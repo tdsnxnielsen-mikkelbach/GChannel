@@ -39,17 +39,20 @@ else if (_customers is { Count: > 0 })
             <MudTd DataLabel="Organization">@(context.OrgDisplayName ?? context.Id)</MudTd>
             <MudTd DataLabel="Domain">@context.Domain</MudTd>
             <MudTd DataLabel="Cloud Identity">
-                @if (context.CloudIdentity?.IsDomainVerified == true)
+                @if (!string.IsNullOrEmpty(context.CloudIdentityId))
                 {
-                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Verified</MudChip>
-                }
-                else if (!string.IsNullOrEmpty(context.CloudIdentityId))
-                {
-                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">Unverified</MudChip>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Linked</MudChip>
                 }
                 else
                 {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">Not linked</MudChip>
+                }
+                @if (!string.IsNullOrEmpty(context.Domain))
+                {
+                    <MudTooltip Text="Check Cloud Identity for this domain">
+                        <MudIconButton Icon="@Icons.Material.Filled.VerifiedUser" Size="Size.Small" Color="Color.Primary"
+                                       Href="@($"/accounts/cloud-identity?domain={Uri.EscapeDataString(context.Domain)}")" />
+                    </MudTooltip>
                 }
             </MudTd>
             <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>

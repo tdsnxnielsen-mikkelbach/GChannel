@@ -48,8 +48,9 @@ advanced distributor/billing features.
 ### 2. Customer management
 
 - [x] **List / view customers** — `accounts.customers.list` + `accounts.customers.get`. Customers
-  table (`/customers`) and detail page (`/customers/{id}`). Served live (not cached) since customer
-  data is mutable.
+  table (`/customers`) and detail page (`/customers/{id}`). Cached in Redis with cache invalidation
+  on create/update/delete. The list's Cloud Identity column links to the per-customer Cloud Identity
+  check (`/accounts/cloud-identity?domain=`).
 - [x] **Create / update / delete customer** — `create`, `patch`, `delete`. Shared create/edit form
   (`/customers/new`, `/customers/edit/{id}`) with org/contact/address; delete confirms first. Update
   uses a field mask so the immutable domain is left untouched.

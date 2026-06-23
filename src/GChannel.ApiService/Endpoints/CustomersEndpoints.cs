@@ -17,28 +17,37 @@ public static class CustomersEndpoints
     {
         var group = app.MapGroup("/api/customers").WithTags("Customers");
 
-        // Customer data is mutable, so list/get are served live (never cached) to avoid staleness.
-        group.MapGet("/", async (
+        // Customer data is mutable, so list/get are cached only briefly and the cache is
+        // invalidated on every create/update/delete to keep the UI consistent.
+        group.MapGet("/", (
                 IGoogleChannelClient channel,
+                IDistributedCache cache,
+                IOptions<GoogleChannelOptions> options,
                 CancellationToken cancellationToken) =>
-                Results.Ok(await channel.ListCustomersAsync(cancellationToken)))
+                CachedAsync(cache, ListCacheKey, options.Value.CacheSeconds,
+                    () => channel.ListCustomersAsync(cancellationToken), cancellationToken))
             .WithName("ListCustomers")
             .WithSummary("Lists the reseller's customers.");
 
-        group.MapGet("/{customerId}", async (
+        group.MapGet("/{customerId}", (
                 string customerId,
                 IGoogleChannelClient channel,
+                IDistributedCache cache,
+                IOptions<GoogleChannelOptions> options,
                 CancellationToken cancellationToken) =>
-                Results.Ok(await channel.GetCustomerAsync(customerId, cancellationToken)))
+                CachedAsync(cache, GetCacheKey(customerId), options.Value.CacheSeconds,
+                    () => channel.GetCustomerAsync(customerId, cancellationToken), cancellationToken))
             .WithName("GetCustomer")
             .WithSummary("Gets a single customer.");
 
         group.MapPost("/", async (
                 SaveCustomerRequest request,
                 IGoogleChannelClient channel,
+                IDistributedCache cache,
                 CancellationToken cancellationToken) =>
             {
                 var created = await channel.CreateCustomerAsync(request, cancellationToken);
+                await InvalidateAsync(cache, created.Id, cancellationToken);
                 return Results.Created($"/api/customers/{created.Id}", created);
             })
             .WithName("CreateCustomer")
@@ -48,9 +57,11 @@ public static class CustomersEndpoints
                 string customerId,
                 SaveCustomerRequest request,
                 IGoogleChannelClient channel,
+                IDistributedCache cache,
                 CancellationToken cancellationToken) =>
             {
                 var updated = await channel.UpdateCustomerAsync(request with { Id = customerId }, cancellationToken);
+                await InvalidateAsync(cache, customerId, cancellationToken);
                 return Results.Ok(updated);
             })
             .WithName("UpdateCustomer")
@@ -59,9 +70,11 @@ public static class CustomersEndpoints
         group.MapDelete("/{customerId}", async (
                 string customerId,
                 IGoogleChannelClient channel,
+                IDistributedCache cache,
                 CancellationToken cancellationToken) =>
             {
                 await channel.DeleteCustomerAsync(customerId, cancellationToken);
+                await InvalidateAsync(cache, customerId, cancellationToken);
                 return Results.NoContent();
             })
             .WithName("DeleteCustomer")
@@ -94,6 +107,20 @@ public static class CustomersEndpoints
             .WithSummary("Lists the offers a customer is eligible to purchase for a SKU.");
 
         return app;
+    }
+
+    private const string ListCacheKey = "customers:list";
+
+    private static string GetCacheKey(string customerId) => $"customers:get:{customerId}";
+
+    /// <summary>Drops the cached customer list and a specific customer after a mutation.</summary>
+    private static async Task InvalidateAsync(IDistributedCache cache, string customerId, CancellationToken cancellationToken)
+    {
+        await cache.RemoveAsync(ListCacheKey, cancellationToken);
+        if (!string.IsNullOrEmpty(customerId))
+        {
+            await cache.RemoveAsync(GetCacheKey(customerId), cancellationToken);
+        }
     }
 
     /// <summary>Returns a cached JSON payload when present, otherwise invokes <paramref name="factory"/> and caches it.</summary>

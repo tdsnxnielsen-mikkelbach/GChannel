@@ -137,12 +137,30 @@
 </MudGrid>
 
 @code {
+    [SupplyParameterFromQuery(Name = "domain")]
+    public string? Domain { get; set; }
+
     private readonly InputModel _model = new();
     private CheckCloudIdentityResult? _result;
     private IReadOnlyList<IdentityCheckHistoryItem> _history = [];
     private bool _busy;
+    private bool _autoChecked;
 
     protected override async Task OnInitializedAsync() => await LoadHistoryAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Deep link from the Customers page: /accounts/cloud-identity?domain={domain} —
+        // prefill the form and run the check once.
+        if (_autoChecked || string.IsNullOrWhiteSpace(Domain))
+        {
+            return;
+        }
+
+        _autoChecked = true;
+        _model.Domain = Domain;
+        await RunCheckAsync(forceRefresh: false);
+    }
 
     private Task CheckAsync() => RunCheckAsync(forceRefresh: false);
 

@@ -104,9 +104,10 @@ Customer CRUD is exposed under `/api/customers` (list, get, create `POST`, updat
 `DELETE`). The UI surfaces this as a customers table (`/customers`), a shared create/edit form
 (`/customers/new`, `/customers/edit/{id}`), and a detail page (`/customers/{id}`).
 
-- **Freshness over caching.** Unlike the idempotent catalog reads, customer list/get are **not
-  cached** — customer data is mutable via the same UI, so serving it live avoids stale views after
-  a create/edit/delete. Only the idempotent purchasable-catalog reads are cached.
+- **Cached with invalidation.** Customer list/get are cached in Redis like the catalog reads, but
+  because customer data is mutable the cache is **invalidated on every create/update/delete**
+  (the list key plus the affected customer key) so the UI never shows stale data after a change.
+  Only idempotent purchasable-catalog reads rely on TTL alone.
 - **Safe updates.** `UpdateCustomerAsync` sets a field mask
   (`org_display_name,org_postal_address,primary_contact_info,language_code`) so the immutable
   domain and Cloud Identity are never touched; the domain field is disabled in the edit form.
