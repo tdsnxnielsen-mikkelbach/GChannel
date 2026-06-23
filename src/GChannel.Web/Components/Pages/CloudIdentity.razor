@@ -1,0 +1,123 @@
+@page "/accounts/cloud-identity"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Cloud Identity check · GChannel</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Cloud Identity check</MudText>
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Verify whether a customer domain already has a Google Cloud Identity account before you
+    start provisioning.
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4" Elevation="2">
+            <EditForm Model="_model" OnValidSubmit="CheckAsync">
+                <DataAnnotationsValidator />
+                <MudTextField @bind-Value="_model.Domain"
+                              Label="Customer domain"
+                              Placeholder="example.com"
+                              Required="true"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Language"
+                              Class="mb-4" />
+                <MudTextField @bind-Value="_model.PrimaryAdminEmail"
+                              Label="Primary admin email (optional)"
+                              Placeholder="admin@example.com"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Email"
+                              Class="mb-4" />
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Search"
+                           Disabled="_busy">
+                    @(_busy ? "Checking…" : "Check")
+                </MudButton>
+            </EditForm>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="7">
+        @if (_busy)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+        }
+        else if (_result is not null)
+        {
+            <MudAlert Severity="@(_result.Exists ? Severity.Warning : Severity.Success)" Class="mb-4">
+                @if (_result.Exists)
+                {
+                    <span>A Cloud Identity account already exists for <b>@_result.Domain</b>.</span>
+                }
+                else
+                {
+                    <span>No Cloud Identity account exists for <b>@_result.Domain</b>. You can provision it.</span>
+                }
+            </MudAlert>
+
+            @if (_result.Accounts.Count > 0)
+            {
+                <MudTable Items="_result.Accounts" Dense="true" Hover="true" Elevation="2">
+                    <HeaderContent>
+                        <MudTh>Customer</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Existing</MudTh>
+                        <MudTh>Owned</MudTh>
+                        <MudTh>Cloud Identity ID</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
+                        <MudTd DataLabel="Type">@context.CustomerType</MudTd>
+                        <MudTd DataLabel="Existing">
+                            <MudIcon Icon="@(context.Existing ? Icons.Material.Filled.Check : Icons.Material.Filled.Close)"
+                                     Color="@(context.Existing ? Color.Success : Color.Default)" Size="Size.Small" />
+                        </MudTd>
+                        <MudTd DataLabel="Owned">
+                            <MudIcon Icon="@(context.Owned ? Icons.Material.Filled.Check : Icons.Material.Filled.Close)"
+                                     Color="@(context.Owned ? Color.Success : Color.Default)" Size="Size.Small" />
+                        </MudTd>
+                        <MudTd DataLabel="Cloud Identity ID">@context.CustomerCloudIdentityId</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private readonly InputModel _model = new();
+    private CheckCloudIdentityResult? _result;
+    private bool _busy;
+
+    private async Task CheckAsync()
+    {
+        _busy = true;
+        _result = null;
+        try
+        {
+            _result = await Api.CheckCloudIdentityAsync(new CheckCloudIdentityRequest
+            {
+                Domain = _model.Domain,
+                PrimaryAdminEmail = string.IsNullOrWhiteSpace(_model.PrimaryAdminEmail) ? null : _model.PrimaryAdminEmail
+            });
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Check failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Domain { get; set; } = string.Empty;
+        public string? PrimaryAdminEmail { get; set; }
+    }
+}

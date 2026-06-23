@@ -1,0 +1,23 @@
+## .NET
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+.vs/
+
+## Aspire / azd
+.azure/
+**/aspire-output/
+*.binlog
+
+## Rider / VS Code
+.idea/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Secrets (never commit)
+**/appsettings.*.local.json
+*.pfx

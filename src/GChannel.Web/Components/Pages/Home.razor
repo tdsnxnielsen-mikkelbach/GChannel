@@ -1,0 +1,82 @@
+﻿@page "/"
+@attribute [Authorize]
+
+<PageTitle>Dashboard · GChannel</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Dashboard</MudText>
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Reseller overview for your Google Cloud Channel estate.
+</MudText>
+
+<MudGrid>
+    @foreach (var card in _summary)
+    {
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <div class="d-flex justify-space-between align-center">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@card.Label</MudText>
+                            <MudText Typo="Typo.h5">@card.Value</MudText>
+                        </div>
+                        <MudIcon Icon="@card.Icon" Color="@card.Color" Size="Size.Large" />
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    }
+
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" GutterBottom="true">Customers onboarded</MudText>
+            <ApexChart TItem="MonthlyPoint" Title="Last 6 months">
+                <ApexPointSeries TItem="MonthlyPoint"
+                                 Items="_monthly"
+                                 Name="Customers"
+                                 SeriesType="SeriesType.Area"
+                                 XValue="@(p => p.Month)"
+                                 YValue="@(p => p.Customers)" />
+            </ApexChart>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" GutterBottom="true">Product mix</MudText>
+            <ApexChart TItem="ProductSlice" Title="Active SKUs">
+                <ApexPointSeries TItem="ProductSlice"
+                                 Items="_products"
+                                 Name="SKUs"
+                                 SeriesType="SeriesType.Donut"
+                                 XValue="@(p => p.Product)"
+                                 YValue="@(p => p.Count)" />
+            </ApexChart>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private record SummaryCard(string Label, string Value, string Icon, Color Color);
+    private record MonthlyPoint(string Month, decimal Customers);
+    private record ProductSlice(string Product, decimal Count);
+
+    // Placeholder figures until the reporting endpoints are wired up.
+    private readonly SummaryCard[] _summary =
+    [
+        new("Customers", "128", Icons.Material.Filled.Business, Color.Primary),
+        new("Active SKUs", "342", Icons.Material.Filled.Inventory2, Color.Success),
+        new("Channel links", "7", Icons.Material.Filled.Hub, Color.Info),
+        new("Pending checks", "3", Icons.Material.Filled.PendingActions, Color.Warning),
+    ];
+
+    private readonly List<MonthlyPoint> _monthly =
+    [
+        new("Jan", 18), new("Feb", 24), new("Mar", 31),
+        new("Apr", 28), new("May", 39), new("Jun", 47),
+    ];
+
+    private readonly List<ProductSlice> _products =
+    [
+        new("Workspace", 180), new("Cloud Identity", 92), new("Chrome", 70),
+    ];
+}

@@ -1,0 +1,6 @@
+@GChannel.ApiService_HostAddress = http://localhost:5033
+
+GET {{GChannel.ApiService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

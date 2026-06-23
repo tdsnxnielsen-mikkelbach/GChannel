@@ -1,0 +1,10 @@
+# azd configuration. The .NET Aspire AppHost describes every container app,
+# the Azure SQL (serverless) database and the Azure Managed Redis cache, so a
+# single service entry pointed at the AppHost is all azd needs.
+# Run `azd up` to provision Azure and deploy both container apps.
+name: gchannel
+services:
+  app:
+    language: dotnet
+    project: ./src/GChannel.AppHost/GChannel.AppHost.csproj
+    host: containerapp
