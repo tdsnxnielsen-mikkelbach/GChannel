@@ -1,0 +1,76 @@
+@page "/catalog/offers"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Offers · GChannel</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Offers</MudText>
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    The offers you can sell to customers.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_offers is { Count: > 0 })
+{
+    <MudTable Items="_offers" Dense="true" Hover="true" Elevation="2" Filter="Matches">
+        <ToolBarContent>
+            <MudTextField @bind-Value="_search" Placeholder="Search offers"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium" Class="mt-0" Immediate="true" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Offer</MudTh>
+            <MudTh>SKU</MudTh>
+            <MudTh>Deal code</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Offer">@(context.DisplayName ?? context.Name)</MudTd>
+            <MudTd DataLabel="SKU">@context.SkuName</MudTd>
+            <MudTd DataLabel="Deal code">@context.DealCode</MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Info">No offers available.</MudAlert>
+}
+
+@code {
+    private IReadOnlyList<CatalogOffer>? _offers;
+    private bool _loading = true;
+    private string _search = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var result = await Api.ListOffersAsync();
+            _offers = result?.Offers ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
+            _offers = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private bool Matches(CatalogOffer offer)
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            return true;
+        }
+
+        return (offer.DisplayName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (offer.SkuName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (offer.DealCode?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+}

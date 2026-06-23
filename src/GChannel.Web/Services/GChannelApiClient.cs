@@ -30,6 +30,36 @@ public sealed class GChannelApiClient(
         return await response.Content.ReadFromJsonAsync<CheckCloudIdentityResult>(cancellationToken);
     }
 
+    /// <summary>Lists the products the reseller is authorized to sell.</summary>
+    public Task<CatalogProductsResult?> ListProductsAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<CatalogProductsResult>(ApiRoutes.Products, cancellationToken);
+
+    /// <summary>Lists the SKUs for a product.</summary>
+    public Task<CatalogSkusResult?> ListSkusAsync(string productId, CancellationToken cancellationToken = default) =>
+        GetAsync<CatalogSkusResult>(ApiRoutes.ProductSkus(productId), cancellationToken);
+
+    /// <summary>Lists the offers the reseller can sell.</summary>
+    public Task<CatalogOffersResult?> ListOffersAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<CatalogOffersResult>(ApiRoutes.Offers, cancellationToken);
+
+    /// <summary>Lists the rebilling-supported SKU groups.</summary>
+    public Task<CatalogSkuGroupsResult?> ListSkuGroupsAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<CatalogSkuGroupsResult>(ApiRoutes.SkuGroups, cancellationToken);
+
+    /// <summary>Lists the billable SKUs in a SKU group.</summary>
+    public Task<CatalogBillableSkusResult?> ListBillableSkusAsync(string skuGroupId, CancellationToken cancellationToken = default) =>
+        GetAsync<CatalogBillableSkusResult>(ApiRoutes.BillableSkus(skuGroupId), cancellationToken);
+
+    private async Task<T?> GetAsync<T>(string route, CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Get, route);
+        await AttachGoogleTokenAsync(message);
+
+        using var response = await http.SendAsync(message, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<T>(cancellationToken);
+    }
+
     private async Task AttachGoogleTokenAsync(HttpRequestMessage message)
     {
         var state = await authState.GetAuthenticationStateAsync();

@@ -8,21 +8,16 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | UI action | Resource.method | Channel API |
 | --- | --- | --- |
 | **Accounts → Cloud Identity check** | `accounts.checkCloudIdentityAccountsExist` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/checkCloudIdentityAccountsExist) |
+| **Catalog → Products** | `products.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/products/list) |
+| **Catalog → Products (SKUs)** | `products.skus.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/products.skus/list) |
+| **Catalog → Offers** | `accounts.offers.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.offers/list) |
+| **Catalog → SKU groups** | `accounts.skuGroups.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups/list) |
+| **Catalog → SKU groups (billable SKUs)** | `accounts.skuGroups.billableSkus.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups.billableSkus/list) |
 
 ## Available possibilities
 
 The following are the full set of `v1` resources/methods the dashboard could grow into,
 grouped by feature area. See [todo.md](todo.md) for sequencing/priority.
-
-### Catalog (what a reseller can sell)
-
-| Resource.method | Purpose |
-| --- | --- |
-| [`products.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/products/list) | List products the reseller is authorized to sell. |
-| [`products.skus.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/products.skus/list) | List SKUs for a product. |
-| [`accounts.offers.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.offers/list) | List the Offers the reseller can sell. |
-| [`accounts.skuGroups.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups/list) | List rebilling-supported SKU groups. |
-| [`accounts.skuGroups.billableSkus.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups.billableSkus/list) | List billable SKUs in a SKU group. |
 
 ### Customers
 

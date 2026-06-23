@@ -16,6 +16,21 @@ namespace GChannel.ApiService.Services;
 public interface IGoogleChannelClient
 {
     Task<CheckCloudIdentityResult> CheckCloudIdentityAsync(CheckCloudIdentityRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Lists the products the reseller is authorized to sell (<c>products.list</c>).</summary>
+    Task<CatalogProductsResult> ListProductsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Lists the SKUs for a product (<c>products.skus.list</c>).</summary>
+    Task<CatalogSkusResult> ListSkusAsync(string productId, CancellationToken cancellationToken);
+
+    /// <summary>Lists the offers the reseller can sell (<c>accounts.offers.list</c>).</summary>
+    Task<CatalogOffersResult> ListOffersAsync(CancellationToken cancellationToken);
+
+    /// <summary>Lists the rebilling SKU groups (<c>accounts.skuGroups.list</c>).</summary>
+    Task<CatalogSkuGroupsResult> ListSkuGroupsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Lists the billable SKUs in a SKU group (<c>accounts.skuGroups.billableSkus.list</c>).</summary>
+    Task<CatalogBillableSkusResult> ListBillableSkusAsync(string skuGroupId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -80,6 +95,171 @@ public sealed class GoogleChannelClient(
             Accounts = accounts
         };
     }
+
+    public async Task<CatalogProductsResult> ListProductsAsync(CancellationToken cancellationToken)
+    {
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var products = new List<CatalogProduct>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Products.List();
+            request.Account = _options.AccountName;
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var product in response.Products ?? [])
+            {
+                products.Add(new CatalogProduct
+                {
+                    Name = product.Name ?? string.Empty,
+                    Id = LastSegment(product.Name),
+                    DisplayName = product.MarketingInfo?.DisplayName,
+                    Description = product.MarketingInfo?.Description
+                });
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new CatalogProductsResult { Products = products };
+    }
+
+    public async Task<CatalogSkusResult> ListSkusAsync(string productId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(productId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var skus = new List<CatalogSku>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Products.Skus.List($"products/{productId}");
+            request.Account = _options.AccountName;
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var sku in response.Skus ?? [])
+            {
+                skus.Add(new CatalogSku
+                {
+                    Name = sku.Name ?? string.Empty,
+                    Id = LastSegment(sku.Name),
+                    DisplayName = sku.MarketingInfo?.DisplayName,
+                    Description = sku.MarketingInfo?.Description
+                });
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new CatalogSkusResult { Skus = skus };
+    }
+
+    public async Task<CatalogOffersResult> ListOffersAsync(CancellationToken cancellationToken)
+    {
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var offers = new List<CatalogOffer>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Offers.List(_options.AccountName);
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var offer in response.Offers ?? [])
+            {
+                offers.Add(new CatalogOffer
+                {
+                    Name = offer.Name ?? string.Empty,
+                    DisplayName = offer.MarketingInfo?.DisplayName,
+                    Description = offer.MarketingInfo?.Description,
+                    SkuName = offer.Sku?.Name,
+                    DealCode = offer.DealCode
+                });
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new CatalogOffersResult { Offers = offers };
+    }
+
+    public async Task<CatalogSkuGroupsResult> ListSkuGroupsAsync(CancellationToken cancellationToken)
+    {
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var groups = new List<CatalogSkuGroup>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.SkuGroups.List(_options.AccountName);
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var group in response.SkuGroups ?? [])
+            {
+                groups.Add(new CatalogSkuGroup
+                {
+                    Name = group.Name ?? string.Empty,
+                    Id = LastSegment(group.Name),
+                    DisplayName = group.DisplayName
+                });
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new CatalogSkuGroupsResult { SkuGroups = groups };
+    }
+
+    public async Task<CatalogBillableSkusResult> ListBillableSkusAsync(string skuGroupId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(skuGroupId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var billableSkus = new List<CatalogBillableSku>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.SkuGroups.BillableSkus.List($"{_options.AccountName}/skuGroups/{skuGroupId}");
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var billable in response.BillableSkus ?? [])
+            {
+                billableSkus.Add(new CatalogBillableSku
+                {
+                    Sku = billable.Sku ?? string.Empty,
+                    SkuDisplayName = billable.SkuDisplayName,
+                    Service = billable.Service,
+                    ServiceDisplayName = billable.ServiceDisplayName
+                });
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new CatalogBillableSkusResult { BillableSkus = billableSkus };
+    }
+
+    /// <summary>Returns the last "/"-separated segment of a resource name (its short id).</summary>
+    private static string LastSegment(string? resourceName) =>
+        string.IsNullOrEmpty(resourceName)
+            ? string.Empty
+            : resourceName[(resourceName.LastIndexOf('/') + 1)..];
 
     private CloudchannelService CreateService()
     {

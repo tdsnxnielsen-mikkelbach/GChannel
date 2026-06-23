@@ -1,0 +1,105 @@
+@page "/catalog/products"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Products · GChannel</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Products</MudText>
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    The products you are authorized to sell. Expand a product to load its SKUs.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_products is { Count: > 0 })
+{
+    <MudExpansionPanels MultiExpansion="true" Elevation="2">
+        @foreach (var product in _products)
+        {
+            <MudExpansionPanel Text="@(product.DisplayName ?? product.Id)"
+                               ExpandedChanged="expanded => OnProductExpanded(product, expanded)">
+                @if (!string.IsNullOrWhiteSpace(product.Description))
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">@product.Description</MudText>
+                }
+
+                @if (_skusByProduct.TryGetValue(product.Id, out var skus))
+                {
+                    @if (skus is null)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                    }
+                    else if (skus.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No SKUs found.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="skus" Dense="true" Hover="true" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>SKU</MudTh>
+                                <MudTh>Id</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="SKU">@(context.DisplayName ?? context.Id)</MudTd>
+                                <MudTd DataLabel="Id">@context.Id</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                }
+            </MudExpansionPanel>
+        }
+    </MudExpansionPanels>
+}
+else
+{
+    <MudAlert Severity="Severity.Info">No products available.</MudAlert>
+}
+
+@code {
+    private IReadOnlyList<CatalogProduct>? _products;
+    private readonly Dictionary<string, IReadOnlyList<CatalogSku>?> _skusByProduct = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var result = await Api.ListProductsAsync();
+            _products = result?.Products ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
+            _products = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnProductExpanded(CatalogProduct product, bool expanded)
+    {
+        if (!expanded || _skusByProduct.ContainsKey(product.Id))
+        {
+            return;
+        }
+
+        // Mark as loading (null) so the panel shows a progress bar.
+        _skusByProduct[product.Id] = null;
+        try
+        {
+            var result = await Api.ListSkusAsync(product.Id);
+            _skusByProduct[product.Id] = result?.Skus ?? [];
+        }
+        catch (Exception ex)
+        {
+            _skusByProduct.Remove(product.Id);
+            Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
+        }
+    }
+}

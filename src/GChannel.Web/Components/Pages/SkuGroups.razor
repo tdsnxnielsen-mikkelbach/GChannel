@@ -1,0 +1,100 @@
+@page "/catalog/sku-groups"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>SKU groups · GChannel</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">SKU groups</MudText>
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Rebilling-supported SKU groups. Expand a group to load its billable SKUs.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_groups is { Count: > 0 })
+{
+    <MudExpansionPanels MultiExpansion="true" Elevation="2">
+        @foreach (var grp in _groups)
+        {
+            <MudExpansionPanel Text="@(grp.DisplayName ?? grp.Id)"
+                               ExpandedChanged="expanded => OnGroupExpanded(grp, expanded)">
+                @if (_billableByGroup.TryGetValue(grp.Id, out var billables))
+                {
+                    @if (billables is null)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                    }
+                    else if (billables.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No billable SKUs found.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="billables" Dense="true" Hover="true" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>SKU</MudTh>
+                                <MudTh>Service</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="SKU">@(context.SkuDisplayName ?? context.Sku)</MudTd>
+                                <MudTd DataLabel="Service">@(context.ServiceDisplayName ?? context.Service)</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                }
+            </MudExpansionPanel>
+        }
+    </MudExpansionPanels>
+}
+else
+{
+    <MudAlert Severity="Severity.Info">No SKU groups available.</MudAlert>
+}
+
+@code {
+    private IReadOnlyList<CatalogSkuGroup>? _groups;
+    private readonly Dictionary<string, IReadOnlyList<CatalogBillableSku>?> _billableByGroup = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var result = await Api.ListSkuGroupsAsync();
+            _groups = result?.SkuGroups ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load SKU groups: {ex.Message}", Severity.Error);
+            _groups = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnGroupExpanded(CatalogSkuGroup group, bool expanded)
+    {
+        if (!expanded || _billableByGroup.ContainsKey(group.Id))
+        {
+            return;
+        }
+
+        // Mark as loading (null) so the panel shows a progress bar.
+        _billableByGroup[group.Id] = null;
+        try
+        {
+            var result = await Api.ListBillableSkusAsync(group.Id);
+            _billableByGroup[group.Id] = result?.BillableSkus ?? [];
+        }
+        catch (Exception ex)
+        {
+            _billableByGroup.Remove(group.Id);
+            Snackbar.Add($"Failed to load billable SKUs: {ex.Message}", Severity.Error);
+        }
+    }
+}

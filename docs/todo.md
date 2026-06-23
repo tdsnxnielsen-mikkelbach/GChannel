@@ -19,9 +19,17 @@ advanced distributor/billing features.
 
 ### 1. Catalog browsing (read-only, low risk)
 
-- [ ] **Products** — `products.list` and `products.skus.list` to browse the sellable catalog.
-- [ ] **Offers** — `accounts.offers.list` to show the Offers the reseller can sell.
-- [ ] **SKU groups** — `accounts.skuGroups.list` + `accounts.skuGroups.billableSkus.list`.
+- [x] **Products** — `products.list` and `products.skus.list` to browse the sellable catalog.
+- [x] **Offers** — `accounts.offers.list` to show the Offers the reseller can sell.
+- [x] **SKU groups** — `accounts.skuGroups.list` + `accounts.skuGroups.billableSkus.list`.
+
+> **Implemented.** Read-only catalog browsing is live end-to-end: shared contracts in
+> `GChannel.Shared/Contracts/Catalog.cs`, `IGoogleChannelClient` catalog methods (with pagination)
+> in the API, cached minimal-API endpoints under `/api/catalog/*` (Redis, `CacheSeconds` TTL), the
+> `GChannelApiClient` typed-client methods, and three Blazor pages (`Products`, `Offers`,
+> `SkuGroups`) reachable from the **Catalog** nav group. Products and SKU groups lazy-load their
+> children (SKUs / billable SKUs) on panel expand.
+
 
 ### 2. Customer management
 
