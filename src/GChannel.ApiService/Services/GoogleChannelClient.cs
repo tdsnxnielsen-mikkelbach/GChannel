@@ -29,6 +29,12 @@ public sealed class GoogleChannelClient(
 {
     private readonly GoogleChannelOptions _options = options.Value;
 
+    /// <summary>
+    /// The <c>CloudIdentityType</c> enum value for a domain-verified Cloud Identity account.
+    /// Only these accounts can be used for downstream reseller actions.
+    /// </summary>
+    private const string DomainCustomerType = "DOMAIN";
+
     public async Task<CheckCloudIdentityResult> CheckCloudIdentityAsync(
         CheckCloudIdentityRequest request,
         CancellationToken cancellationToken)
@@ -50,6 +56,9 @@ public sealed class GoogleChannelClient(
             .CheckCloudIdentityAccountsExist(body, _options.AccountName)
             .ExecuteAsync(cancellationToken);
 
+        // All matched accounts are returned, but only DOMAIN-type accounts are usable for downstream
+        // reseller actions (customer creation, transfers, entitlements). Non-DOMAIN matches (e.g.
+        // TEAM / unspecified) are flagged via IsDomain / HasNonDomainAccounts so the UI can warn.
         var accounts = (response.CloudIdentityAccounts ?? [])
             .Select(a => new CloudIdentityAccount
             {
@@ -58,6 +67,7 @@ public sealed class GoogleChannelClient(
                 CustomerName = a.CustomerName,
                 CustomerCloudIdentityId = a.CustomerCloudIdentityId,
                 CustomerType = a.CustomerType,
+                IsDomain = string.Equals(a.CustomerType, DomainCustomerType, StringComparison.OrdinalIgnoreCase),
                 ChannelPartnerCloudIdentityId = a.ChannelPartnerCloudIdentityId
             })
             .ToList();
@@ -65,7 +75,8 @@ public sealed class GoogleChannelClient(
         return new CheckCloudIdentityResult
         {
             Domain = request.Domain,
-            Exists = accounts.Any(a => a.Existing),
+            Exists = accounts.Any(a => a.IsDomain && a.Existing),
+            HasNonDomainAccounts = accounts.Any(a => !a.IsDomain),
             Accounts = accounts
         };
     }

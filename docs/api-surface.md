@@ -1,8 +1,111 @@
-# Implemented API surface
+# API surface
 
-| UI action | Channel API |
+Based on the stable **`v1`** of the [Cloud Channel API](https://docs.cloud.google.com/channel/docs/reference/rest).
+All paths are relative to `https://cloudchannel.googleapis.com`.
+
+## Implemented
+
+| UI action | Resource.method | Channel API |
+| --- | --- | --- |
+| **Accounts → Cloud Identity check** | `accounts.checkCloudIdentityAccountsExist` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/checkCloudIdentityAccountsExist) |
+
+## Available possibilities
+
+The following are the full set of `v1` resources/methods the dashboard could grow into,
+grouped by feature area. See [todo.md](todo.md) for sequencing/priority.
+
+### Catalog (what a reseller can sell)
+
+| Resource.method | Purpose |
 | --- | --- |
-| **Accounts → Cloud Identity check** | [`accounts.checkCloudIdentityAccountsExist`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/checkCloudIdentityAccountsExist) |
+| [`products.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/products/list) | List products the reseller is authorized to sell. |
+| [`products.skus.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/products.skus/list) | List SKUs for a product. |
+| [`accounts.offers.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.offers/list) | List the Offers the reseller can sell. |
+| [`accounts.skuGroups.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups/list) | List rebilling-supported SKU groups. |
+| [`accounts.skuGroups.billableSkus.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups.billableSkus/list) | List billable SKUs in a SKU group. |
 
-Planned next (the structure is ready to grow into these):
-`accounts`, `accounts.channelPartnerLinks`, `products`, `products.skus`.
+### Customers
+
+| Resource.method | Purpose |
+| --- | --- |
+| [`accounts.customers.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) | List customers. |
+| [`accounts.customers.get`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/get) | Get a customer. |
+| [`accounts.customers.create`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/create) | Create a customer. |
+| [`accounts.customers.patch`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/patch) | Update a customer. |
+| [`accounts.customers.delete`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/delete) | Delete a customer. |
+| [`accounts.customers.import`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/import) | Import a customer from Cloud Identity before transfer. |
+| [`accounts.customers.provisionCloudIdentity`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/provisionCloudIdentity) | Provision a Cloud Identity for a customer. |
+| [`accounts.customers.listPurchasableOffers`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableOffers) | Offers purchasable for a customer. |
+| [`accounts.customers.listPurchasableSkus`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableSkus) | SKUs purchasable / up-/down-gradeable for a customer. |
+| [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs. |
+
+### Entitlements (subscriptions / lifecycle)
+
+| Resource.method | Purpose |
+| --- | --- |
+| [`accounts.customers.entitlements.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/list) | List a customer's entitlements. |
+| [`accounts.customers.entitlements.get`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/get) | Get an entitlement. |
+| [`accounts.customers.entitlements.create`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/create) | Create (purchase) an entitlement. |
+| [`accounts.customers.entitlements.changeOffer`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/changeOffer) | Change the Offer of an entitlement. |
+| [`accounts.customers.entitlements.changeParameters`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/changeParameters) | Change parameters (e.g. seats). |
+| [`accounts.customers.entitlements.changeRenewalSettings`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/changeRenewalSettings) | Update renewal settings. |
+| [`accounts.customers.entitlements.activate`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/activate) | Activate a suspended entitlement. |
+| [`accounts.customers.entitlements.suspend`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/suspend) | Suspend an entitlement. |
+| [`accounts.customers.entitlements.cancel`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/cancel) | Cancel an entitlement. |
+| [`accounts.customers.entitlements.startPaidService`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/startPaidService) | Start paid service for a trial. |
+| [`accounts.customers.entitlements.lookupOffer`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/lookupOffer) | Look up the Offer of an entitlement. |
+| [`accounts.customers.entitlements.listEntitlementChanges`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/listEntitlementChanges) | Entitlement change history. |
+
+### Transfers
+
+| Resource.method | Purpose |
+| --- | --- |
+| [`accounts.listTransferableSkus`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/listTransferableSkus) | Transferable SKUs for a customer. |
+| [`accounts.listTransferableOffers`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/listTransferableOffers) | Transferable Offers for a customer. |
+| [`accounts.customers.transferEntitlements`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/transferEntitlements) | Transfer entitlements to this reseller. |
+| [`accounts.customers.transferEntitlementsToGoogle`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/transferEntitlementsToGoogle) | Transfer entitlements to Google. |
+
+### Channel partner links (n-tier / distributor)
+
+| Resource.method | Purpose |
+| --- | --- |
+| [`accounts.channelPartnerLinks.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/list) | List channel partner links. |
+| [`accounts.channelPartnerLinks.get`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/get) | Get a channel partner link. |
+| [`accounts.channelPartnerLinks.create`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/create) | Initiate a distributor↔reseller link. |
+| [`accounts.channelPartnerLinks.patch`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/patch) | Update a channel partner link. |
+| `accounts.channelPartnerLinks.customers.*` | Manage customers under a channel partner ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers)). |
+
+### Repricing (rebilling margin)
+
+| Resource.method | Purpose |
+| --- | --- |
+| `accounts.customers.customerRepricingConfigs.*` | How a reseller modifies a customer's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.customerRepricingConfigs)). |
+| `accounts.channelPartnerLinks.channelPartnerRepricingConfigs.*` | How a distributor modifies a channel partner's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.channelPartnerRepricingConfigs)). |
+
+### Pub/Sub subscribers & operations
+
+| Resource.method | Purpose |
+| --- | --- |
+| `accounts.register` / `accounts.unregister` / `accounts.listSubscribers` | Manage Pub/Sub subscriber service accounts ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts)). |
+| `operations.{get,list,cancel,delete}` | Track long-running operations ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/operations)). |
+
+### Reporting (deprecated in v1)
+
+`accounts.reports.*` and `accounts.reportJobs.fetchReportResults` are **deprecated**; avoid
+building new UI on them. Drive the home-page figures from entitlement data instead.
+
+## `v1alpha1` preview (use with caution)
+
+The API also exposes a [`v1alpha1`](https://docs.cloud.google.com/channel/docs/reference/rest)
+version. It is **alpha**: subject to breaking changes, not recommended for production. It mostly
+mirrors `v1`, but adds a few capabilities that have no stable equivalent yet:
+
+| Resource.method | Purpose |
+| --- | --- |
+| [`accounts.listProvisionableCloudIdentityTypes`](https://docs.cloud.google.com/channel/docs/reference/rest/v1alpha1/accounts/listProvisionableCloudIdentityTypes) | Workspace customer types creatable for a domain, and whether a transfer is required. |
+| [`accounts.customers.entitlements.assignChannelPartner`](https://docs.cloud.google.com/channel/docs/reference/rest/v1alpha1/accounts.customers.entitlements/assignChannelPartner) | Assign a channel partner to an entitlement (n-tier). |
+| [`opportunities`](https://docs.cloud.google.com/channel/docs/reference/rest/v1alpha1/opportunities) `create` / `get` / `patch` / `query` | Deal-registration / opportunity submission flow. |
+
+It also still exposes the **deprecated** entitlement variants `changePlan`, `changeQuantity`,
+and `changeSku` — prefer the `v1` `changeOffer` / `changeParameters` methods instead.
+

@@ -58,6 +58,14 @@
                 }
             </MudAlert>
 
+            @if (_result.HasNonDomainAccounts)
+            {
+                <MudAlert Severity="Severity.Info" Class="mb-4">
+                    One or more matches are not domain-verified (<b>DOMAIN</b>) accounts. These cannot be
+                    used for reseller actions such as customer creation, transfers or entitlements.
+                </MudAlert>
+            }
+
             @if (_result.Accounts.Count > 0)
             {
                 <MudTable Items="_result.Accounts" Dense="true" Hover="true" Elevation="2">
@@ -70,7 +78,17 @@
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
-                        <MudTd DataLabel="Type">@context.CustomerType</MudTd>
+                        <MudTd DataLabel="Type">
+                            @if (context.IsDomain)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">@context.CustomerType</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text"
+                                         Icon="@Icons.Material.Filled.Warning">@context.CustomerType — not usable</MudChip>
+                            }
+                        </MudTd>
                         <MudTd DataLabel="Existing">
                             <MudIcon Icon="@(context.Existing ? Icons.Material.Filled.Check : Icons.Material.Filled.Close)"
                                      Color="@(context.Existing ? Color.Success : Color.Default)" Size="Size.Small" />

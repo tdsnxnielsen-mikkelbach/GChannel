@@ -18,8 +18,17 @@ public sealed record CheckCloudIdentityResult
 {
     public required string Domain { get; init; }
 
-    /// <summary>True when at least one Cloud Identity account exists for the domain.</summary>
+    /// <summary>
+    /// True when at least one domain-verified (<c>DOMAIN</c>) Cloud Identity account exists for the
+    /// domain. Only <c>DOMAIN</c> accounts are usable for downstream reseller actions.
+    /// </summary>
     public bool Exists { get; init; }
+
+    /// <summary>
+    /// True when one or more matched accounts are not domain-verified (e.g. <c>TEAM</c>) and so
+    /// cannot be used for reseller actions. Surfaced as a warning in the UI.
+    /// </summary>
+    public bool HasNonDomainAccounts { get; init; }
 
     public IReadOnlyList<CloudIdentityAccount> Accounts { get; init; } = [];
 }
@@ -32,5 +41,12 @@ public sealed record CloudIdentityAccount
     public string? CustomerName { get; init; }
     public string? CustomerCloudIdentityId { get; init; }
     public string? CustomerType { get; init; }
+
+    /// <summary>
+    /// True when <see cref="CustomerType"/> is <c>DOMAIN</c> — the only type usable for downstream
+    /// reseller actions (customer creation, transfers, entitlements).
+    /// </summary>
+    public bool IsDomain { get; init; }
+
     public string? ChannelPartnerCloudIdentityId { get; init; }
 }
