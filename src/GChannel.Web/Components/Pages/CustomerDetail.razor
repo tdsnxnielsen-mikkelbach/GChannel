@@ -1,0 +1,360 @@
+@page "/customers/{Id}"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+
+<PageTitle>@(_customer?.OrgDisplayName ?? "Customer") · GChannel</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_customer is null)
+{
+    <MudAlert Severity="Severity.Error">Customer not found.</MudAlert>
+    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="/customers" StartIcon="@Icons.Material.Filled.ArrowBack">
+        Back to customers
+    </MudButton>
+}
+else
+{
+    <div class="d-flex justify-space-between align-center mb-4">
+        <div>
+            <MudText Typo="Typo.h4">@(_customer.OrgDisplayName ?? _customer.Id)</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@_customer.Domain</MudText>
+        </div>
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
+                       Href="@($"/customers/edit/{_customer.Id}")">Edit</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete"
+                       OnClick="DeleteAsync">Delete</MudButton>
+        </div>
+    </div>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Details</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            <tr><td><strong>Customer id</strong></td><td>@_customer.Id</td></tr>
+                            <tr><td><strong>Domain</strong></td><td>@_customer.Domain</td></tr>
+                            <tr><td><strong>Language</strong></td><td>@(_customer.LanguageCode ?? "—")</td></tr>
+                            <tr><td><strong>Cloud Identity id</strong></td><td>@(_customer.CloudIdentityId ?? "—")</td></tr>
+                            <tr><td><strong>Created</strong></td><td>@(_customer.CreateTime?.ToString("u") ?? "—")</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Cloud Identity</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    @if (_customer.CloudIdentity is { } ci)
+                    {
+                        <MudSimpleTable Dense="true" Elevation="0">
+                            <tbody>
+                                <tr><td><strong>Type</strong></td><td>@(ci.CustomerType ?? "—")</td></tr>
+                                <tr><td><strong>Primary domain</strong></td><td>@(ci.PrimaryDomain ?? "—")</td></tr>
+                                <tr>
+                                    <td><strong>Domain verified</strong></td>
+                                    <td>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                                 Color="@(ci.IsDomainVerified ? Color.Success : Color.Warning)">
+                                            @(ci.IsDomainVerified ? "Verified" : "Unverified")
+                                        </MudChip>
+                                    </td>
+                                </tr>
+                                <tr><td><strong>Alternate email</strong></td><td>@(ci.AlternateEmail ?? "—")</td></tr>
+                                @if (!string.IsNullOrEmpty(ci.AdminConsoleUri))
+                                {
+                                    <tr><td><strong>Admin console</strong></td><td><MudLink Href="@ci.AdminConsoleUri" Target="_blank">Open</MudLink></td></tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No Cloud Identity linked.</MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Primary contact</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    @if (_customer.PrimaryContact is { } c)
+                    {
+                        <MudSimpleTable Dense="true" Elevation="0">
+                            <tbody>
+                                <tr><td><strong>Name</strong></td><td>@($"{c.FirstName} {c.LastName}".Trim())</td></tr>
+                                <tr><td><strong>Email</strong></td><td>@(c.Email ?? "—")</td></tr>
+                                <tr><td><strong>Phone</strong></td><td>@(c.Phone ?? "—")</td></tr>
+                                <tr><td><strong>Title</strong></td><td>@(c.Title ?? "—")</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No contact on file.</MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Address</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    @if (_customer.Address is { } a)
+                    {
+                        <MudSimpleTable Dense="true" Elevation="0">
+                            <tbody>
+                                <tr><td><strong>Street</strong></td><td>@(string.Join(", ", a.AddressLines) is { Length: > 0 } s ? s : "—")</td></tr>
+                                <tr><td><strong>City</strong></td><td>@(a.Locality ?? "—")</td></tr>
+                                <tr><td><strong>State / province</strong></td><td>@(a.AdministrativeArea ?? "—")</td></tr>
+                                <tr><td><strong>Postal code</strong></td><td>@(a.PostalCode ?? "—")</td></tr>
+                                <tr><td><strong>Region</strong></td><td>@(a.RegionCode ?? "—")</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No address on file.</MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    <MudCard Elevation="2" Class="mt-2">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6">Purchasable catalog</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    SKUs this customer is eligible to purchase. Pick a product to load its SKUs, then
+                    expand a SKU for its purchasable offers or jump to the catalog.
+                </MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (_products is null)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else
+            {
+                <MudSelect T="string" Label="Product" Value="_selectedProductId" ValueChanged="OnProductSelected"
+                           Dense="true" Class="mb-4" Style="max-width:480px">
+                    @foreach (var product in _products)
+                    {
+                        <MudSelectItem Value="@product.Id">@(product.DisplayName ?? product.Id)</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (_skusLoading)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                }
+                else if (_purchasableSkus is { Count: > 0 })
+                {
+                    <MudExpansionPanels MultiExpansion="true" Elevation="0">
+                        @foreach (var sku in _purchasableSkus)
+                        {
+                            <MudExpansionPanel Text="@(sku.DisplayName ?? sku.SkuId)"
+                                               Expanded="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
+                                               ExpandedChanged="expanded => OnSkuExpanded(sku, expanded)">
+                                <div class="d-flex justify-space-between align-center mb-2">
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">SKU id: @sku.SkuId</MudText>
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.OpenInNew"
+                                               Href="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")">
+                                        View in catalog
+                                    </MudButton>
+                                </div>
+
+                                @if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
+                                {
+                                    @if (offers is null)
+                                    {
+                                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                                    }
+                                    else if (offers.Count == 0)
+                                    {
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">No purchasable offers.</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudTable Items="offers" Dense="true" Hover="true" Elevation="0">
+                                            <HeaderContent>
+                                                <MudTh>Offer</MudTh>
+                                                <MudTh>Price reference</MudTh>
+                                            </HeaderContent>
+                                            <RowTemplate>
+                                                <MudTd DataLabel="Offer">@(context.DisplayName ?? context.OfferName)</MudTd>
+                                                <MudTd DataLabel="Price reference">@(context.PriceReferenceId ?? "—")</MudTd>
+                                            </RowTemplate>
+                                        </MudTable>
+                                    }
+                                }
+                            </MudExpansionPanel>
+                        }
+                    </MudExpansionPanels>
+                }
+                else if (_purchasableSkus is not null)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        No purchasable SKUs for this product.
+                    </MudText>
+                }
+            }
+        </MudCardContent>
+    </MudCard>
+
+    <MudButton Class="mt-4" Variant="Variant.Text" Href="/customers" StartIcon="@Icons.Material.Filled.ArrowBack">
+        Back to customers
+    </MudButton>
+}
+
+@code {
+    [Parameter]
+    public string Id { get; set; } = string.Empty;
+
+    private Customer? _customer;
+    private bool _loading = true;
+
+    private IReadOnlyList<CatalogProduct>? _products;
+    private string? _selectedProductId;
+    private IReadOnlyList<PurchasableSku>? _purchasableSkus;
+    private bool _skusLoading;
+    private readonly Dictionary<string, IReadOnlyList<PurchasableOffer>?> _offersBySku = [];
+    private readonly HashSet<string> _expandedSkus = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _products = null;
+        _selectedProductId = null;
+        _purchasableSkus = null;
+        _offersBySku.Clear();
+        _expandedSkus.Clear();
+
+        try
+        {
+            _customer = await Api.GetCustomerAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
+            _customer = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        if (_customer is not null)
+        {
+            try
+            {
+                var products = await Api.ListProductsAsync();
+                _products = products?.Products ?? [];
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
+                _products = [];
+            }
+        }
+    }
+
+    private async Task OnProductSelected(string productId)
+    {
+        _selectedProductId = productId;
+        _purchasableSkus = null;
+        _offersBySku.Clear();
+        _expandedSkus.Clear();
+        _skusLoading = true;
+        try
+        {
+            var result = await Api.ListPurchasableSkusAsync(Id, productId);
+            _purchasableSkus = result?.Skus ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load purchasable SKUs: {ex.Message}", Severity.Error);
+            _purchasableSkus = [];
+        }
+        finally
+        {
+            _skusLoading = false;
+        }
+    }
+
+    private async Task OnSkuExpanded(PurchasableSku sku, bool expanded)
+    {
+        var skuId = sku.SkuId ?? string.Empty;
+        if (expanded)
+        {
+            _expandedSkus.Add(skuId);
+        }
+        else
+        {
+            _expandedSkus.Remove(skuId);
+        }
+
+        if (!expanded || _offersBySku.ContainsKey(skuId) || string.IsNullOrEmpty(skuId))
+        {
+            return;
+        }
+
+        _offersBySku[skuId] = null;
+        try
+        {
+            var result = await Api.ListPurchasableOffersAsync(Id, sku.ProductId ?? _selectedProductId ?? string.Empty, skuId);
+            _offersBySku[skuId] = result?.Offers ?? [];
+        }
+        catch (Exception ex)
+        {
+            _offersBySku.Remove(skuId);
+            Snackbar.Add($"Failed to load purchasable offers: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_customer is null)
+        {
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Delete customer",
+            $"Delete '{_customer.OrgDisplayName ?? _customer.Id}'? This cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteCustomerAsync(_customer.Id);
+            Snackbar.Add("Customer deleted.", Severity.Success);
+            Nav.NavigateTo("/customers");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete customer: {ex.Message}", Severity.Error);
+        }
+    }
+}

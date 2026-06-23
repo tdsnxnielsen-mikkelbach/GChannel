@@ -1,0 +1,129 @@
+@page "/customers"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject IDialogService DialogService
+
+<PageTitle>Customers · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h4">Customers</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.PersonAdd"
+               Href="/customers/new">
+        New customer
+    </MudButton>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Customers linked to your reseller account. Open a customer to view details and the catalog they
+    are eligible to purchase.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_customers is { Count: > 0 })
+{
+    <MudTable Items="_customers" Hover="true" Elevation="2" Dense="false">
+        <HeaderContent>
+            <MudTh>Organization</MudTh>
+            <MudTh>Domain</MudTh>
+            <MudTh>Cloud Identity</MudTh>
+            <MudTh>Created</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Organization">@(context.OrgDisplayName ?? context.Id)</MudTd>
+            <MudTd DataLabel="Domain">@context.Domain</MudTd>
+            <MudTd DataLabel="Cloud Identity">
+                @if (context.CloudIdentity?.IsDomainVerified == true)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Verified</MudChip>
+                }
+                else if (!string.IsNullOrEmpty(context.CloudIdentityId))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">Unverified</MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudTooltip Text="View">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                   Href="@($"/customers/{context.Id}")" />
+                </MudTooltip>
+                <MudTooltip Text="Edit">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   Href="@($"/customers/edit/{context.Id}")" />
+                </MudTooltip>
+                <MudTooltip Text="Delete">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                   OnClick="@(() => DeleteAsync(context))" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Info">
+        No customers yet. Use <strong>New customer</strong> to create one.
+    </MudAlert>
+}
+
+@code {
+    private IReadOnlyList<Customer>? _customers;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Api.ListCustomersAsync();
+            _customers = result?.Customers ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load customers: {ex.Message}", Severity.Error);
+            _customers = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task DeleteAsync(Customer customer)
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Delete customer",
+            $"Delete '{customer.OrgDisplayName ?? customer.Id}'? This cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteCustomerAsync(customer.Id);
+            Snackbar.Add("Customer deleted.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete customer: {ex.Message}", Severity.Error);
+        }
+    }
+}

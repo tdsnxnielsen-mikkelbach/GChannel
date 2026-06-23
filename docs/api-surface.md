@@ -13,6 +13,11 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Catalog → Offers** | `accounts.offers.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.offers/list) |
 | **Catalog → SKU groups** | `accounts.skuGroups.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups/list) |
 | **Catalog → SKU groups (billable SKUs)** | `accounts.skuGroups.billableSkus.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups.billableSkus/list) |
+| **Customers → list / detail** | `accounts.customers.list` / `accounts.customers.get` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) |
+| **Customers → create / edit** | `accounts.customers.create` / `accounts.customers.patch` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/create) |
+| **Customers → delete** | `accounts.customers.delete` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/delete) |
+| **Customers → purchasable SKUs** | `accounts.customers.listPurchasableSkus` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableSkus) |
+| **Customers → purchasable offers** | `accounts.customers.listPurchasableOffers` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableOffers) |
 
 > **Cross-navigation.** Catalog resources are correlated by id (product ↔ SKU ↔ offer ↔ billable
 > SKU) so the UI can deep-link between products, offers, and SKU groups. See
@@ -30,18 +35,13 @@ grouped by feature area. See [todo.md](todo.md) for sequencing/priority.
 
 ### Customers
 
+Most customer methods are now **implemented** (see the table above). The following remain available:
+
 | Resource.method | Purpose |
 | --- | --- |
-| [`accounts.customers.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) | List customers. |
-| [`accounts.customers.get`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/get) | Get a customer. |
-| [`accounts.customers.create`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/create) | Create a customer. |
-| [`accounts.customers.patch`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/patch) | Update a customer. |
-| [`accounts.customers.delete`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/delete) | Delete a customer. |
-| [`accounts.customers.import`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/import) | Import a customer from Cloud Identity before transfer. |
-| [`accounts.customers.provisionCloudIdentity`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/provisionCloudIdentity) | Provision a Cloud Identity for a customer. |
-| [`accounts.customers.listPurchasableOffers`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableOffers) | Offers purchasable for a customer. |
-| [`accounts.customers.listPurchasableSkus`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableSkus) | SKUs purchasable / up-/down-gradeable for a customer. |
-| [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs. |
+| [`accounts.customers.import`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/import) | Import a customer from Cloud Identity before transfer. *(LRO — deferred to §7.)* |
+| [`accounts.customers.provisionCloudIdentity`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/provisionCloudIdentity) | Provision a Cloud Identity for a customer. *(LRO — deferred to §7.)* |
+| [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs. *(N-tier distributor billing — deferred.)* |
 
 ### Entitlements (subscriptions / lifecycle)
 

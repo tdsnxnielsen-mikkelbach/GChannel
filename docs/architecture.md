@@ -97,3 +97,20 @@ and offers/billable-SKUs carry both `SkuId` and `ProductId`. The UI uses these f
 
 This same id-correlation model is the hook for future **customer management** links (e.g. a
 customer's entitlements resolving to the products/SKUs/offers shown here).
+
+## Customer management
+
+Customer CRUD is exposed under `/api/customers` (list, get, create `POST`, update `PUT`, delete
+`DELETE`). The UI surfaces this as a customers table (`/customers`), a shared create/edit form
+(`/customers/new`, `/customers/edit/{id}`), and a detail page (`/customers/{id}`).
+
+- **Freshness over caching.** Unlike the idempotent catalog reads, customer list/get are **not
+  cached** — customer data is mutable via the same UI, so serving it live avoids stale views after
+  a create/edit/delete. Only the idempotent purchasable-catalog reads are cached.
+- **Safe updates.** `UpdateCustomerAsync` sets a field mask
+  (`org_display_name,org_postal_address,primary_contact_info,language_code`) so the immutable
+  domain and Cloud Identity are never touched; the domain field is disabled in the edit form.
+- **Catalog correlation.** The detail page's *Purchasable catalog* section reuses the catalog
+  id-correlation model: picking a product lists the customer's purchasable SKUs
+  (`listPurchasableSkus`), each of which deep-links to `/catalog/products?product={productId}&sku={skuId}`
+  and can expand to its purchasable offers (`listPurchasableOffers`).

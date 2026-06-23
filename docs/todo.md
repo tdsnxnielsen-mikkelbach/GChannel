@@ -47,11 +47,18 @@ advanced distributor/billing features.
 
 ### 2. Customer management
 
-- [ ] **List / view customers** — `accounts.customers.list` + `accounts.customers.get`.
-- [ ] **Create / update / delete customer** — `create`, `patch`, `delete`.
-- [ ] **Cloud Identity** — `provisionCloudIdentity`, and `import` for pre-transfer onboarding.
-- [ ] **Purchasable catalog per customer** — `listPurchasableOffers`, `listPurchasableSkus`,
-  `queryEligibleBillingAccounts`.
+- [x] **List / view customers** — `accounts.customers.list` + `accounts.customers.get`. Customers
+  table (`/customers`) and detail page (`/customers/{id}`). Served live (not cached) since customer
+  data is mutable.
+- [x] **Create / update / delete customer** — `create`, `patch`, `delete`. Shared create/edit form
+  (`/customers/new`, `/customers/edit/{id}`) with org/contact/address; delete confirms first. Update
+  uses a field mask so the immutable domain is left untouched.
+- [x] **Purchasable catalog per customer** — `listPurchasableSkus` + `listPurchasableOffers` on the
+  customer detail page, with **catalog correlation**: each purchasable SKU links back to
+  `/catalog/products?product=&sku=`. `queryEligibleBillingAccounts` deferred (n-tier distributor
+  billing — low value for the standard reseller flow).
+- [ ] **Cloud Identity** — `provisionCloudIdentity` and `import` for pre-transfer onboarding.
+  Deferred: both return long-running `Operation`s and belong with the LRO infrastructure in §7.
 
 ### 3. Entitlement lifecycle (the core selling flow)
 

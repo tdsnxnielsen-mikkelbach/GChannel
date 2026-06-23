@@ -38,6 +38,7 @@ await EnsureDatabaseAsync(app);
 app.MapDefaultEndpoints();
 app.MapAccountsEndpoints();
 app.MapCatalogEndpoints();
+app.MapCustomersEndpoints();
 
 app.Run();
 

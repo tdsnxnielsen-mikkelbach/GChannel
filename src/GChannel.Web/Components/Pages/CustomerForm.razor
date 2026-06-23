@@ -1,0 +1,229 @@
+@page "/customers/new"
+@page "/customers/edit/{Id}"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>@(IsEdit ? "Edit customer" : "New customer") · GChannel</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">@(IsEdit ? "Edit customer" : "New customer")</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else
+{
+    <MudForm @ref="_form">
+        <MudCard Elevation="2" Class="mb-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Organization</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudTextField @bind-Value="_model.OrgDisplayName" Label="Organization name" Required="true"
+                              RequiredError="Organization name is required." Class="mb-3" />
+                <MudTextField @bind-Value="_model.Domain" Label="Primary domain" Required="true"
+                              RequiredError="Domain is required." Disabled="IsEdit"
+                              HelperText="@(IsEdit ? "Domain cannot be changed after creation." : "e.g. contoso.com")"
+                              Class="mb-3" />
+                <MudTextField @bind-Value="_model.LanguageCode" Label="Language code"
+                              HelperText="e.g. en-US" />
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Elevation="2" Class="mb-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Primary contact</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_model.FirstName" Label="First name" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_model.LastName" Label="Last name" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_model.Email" Label="Email" InputType="InputType.Email" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_model.Phone" Label="Phone" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_model.Title" Label="Title" />
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <MudCard Elevation="2" Class="mb-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Address</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_model.RegionCode" Label="Region code" Required="true"
+                                      RequiredError="Region code is required." HelperText="e.g. US" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_model.PostalCode" Label="Postal code" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudTextField @bind-Value="_model.AdministrativeArea" Label="State / province" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_model.Locality" Label="City" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_model.AddressLine" Label="Address line" />
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        <div class="d-flex gap-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving">
+                @(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create customer"))
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="Cancel" Disabled="_saving">Cancel</MudButton>
+        </div>
+    </MudForm>
+}
+
+@code {
+    [Parameter]
+    public string? Id { get; set; }
+
+    private bool IsEdit => !string.IsNullOrEmpty(Id);
+
+    private MudForm _form = null!;
+    private readonly CustomerEditModel _model = new();
+    private bool _loading;
+    private bool _saving;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!IsEdit)
+        {
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var customer = await Api.GetCustomerAsync(Id!);
+            if (customer is not null)
+            {
+                _model.OrgDisplayName = customer.OrgDisplayName ?? string.Empty;
+                _model.Domain = customer.Domain ?? string.Empty;
+                _model.LanguageCode = customer.LanguageCode;
+                _model.FirstName = customer.PrimaryContact?.FirstName;
+                _model.LastName = customer.PrimaryContact?.LastName;
+                _model.Email = customer.PrimaryContact?.Email;
+                _model.Phone = customer.PrimaryContact?.Phone;
+                _model.Title = customer.PrimaryContact?.Title;
+                _model.RegionCode = customer.Address?.RegionCode ?? string.Empty;
+                _model.PostalCode = customer.Address?.PostalCode;
+                _model.AdministrativeArea = customer.Address?.AdministrativeArea;
+                _model.Locality = customer.Address?.Locality;
+                _model.AddressLine = customer.Address?.AddressLines.FirstOrDefault();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        await _form.ValidateAsync();
+        if (!_form.IsValid)
+        {
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var request = _model.ToRequest(Id);
+            var saved = IsEdit
+                ? await Api.UpdateCustomerAsync(Id!, request)
+                : await Api.CreateCustomerAsync(request);
+
+            Snackbar.Add(IsEdit ? "Customer updated." : "Customer created.", Severity.Success);
+            Nav.NavigateTo(saved is not null ? $"/customers/{saved.Id}" : "/customers");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save customer: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() =>
+        Nav.NavigateTo(IsEdit ? $"/customers/{Id}" : "/customers");
+
+    private sealed class CustomerEditModel
+    {
+        public string OrgDisplayName { get; set; } = string.Empty;
+        public string Domain { get; set; } = string.Empty;
+        public string? LanguageCode { get; set; }
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+        public string? Title { get; set; }
+        public string RegionCode { get; set; } = string.Empty;
+        public string? PostalCode { get; set; }
+        public string? AdministrativeArea { get; set; }
+        public string? Locality { get; set; }
+        public string? AddressLine { get; set; }
+
+        public SaveCustomerRequest ToRequest(string? id) => new()
+        {
+            Id = id,
+            OrgDisplayName = OrgDisplayName,
+            Domain = Domain,
+            LanguageCode = LanguageCode,
+            PrimaryContact = HasContact
+                ? new CustomerContact
+                {
+                    FirstName = FirstName,
+                    LastName = LastName,
+                    Email = Email,
+                    Phone = Phone,
+                    Title = Title
+                }
+                : null,
+            Address = new CustomerAddress
+            {
+                RegionCode = RegionCode,
+                PostalCode = PostalCode,
+                AdministrativeArea = AdministrativeArea,
+                Locality = Locality,
+                AddressLines = string.IsNullOrWhiteSpace(AddressLine) ? [] : [AddressLine!]
+            }
+        };
+
+        private bool HasContact =>
+            !string.IsNullOrWhiteSpace(FirstName) || !string.IsNullOrWhiteSpace(LastName) ||
+            !string.IsNullOrWhiteSpace(Email) || !string.IsNullOrWhiteSpace(Phone) ||
+            !string.IsNullOrWhiteSpace(Title);
+    }
+}

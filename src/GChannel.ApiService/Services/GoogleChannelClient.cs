@@ -34,6 +34,27 @@ public interface IGoogleChannelClient
 
     /// <summary>Lists the billable SKUs in a SKU group (<c>accounts.skuGroups.billableSkus.list</c>).</summary>
     Task<CatalogBillableSkusResult> ListBillableSkusAsync(string skuGroupId, CancellationToken cancellationToken);
+
+    /// <summary>Lists the reseller's customers (<c>accounts.customers.list</c>).</summary>
+    Task<CustomersResult> ListCustomersAsync(CancellationToken cancellationToken);
+
+    /// <summary>Gets a single customer (<c>accounts.customers.get</c>).</summary>
+    Task<Customer> GetCustomerAsync(string customerId, CancellationToken cancellationToken);
+
+    /// <summary>Creates a customer (<c>accounts.customers.create</c>).</summary>
+    Task<Customer> CreateCustomerAsync(SaveCustomerRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Updates a customer (<c>accounts.customers.patch</c>).</summary>
+    Task<Customer> UpdateCustomerAsync(SaveCustomerRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Deletes a customer (<c>accounts.customers.delete</c>).</summary>
+    Task DeleteCustomerAsync(string customerId, CancellationToken cancellationToken);
+
+    /// <summary>Lists a customer's purchasable SKUs for a product (<c>customers.listPurchasableSkus</c>).</summary>
+    Task<PurchasableSkusResult> ListPurchasableSkusAsync(string customerId, string productId, CancellationToken cancellationToken);
+
+    /// <summary>Lists a customer's purchasable offers for a SKU (<c>customers.listPurchasableOffers</c>).</summary>
+    Task<PurchasableOffersResult> ListPurchasableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -262,6 +283,232 @@ public sealed class GoogleChannelClient(
 
         return new CatalogBillableSkusResult { BillableSkus = billableSkus };
     }
+
+    public async Task<CustomersResult> ListCustomersAsync(CancellationToken cancellationToken)
+    {
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var customers = new List<Customer>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.List(_options.AccountName);
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var customer in response.Customers ?? [])
+            {
+                customers.Add(MapCustomer(customer));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new CustomersResult { Customers = customers };
+    }
+
+    public async Task<Customer> GetCustomerAsync(string customerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var response = await service.Accounts.Customers
+            .Get(CustomerName(customerId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapCustomer(response);
+    }
+
+    public async Task<Customer> CreateCustomerAsync(SaveCustomerRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.OrgDisplayName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Domain);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = ToGoogleCustomer(request);
+        body.Domain = request.Domain;
+
+        logger.LogInformation("Creating customer {Org} ({Domain})", request.OrgDisplayName, request.Domain);
+
+        var response = await service.Accounts.Customers
+            .Create(body, _options.AccountName)
+            .ExecuteAsync(cancellationToken);
+
+        return MapCustomer(response);
+    }
+
+    public async Task<Customer> UpdateCustomerAsync(SaveCustomerRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.OrgDisplayName);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = ToGoogleCustomer(request);
+
+        var patch = service.Accounts.Customers.Patch(body, CustomerName(request.Id!));
+        // Restrict the update to editable fields so the immutable domain/cloud-identity are untouched.
+        patch.UpdateMask = "org_display_name,org_postal_address,primary_contact_info,language_code";
+
+        var response = await patch.ExecuteAsync(cancellationToken);
+        return MapCustomer(response);
+    }
+
+    public async Task DeleteCustomerAsync(string customerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        await service.Accounts.Customers
+            .Delete(CustomerName(customerId))
+            .ExecuteAsync(cancellationToken);
+    }
+
+    public async Task<PurchasableSkusResult> ListPurchasableSkusAsync(string customerId, string productId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(productId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var skus = new List<PurchasableSku>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.ListPurchasableSkus(CustomerName(customerId));
+            request.CreateEntitlementPurchaseProduct = $"products/{productId}";
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var purchasable in response.PurchasableSkus ?? [])
+            {
+                skus.Add(new PurchasableSku
+                {
+                    SkuName = purchasable.Sku?.Name ?? string.Empty,
+                    SkuId = LastSegment(purchasable.Sku?.Name),
+                    ProductId = ProductIdFromResourceName(purchasable.Sku?.Name) is { Length: > 0 } pid ? pid : productId,
+                    DisplayName = purchasable.Sku?.MarketingInfo?.DisplayName
+                });
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new PurchasableSkusResult { Skus = skus };
+    }
+
+    public async Task<PurchasableOffersResult> ListPurchasableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(productId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(skuId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var offers = new List<PurchasableOffer>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.ListPurchasableOffers(CustomerName(customerId));
+            request.CreateEntitlementPurchaseSku = $"products/{productId}/skus/{skuId}";
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var purchasable in response.PurchasableOffers ?? [])
+            {
+                offers.Add(new PurchasableOffer
+                {
+                    OfferName = purchasable.Offer?.Name ?? string.Empty,
+                    DisplayName = purchasable.Offer?.MarketingInfo?.DisplayName,
+                    SkuId = LastSegment(purchasable.Offer?.Sku?.Name) is { Length: > 0 } sid ? sid : skuId,
+                    ProductId = ProductIdFromResourceName(purchasable.Offer?.Sku?.Name) is { Length: > 0 } pid ? pid : productId,
+                    PriceReferenceId = purchasable.PriceReferenceId
+                });
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new PurchasableOffersResult { Offers = offers };
+    }
+
+    /// <summary>Maps a Google customer resource to the UI-facing <see cref="Customer"/> contract.</summary>
+    private Customer MapCustomer(GoogleCloudChannelV1Customer customer) => new()
+    {
+        Name = customer.Name ?? string.Empty,
+        Id = LastSegment(customer.Name),
+        OrgDisplayName = customer.OrgDisplayName,
+        Domain = customer.Domain,
+        CloudIdentityId = customer.CloudIdentityId,
+        LanguageCode = customer.LanguageCode,
+        ChannelPartnerId = customer.ChannelPartnerId,
+        CreateTime = customer.CreateTimeDateTimeOffset,
+        PrimaryContact = customer.PrimaryContactInfo is { } contact
+            ? new CustomerContact
+            {
+                FirstName = contact.FirstName,
+                LastName = contact.LastName,
+                Email = contact.Email,
+                Title = contact.Title,
+                Phone = contact.Phone
+            }
+            : null,
+        Address = customer.OrgPostalAddress is { } address
+            ? new CustomerAddress
+            {
+                RegionCode = address.RegionCode,
+                PostalCode = address.PostalCode,
+                AdministrativeArea = address.AdministrativeArea,
+                Locality = address.Locality,
+                AddressLines = address.AddressLines is { } lines ? [.. lines] : []
+            }
+            : null,
+        CloudIdentity = customer.CloudIdentityInfo is { } info
+            ? new CustomerCloudIdentity
+            {
+                CustomerType = info.CustomerType,
+                PrimaryDomain = info.PrimaryDomain,
+                IsDomainVerified = info.IsDomainVerified ?? false,
+                AlternateEmail = info.AlternateEmail,
+                AdminConsoleUri = info.AdminConsoleUri
+            }
+            : null
+    };
+
+    /// <summary>Builds a Google customer body from a save request (shared by create and update).</summary>
+    private static GoogleCloudChannelV1Customer ToGoogleCustomer(SaveCustomerRequest request) => new()
+    {
+        OrgDisplayName = request.OrgDisplayName,
+        LanguageCode = string.IsNullOrWhiteSpace(request.LanguageCode) ? null : request.LanguageCode,
+        OrgPostalAddress = new GoogleTypePostalAddress
+        {
+            RegionCode = request.Address.RegionCode,
+            PostalCode = request.Address.PostalCode,
+            AdministrativeArea = request.Address.AdministrativeArea,
+            Locality = request.Address.Locality,
+            AddressLines = request.Address.AddressLines is { Count: > 0 } lines ? [.. lines] : null
+        },
+        PrimaryContactInfo = request.PrimaryContact is { } contact
+            ? new GoogleCloudChannelV1ContactInfo
+            {
+                FirstName = contact.FirstName,
+                LastName = contact.LastName,
+                Email = contact.Email,
+                Title = contact.Title,
+                Phone = contact.Phone
+            }
+            : null
+    };
+
+    /// <summary>Builds the full customer resource name for a short customer id.</summary>
+    private string CustomerName(string customerId) => $"{_options.AccountName}/customers/{customerId}";
 
     /// <summary>Returns the last "/"-separated segment of a resource name (its short id).</summary>
     private static string LastSegment(string? resourceName) =>
