@@ -33,9 +33,10 @@ public static class AccountsEndpoints
         IDistributedCache cache,
         GChannelDbContext db,
         IOptions<GoogleChannelOptions> options,
+        ILoggerFactory loggerFactory,
         HttpContext http,
-        bool refresh,
-        CancellationToken cancellationToken)
+        bool refresh = false,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Domain))
         {
@@ -76,7 +77,18 @@ public static class AccountsEndpoints
             AccountsFound = result.Accounts.Count,
             PerformedBy = http.User.Identity?.Name ?? http.Request.Headers["X-User-Email"].ToString()
         });
-        await db.SaveChangesAsync(cancellationToken);
+
+        // The audit write is best-effort: a paused/warming serverless database must not fail the
+        // user's check, which has already succeeded against Google at this point.
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            loggerFactory.CreateLogger("AccountsEndpoints")
+                .LogWarning(ex, "Failed to persist Cloud Identity audit log for {Domain}.", result.Domain);
+        }
 
         return Results.Ok(result);
     }
