@@ -42,16 +42,13 @@ cache.ConfigureInfrastructure(infra =>
 // The OAuth client secret is persisted here and surfaced to the app as a Key Vault
 // reference, so the literal value never appears in the deployment manifest or as
 // plain-text Container Apps configuration.
+// Key Vault has no local emulator, so it is only provisioned when publishing.
 var keyVault = builder.AddAzureKeyVault("secrets");
 
 // Configuration supplied at deploy time (azd prompts for these once).
 var googleClientId = builder.AddParameter("GoogleClientId");
 var googleClientSecretParam = builder.AddParameter("GoogleClientSecret", secret: true);
 var googleChannelAccountId = builder.AddParameter("GoogleChannelAccountId");
-
-// Store the OAuth client secret in Key Vault and obtain a reference for injection.
-keyVault.AddSecret("google-client-secret", googleClientSecretParam);
-var googleClientSecret = keyVault.GetSecret("google-client-secret");
 
 // Back-end services container app (internal): owns SQL, Redis and the Google Channel API.
 var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
@@ -62,13 +59,29 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WaitFor(cache);
 
 // Blazor front end container app (external): the dashboard users sign in to.
-// It reads the OAuth client secret from Key Vault via its managed identity.
-builder.AddProject<Projects.GChannel_Web>("webfrontend")
-    .WithReference(keyVault)
+var webfrontend = builder.AddProject<Projects.GChannel_Web>("webfrontend")
     .WithExternalHttpEndpoints()
     .WithReference(apiService)
     .WithEnvironment("Authentication__Google__ClientId", googleClientId)
-    .WithEnvironment("Authentication__Google__ClientSecret", googleClientSecret)
     .WaitFor(apiService);
+
+if (builder.ExecutionContext.IsPublishMode)
+{
+    // In Azure, persist the OAuth client secret in Key Vault and surface it to the
+    // app as a Key Vault reference (resolved via the app's managed identity), so the
+    // literal value never appears in the deployment manifest or app configuration.
+    keyVault.AddSecret("google-client-secret", googleClientSecretParam);
+    var googleClientSecret = keyVault.GetSecret("google-client-secret");
+
+    webfrontend
+        .WithReference(keyVault)
+        .WithEnvironment("Authentication__Google__ClientSecret", googleClientSecret);
+}
+else
+{
+    // Local development: Key Vault cannot be provisioned, so inject the secret
+    // parameter value (sourced from user secrets) directly.
+    webfrontend.WithEnvironment("Authentication__Google__ClientSecret", googleClientSecretParam);
+}
 
 builder.Build().Run();

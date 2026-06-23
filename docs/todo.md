@@ -5,9 +5,12 @@ resources/methods these items map to.
 
 ## Hardening
 
-- **Silent token refresh.** Google access tokens expire after ~1 hour. A refresh token is
-  captured (`AccessType=offline`); wiring up silent refresh in the API service is the recommended
-  next hardening step.
+- [x] **Silent token refresh.** Google access tokens expire after ~1 hour. The refresh token is
+  captured (`AccessType=offline`) and the Web app now silently refreshes the access token via
+  `GoogleTokenProvider` before forwarding it to the API service, caching refreshed tokens in
+  memory per user. The refresh happens in the **Web app** (not the API service as originally
+  suggested) so the long-lived refresh token never leaves the front end — only short-lived access
+  tokens are forwarded to the API, which remains a stateless Bearer consumer.
 
 ## Roadmap (Channel API capabilities to grow into)
 
@@ -76,6 +79,21 @@ breaking-change risk:
 - The dashboard figures on the home page are placeholders. **Note:** the `accounts.reports.*` and
   `accounts.reportJobs.fetchReportResults` endpoints are **deprecated** in `v1`, so derive these
   figures from entitlement/customer data rather than the legacy reporting API.
+
+  Wiring the dashboard to real data therefore has **no single reporting endpoint** — it must
+  aggregate the read-path roadmap items above, roughly in this dependency order:
+
+  - **§2 Customer management** (`accounts.customers.list`) — drives the **Customers** card and the
+    *customers onboarded over time* area chart (bucket by customer create timestamps).
+  - **§3 Entitlement lifecycle** (`entitlements.list`) — drives **Active SKUs**, the **Product mix**
+    donut (group entitlements by product/SKU), and counters such as channel links / pending checks.
+  - **§1 Catalog browsing** (`products.list` / `products.skus.list`) — optional, only to resolve raw
+    SKU/product IDs into friendly labels for the donut.
+
+  Implementation shape: build §1 → §2 → §3 read paths, then expose a single derived summary
+  endpoint (e.g. `GET /api/dashboard/summary`) that the home page consumes via `GChannelApiClient`,
+  replacing the hardcoded arrays in `Home.razor`. This slice is pure reads (low risk) and does not
+  need the long-running-operations / Pub/Sub work in §7.
 
 ## Notes
 

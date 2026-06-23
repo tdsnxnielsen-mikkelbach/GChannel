@@ -39,6 +39,19 @@ The signed-in user's Google OAuth access token (scope `https://www.googleapis.co
 is forwarded from the Web app to the API service, which uses it to call the Channel API on the
 user's behalf.
 
+## Token lifecycle (silent refresh)
+
+Google access tokens expire after ~1 hour. To keep sessions working without forcing re-login, the
+Web app requests offline access (`AccessType=offline`) so Google also returns a **refresh token**.
+At sign-in the access token, refresh token, and the access token's expiry are stored as claims in
+the data-protected authentication cookie.
+
+Before each call to the API service, `GoogleTokenProvider` (in the Web app) returns a valid access
+token: it reuses the sign-in token until just before it expires, then silently exchanges the
+refresh token for a new access token at Google's token endpoint, caching the result in memory per
+user. Only short-lived access tokens are ever forwarded to the API service — the long-lived refresh
+token never leaves the Web app, so the API service stays a stateless Bearer-token consumer.
+
 ## Secrets
 
 The Google OAuth **client secret** is stored in **Azure Key Vault** and injected into the Web

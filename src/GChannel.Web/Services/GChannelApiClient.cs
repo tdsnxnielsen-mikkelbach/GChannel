@@ -9,10 +9,11 @@ namespace GChannel.Web.Services;
 /// Typed client the UI uses to talk to the API service. It transparently attaches the
 /// signed-in user's Google access token so Razor components never touch tokens or REST paths.
 /// </summary>
-public sealed class GChannelApiClient(HttpClient http, AuthenticationStateProvider authState)
+public sealed class GChannelApiClient(
+    HttpClient http,
+    AuthenticationStateProvider authState,
+    GoogleTokenProvider tokenProvider)
 {
-    public const string GoogleAccessTokenClaim = "google_access_token";
-
     public async Task<CheckCloudIdentityResult?> CheckCloudIdentityAsync(
         CheckCloudIdentityRequest request,
         CancellationToken cancellationToken = default)
@@ -32,7 +33,7 @@ public sealed class GChannelApiClient(HttpClient http, AuthenticationStateProvid
     private async Task AttachGoogleTokenAsync(HttpRequestMessage message)
     {
         var state = await authState.GetAuthenticationStateAsync();
-        var token = state.User.FindFirst(GoogleAccessTokenClaim)?.Value;
+        var token = await tokenProvider.GetAccessTokenAsync(state.User);
         if (!string.IsNullOrEmpty(token))
         {
             message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

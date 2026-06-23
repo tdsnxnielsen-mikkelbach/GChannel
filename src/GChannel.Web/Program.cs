@@ -22,6 +22,10 @@ builder.Services.AddApexCharts();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorization();
 
+// Caches silently-refreshed Google access tokens per user.
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<GoogleTokenProvider>();
+
 // Google sign-in. The reseller signs in with their Google account; we request the
 // Channel API scope and keep the access/refresh tokens so the API service can act on
 // the user's behalf.
@@ -47,12 +51,20 @@ builder.Services
             {
                 if (context.AccessToken is { } accessToken)
                 {
-                    identity.AddClaim(new Claim(GChannelApiClient.GoogleAccessTokenClaim, accessToken));
+                    identity.AddClaim(new Claim(GoogleTokenProvider.AccessTokenClaim, accessToken));
                 }
 
                 if (context.RefreshToken is { } refreshToken)
                 {
-                    identity.AddClaim(new Claim("google_refresh_token", refreshToken));
+                    identity.AddClaim(new Claim(GoogleTokenProvider.RefreshTokenClaim, refreshToken));
+                }
+
+                // Record when the access token expires so it can be refreshed silently later.
+                if (int.TryParse(context.TokenResponse.ExpiresIn, out var expiresInSeconds))
+                {
+                    identity.AddClaim(new Claim(
+                        GoogleTokenProvider.ExpiresAtClaim,
+                        DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds).ToString("o")));
                 }
             }
 
