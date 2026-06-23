@@ -59,3 +59,41 @@ container app as a Key Vault *secret reference* — the literal value never appe
 deployment manifest or as plain-text Container Apps configuration. The Web app reads it through
 its **managed identity** (granted `Key Vault Secrets User`). Non-secret settings (client id,
 reseller account id) are passed as normal parameters/environment variables.
+
+## Resilience &amp; throttling (HTTP 429)
+
+The Channel API enforces per-project quotas, so bursts of reads can return **429 Too Many
+Requests**. Two layers keep this graceful:
+
+- **Client-side back-off.** Each `CloudchannelService` is created with a `BackOffHandler` that
+  retries `429` (and transient `503`) responses with exponential back-off, up to
+  `GoogleChannel:MaxRetryAttempts` (default 3). The library's default 503-only policy is disabled
+  in favour of this combined handler.
+- **Clean surfacing.** If retries are exhausted, `GoogleApiExceptionHandler` (an `IExceptionHandler`)
+  maps the `GoogleApiException` to the same HTTP status (e.g. `429` with a `Retry-After` hint, or
+  `403`/`404`) and a `ProblemDetails` body, instead of a generic `500`. A missing access token
+  becomes a `401`. The Blazor pages surface these as snackbar errors.
+
+Idempotent reads are also **cached in Redis** (`GoogleChannel:CacheSeconds`, default 300s), so warm
+lookups never hit Google — both reducing latency and shrinking the 429 surface.
+
+**Cloud Identity checks** are additionally **persisted** to Azure SQL (`IdentityCheckLogs`) as an
+audit trail. The check endpoint serves the cached result by default; passing `?refresh=true`
+(surfaced as the **recheck** button in the UI) bypasses the cache and re-queries Google, then
+refreshes the cache. A history endpoint returns the latest result per domain so the UI can show a
+"recently checked" list with one-click recheck.
+
+## Catalog correlation &amp; navigation
+
+Catalog resources are cross-linked so a user can pivot between them. The API derives correlation
+ids from Google resource names (`products/{product}/skus/{sku}`): a SKU carries its `ProductId`,
+and offers/billable-SKUs carry both `SkuId` and `ProductId`. The UI uses these for deep links:
+
+- **Products → Offers** — each SKU row links to `/catalog/offers?sku={skuId}` (offers filtered to
+  that SKU).
+- **Offers → Products** — the SKU column links to `/catalog/products?product={productId}&sku={skuId}`,
+  which auto-expands the product and highlights the SKU.
+- **SKU groups → Products / Offers** — each billable SKU links to its product and its offers.
+
+This same id-correlation model is the hook for future **customer management** links (e.g. a
+customer's entitlements resolving to the products/SKUs/offers shown here).

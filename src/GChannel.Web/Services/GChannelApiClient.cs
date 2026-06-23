@@ -16,9 +16,14 @@ public sealed class GChannelApiClient(
 {
     public async Task<CheckCloudIdentityResult?> CheckCloudIdentityAsync(
         CheckCloudIdentityRequest request,
+        bool forceRefresh = false,
         CancellationToken cancellationToken = default)
     {
-        using var message = new HttpRequestMessage(HttpMethod.Post, ApiRoutes.CheckCloudIdentity)
+        var route = forceRefresh
+            ? $"{ApiRoutes.CheckCloudIdentity}?refresh=true"
+            : ApiRoutes.CheckCloudIdentity;
+
+        using var message = new HttpRequestMessage(HttpMethod.Post, route)
         {
             Content = JsonContent.Create(request)
         };
@@ -29,6 +34,10 @@ public sealed class GChannelApiClient(
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<CheckCloudIdentityResult>(cancellationToken);
     }
+
+    /// <summary>Lists recently checked domains (latest result per domain).</summary>
+    public Task<IdentityCheckHistoryResult?> GetIdentityCheckHistoryAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<IdentityCheckHistoryResult>(ApiRoutes.IdentityCheckHistory, cancellationToken);
 
     /// <summary>Lists the products the reseller is authorized to sell.</summary>
     public Task<CatalogProductsResult?> ListProductsAsync(CancellationToken cancellationToken = default) =>

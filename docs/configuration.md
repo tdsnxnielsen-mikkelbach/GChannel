@@ -21,6 +21,13 @@
 In Azure the client secret lives in Key Vault; locally it is resolved from user-secrets, so the
 app code reads `Authentication:Google:ClientSecret` the same way in both environments.
 
+### Optional tuning (defaults shown)
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `GoogleChannel:CacheSeconds` | `300` | Redis TTL for idempotent reads (catalog, identity checks). |
+| `GoogleChannel:MaxRetryAttempts` | `3` | Exponential back-off retries for throttled (429) / transient (503) Channel API calls. Set `0` to disable. |
+
 ## Local secrets
 
 ```powershell

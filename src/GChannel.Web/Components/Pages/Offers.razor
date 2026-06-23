@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject GChannelApiClient Api
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
 <PageTitle>Offers · GChannel</PageTitle>
 
@@ -9,6 +10,14 @@
 <MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
     The offers you can sell to customers.
 </MudText>
+
+@if (!string.IsNullOrEmpty(SkuFilter))
+{
+    <MudChip T="string" Color="Color.Primary" Variant="Variant.Text"
+             OnClose="ClearSkuFilter" CloseIcon="@Icons.Material.Filled.Close" Class="mb-4">
+        Filtered by SKU: @SkuFilter
+    </MudChip>
+}
 
 @if (_loading)
 {
@@ -29,7 +38,18 @@ else if (_offers is { Count: > 0 })
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Offer">@(context.DisplayName ?? context.Name)</MudTd>
-            <MudTd DataLabel="SKU">@context.SkuName</MudTd>
+            <MudTd DataLabel="SKU">
+                @if (!string.IsNullOrEmpty(context.ProductId))
+                {
+                    <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
+                        @(context.SkuId ?? context.SkuName)
+                    </MudLink>
+                }
+                else
+                {
+                    @context.SkuName
+                }
+            </MudTd>
             <MudTd DataLabel="Deal code">@context.DealCode</MudTd>
         </RowTemplate>
     </MudTable>
@@ -40,6 +60,9 @@ else
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "sku")]
+    public string? SkuFilter { get; set; }
+
     private IReadOnlyList<CatalogOffer>? _offers;
     private bool _loading = true;
     private string _search = string.Empty;
@@ -62,8 +85,16 @@ else
         }
     }
 
+    private void ClearSkuFilter() => Nav.NavigateTo("/catalog/offers");
+
     private bool Matches(CatalogOffer offer)
     {
+        if (!string.IsNullOrEmpty(SkuFilter)
+            && !string.Equals(offer.SkuId, SkuFilter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(_search))
         {
             return true;

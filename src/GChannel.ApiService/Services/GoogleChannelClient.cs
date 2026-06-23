@@ -3,9 +3,12 @@ using GChannel.Shared.Contracts;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Cloudchannel.v1;
 using Google.Apis.Cloudchannel.v1.Data;
+using Google.Apis.Http;
 using Google.Apis.Services;
+using Google.Apis.Util;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
+using System.Net;
 
 namespace GChannel.ApiService.Services;
 
@@ -149,6 +152,7 @@ public sealed class GoogleChannelClient(
                 {
                     Name = sku.Name ?? string.Empty,
                     Id = LastSegment(sku.Name),
+                    ProductId = ProductIdFromResourceName(sku.Name) is { Length: > 0 } pid ? pid : productId,
                     DisplayName = sku.MarketingInfo?.DisplayName,
                     Description = sku.MarketingInfo?.Description
                 });
@@ -182,6 +186,8 @@ public sealed class GoogleChannelClient(
                     DisplayName = offer.MarketingInfo?.DisplayName,
                     Description = offer.MarketingInfo?.Description,
                     SkuName = offer.Sku?.Name,
+                    SkuId = LastSegment(offer.Sku?.Name),
+                    ProductId = ProductIdFromResourceName(offer.Sku?.Name),
                     DealCode = offer.DealCode
                 });
             }
@@ -242,6 +248,8 @@ public sealed class GoogleChannelClient(
                 billableSkus.Add(new CatalogBillableSku
                 {
                     Sku = billable.Sku ?? string.Empty,
+                    SkuId = LastSegment(billable.Sku),
+                    ProductId = ProductIdFromResourceName(billable.Sku),
                     SkuDisplayName = billable.SkuDisplayName,
                     Service = billable.Service,
                     ServiceDisplayName = billable.ServiceDisplayName
@@ -261,14 +269,49 @@ public sealed class GoogleChannelClient(
             ? string.Empty
             : resourceName[(resourceName.LastIndexOf('/') + 1)..];
 
+    /// <summary>
+    /// Extracts the product id from a SKU resource name of the form
+    /// <c>products/{product}/skus/{sku}</c>. Returns an empty string when not present.
+    /// </summary>
+    private static string ProductIdFromResourceName(string? resourceName)
+    {
+        if (string.IsNullOrEmpty(resourceName))
+        {
+            return string.Empty;
+        }
+
+        var segments = resourceName.Split('/');
+        var index = Array.IndexOf(segments, "products");
+        return index >= 0 && index + 1 < segments.Length ? segments[index + 1] : string.Empty;
+    }
+
     private CloudchannelService CreateService()
     {
         var credential = GoogleCredential.FromAccessToken(GetAccessToken());
-        return new CloudchannelService(new BaseClientService.Initializer
+        var service = new CloudchannelService(new BaseClientService.Initializer
         {
             HttpClientInitializer = credential,
-            ApplicationName = _options.ApplicationName
+            ApplicationName = _options.ApplicationName,
+            // We install our own back-off handler below (covering 429 and 503), so turn off the
+            // library default which only retries 503.
+            DefaultExponentialBackOffPolicy = ExponentialBackOffPolicy.None
         });
+
+        // Retry throttling (429 Too Many Requests) and transient 503s with exponential back-off so a
+        // burst of catalog reads degrades gracefully instead of failing outright. If retries are
+        // exhausted the original 429/503 surfaces and is mapped to a clean response upstream.
+        if (_options.MaxRetryAttempts > 0)
+        {
+            var backOff = new BackOffHandler(new BackOffHandler.Initializer(
+                new ExponentialBackOff(TimeSpan.FromMilliseconds(500), _options.MaxRetryAttempts))
+            {
+                HandleUnsuccessfulResponseFunc = static response =>
+                    response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable
+            });
+            service.HttpClient.MessageHandler.AddUnsuccessfulResponseHandler(backOff);
+        }
+
+        return service;
     }
 
     private string GetAccessToken()

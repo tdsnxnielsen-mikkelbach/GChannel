@@ -8,6 +8,9 @@ public static class ApiRoutes
 {
     public const string CheckCloudIdentity = "/api/accounts/check-cloud-identity";
 
+    /// <summary>Recent Cloud Identity checks (latest result per domain).</summary>
+    public const string IdentityCheckHistory = "/api/accounts/check-cloud-identity/history";
+
     // Catalog (read-only) browsing.
     public const string Products = "/api/catalog/products";
     public const string Offers = "/api/catalog/offers";

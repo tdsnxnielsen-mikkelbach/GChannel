@@ -7,7 +7,8 @@
 
 <MudText Typo="Typo.h4" GutterBottom="true">Products</MudText>
 <MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
-    The products you are authorized to sell. Expand a product to load its SKUs.
+    The products you are authorized to sell. Expand a product to load its SKUs, then jump to the
+    offers for any SKU.
 </MudText>
 
 @if (_loading)
@@ -20,6 +21,7 @@ else if (_products is { Count: > 0 })
         @foreach (var product in _products)
         {
             <MudExpansionPanel Text="@(product.DisplayName ?? product.Id)"
+                               Expanded="_expanded.Contains(product.Id)"
                                ExpandedChanged="expanded => OnProductExpanded(product, expanded)">
                 @if (!string.IsNullOrWhiteSpace(product.Description))
                 {
@@ -38,14 +40,22 @@ else if (_products is { Count: > 0 })
                     }
                     else
                     {
-                        <MudTable Items="skus" Dense="true" Hover="true" Elevation="0">
+                        <MudTable Items="skus" Dense="true" Hover="true" Elevation="0" RowStyleFunc="SkuRowStyle">
                             <HeaderContent>
                                 <MudTh>SKU</MudTh>
                                 <MudTh>Id</MudTh>
+                                <MudTh>Related</MudTh>
                             </HeaderContent>
                             <RowTemplate>
                                 <MudTd DataLabel="SKU">@(context.DisplayName ?? context.Id)</MudTd>
                                 <MudTd DataLabel="Id">@context.Id</MudTd>
+                                <MudTd DataLabel="Related">
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.LocalOffer"
+                                               Href="@($"/catalog/offers?sku={context.Id}")">
+                                        Offers
+                                    </MudButton>
+                                </MudTd>
                             </RowTemplate>
                         </MudTable>
                     }
@@ -60,9 +70,17 @@ else
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "product")]
+    public string? ProductId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sku")]
+    public string? SkuId { get; set; }
+
     private IReadOnlyList<CatalogProduct>? _products;
     private readonly Dictionary<string, IReadOnlyList<CatalogSku>?> _skusByProduct = [];
+    private readonly HashSet<string> _expanded = [];
     private bool _loading = true;
+    private bool _deepLinkApplied;
 
     protected override async Task OnInitializedAsync()
     {
@@ -82,8 +100,33 @@ else
         }
     }
 
+    protected override async Task OnParametersSetAsync()
+    {
+        // Deep link: /catalog/products?product={id}&sku={id} — auto-expand and load the target.
+        if (_deepLinkApplied || string.IsNullOrEmpty(ProductId) || _products is null)
+        {
+            return;
+        }
+
+        _deepLinkApplied = true;
+        var target = _products.FirstOrDefault(p => string.Equals(p.Id, ProductId, StringComparison.OrdinalIgnoreCase));
+        if (target is not null)
+        {
+            await OnProductExpanded(target, true);
+        }
+    }
+
     private async Task OnProductExpanded(CatalogProduct product, bool expanded)
     {
+        if (expanded)
+        {
+            _expanded.Add(product.Id);
+        }
+        else
+        {
+            _expanded.Remove(product.Id);
+        }
+
         if (!expanded || _skusByProduct.ContainsKey(product.Id))
         {
             return;
@@ -102,4 +145,9 @@ else
             Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
         }
     }
+
+    private string SkuRowStyle(CatalogSku sku, int _) =>
+        !string.IsNullOrEmpty(SkuId) && string.Equals(sku.Id, SkuId, StringComparison.OrdinalIgnoreCase)
+            ? "background-color: var(--mud-palette-primary-hover);"
+            : string.Empty;
 }

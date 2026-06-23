@@ -50,3 +50,19 @@ public sealed record CloudIdentityAccount
 
     public string? ChannelPartnerCloudIdentityId { get; init; }
 }
+
+/// <summary>A single past Cloud Identity check (latest result per domain), used to offer rechecks.</summary>
+public sealed record IdentityCheckHistoryItem
+{
+    public required string Domain { get; init; }
+    public bool Exists { get; init; }
+    public int AccountsFound { get; init; }
+    public DateTimeOffset PerformedAt { get; init; }
+    public string? PerformedBy { get; init; }
+}
+
+/// <summary>Result of listing recent Cloud Identity checks.</summary>
+public sealed record IdentityCheckHistoryResult
+{
+    public IReadOnlyList<IdentityCheckHistoryItem> Items { get; init; } = [];
+}

@@ -14,6 +14,15 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Catalog → SKU groups** | `accounts.skuGroups.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups/list) |
 | **Catalog → SKU groups (billable SKUs)** | `accounts.skuGroups.billableSkus.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.skuGroups.billableSkus/list) |
 
+> **Cross-navigation.** Catalog resources are correlated by id (product ↔ SKU ↔ offer ↔ billable
+> SKU) so the UI can deep-link between products, offers, and SKU groups. See
+> [architecture.md](architecture.md#catalog-correlation--navigation).
+
+> **Resilience.** All Channel API calls retry `429`/`503` with exponential back-off and surface a
+> clean `ProblemDetails` (with `Retry-After` on 429) when throttled. Idempotent reads are cached in
+> Redis. Cloud Identity checks are also persisted to SQL with a history/recheck (cache-bypass)
+> path — internal endpoint `GET /api/accounts/check-cloud-identity/history`.
+
 ## Available possibilities
 
 The following are the full set of `v1` resources/methods the dashboard could grow into,

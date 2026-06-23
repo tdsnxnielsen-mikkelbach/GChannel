@@ -30,6 +30,10 @@ public sealed record CatalogSku
     public required string Name { get; init; }
 
     public required string Id { get; init; }
+
+    /// <summary>Id of the product this SKU belongs to (for navigation back to the product).</summary>
+    public string? ProductId { get; init; }
+
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
 }
@@ -51,6 +55,12 @@ public sealed record CatalogOffer
 
     /// <summary>The SKU resource name this offer relates to.</summary>
     public string? SkuName { get; init; }
+
+    /// <summary>Id of the SKU this offer relates to (for navigation to the product/SKU).</summary>
+    public string? SkuId { get; init; }
+
+    /// <summary>Id of the product the related SKU belongs to.</summary>
+    public string? ProductId { get; init; }
 
     public string? DealCode { get; init; }
 }
@@ -80,8 +90,14 @@ public sealed record CatalogSkuGroupsResult
 /// <summary>A billable SKU within a SKU group. Maps to <c>accounts.skuGroups.billableSkus.list</c>.</summary>
 public sealed record CatalogBillableSku
 {
-    /// <summary>SKU resource name, e.g. "services/{service}/skus/{sku}".</summary>
+    /// <summary>SKU resource name, e.g. "products/{product}/skus/{sku}".</summary>
     public required string Sku { get; init; }
+
+    /// <summary>Id of the SKU (for navigation to the product/SKU and its offers).</summary>
+    public string? SkuId { get; init; }
+
+    /// <summary>Id of the product the SKU belongs to.</summary>
+    public string? ProductId { get; init; }
 
     public string? SkuDisplayName { get; init; }
 

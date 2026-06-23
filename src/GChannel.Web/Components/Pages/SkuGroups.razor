@@ -37,10 +37,29 @@ else if (_groups is { Count: > 0 })
                             <HeaderContent>
                                 <MudTh>SKU</MudTh>
                                 <MudTh>Service</MudTh>
+                                <MudTh>Related</MudTh>
                             </HeaderContent>
                             <RowTemplate>
-                                <MudTd DataLabel="SKU">@(context.SkuDisplayName ?? context.Sku)</MudTd>
+                                <MudTd DataLabel="SKU">@(context.SkuDisplayName ?? context.SkuId ?? context.Sku)</MudTd>
                                 <MudTd DataLabel="Service">@(context.ServiceDisplayName ?? context.Service)</MudTd>
+                                <MudTd DataLabel="Related">
+                                    @if (!string.IsNullOrEmpty(context.ProductId))
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.Inventory2"
+                                                   Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
+                                            Product
+                                        </MudButton>
+                                    }
+                                    @if (!string.IsNullOrEmpty(context.SkuId))
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.LocalOffer"
+                                                   Href="@($"/catalog/offers?sku={context.SkuId}")">
+                                            Offers
+                                        </MudButton>
+                                    }
+                                </MudTd>
                             </RowTemplate>
                         </MudTable>
                     }

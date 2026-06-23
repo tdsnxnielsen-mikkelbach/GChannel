@@ -9,6 +9,7 @@ builder.AddServiceDefaults();
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GoogleApiExceptionHandler>();
 builder.Services.AddHttpContextAccessor();
 
 // Azure SQL (serverless) via Aspire — connection name must match AppHost ("gchanneldb").

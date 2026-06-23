@@ -38,6 +38,37 @@
                 </MudButton>
             </EditForm>
         </MudPaper>
+
+        <MudPaper Class="pa-4 mt-4" Elevation="2">
+            <MudText Typo="Typo.subtitle1" GutterBottom="true">Recently checked</MudText>
+            @if (_history.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No checks yet.</MudText>
+            }
+            else
+            {
+                <MudList T="string" Dense="true">
+                    @foreach (var item in _history)
+                    {
+                        <MudListItem T="string">
+                            <div class="d-flex align-center justify-space-between" style="width:100%">
+                                <div>
+                                    <MudText Typo="Typo.body2"><b>@item.Domain</b></MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @(item.Exists ? "Exists" : "Available") · @item.PerformedAt.LocalDateTime.ToString("g")
+                                    </MudText>
+                                </div>
+                                <MudTooltip Text="Recheck (bypass cache)">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small"
+                                                   Color="Color.Primary" Disabled="_busy"
+                                                   OnClick="() => RecheckAsync(item)" />
+                                </MudTooltip>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </MudPaper>
     </MudItem>
 
     <MudItem xs="12" md="7">
@@ -108,19 +139,35 @@
 @code {
     private readonly InputModel _model = new();
     private CheckCloudIdentityResult? _result;
+    private IReadOnlyList<IdentityCheckHistoryItem> _history = [];
     private bool _busy;
 
-    private async Task CheckAsync()
+    protected override async Task OnInitializedAsync() => await LoadHistoryAsync();
+
+    private Task CheckAsync() => RunCheckAsync(forceRefresh: false);
+
+    private async Task RecheckAsync(IdentityCheckHistoryItem item)
+    {
+        _model.Domain = item.Domain;
+        _model.PrimaryAdminEmail = null;
+        await RunCheckAsync(forceRefresh: true);
+    }
+
+    private async Task RunCheckAsync(bool forceRefresh)
     {
         _busy = true;
         _result = null;
         try
         {
-            _result = await Api.CheckCloudIdentityAsync(new CheckCloudIdentityRequest
-            {
-                Domain = _model.Domain,
-                PrimaryAdminEmail = string.IsNullOrWhiteSpace(_model.PrimaryAdminEmail) ? null : _model.PrimaryAdminEmail
-            });
+            _result = await Api.CheckCloudIdentityAsync(
+                new CheckCloudIdentityRequest
+                {
+                    Domain = _model.Domain,
+                    PrimaryAdminEmail = string.IsNullOrWhiteSpace(_model.PrimaryAdminEmail) ? null : _model.PrimaryAdminEmail
+                },
+                forceRefresh);
+
+            await LoadHistoryAsync();
         }
         catch (Exception ex)
         {
@@ -129,6 +176,19 @@
         finally
         {
             _busy = false;
+        }
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        try
+        {
+            var result = await Api.GetIdentityCheckHistoryAsync();
+            _history = result?.Items ?? [];
+        }
+        catch
+        {
+            // History is a convenience; ignore load failures so the check form still works.
         }
     }
 

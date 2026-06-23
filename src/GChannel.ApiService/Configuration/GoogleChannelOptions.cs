@@ -17,6 +17,12 @@ public sealed class GoogleChannelOptions
     /// <summary>Cache time-to-live (seconds) for idempotent lookups such as identity checks.</summary>
     public int CacheSeconds { get; set; } = 300;
 
+    /// <summary>
+    /// Maximum automatic retries for throttled (HTTP 429) or transient (HTTP 503) Channel API
+    /// calls. Retries use exponential back-off; set to 0 to disable client-side retrying.
+    /// </summary>
+    public int MaxRetryAttempts { get; set; } = 3;
+
     /// <summary>Normalised account name guaranteed to start with "accounts/".</summary>
     public string AccountName =>
         string.IsNullOrWhiteSpace(AccountId)

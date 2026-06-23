@@ -11,6 +11,14 @@ resources/methods these items map to.
   memory per user. The refresh happens in the **Web app** (not the API service as originally
   suggested) so the long-lived refresh token never leaves the front end — only short-lived access
   tokens are forwarded to the API, which remains a stateless Bearer consumer.
+- [x] **Throttling / 429 handling.** Every Channel API call retries `429` (and transient `503`)
+  with exponential back-off (`GoogleChannel:MaxRetryAttempts`, default 3). If retries are
+  exhausted, `GoogleApiExceptionHandler` returns a clean `ProblemDetails` mirroring the upstream
+  status (`429` with `Retry-After`, `403`, `404`, …) instead of a `500`; a missing token becomes
+  `401`. See [architecture.md](architecture.md#resilience--throttling-http-429).
+- [x] **Cloud Identity caching &amp; recheck.** Check results are cached in Redis and persisted to
+  SQL (`IdentityCheckLogs`). The UI shows a **recently checked** list and a **recheck** action that
+  bypasses the cache (`?refresh=true`) to re-query Google and refresh the cache.
 
 ## Roadmap (Channel API capabilities to grow into)
 
@@ -29,6 +37,12 @@ advanced distributor/billing features.
 > `GChannelApiClient` typed-client methods, and three Blazor pages (`Products`, `Offers`,
 > `SkuGroups`) reachable from the **Catalog** nav group. Products and SKU groups lazy-load their
 > children (SKUs / billable SKUs) on panel expand.
+>
+> **Correlation/navigation.** Resources are cross-linked by id (product ↔ SKU ↔ offer ↔ billable
+> SKU): SKU rows link to their offers, offers link back to their product/SKU (auto-expand +
+> highlight), and billable SKUs link to both. This id model is the hook for correlating with
+> **customer management** (§2) later — a customer's entitlements will resolve to these same
+> products/SKUs/offers.
 
 
 ### 2. Customer management
