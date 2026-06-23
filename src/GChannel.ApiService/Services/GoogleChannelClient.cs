@@ -291,20 +291,30 @@ public sealed class GoogleChannelClient(
 
         var customers = new List<Customer>();
         string? pageToken = null;
-        do
+        try
         {
-            var request = service.Accounts.Customers.List(_options.AccountName);
-            request.PageToken = pageToken;
-            var response = await request.ExecuteAsync(cancellationToken);
-
-            foreach (var customer in response.Customers ?? [])
+            do
             {
-                customers.Add(MapCustomer(customer));
-            }
+                var request = service.Accounts.Customers.List(_options.AccountName);
+                request.PageToken = pageToken;
+                var response = await request.ExecuteAsync(cancellationToken);
 
-            pageToken = response.NextPageToken;
+                foreach (var customer in response.Customers ?? [])
+                {
+                    customers.Add(MapCustomer(customer));
+                }
+
+                pageToken = response.NextPageToken;
+            }
+            while (!string.IsNullOrEmpty(pageToken));
         }
-        while (!string.IsNullOrEmpty(pageToken));
+        catch (OperationCanceledException ex)
+        {
+            // Benign: the caller (browser/Blazor circuit) went away mid-request. Logged at Debug
+            // for traceability, then rethrown so behavior is unchanged.
+            logger.LogDebug(ex, "ListCustomers canceled (client disconnected or navigated away).");
+            throw;
+        }
 
         return new CustomersResult { Customers = customers };
     }

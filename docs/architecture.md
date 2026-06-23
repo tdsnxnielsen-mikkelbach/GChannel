@@ -115,3 +115,23 @@ Customer CRUD is exposed under `/api/customers` (list, get, create `POST`, updat
   id-correlation model: picking a product lists the customer's purchasable SKUs
   (`listPurchasableSkus`), each of which deep-links to `/catalog/products?product={productId}&sku={skuId}`
   and can expand to its purchasable offers (`listPurchasableOffers`).
+- **Cloud Identity cross-link.** The customers table shows whether each customer has a linked Cloud
+  Identity (from the `CloudIdentityId` already in the list response — no extra call) and offers a
+  per-row **Check** action that deep-links to `/accounts/cloud-identity?domain={domain}`, which
+  prefills and runs the check for that domain.
+
+## Blazor rendering &amp; request cancellation
+
+The Web app uses **Interactive Server** components with prerendering. A component therefore renders
+twice: once during the static prerender pass and again when the interactive circuit connects. Data
+loads that run in `OnInitializedAsync`/`OnParametersSetAsync` execute during prerender, and the
+in-flight API call is **canceled** when the response is flushed and the page goes interactive —
+surfacing as a benign `TaskCanceledException` (innermost `SocketException: "...aborted because of
+... an application request"`).
+
+- **Prerender-safe loading.** Data-heavy pages (e.g. the customers list) load in
+  `OnAfterRenderAsync(firstRender)` instead, so the API call runs once on the live circuit and the
+  canceled prerender request is avoided.
+- **Traceable, non-fatal cancellation.** Server-side, these cancellations are caught at the call
+  site (e.g. `ListCustomersAsync`), logged at `Debug`, and rethrown — behavior is unchanged and
+  ASP.NET Core handles the aborted request normally.

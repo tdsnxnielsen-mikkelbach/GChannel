@@ -84,7 +84,16 @@ else
     private IReadOnlyList<Customer>? _customers;
     private bool _loading = true;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    // Load after the first interactive render rather than in OnInitializedAsync, so the API call
+    // runs once on the live circuit instead of being issued (and canceled) during prerendering.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+    }
 
     private async Task LoadAsync()
     {

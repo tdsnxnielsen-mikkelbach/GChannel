@@ -20,13 +20,16 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Customers → purchasable offers** | `accounts.customers.listPurchasableOffers` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableOffers) |
 
 > **Cross-navigation.** Catalog resources are correlated by id (product ↔ SKU ↔ offer ↔ billable
-> SKU) so the UI can deep-link between products, offers, and SKU groups. See
+> SKU) so the UI can deep-link between products, offers, and SKU groups. Customers extend this: the
+> detail page's purchasable SKUs deep-link into the catalog, and each customer row links to the
+> Cloud Identity check for its domain (`/accounts/cloud-identity?domain=`). See
 > [architecture.md](architecture.md#catalog-correlation--navigation).
 
 > **Resilience.** All Channel API calls retry `429`/`503` with exponential back-off and surface a
 > clean `ProblemDetails` (with `Retry-After` on 429) when throttled. Idempotent reads are cached in
-> Redis. Cloud Identity checks are also persisted to SQL with a history/recheck (cache-bypass)
-> path — internal endpoint `GET /api/accounts/check-cloud-identity/history`.
+> Redis (customer list/get are cached with invalidation on writes). Cloud Identity checks are also
+> persisted to SQL with a history/recheck (cache-bypass) path — internal endpoint
+> `GET /api/accounts/check-cloud-identity/history`.
 
 ## Available possibilities
 
