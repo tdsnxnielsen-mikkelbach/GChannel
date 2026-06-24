@@ -19,6 +19,15 @@ public static class DashboardEndpoints
     /// <summary>Redis key the cheap dashboard overview (count + onboarding) is cached under.</summary>
     public const string OverviewCacheKey = "dashboard:overview";
 
+    /// <summary>
+    /// How long the "last known good" fallback copy is kept. Far longer than the live TTL so a
+    /// sustained quota outage still has a result to serve.
+    /// </summary>
+    public static readonly TimeSpan StaleTtl = TimeSpan.FromHours(24);
+
+    /// <summary>Derives the "last known good" key for a given live cache key.</summary>
+    public static string StaleKey(string cacheKey) => cacheKey + ":last";
+
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard");
@@ -66,7 +75,12 @@ public static class DashboardEndpoints
         return app;
     }
 
-    /// <summary>Returns a cached JSON payload when present, otherwise invokes <paramref name="factory"/> and caches it.</summary>
+    /// <summary>
+    /// Returns a cached JSON payload when present, otherwise invokes <paramref name="factory"/> and
+    /// caches it. A separate long-lived "last known good" copy is also kept: if a live recompute fails
+    /// (e.g. the Channel API per-minute quota is exhausted), the most recent successful result is served
+    /// instead of failing the whole dashboard.
+    /// </summary>
     private static async Task<IResult> CachedAsync<T>(
         IDistributedCache cache,
         string cacheKey,
@@ -74,21 +88,47 @@ public static class DashboardEndpoints
         Func<Task<T>> factory,
         CancellationToken cancellationToken)
     {
+        var staleKey = StaleKey(cacheKey);
+
         var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
         if (cached is not null)
         {
             return Results.Ok(JsonSerializer.Deserialize<T>(cached));
         }
 
-        var result = await factory();
+        T result;
+        try
+        {
+            result = await factory();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Live recompute failed (commonly a 429 quota error). Serve the last known good result if
+            // we have one so a transient quota blip doesn't break the page; otherwise surface the error.
+            var stale = await cache.GetStringAsync(staleKey, cancellationToken);
+            if (stale is not null)
+            {
+                return Results.Ok(JsonSerializer.Deserialize<T>(stale));
+            }
 
+            throw;
+        }
+
+        var json = JsonSerializer.Serialize(result);
         await cache.SetStringAsync(
             cacheKey,
-            JsonSerializer.Serialize(result),
+            json,
             new DistributedCacheEntryOptions
             {
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(cacheSeconds)
             },
+            cancellationToken);
+
+        // Refresh the long-lived fallback copy (survives well past the live TTL).
+        await cache.SetStringAsync(
+            staleKey,
+            json,
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = StaleTtl },
             cancellationToken);
 
         return Results.Ok(result);

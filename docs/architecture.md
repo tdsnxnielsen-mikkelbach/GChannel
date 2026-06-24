@@ -181,7 +181,7 @@ read paths:
 
 The aggregation makes N+1 Channel API calls (customers + per-customer entitlements). The per-customer
 entitlement lists run with **bounded parallelism** (`GoogleChannel:DashboardMaxConcurrency`, default 6)
-under a **time budget** (35s) that is
+under a **time budget** (`GoogleChannel:DashboardBudgetSeconds`, default 45s) that is
 kept comfortably below the HTTP client's per-attempt timeout, so the endpoint always responds in time
 (and its Redis cache can warm up) instead of being cut off mid-flight and retried. The Channel API
 enforces a **per-minute request quota** ("ListEntitlements requests per minute"), so on large estates
@@ -191,7 +191,7 @@ Two layers prevent that: (1) the calls are **proactively paced** to
 pacer, so the quota is respected up-front rather than after the fact — concurrency alone can't do this
 because six in-flight calls still burst; and (2) any residual `429` is retried honouring the server's
 `Retry-After` header (see *Resilience & throttling*). Pacing trades 429 errors for clean, paced results:
-on a large estate the on-demand path now loads as many customers as fit in the 35s budget at the paced
+on a large estate the on-demand path now loads as many customers as fit in the budget at the paced
 rate (the rest reported as not-reached) **without** the 429 storm. Set `DashboardRequestsPerMinute` to
 match your project's actual quota (raise it if your quota is higher, `0` to disable), lower
 `DashboardMaxConcurrency` to further reduce pressure, or — the proper fix for large estates — enable the
@@ -200,10 +200,19 @@ on the request path. Customers that
 error out (`GoogleApiException`) or aren't reached within the budget are reported via
 `SkippedCustomerCount`, which the home page surfaces as an "N customers couldn't be loaded" warning.
 The two outcomes are tracked separately and summarised in `IncompleteReason` (e.g. "78 not loaded
-within the 35s time budget" vs "3 failed (2× 403 Forbidden, 1× API error)"), which is logged and shown
+within the 45s time budget" vs "3 failed (2× 403 Forbidden, 1× API error)"), which is logged and shown
 under the warning so the cause is visible rather than opaque; the rest of the figures are still shown.
 The partial aggregates are merged single-threaded. The summary is **cached in Redis** for
 `CacheSeconds` (default 300s).
+
+**Last-known-good fallback.** `accounts.customers.list` has its own per-minute project quota (separate
+from `ListEntitlements`), so a busy project can return `429 TooManyRequests` even for the cheap overview
+call. To keep a quota blip from breaking the page, the cache helper writes a second long-lived copy of
+every successful result under `<key>:last` (24h TTL) in addition to the live `CacheSeconds` copy. If a
+live recompute throws (e.g. a 429), the endpoint serves that last-known-good copy instead of failing;
+only a genuinely cold cache (no prior success) surfaces the error. This applies to both `/summary` and
+`/overview`. On the client side the overview phase is treated as a pure optimization — its failures are
+swallowed silently because the summary phase carries the same customer count and onboarding data.
 
 **Progressive (two-phase) loading.** Because the entitlement aggregation is inherently quota-bound and
 slow on a cold cache, the dashboard renders in two phases so the page populates while results arrive.
@@ -229,11 +238,15 @@ service-account identity of its own).
 When `GoogleChannel:BackgroundRefreshSeconds` &gt; 0 and a service account + impersonation user are
 configured, a hosted `DashboardRefreshService` recomputes the summary off the request path on that
 interval and writes it to the same `dashboard:summary` Redis key (with a TTL of twice the interval).
+The same run also derives the cheap overview (a strict subset of the summary — customer count +
+onboarding) and warms `dashboard:overview`, and seeds the long-lived `:last` fallback copy for **both**
+keys, all from its single aggregation (no extra Channel API calls). This means once the background path
+succeeds even once, both endpoints have a last-known-good result to serve through a later quota outage.
 The user endpoint then serves a ready-made, complete result instead of running the slow aggregation
 on demand — solving the large-estate case where even the time-budgeted on-demand path returns only a
 partial. Because it runs off the HTTP request (no attempt timeout), the background path calls
 `GetDashboardSummaryAsync(..., applyTimeBudget: false)` so it runs **unbounded** and produces a
-complete result; the 35s budget applies only to the on-demand request path. Because the worker runs
+complete result; the time budget applies only to the on-demand request path. Because the worker runs
 as a hosted service inside the API process, scaling the API to multiple replicas would otherwise have
 every replica refresh on its own timer. To keep it
 single-flight, each tick first takes a best-effort Redis lock (`dashboard:refresh:lock`, set with
@@ -243,8 +256,11 @@ left to expire so it doubles as an "already refreshed this interval" marker. The
 refresh can outrun its interval on a large estate (the lock set at the start would then expire mid-run
 and let the next tick re-run it immediately, saturating the Channel API and starving interactive
 calls), a refresh that runs longer than its interval re-arms the lock on completion to enforce at
-least one interval of cooldown. See
-[configuration.md](configuration.md) for the required Google setup.
+least one interval of cooldown. Set the interval comfortably **longer than a full run takes** — paced
+aggregation processes roughly `DashboardRequestsPerMinute` customers per minute, so a few hundred
+customers can take minutes; an interval like 60s would run essentially continuously and drain the
+shared project quota that on-demand calls need. A value of **900s (15 min) or more** is a safe
+starting point. See [configuration.md](configuration.md) for the required Google setup.
 
 ## Blazor rendering &amp; request cancellation
 

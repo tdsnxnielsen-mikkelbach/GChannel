@@ -17,9 +17,13 @@
 | `Authentication:Google:ClientId` | Web | user-secrets | `GoogleClientId` azd param (env var) |
 | `Authentication:Google:ClientSecret` | Web | user-secrets | `GoogleClientSecret` azd param → **Key Vault** |
 | `GoogleChannel:AccountId` | ApiService | user-secrets | `GoogleChannelAccountId` azd param (env var) |
+| `GoogleChannel:ServiceAccountKeyJson` | ApiService | `Parameters:` (AppHost) | `GoogleChannelServiceAccountKeyJson` azd param → **Key Vault** |
+| `GoogleChannel:ImpersonateUser` | ApiService | `Parameters:` (AppHost) | `GoogleChannelImpersonateUser` azd param (env var) |
+| `GoogleChannel:BackgroundRefreshSeconds` | ApiService | `Parameters:` (AppHost) | `GoogleChannelBackgroundRefreshSeconds` azd param (env var) |
 
 In Azure the client secret lives in Key Vault; locally it is resolved from user-secrets, so the
-app code reads `Authentication:Google:ClientSecret` the same way in both environments.
+app code reads `Authentication:Google:ClientSecret` the same way in both environments. The last three
+rows are optional — they enable the [background dashboard refresh](#background-dashboard-refresh-optional).
 
 ### Optional tuning (defaults shown)
 
@@ -30,6 +34,7 @@ app code reads `Authentication:Google:ClientSecret` the same way in both environ
 | `GoogleChannel:MaxRetryDelaySeconds` | `60` | Upper bound (seconds) on a single throttled retry wait, capping a large `Retry-After` so a request can't stall beyond the dashboard time budget. |
 | `GoogleChannel:DashboardMaxConcurrency` | `6` | Max concurrent per-customer `entitlements.list` calls when building the dashboard. Lower it if the dashboard reports throttled (429) customers; the Channel API enforces a per-minute request quota. Minimum 1. |
 | `GoogleChannel:DashboardRequestsPerMinute` | `60` | Client-side pacing (requests/minute) for the dashboard's `entitlements.list` calls so the aggregation stays under the Channel API's "ListEntitlements requests per minute" quota and avoids 429 storms. Set to match (or just under) your project's quota; `0` disables pacing. |
+| `GoogleChannel:DashboardBudgetSeconds` | `45` | Time budget for the on-demand dashboard's per-customer entitlement phase, kept under the 60s HTTP attempt timeout. Roughly `DashboardBudgetSeconds × DashboardRequestsPerMinute / 60` customers are reachable per on-demand request; raise it (with headroom under 60s) to reach more, or enable the background refresh for a complete result. Minimum 5. |
 | `GoogleChannel:BackgroundRefreshSeconds` | `0` (off) | Interval for the background worker that recomputes the dashboard summary with a service account and warms the Redis cache. Requires a service account + impersonation user (below). |
 | `GoogleChannel:ServiceAccountKeyJson` | _empty_ | Raw JSON of a Google service-account key used by the background refresher. Treat as a secret. |
 | `GoogleChannel:ServiceAccountKeyPath` | _empty_ | Alternative to `ServiceAccountKeyJson`: path to a service-account key file. |
@@ -45,20 +50,45 @@ and warms the Redis cache, so the page serves an instant, complete result.
 Because the Channel API has no service-account identity of its own, the worker authenticates with a
 service account configured for **domain-wide delegation** that impersonates a reseller admin:
 
-1. Create a service account and a JSON key in Google Cloud.
+1. Create a service account and a JSON key in Google Cloud (enable **domain-wide delegation** and note
+   its **Client ID**).
 2. In the Google Workspace Admin console, authorize that service account's client ID for the
    `https://www.googleapis.com/auth/apps.order` scope (domain-wide delegation).
-3. Configure the ApiService:
+3. Supply the values. The AppHost exposes them as parameters, so they flow the same way as the other
+   Google settings: the `Parameters:` configuration section locally, and `azd env set` for deploys.
+
+| AppHost parameter (`azd env set` name) | Maps to env var → config key | Secret |
+| --- | --- | --- |
+| `GoogleChannelServiceAccountKeyJson` | `GoogleChannel__ServiceAccountKeyJson` → `GoogleChannel:ServiceAccountKeyJson` | **Yes** → Key Vault |
+| `GoogleChannelImpersonateUser` | `GoogleChannel__ImpersonateUser` → `GoogleChannel:ImpersonateUser` | No |
+| `GoogleChannelBackgroundRefreshSeconds` | `GoogleChannel__BackgroundRefreshSeconds` → `GoogleChannel:BackgroundRefreshSeconds` | No |
+
+**Local (running via the AppHost)** — set under the `Parameters:` section of the **AppHost** project:
 
 ```powershell
-dotnet user-secrets --project src/GChannel.ApiService set "GoogleChannel:ServiceAccountKeyPath" "C:\keys\gchannel-sa.json"
-dotnet user-secrets --project src/GChannel.ApiService set "GoogleChannel:ImpersonateUser" "admin@yourdomain.com"
-dotnet user-secrets --project src/GChannel.ApiService set "GoogleChannel:BackgroundRefreshSeconds" "600"
+$saKey = Get-Content -Raw -Path "C:\keys\gchannel-sa.json"
+dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleChannelServiceAccountKeyJson" "$saKey"
+dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleChannelImpersonateUser" "admin@yourdomain.com"
+dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleChannelBackgroundRefreshSeconds" "600"
 ```
 
+**Deploy (`azd`)** — set them in the azd environment, then `azd up`/`azd provision`:
+
+```powershell
+$saKey = Get-Content -Raw -Path "C:\keys\gchannel-sa.json"
+azd env set GoogleChannelServiceAccountKeyJson "$saKey"
+azd env set GoogleChannelImpersonateUser "admin@yourdomain.com"
+azd env set GoogleChannelBackgroundRefreshSeconds "600"
+azd up
+```
+
+On deploy the secret key is stored in **Key Vault** (`google-channel-sa-key`) and surfaced to the
+`apiservice` container app as a Key Vault reference (resolved via its managed identity), mirroring the
+OAuth client-secret pattern — the literal JSON never appears in the manifest or app configuration.
+
 The refresh stays disabled unless a key, an impersonation user, and a positive interval are all set.
-In Azure, supply these to the `apiservice` container app (store the key JSON in Key Vault and reference
-it as the `GoogleChannel__ServiceAccountKeyJson` env var, mirroring the OAuth client-secret pattern).
+Since these are plain azd parameters, `azd up` prompts for any you haven't set; pass empty / `0` to keep
+the feature off without prompting (`azd env set GoogleChannelBackgroundRefreshSeconds "0"`).
 
 ## Local secrets
 

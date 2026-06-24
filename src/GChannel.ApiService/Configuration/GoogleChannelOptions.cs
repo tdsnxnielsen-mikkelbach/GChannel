@@ -44,6 +44,15 @@ public sealed class GoogleChannelOptions
     /// </summary>
     public int DashboardRequestsPerMinute { get; set; } = 60;
 
+    /// <summary>
+    /// Time budget (seconds) for the on-demand dashboard's per-customer entitlement phase. Kept under
+    /// the HTTP client's per-attempt timeout (60s) so the endpoint always responds in time with a
+    /// (possibly partial) result. Roughly <c>DashboardBudgetSeconds × DashboardRequestsPerMinute / 60</c>
+    /// customers are reachable per on-demand request; raise it (with headroom under 60s) to reach more,
+    /// or enable the background refresh for a complete result. Minimum 5.
+    /// </summary>
+    public int DashboardBudgetSeconds { get; set; } = 45;
+
     /// <summary>OAuth scope required to call the Channel reseller (order) APIs.</summary>
     public const string ChannelScope = "https://www.googleapis.com/auth/apps.order";
 

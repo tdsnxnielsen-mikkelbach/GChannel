@@ -133,23 +133,38 @@
     // (avoiding a canceled prerender request), mirroring the other data-heavy pages.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (!firstRender)
         {
-            // Phase 1 then phase 2: the cheap overview renders the customer count + onboarding chart
-            // immediately while the quota-bound entitlement aggregation streams in afterwards.
-            await LoadOverviewAsync();
-            StateHasChanged();
-            await LoadSummaryAsync();
-            StateHasChanged();
+            return;
         }
+
+        // Capture the token once up front: the two-phase load can run for tens of seconds, and if the
+        // circuit/component tears down meanwhile the source is disposed — reading _cts.Token again (or
+        // letting HttpClient register on it) would then throw ObjectDisposedException.
+        CancellationToken token;
+        try
+        {
+            token = _cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        // Phase 1 then phase 2: the cheap overview renders the customer count + onboarding chart
+        // immediately while the quota-bound entitlement aggregation streams in afterwards.
+        await LoadOverviewAsync(token);
+        StateHasChanged();
+        await LoadSummaryAsync(token);
+        StateHasChanged();
     }
 
-    private async Task LoadOverviewAsync()
+    private async Task LoadOverviewAsync(CancellationToken cancellationToken)
     {
         _overviewLoading = true;
         try
         {
-            _overview = await Api.GetDashboardOverviewAsync(_cts.Token);
+            _overview = await Api.GetDashboardOverviewAsync(cancellationToken);
 
             _monthly.Clear();
             foreach (var point in _overview?.CustomersOnboarded ?? [])
@@ -157,13 +172,11 @@
                 _monthly.Add(new MonthlyPoint(point.Month, point.Customers));
             }
         }
-        catch (OperationCanceledException)
+        catch (Exception)
         {
-            // Benign: navigation away or circuit teardown.
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to load dashboard: {ex.Message}", Severity.Error);
+            // The overview is only a fast-path optimisation: the summary (phase 2) carries the same
+            // customer count + onboarding data, so a failure here (e.g. a transient quota 429) is
+            // swallowed silently and phase 2 fills everything in.
         }
         finally
         {
@@ -171,12 +184,12 @@
         }
     }
 
-    private async Task LoadSummaryAsync()
+    private async Task LoadSummaryAsync(CancellationToken cancellationToken)
     {
         _entitlementsLoading = true;
         try
         {
-            _data = await Api.GetDashboardSummaryAsync(_cts.Token);
+            _data = await Api.GetDashboardSummaryAsync(cancellationToken);
 
             // The summary carries authoritative onboarding data too; refresh the chart from it in
             // case the overview cache lagged behind.
@@ -192,9 +205,9 @@
                 _products.Add(new ProductSlice(slice.Product, slice.Count));
             }
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
-            // Benign: the entitlement aggregation is slow and the request was canceled.
+            // Benign: the entitlement aggregation is slow and the request was cancelled/disposed.
         }
         catch (Exception ex)
         {
@@ -208,7 +221,14 @@
 
     public void Dispose()
     {
-        _cts.Cancel();
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed (e.g. Dispose called twice during teardown) — nothing to cancel.
+        }
         _cts.Dispose();
     }
 }

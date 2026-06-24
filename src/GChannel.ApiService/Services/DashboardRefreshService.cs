@@ -71,11 +71,19 @@ public sealed class DashboardRefreshService(
                 // Run unbounded (no request-path time budget) so the cached result is complete even
                 // for large estates; this path is off the HTTP request and has no attempt timeout.
                 var summary = await client.GetDashboardSummaryAsync(stoppingToken, applyTimeBudget: false);
-                await cache.SetStringAsync(
-                    DashboardEndpoints.CacheKey,
-                    JsonSerializer.Serialize(summary),
-                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl },
-                    stoppingToken);
+
+                // The overview (count + onboarding) is a strict subset of the summary, so derive and
+                // warm it here too — no extra Channel API calls.
+                var overview = new GChannel.Shared.Contracts.DashboardOverview
+                {
+                    CustomerCount = summary.CustomerCount,
+                    CustomersOnboarded = summary.CustomersOnboarded,
+                };
+
+                // Write both the live key (short TTL) and the long-lived "last known good" fallback so
+                // the endpoint can serve a result even when the live recompute later hits the quota.
+                await WarmAsync(DashboardEndpoints.CacheKey, summary, ttl, stoppingToken);
+                await WarmAsync(DashboardEndpoints.OverviewCacheKey, overview, ttl, stoppingToken);
 
                 logger.LogInformation("Dashboard summary refreshed in background ({Skipped} customer(s) skipped).",
                     summary.SkippedCustomerCount);
@@ -110,5 +118,27 @@ public sealed class DashboardRefreshService(
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    /// <summary>
+    /// Caches <paramref name="value"/> under both the live key (short TTL) and its long-lived
+    /// "last known good" fallback key, keeping the background path in sync with the endpoint's
+    /// stale-fallback behaviour.
+    /// </summary>
+    private async Task WarmAsync<T>(string cacheKey, T value, TimeSpan ttl, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(value);
+
+        await cache.SetStringAsync(
+            cacheKey,
+            json,
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl },
+            cancellationToken);
+
+        await cache.SetStringAsync(
+            DashboardEndpoints.StaleKey(cacheKey),
+            json,
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = DashboardEndpoints.StaleTtl },
+            cancellationToken);
     }
 }

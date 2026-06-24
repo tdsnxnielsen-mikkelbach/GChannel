@@ -54,16 +54,24 @@ cache.ConfigureInfrastructure(infra =>
 // Key Vault has no local emulator, so it is only provisioned when publishing.
 var keyVault = builder.AddAzureKeyVault("secrets");
 
-// Configuration supplied at deploy time (azd prompts for these once).
+// Configuration supplied at deploy time (azd prompts for these once, or `azd env set`).
 var googleClientId = builder.AddParameter("GoogleClientId");
 var googleClientSecretParam = builder.AddParameter("GoogleClientSecret", secret: true);
 var googleChannelAccountId = builder.AddParameter("GoogleChannelAccountId");
+
+// Optional background dashboard refresh (service account + domain-wide delegation). Leave the
+// service-account key empty / refresh seconds at 0 to keep it disabled; set all three to enable.
+var googleChannelImpersonateUser = builder.AddParameter("GoogleChannelImpersonateUser");
+var googleChannelBackgroundRefreshSeconds = builder.AddParameter("GoogleChannelBackgroundRefreshSeconds");
+var googleChannelServiceAccountKeyParam = builder.AddParameter("GoogleChannelServiceAccountKeyJson", secret: true);
 
 // Back-end services container app (internal): owns SQL, Redis and the Google Channel API.
 var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithReference(database)
     .WithReference(cache)
     .WithEnvironment("GoogleChannel__AccountId", googleChannelAccountId)
+    .WithEnvironment("GoogleChannel__ImpersonateUser", googleChannelImpersonateUser)
+    .WithEnvironment("GoogleChannel__BackgroundRefreshSeconds", googleChannelBackgroundRefreshSeconds)
     .WaitFor(database)
     .WaitFor(cache);
 
@@ -85,12 +93,21 @@ if (builder.ExecutionContext.IsPublishMode)
     webfrontend
         .WithReference(keyVault)
         .WithEnvironment("Authentication__Google__ClientSecret", googleClientSecret);
+
+    // Same treatment for the service-account key used by the background dashboard refresh.
+    keyVault.AddSecret("google-channel-sa-key", googleChannelServiceAccountKeyParam);
+    var googleChannelServiceAccountKey = keyVault.GetSecret("google-channel-sa-key");
+
+    apiService
+        .WithReference(keyVault)
+        .WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKey);
 }
 else
 {
     // Local development: Key Vault cannot be provisioned, so inject the secret
-    // parameter value (sourced from user secrets) directly.
+    // parameter values (sourced from user secrets) directly.
     webfrontend.WithEnvironment("Authentication__Google__ClientSecret", googleClientSecretParam);
+    apiService.WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKeyParam);
 }
 
 builder.Build().Run();

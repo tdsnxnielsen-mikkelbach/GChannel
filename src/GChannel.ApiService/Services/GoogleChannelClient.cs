@@ -563,10 +563,11 @@ public sealed class GoogleChannelClient(
         // the budget, or that error out, are reported as skipped together with the reason why.
         // The background refresher (applyTimeBudget: false) runs unbounded so its cached result is
         // complete even for large estates where the on-demand budget would otherwise truncate it.
+        var budgetSeconds = Math.Max(5, _options.DashboardBudgetSeconds);
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         if (applyTimeBudget)
         {
-            budget.CancelAfter(DashboardEntitlementBudget);
+            budget.CancelAfter(TimeSpan.FromSeconds(budgetSeconds));
         }
         var budgetToken = budget.Token;
 
@@ -652,7 +653,7 @@ public sealed class GoogleChannelClient(
             }
         }
 
-        var incompleteReason = BuildIncompleteReason(notReached, failed, failureReasons);
+        var incompleteReason = BuildIncompleteReason(notReached, failed, failureReasons, budgetSeconds);
         if (incompleteReason is not null)
         {
             logger.LogWarning("Dashboard summary incomplete: {Reason}", incompleteReason);
@@ -675,13 +676,6 @@ public sealed class GoogleChannelClient(
                 .ToList()
         };
     }
-
-    /// <summary>
-    /// Time budget for the per-customer entitlement phase of the dashboard summary. Kept comfortably
-    /// under the HTTP client's per-attempt timeout so the endpoint always responds in time (returning
-    /// a partial result if needed) and the cached value can warm up instead of being cut off.
-    /// </summary>
-    private static readonly TimeSpan DashboardEntitlementBudget = TimeSpan.FromSeconds(35);
 
     private enum CustomerLoadOutcome { Loaded, NotReachedInTime, Failed }
 
@@ -708,7 +702,7 @@ public sealed class GoogleChannelClient(
 
     /// <summary>Builds the human-readable "why is this incomplete" note, or null when nothing was skipped.</summary>
     private static string? BuildIncompleteReason(
-        int notReached, int failed, IReadOnlyDictionary<string, int> failureReasons)
+        int notReached, int failed, IReadOnlyDictionary<string, int> failureReasons, int budgetSeconds)
     {
         if (notReached == 0 && failed == 0)
         {
@@ -718,7 +712,7 @@ public sealed class GoogleChannelClient(
         var parts = new List<string>();
         if (notReached > 0)
         {
-            parts.Add($"{notReached} not loaded within the {DashboardEntitlementBudget.TotalSeconds:0}s time budget");
+            parts.Add($"{notReached} not loaded within the {budgetSeconds}s time budget");
         }
 
         if (failed > 0)
