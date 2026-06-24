@@ -15,7 +15,7 @@
 {
     <MudChip T="string" Color="Color.Primary" Variant="Variant.Text"
              OnClose="ClearSkuFilter" CloseIcon="@Icons.Material.Filled.Close" Class="mb-4">
-        Filtered by SKU: @SkuFilter
+        Filtered by SKU: @FilterLabel
     </MudChip>
 }
 
@@ -37,17 +37,23 @@ else if (_offers is { Count: > 0 })
             <MudTh>Deal code</MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="Offer">@(context.DisplayName ?? context.Name)</MudTd>
+            <MudTd DataLabel="Offer">
+                <MudTooltip Text="@(context.OfferId ?? context.Name)">
+                    <span>@(context.DisplayName ?? context.OfferId ?? context.Name)</span>
+                </MudTooltip>
+            </MudTd>
             <MudTd DataLabel="SKU">
                 @if (!string.IsNullOrEmpty(context.ProductId))
                 {
-                    <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
-                        @(context.SkuId ?? context.SkuName)
-                    </MudLink>
+                    <MudTooltip Text="@(context.SkuId ?? context.SkuName)">
+                        <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
+                            @(context.SkuDisplayName ?? context.SkuId ?? context.SkuName)
+                        </MudLink>
+                    </MudTooltip>
                 }
                 else
                 {
-                    @context.SkuName
+                    @(context.SkuDisplayName ?? context.SkuName)
                 }
             </MudTd>
             <MudTd DataLabel="Deal code">@context.DealCode</MudTd>
@@ -87,6 +93,12 @@ else
 
     private void ClearSkuFilter() => Nav.NavigateTo("/catalog/offers");
 
+    // Friendly SKU name for the active filter chip, falling back to the raw id.
+    private string FilterLabel =>
+        _offers?.FirstOrDefault(o => string.Equals(o.SkuId, SkuFilter, StringComparison.OrdinalIgnoreCase))?.SkuDisplayName
+        ?? SkuFilter
+        ?? string.Empty;
+
     private bool Matches(CatalogOffer offer)
     {
         if (!string.IsNullOrEmpty(SkuFilter)
@@ -101,6 +113,7 @@ else
         }
 
         return (offer.DisplayName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (offer.SkuDisplayName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
             || (offer.SkuName?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false)
             || (offer.DealCode?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false);
     }

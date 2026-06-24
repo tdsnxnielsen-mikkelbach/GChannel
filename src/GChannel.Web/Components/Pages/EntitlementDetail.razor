@@ -20,7 +20,7 @@ else
 {
     <div class="d-flex justify-space-between align-center mb-4">
         <div>
-            <MudText Typo="Typo.h4">@(_entitlement.OfferId ?? _entitlement.Id)</MudText>
+            <MudText Typo="Typo.h4">@(_entitlement.SkuDisplayName ?? _entitlement.OfferDisplayName ?? _entitlement.OfferId ?? _entitlement.Id)</MudText>
             <div class="d-flex gap-2 align-center mt-1">
                 <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(_entitlement.ProvisioningState)">
                     @(_entitlement.ProvisioningState ?? "—")
@@ -48,9 +48,13 @@ else
                                 <td>
                                     @if (!string.IsNullOrEmpty(_entitlement.SkuId))
                                     {
-                                        <MudLink Href="@($"/catalog/offers?sku={_entitlement.SkuId}")">@(_entitlement.OfferId ?? "—")</MudLink>
+                                        <MudLink Href="@($"/catalog/offers?sku={_entitlement.SkuId}")">@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")</MudLink>
                                     }
-                                    else { <span>@(_entitlement.OfferId ?? "—")</span> }
+                                    else { <span>@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")</span> }
+                                    @if (!string.IsNullOrEmpty(_entitlement.OfferId) && !string.IsNullOrEmpty(_entitlement.OfferDisplayName))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@_entitlement.OfferId</MudText>
+                                    }
                                 </td>
                             </tr>
                             <tr>
@@ -59,8 +63,9 @@ else
                                     @if (!string.IsNullOrEmpty(_entitlement.ProductId))
                                     {
                                         <MudLink Href="@($"/catalog/products?product={_entitlement.ProductId}&sku={_entitlement.SkuId}")">
-                                            @(_entitlement.ProductId) / @(_entitlement.SkuId)
+                                            @(_entitlement.ProductDisplayName ?? _entitlement.ProductId) / @(_entitlement.SkuDisplayName ?? _entitlement.SkuId)
                                         </MudLink>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@(_entitlement.ProductId) / @(_entitlement.SkuId)</MudText>
                                     }
                                     else { <span>—</span> }
                                 </td>
@@ -199,7 +204,9 @@ else
                         <MudTd DataLabel="Offer">
                             @if (!string.IsNullOrEmpty(context.OfferId))
                             {
-                                <MudLink Href="@($"/catalog/offers?sku={_entitlement.SkuId}")">@context.OfferId</MudLink>
+                                <MudTooltip Text="@context.OfferId">
+                                    <MudLink Href="@($"/catalog/offers?sku={_entitlement.SkuId}")">@(context.OfferDisplayName ?? context.OfferId)</MudLink>
+                                </MudTooltip>
                             }
                             else { <span>—</span> }
                         </MudTd>

@@ -37,11 +37,19 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > Operation polling is deferred to the roadmap's §7; the UI currently reflects the operation as
 > *completed* (when Google finishes inline) or *submitted — processing* and reloads the list.
 
+> **Friendly names.** Entitlements and their change history carry only opaque ids; the API resolves
+> human-readable **offer / SKU / product** names from the offer catalog (`accounts.offers.list`,
+> reusing `MarketingInfo.DisplayName`) and the UI shows the name with the id as a tooltip/caption,
+> falling back to the id if a name can't be resolved. The same friendly-name-with-id-tooltip pattern
+> is applied across the catalog pages (e.g. the Offers page SKU column).
+
 > **Resilience.** All Channel API calls retry `429`/`503` with exponential back-off and surface a
-> clean `ProblemDetails` (with `Retry-After` on 429) when throttled. Idempotent reads are cached in
-> Redis (customer list/get are cached with invalidation on writes). Cloud Identity checks are also
-> persisted to SQL with a history/recheck (cache-bypass) path — internal endpoint
-> `GET /api/accounts/check-cloud-identity/history`.
+> clean `ProblemDetails` (with `Retry-After` on 429) when throttled. The shared resilience handler
+> uses raised attempt/total timeouts (60s/120s) so cold-start calls aren't cut at the framework's
+> default 30s, and benign client-aborted requests are classified as `499` rather than `500`.
+> Idempotent reads are cached in Redis (customer list/get are cached with invalidation on writes).
+> Cloud Identity checks are also persisted to SQL with a history/recheck (cache-bypass) path —
+> internal endpoint `GET /api/accounts/check-cloud-identity/history`.
 
 ## Available possibilities
 

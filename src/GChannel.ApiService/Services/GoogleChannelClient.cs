@@ -241,10 +241,12 @@ public sealed class GoogleChannelClient(
                 offers.Add(new CatalogOffer
                 {
                     Name = offer.Name ?? string.Empty,
+                    OfferId = LastSegment(offer.Name),
                     DisplayName = offer.MarketingInfo?.DisplayName,
                     Description = offer.MarketingInfo?.Description,
                     SkuName = offer.Sku?.Name,
                     SkuId = LastSegment(offer.Sku?.Name),
+                    SkuDisplayName = offer.Sku?.MarketingInfo?.DisplayName,
                     ProductId = ProductIdFromResourceName(offer.Sku?.Name),
                     DealCode = offer.DealCode
                 });
@@ -493,6 +495,7 @@ public sealed class GoogleChannelClient(
         using var service = CreateService();
 
         var entitlements = new List<Entitlement>();
+        var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
         string? pageToken = null;
         do
         {
@@ -502,7 +505,7 @@ public sealed class GoogleChannelClient(
 
             foreach (var entitlement in response.Entitlements ?? [])
             {
-                entitlements.Add(MapEntitlement(entitlement));
+                entitlements.Add(MapEntitlement(entitlement, offerLookup));
             }
 
             pageToken = response.NextPageToken;
@@ -523,7 +526,8 @@ public sealed class GoogleChannelClient(
             .Get(EntitlementName(customerId, entitlementId))
             .ExecuteAsync(cancellationToken);
 
-        return MapEntitlement(response);
+        var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
+        return MapEntitlement(response, offerLookup);
     }
 
     public async Task<EntitlementChangesResult> ListEntitlementChangesAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
@@ -534,6 +538,7 @@ public sealed class GoogleChannelClient(
         using var service = CreateService();
 
         var changes = new List<EntitlementChange>();
+        var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
         string? pageToken = null;
         do
         {
@@ -544,7 +549,7 @@ public sealed class GoogleChannelClient(
 
             foreach (var change in response.EntitlementChanges ?? [])
             {
-                changes.Add(MapEntitlementChange(change));
+                changes.Add(MapEntitlementChange(change, offerLookup));
             }
 
             pageToken = response.NextPageToken;
@@ -717,48 +722,127 @@ public sealed class GoogleChannelClient(
     }
 
     /// <summary>Maps a Google entitlement resource to the UI-facing <see cref="Entitlement"/> contract.</summary>
-    private static Entitlement MapEntitlement(GoogleCloudChannelV1Entitlement entitlement) => new()
+    private static Entitlement MapEntitlement(GoogleCloudChannelV1Entitlement entitlement, IReadOnlyDictionary<string, OfferDisplay>? offerLookup = null)
     {
-        Name = entitlement.Name ?? string.Empty,
-        Id = LastSegment(entitlement.Name),
-        OfferName = entitlement.Offer,
-        OfferId = LastSegment(entitlement.Offer),
-        ProductId = entitlement.ProvisionedService?.ProductId,
-        SkuId = entitlement.ProvisionedService?.SkuId,
-        ProvisioningState = entitlement.ProvisioningState,
-        PurchaseOrderId = entitlement.PurchaseOrderId,
-        BillingAccount = entitlement.BillingAccount,
-        CreateTime = entitlement.CreateTimeDateTimeOffset,
-        UpdateTime = entitlement.UpdateTimeDateTimeOffset,
-        SuspensionReasons = entitlement.SuspensionReasons is { } reasons ? [.. reasons] : [],
-        IsTrial = entitlement.TrialSettings?.Trial ?? false,
-        TrialEndTime = entitlement.TrialSettings?.EndTimeDateTimeOffset,
-        Commitment = entitlement.CommitmentSettings is { } commitment
-            ? new EntitlementCommitment
+        var offerId = LastSegment(entitlement.Offer);
+        var productId = entitlement.ProvisionedService?.ProductId;
+        var skuId = entitlement.ProvisionedService?.SkuId;
+
+        OfferDisplay display = default;
+        if (offerLookup is not null && !string.IsNullOrEmpty(offerId))
+        {
+            offerLookup.TryGetValue(offerId, out display);
+        }
+
+        return new()
+        {
+            Name = entitlement.Name ?? string.Empty,
+            Id = LastSegment(entitlement.Name),
+            OfferName = entitlement.Offer,
+            OfferId = offerId,
+            OfferDisplayName = display.OfferDisplayName,
+            ProductId = productId,
+            ProductDisplayName = display.ProductDisplayName,
+            SkuId = skuId,
+            SkuDisplayName = display.SkuDisplayName,
+            ProvisioningState = entitlement.ProvisioningState,
+            PurchaseOrderId = entitlement.PurchaseOrderId,
+            BillingAccount = entitlement.BillingAccount,
+            CreateTime = entitlement.CreateTimeDateTimeOffset,
+            UpdateTime = entitlement.UpdateTimeDateTimeOffset,
+            SuspensionReasons = entitlement.SuspensionReasons is { } reasons ? [.. reasons] : [],
+            IsTrial = entitlement.TrialSettings?.Trial ?? false,
+            TrialEndTime = entitlement.TrialSettings?.EndTimeDateTimeOffset,
+            Commitment = entitlement.CommitmentSettings is { } commitment
+                ? new EntitlementCommitment
+                {
+                    StartTime = commitment.StartTimeDateTimeOffset,
+                    EndTime = commitment.EndTimeDateTimeOffset,
+                    RenewalEnabled = commitment.RenewalSettings?.EnableRenewal,
+                    PaymentPlan = commitment.RenewalSettings?.PaymentPlan
+                }
+                : null,
+            Parameters = entitlement.Parameters is { } parameters
+                ? parameters.Select(MapParameter).ToList()
+                : []
+        };
+    }
+
+    /// <summary>Friendly display names for an offer (and its SKU/product), resolved from the Catalog.</summary>
+    private readonly record struct OfferDisplay(string? OfferDisplayName, string? SkuDisplayName, string? ProductDisplayName);
+
+    /// <summary>
+    /// Builds a lookup of offer id -> friendly display names from the reseller's offer catalog,
+    /// used to turn opaque entitlement ids into human-readable names. A single <c>offers.list</c>
+    /// resolves the offer, SKU and product names at once. Failures are non-fatal: entitlements
+    /// still render with their ids if the catalog can't be loaded.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, OfferDisplay>> BuildOfferDisplayLookupAsync(
+        CloudchannelService service, CancellationToken cancellationToken)
+    {
+        var map = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            string? pageToken = null;
+            do
             {
-                StartTime = commitment.StartTimeDateTimeOffset,
-                EndTime = commitment.EndTimeDateTimeOffset,
-                RenewalEnabled = commitment.RenewalSettings?.EnableRenewal,
-                PaymentPlan = commitment.RenewalSettings?.PaymentPlan
+                var request = service.Accounts.Offers.List(_options.AccountName);
+                request.PageToken = pageToken;
+                var response = await request.ExecuteAsync(cancellationToken);
+
+                foreach (var offer in response.Offers ?? [])
+                {
+                    var offerId = LastSegment(offer.Name);
+                    if (string.IsNullOrEmpty(offerId))
+                    {
+                        continue;
+                    }
+
+                    map[offerId] = new OfferDisplay(
+                        offer.MarketingInfo?.DisplayName,
+                        offer.Sku?.MarketingInfo?.DisplayName,
+                        offer.Sku?.Product?.MarketingInfo?.DisplayName);
+                }
+
+                pageToken = response.NextPageToken;
             }
-            : null,
-        Parameters = entitlement.Parameters is { } parameters
-            ? parameters.Select(MapParameter).ToList()
-            : []
-    };
+            while (!string.IsNullOrEmpty(pageToken));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not resolve offer display names; entitlements will show ids.");
+        }
+
+        return map;
+    }
 
     /// <summary>Maps a Google entitlement-change resource to the UI-facing <see cref="EntitlementChange"/>.</summary>
-    private static EntitlementChange MapEntitlementChange(GoogleCloudChannelV1EntitlementChange change) => new()
+    private static EntitlementChange MapEntitlementChange(GoogleCloudChannelV1EntitlementChange change, IReadOnlyDictionary<string, OfferDisplay>? offerLookup = null)
     {
-        ChangeType = change.ChangeType,
-        OfferId = LastSegment(change.Offer),
-        OperatorType = change.OperatorType,
-        CreateTime = change.CreateTimeDateTimeOffset,
-        Reason = change.ActivationReason
-            ?? change.CancellationReason
-            ?? change.SuspensionReason
-            ?? change.OtherChangeReason
-    };
+        var offerId = LastSegment(change.Offer);
+        string? offerDisplayName = null;
+        if (offerLookup is not null && !string.IsNullOrEmpty(offerId) && offerLookup.TryGetValue(offerId, out var display))
+        {
+            offerDisplayName = display.OfferDisplayName;
+        }
+
+        return new()
+        {
+            ChangeType = change.ChangeType,
+            OfferId = offerId,
+            OfferDisplayName = offerDisplayName,
+            OperatorType = change.OperatorType,
+            CreateTime = change.CreateTimeDateTimeOffset,
+            Reason = change.ActivationReason
+                ?? change.CancellationReason
+                ?? change.SuspensionReason
+                ?? change.OtherChangeReason
+        };
+    }
 
     private static EntitlementParameter MapParameter(GoogleCloudChannelV1Parameter parameter) => new()
     {

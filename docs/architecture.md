@@ -77,6 +77,12 @@ Requests**. Two layers keep this graceful:
 Idempotent reads are also **cached in Redis** (`GoogleChannel:CacheSeconds`, default 300s), so warm
 lookups never hit Google — both reducing latency and shrinking the 429 surface.
 
+**Request timeouts.** The shared `AddStandardResilienceHandler` (in `GChannel.ServiceDefaults`) is
+configured with a longer **attempt** (60s) and **total-request** (120s) timeout than the framework
+default (10s/30s). Calls that fan out to the Channel API can legitimately exceed 30s on a cold start
+(credential setup plus exponential back-off retries), so the default would otherwise surface as
+*"The operation didn't complete within the allowed timeout of '00:00:30'"*.
+
 **Cloud Identity checks** are additionally **persisted** to Azure SQL (`IdentityCheckLogs`) as an
 audit trail. The check endpoint serves the cached result by default; passing `?refresh=true`
 (surfaced as the **recheck** button in the UI) bypasses the cache and re-queries Google, then
@@ -94,6 +100,10 @@ and offers/billable-SKUs carry both `SkuId` and `ProductId`. The UI uses these f
 - **Offers → Products** — the SKU column links to `/catalog/products?product={productId}&sku={skuId}`,
   which auto-expands the product and highlights the SKU.
 - **SKU groups → Products / Offers** — each billable SKU links to its product and its offers.
+
+Each table shows the **friendly display name** with the raw id available as a tooltip (and, where a
+list previously showed an opaque id such as the Offers page's SKU column, the id is replaced by the
+resolved SKU/offer name with the id moved to the tooltip).
 
 This same id-correlation model is the hook for future **customer management** links (e.g. a
 customer's entitlements resolving to the products/SKUs/offers shown here).
@@ -136,6 +146,11 @@ affected customer's entitlement caches (list + the specific entitlement's get/ch
   `/catalog/products?product={productId}&sku={skuId}`. The purchase and *change offer* flows reuse
   the customer's purchasable SKUs/offers (`listPurchasableSkus`/`listPurchasableOffers`) so the
   eligible offer resolves to the same catalog ids.
+- **Friendly names.** Entitlements (and their change history) only carry opaque ids, so the API
+  enriches them with human-readable **offer / SKU / product** names resolved from the offer catalog
+  (a single `offers.list`, reusing the catalog `MarketingInfo.DisplayName`). The UI shows the
+  friendly name with the raw id as a tooltip/secondary caption, and falls back to the id if a name
+  can't be resolved (the lookup is non-fatal).
 - **Typed parameters.** Seat counts are the `num_units` entitlement parameter; the UI sends them as
   a typed `int64` value (`EntitlementParameterInput.IntValue`) on purchase and `changeParameters`.
 - **Long-running operations.** Mutating calls (`create`, `changeOffer`, `changeParameters`,
@@ -159,4 +174,16 @@ surfacing as a benign `TaskCanceledException` (innermost `SocketException: "...a
   canceled prerender request is avoided.
 - **Traceable, non-fatal cancellation.** Server-side, these cancellations are caught at the call
   site (e.g. `ListCustomersAsync`), logged at `Debug`, and rethrown — behavior is unchanged and
-  ASP.NET Core handles the aborted request normally.
+  ASP.NET Core handles the aborted request normally. The global `GoogleApiExceptionHandler` also
+  classifies a client-aborted request (`OperationCanceledException` with `RequestAborted` signalled)
+  as **`499 Client Closed Request`** at `Debug` rather than a `500`, so genuine client disconnects
+  aren't logged as server errors.
+
+## Local development persistence
+
+The AppHost runs SQL Server and Redis as containers with a **persistent lifetime**
+(`ContainerLifetime.Persistent`) and named **data volumes** (`gchannel-sql-data`,
+`gchannel-redis-data`; Redis also enables RDB snapshots). The containers therefore stay running and
+keep their data **between debug sessions**, so the database isn't re-seeded and the cache stays warm
+on each `F5` — which also removes the cold-start latency that previously tripped the request timeout.
+To wipe and reseed, remove the volumes: `docker volume rm gchannel-sql-data gchannel-redis-data`.

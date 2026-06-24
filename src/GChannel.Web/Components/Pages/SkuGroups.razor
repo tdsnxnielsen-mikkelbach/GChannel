@@ -40,7 +40,11 @@ else if (_groups is { Count: > 0 })
                                 <MudTh>Related</MudTh>
                             </HeaderContent>
                             <RowTemplate>
-                                <MudTd DataLabel="SKU">@(context.SkuDisplayName ?? context.SkuId ?? context.Sku)</MudTd>
+                                <MudTd DataLabel="SKU">
+                                    <MudTooltip Text="@(context.SkuId ?? context.Sku)">
+                                        <span>@(context.SkuDisplayName ?? context.SkuId ?? context.Sku)</span>
+                                    </MudTooltip>
+                                </MudTd>
                                 <MudTd DataLabel="Service">@(context.ServiceDisplayName ?? context.Service)</MudTd>
                                 <MudTd DataLabel="Related">
                                     @if (!string.IsNullOrEmpty(context.ProductId))

@@ -50,6 +50,9 @@ public sealed record CatalogOffer
     /// <summary>Resource name, e.g. "accounts/{account_id}/offers/{offer_id}".</summary>
     public required string Name { get; init; }
 
+    /// <summary>Short offer id (the last path segment of <see cref="Name"/>).</summary>
+    public string? OfferId { get; init; }
+
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
 
@@ -58,6 +61,9 @@ public sealed record CatalogOffer
 
     /// <summary>Id of the SKU this offer relates to (for navigation to the product/SKU).</summary>
     public string? SkuId { get; init; }
+
+    /// <summary>Human-friendly SKU name resolved from the Catalog (falls back to <see cref="SkuId"/> in the UI).</summary>
+    public string? SkuDisplayName { get; init; }
 
     /// <summary>Id of the product the related SKU belongs to.</summary>
     public string? ProductId { get; init; }

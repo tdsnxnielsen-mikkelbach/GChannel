@@ -21,11 +21,20 @@ public sealed record Entitlement
     /// <summary>Offer short id (for navigation to the Catalog offer).</summary>
     public string? OfferId { get; init; }
 
+    /// <summary>Human-friendly offer name resolved from the Catalog (falls back to <see cref="OfferId"/> in the UI).</summary>
+    public string? OfferDisplayName { get; init; }
+
     /// <summary>Product id of the provisioned service (for Catalog correlation).</summary>
     public string? ProductId { get; init; }
 
+    /// <summary>Human-friendly product name resolved from the Catalog (falls back to <see cref="ProductId"/> in the UI).</summary>
+    public string? ProductDisplayName { get; init; }
+
     /// <summary>SKU id of the provisioned service (for Catalog correlation).</summary>
     public string? SkuId { get; init; }
+
+    /// <summary>Human-friendly SKU name resolved from the Catalog (falls back to <see cref="SkuId"/> in the UI).</summary>
+    public string? SkuDisplayName { get; init; }
 
     /// <summary>Provisioning state, e.g. ACTIVE / SUSPENDED / PENDING / CANCELLED.</summary>
     public string? ProvisioningState { get; init; }
@@ -76,6 +85,9 @@ public sealed record EntitlementChange
 
     /// <summary>Offer short id active after this change (for Catalog correlation).</summary>
     public string? OfferId { get; init; }
+
+    /// <summary>Human-friendly offer name resolved from the Catalog (falls back to <see cref="OfferId"/> in the UI).</summary>
+    public string? OfferDisplayName { get; init; }
 
     /// <summary>Who initiated the change, e.g. CUSTOMER_SERVICE_REPRESENTATIVE / SYSTEM / RESELLER.</summary>
     public string? OperatorType { get; init; }

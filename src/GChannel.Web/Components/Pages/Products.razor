@@ -47,7 +47,11 @@ else if (_products is { Count: > 0 })
                                 <MudTh>Related</MudTh>
                             </HeaderContent>
                             <RowTemplate>
-                                <MudTd DataLabel="SKU">@(context.DisplayName ?? context.Id)</MudTd>
+                                <MudTd DataLabel="SKU">
+                                    <MudTooltip Text="@context.Id">
+                                        <span>@(context.DisplayName ?? context.Id)</span>
+                                    </MudTooltip>
+                                </MudTd>
                                 <MudTd DataLabel="Id">@context.Id</MudTd>
                                 <MudTd DataLabel="Related">
                                     <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"

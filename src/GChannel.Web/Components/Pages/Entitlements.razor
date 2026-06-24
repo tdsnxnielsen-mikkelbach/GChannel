@@ -45,19 +45,23 @@ else if (_entitlements is { Count: > 0 })
             <MudTd DataLabel="Offer / SKU">
                 @if (!string.IsNullOrEmpty(context.SkuId))
                 {
-                    <MudLink Href="@($"/catalog/offers?sku={context.SkuId}")">@(context.OfferId ?? context.Id)</MudLink>
+                    <MudTooltip Text="@(context.OfferId ?? context.Id)">
+                        <MudLink Href="@($"/catalog/offers?sku={context.SkuId}")">@OfferLabel(context)</MudLink>
+                    </MudTooltip>
                 }
                 else
                 {
-                    @(context.OfferId ?? context.Id)
+                    @OfferLabel(context)
                 }
             </MudTd>
             <MudTd DataLabel="Product">
                 @if (!string.IsNullOrEmpty(context.ProductId))
                 {
-                    <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
-                        @(context.ProductId)
-                    </MudLink>
+                    <MudTooltip Text="@context.ProductId">
+                        <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
+                            @(context.ProductDisplayName ?? context.ProductId)
+                        </MudLink>
+                    </MudTooltip>
                 }
                 else
                 {
@@ -145,6 +149,10 @@ else
 
     private static bool IsSuspended(Entitlement e) =>
         string.Equals(e.ProvisioningState, "SUSPENDED", StringComparison.OrdinalIgnoreCase);
+
+    // Prefer the friendly SKU/offer name resolved from the Catalog; fall back to the opaque id.
+    private static string OfferLabel(Entitlement e) =>
+        e.SkuDisplayName ?? e.OfferDisplayName ?? e.OfferId ?? e.Id;
 
     private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
     {

@@ -19,6 +19,12 @@ resources/methods these items map to.
 - [x] **Cloud Identity caching &amp; recheck.** Check results are cached in Redis and persisted to
   SQL (`IdentityCheckLogs`). The UI shows a **recently checked** list and a **recheck** action that
   bypasses the cache (`?refresh=true`) to re-query Google and refresh the cache.
+- [x] **Request timeouts &amp; cancellation.** The shared resilience handler uses raised attempt/total
+  timeouts (60s/120s) so cold-start Channel API calls aren't cut at the framework's default 30s, and
+  benign client-aborted requests are classified as `499` (not `500`) by `GoogleApiExceptionHandler`.
+- [x] **Local dev persistence.** SQL and Redis run as persistent-lifetime containers with named data
+  volumes (`gchannel-sql-data`, `gchannel-redis-data`), so data survives between debug sessions and
+  cold-start latency is avoided. See [deployment.md](deployment.md#run-locally).
 
 ## Roadmap (Channel API capabilities to grow into)
 
@@ -89,6 +95,13 @@ advanced distributor/billing features.
 > operation polling is **§7**; until then the UI surfaces the operation as accepted (showing
 > *completed* when Google finishes inline, otherwise *submitted — processing*) and reloads the list,
 > so a freshly purchased or changed entitlement appears once provisioning finishes.
+>
+> **Friendly names.** Entitlements and their change history carry only opaque offer/SKU/product ids;
+> the API resolves human-readable names from the offer catalog (`accounts.offers.list`, reusing
+> `MarketingInfo.DisplayName`) and the UI shows the friendly name with the id as a tooltip/caption,
+> falling back to the id when a name can't be resolved. The same friendly-name-with-id-tooltip
+> pattern was applied across the catalog pages (e.g. the Offers page SKU column now shows the SKU
+> display name).
 
 ### 4. Transfers
 
