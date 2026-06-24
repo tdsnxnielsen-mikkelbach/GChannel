@@ -174,11 +174,15 @@ read paths:
   product, top 8). A single `offers.list` lookup (the same one the entitlement pages use) resolves
   opaque product ids to friendly labels.
 
-The aggregation makes N+1 Channel API calls (customers + per-customer entitlements), so the whole
-summary is **cached in Redis** for `CacheSeconds` (default 300s) and covered by the raised request
-timeout. The page loads in `OnAfterRenderAsync(firstRender)` (prerender-safe) and shows a loading bar
-until the summary arrives. Like the other pages it carries no hardcoded data — empty states render
-when there are no customers/entitlements.
+The aggregation makes N+1 Channel API calls (customers + per-customer entitlements). The per-customer
+entitlement lists run with **bounded parallelism** (6 concurrent) so the whole call stays within the
+request timeout and the cached result can warm up; throttled `429`s are retried by the shared
+resilience handler and the partial aggregates are merged single-threaded. The summary is **cached in
+Redis** for `CacheSeconds` (default 300s). The page loads in `OnAfterRenderAsync(firstRender)`
+(prerender-safe) behind a loading bar, ties the request to a `CancellationTokenSource` disposed with
+the component, and treats `OperationCanceledException` as benign (no error toast on navigation away).
+Like the other pages it carries no hardcoded data — empty states render when there are no
+customers/entitlements.
 
 ## Blazor rendering &amp; request cancellation
 

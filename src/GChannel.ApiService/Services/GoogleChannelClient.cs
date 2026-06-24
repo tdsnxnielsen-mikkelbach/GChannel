@@ -544,56 +544,42 @@ public sealed class GoogleChannelClient(
         // §1 catalog — one offer lookup resolves product/SKU names for the donut labels.
         var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
 
-        // §3 entitlements — counters + product mix, aggregated across all customers.
+        // §3 entitlements — one List call per customer is unavoidable (there is no cross-customer
+        // list), so the per-customer aggregation runs with bounded parallelism to keep the whole
+        // call within the request timeout and let the cached result warm up. 429s are retried by
+        // the shared resilience handler; partials are merged single-threaded to avoid locks.
+        using var throttle = new SemaphoreSlim(MaxDashboardConcurrency);
+
+        var partials = await Task.WhenAll(customers.Select(async customer =>
+        {
+            await throttle.WaitAsync(cancellationToken);
+            try
+            {
+                return await AggregateCustomerEntitlementsAsync(service, customer.Id, offerLookup, cancellationToken);
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        }));
+
         var active = 0;
         var trials = 0;
         var suspended = 0;
         long activeSeats = 0;
         var productMix = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var customer in customers)
+        foreach (var partial in partials)
         {
-            string? entitlementToken = null;
-            do
+            active += partial.Active;
+            trials += partial.Trials;
+            suspended += partial.Suspended;
+            activeSeats += partial.ActiveSeats;
+
+            foreach (var (label, count) in partial.ProductMix)
             {
-                var request = service.Accounts.Customers.Entitlements.List(CustomerName(customer.Id));
-                request.PageToken = entitlementToken;
-                var response = await request.ExecuteAsync(cancellationToken);
-
-                foreach (var raw in response.Entitlements ?? [])
-                {
-                    var entitlement = MapEntitlement(raw, offerLookup);
-                    var isActive = string.Equals(entitlement.ProvisioningState, "ACTIVE", StringComparison.OrdinalIgnoreCase);
-
-                    if (isActive)
-                    {
-                        active++;
-
-                        var seats = entitlement.Parameters
-                            .FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value;
-                        if (long.TryParse(seats, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
-                        {
-                            activeSeats += n;
-                        }
-
-                        var label = entitlement.ProductDisplayName ?? entitlement.ProductId ?? "Other";
-                        productMix[label] = productMix.GetValueOrDefault(label) + 1;
-                    }
-
-                    if (entitlement.IsTrial)
-                    {
-                        trials++;
-                    }
-
-                    if (string.Equals(entitlement.ProvisioningState, "SUSPENDED", StringComparison.OrdinalIgnoreCase))
-                    {
-                        suspended++;
-                    }
-                }
-
-                entitlementToken = response.NextPageToken;
+                productMix[label] = productMix.GetValueOrDefault(label) + count;
             }
-            while (!string.IsNullOrEmpty(entitlementToken));
         }
 
         return new DashboardSummary
@@ -610,6 +596,70 @@ public sealed class GoogleChannelClient(
                 .Select(kv => new DashboardProductSlice { Product = kv.Key, Count = kv.Value })
                 .ToList()
         };
+    }
+
+    /// <summary>Max concurrent per-customer entitlement list calls when building the dashboard summary.</summary>
+    private const int MaxDashboardConcurrency = 6;
+
+    private readonly record struct EntitlementAggregate(
+        int Active, int Trials, int Suspended, long ActiveSeats, IReadOnlyDictionary<string, int> ProductMix);
+
+    /// <summary>Paginates a single customer's entitlements and returns its partial dashboard aggregate.</summary>
+    private async Task<EntitlementAggregate> AggregateCustomerEntitlementsAsync(
+        CloudchannelService service,
+        string customerId,
+        IReadOnlyDictionary<string, OfferDisplay> offerLookup,
+        CancellationToken cancellationToken)
+    {
+        var active = 0;
+        var trials = 0;
+        var suspended = 0;
+        long activeSeats = 0;
+        var productMix = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        string? entitlementToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.Entitlements.List(CustomerName(customerId));
+            request.PageToken = entitlementToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var raw in response.Entitlements ?? [])
+            {
+                var entitlement = MapEntitlement(raw, offerLookup);
+                var isActive = string.Equals(entitlement.ProvisioningState, "ACTIVE", StringComparison.OrdinalIgnoreCase);
+
+                if (isActive)
+                {
+                    active++;
+
+                    var seats = entitlement.Parameters
+                        .FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value;
+                    if (long.TryParse(seats, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                    {
+                        activeSeats += n;
+                    }
+
+                    var label = entitlement.ProductDisplayName ?? entitlement.ProductId ?? "Other";
+                    productMix[label] = productMix.GetValueOrDefault(label) + 1;
+                }
+
+                if (entitlement.IsTrial)
+                {
+                    trials++;
+                }
+
+                if (string.Equals(entitlement.ProvisioningState, "SUSPENDED", StringComparison.OrdinalIgnoreCase))
+                {
+                    suspended++;
+                }
+            }
+
+            entitlementToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(entitlementToken));
+
+        return new EntitlementAggregate(active, trials, suspended, activeSeats, productMix);
     }
 
     /// <summary>Buckets customers into the trailing six months by their create time (oldest first).</summary>

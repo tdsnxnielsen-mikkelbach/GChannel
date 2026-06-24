@@ -1,5 +1,6 @@
 ﻿@page "/"
 @attribute [Authorize]
+@implements IDisposable
 @inject GChannelApiClient Api
 @inject ISnackbar Snackbar
 
@@ -85,6 +86,7 @@
     private bool _loading = true;
     private readonly List<MonthlyPoint> _monthly = [];
     private readonly List<ProductSlice> _products = [];
+    private readonly CancellationTokenSource _cts = new();
 
     // Cards derive from the loaded summary; before load they show zeros.
     private SummaryCard[] Cards =>
@@ -111,7 +113,7 @@
         _loading = true;
         try
         {
-            _data = await Api.GetDashboardSummaryAsync();
+            _data = await Api.GetDashboardSummaryAsync(_cts.Token);
 
             _monthly.Clear();
             foreach (var point in _data?.CustomersOnboarded ?? [])
@@ -125,6 +127,11 @@
                 _products.Add(new ProductSlice(slice.Product, slice.Count));
             }
         }
+        catch (OperationCanceledException)
+        {
+            // Benign: the dashboard aggregation is slow and the request was canceled
+            // (navigation away or circuit teardown). Nothing to surface to the user.
+        }
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to load dashboard: {ex.Message}", Severity.Error);
@@ -133,5 +140,11 @@
         {
             _loading = false;
         }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
     }
 }

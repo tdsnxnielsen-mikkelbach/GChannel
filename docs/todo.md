@@ -159,10 +159,12 @@ breaking-change risk:
   - **§1 Catalog browsing** — a single `offers.list` lookup resolves SKU/product IDs into friendly
     donut labels.
 
-  The aggregation makes N+1 Channel API calls (customers + per-customer entitlements); acceptable for
-  this read-only slice because the result is cached and covered by the raised request timeout. The
-  former **Channel links** and **Pending checks** cards were replaced with **Trials** / **Suspended**
-  because channel partner links (§5) are not yet implemented.
+  The aggregation makes N+1 Channel API calls (customers + per-customer entitlements); the
+  per-customer lists run with bounded parallelism (6 concurrent) so the call completes within the
+  request timeout and the cached result warms up. The home page ties the request to the component
+  lifetime and treats cancellation as benign. The former **Channel links** and **Pending checks**
+  cards were replaced with **Trials** / **Suspended** because channel partner links (§5) are not yet
+  implemented.
 
 ## Notes
 
