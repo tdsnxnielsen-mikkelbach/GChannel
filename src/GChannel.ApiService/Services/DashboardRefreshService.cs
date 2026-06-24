@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Endpoints;
+using GChannel.Shared.Contracts;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -25,6 +26,9 @@ public sealed class DashboardRefreshService(
     // interval. The key is intentionally never released; its TTL equals one interval so it doubles
     // as a "already refreshed this interval" marker across all replicas.
     private const string RefreshLockKey = "dashboard:refresh:lock";
+
+    // How many customers to aggregate between partial-snapshot publishes during a background run.
+    private const int PartialPublishEvery = 10;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -50,10 +54,17 @@ public sealed class DashboardRefreshService(
             "Dashboard background refresh enabled; recomputing every {Interval}s as {User}.",
             opts.BackgroundRefreshSeconds, opts.ImpersonateUser);
 
+        // Carry the previous run's outcome forward so each status write keeps a meaningful
+        // "last completed" even while the next run is in progress.
+        DateTimeOffset? lastCompletedUtc = null;
+        int? lastDurationSeconds = null;
+        int? lastSkippedCount = null;
+
         do
         {
             var acquired = false;
             var startedAt = Stopwatch.GetTimestamp();
+            var startedUtc = DateTimeOffset.UtcNow;
             try
             {
                 // Take a best-effort distributed lock so that when the API scales to multiple
@@ -68,13 +79,30 @@ public sealed class DashboardRefreshService(
                     continue;
                 }
 
+                // Mark the run as in progress so the home page can show a "Refreshing…" indicator.
+                await WriteStatusAsync(new DashboardRefreshStatus
+                {
+                    Enabled = true,
+                    IsRunning = true,
+                    LastStartedUtc = startedUtc,
+                    LastCompletedUtc = lastCompletedUtc,
+                    LastDurationSeconds = lastDurationSeconds,
+                    LastSkippedCount = lastSkippedCount,
+                }, stoppingToken);
+
                 // Run unbounded (no request-path time budget) so the cached result is complete even
                 // for large estates; this path is off the HTTP request and has no attempt timeout.
-                var summary = await client.GetDashboardSummaryAsync(stoppingToken, applyTimeBudget: false);
+                // Publish a partial snapshot to the live cache every few customers so the polling UI
+                // can watch the figures fill in during a long recompute (no extra Channel API cost).
+                var summary = await client.GetDashboardSummaryAsync(
+                    stoppingToken,
+                    applyTimeBudget: false,
+                    onPartial: partial => PublishPartialAsync(partial, ttl, stoppingToken),
+                    partialEvery: PartialPublishEvery);
 
                 // The overview (count + onboarding) is a strict subset of the summary, so derive and
                 // warm it here too — no extra Channel API calls.
-                var overview = new GChannel.Shared.Contracts.DashboardOverview
+                var overview = new DashboardOverview
                 {
                     CustomerCount = summary.CustomerCount,
                     CustomersOnboarded = summary.CustomersOnboarded,
@@ -85,6 +113,20 @@ public sealed class DashboardRefreshService(
                 await WarmAsync(DashboardEndpoints.CacheKey, summary, ttl, stoppingToken);
                 await WarmAsync(DashboardEndpoints.OverviewCacheKey, overview, ttl, stoppingToken);
 
+                // Record completion so the home page can show "Updated X ago".
+                lastCompletedUtc = DateTimeOffset.UtcNow;
+                lastDurationSeconds = (int)Math.Round(Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
+                lastSkippedCount = summary.SkippedCustomerCount;
+                await WriteStatusAsync(new DashboardRefreshStatus
+                {
+                    Enabled = true,
+                    IsRunning = false,
+                    LastStartedUtc = startedUtc,
+                    LastCompletedUtc = lastCompletedUtc,
+                    LastDurationSeconds = lastDurationSeconds,
+                    LastSkippedCount = lastSkippedCount,
+                }, stoppingToken);
+
                 logger.LogInformation("Dashboard summary refreshed in background ({Skipped} customer(s) skipped).",
                     summary.SkippedCustomerCount);
             }
@@ -94,8 +136,21 @@ public sealed class DashboardRefreshService(
             }
             catch (Exception ex)
             {
-                // Never let a transient failure kill the worker; log and try again next tick.
+                // Never let a transient failure kill the worker; log and try again next tick. Clear
+                // the in-progress flag so the UI doesn't show "Refreshing…" forever.
                 logger.LogWarning(ex, "Background dashboard refresh failed; will retry on the next interval.");
+                if (acquired)
+                {
+                    await TryWriteStatusAsync(new DashboardRefreshStatus
+                    {
+                        Enabled = true,
+                        IsRunning = false,
+                        LastStartedUtc = startedUtc,
+                        LastCompletedUtc = lastCompletedUtc,
+                        LastDurationSeconds = lastDurationSeconds,
+                        LastSkippedCount = lastSkippedCount,
+                    }, stoppingToken);
+                }
             }
             finally
             {
@@ -140,5 +195,41 @@ public sealed class DashboardRefreshService(
             json,
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = DashboardEndpoints.StaleTtl },
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Publishes a mid-run snapshot to the live summary cache only (never the "last known good"
+    /// fallback, which must stay equal to the last <em>complete</em> run). Lets the polling UI watch
+    /// the figures fill in while the quota-paced aggregation is still in flight.
+    /// </summary>
+    private async Task PublishPartialAsync(DashboardSummary partial, TimeSpan ttl, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(partial);
+        await cache.SetStringAsync(
+            DashboardEndpoints.CacheKey,
+            json,
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl },
+            cancellationToken);
+    }
+
+    /// <summary>Writes the refresher's run status to the cache (kept well past one interval).</summary>
+    private Task WriteStatusAsync(DashboardRefreshStatus status, CancellationToken cancellationToken) =>
+        cache.SetStringAsync(
+            DashboardEndpoints.StatusKey,
+            JsonSerializer.Serialize(status),
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = DashboardEndpoints.StaleTtl },
+            cancellationToken);
+
+    /// <summary>Best-effort status write used on the failure path so a hiccup can't surface an error.</summary>
+    private async Task TryWriteStatusAsync(DashboardRefreshStatus status, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await WriteStatusAsync(status, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not write the dashboard refresh status.");
+        }
     }
 }

@@ -60,7 +60,10 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > (from `accounts.customers.entitlements.list`, with `accounts.offers.list`/`accounts.products.list`
 > resolving friendly product labels). Those per-customer entitlement calls are paced under the
 > per-minute quota (`DashboardRequestsPerMinute`) and 429s are retried honouring `Retry-After`. Both
-> results are cached in Redis for `CacheSeconds`.
+> results are cached in Redis for `CacheSeconds`. A third cheap endpoint `GET /api/dashboard/status`
+> returns the background refresher's `DashboardRefreshStatus` (enabled / in-progress / last-completed /
+> duration / skipped), which the home page polls every 30 s to show an "Updated X ago" / "Refreshing…"
+> indicator and to redraw the figures live while a background run publishes partial snapshots.
 
 ## Available possibilities
 

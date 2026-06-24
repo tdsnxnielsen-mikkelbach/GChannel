@@ -69,3 +69,28 @@ public sealed record DashboardProductSlice
 
     public int Count { get; init; }
 }
+
+/// <summary>
+/// Health/freshness of the background dashboard refresher, surfaced on the home page so users can see
+/// when the figures were last recomputed and whether a refresh is in progress.
+/// </summary>
+public sealed record DashboardRefreshStatus
+{
+    /// <summary>Whether the background refresher is configured and running (vs. on-demand only).</summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>True while a background recompute is currently in progress.</summary>
+    public bool IsRunning { get; init; }
+
+    /// <summary>When the most recent background recompute started, or <c>null</c> if it never has.</summary>
+    public DateTimeOffset? LastStartedUtc { get; init; }
+
+    /// <summary>When the most recent background recompute completed, or <c>null</c> if none has finished.</summary>
+    public DateTimeOffset? LastCompletedUtc { get; init; }
+
+    /// <summary>Wall-clock duration of the last completed recompute, in seconds.</summary>
+    public int? LastDurationSeconds { get; init; }
+
+    /// <summary>How many customers the last completed recompute skipped (genuine per-customer errors).</summary>
+    public int? LastSkippedCount { get; init; }
+}

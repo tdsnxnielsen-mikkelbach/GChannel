@@ -47,6 +47,10 @@ public sealed class GChannelApiClient(
     public Task<DashboardOverview?> GetDashboardOverviewAsync(CancellationToken cancellationToken = default) =>
         GetAsync<DashboardOverview>(ApiRoutes.DashboardOverview, cancellationToken);
 
+    /// <summary>Gets the freshness/health of the background dashboard refresher (last run + in-progress flag).</summary>
+    public Task<DashboardRefreshStatus?> GetDashboardStatusAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<DashboardRefreshStatus>(ApiRoutes.DashboardStatus, cancellationToken);
+
     /// <summary>Lists the products the reseller is authorized to sell.</summary>
     public Task<CatalogProductsResult?> ListProductsAsync(CancellationToken cancellationToken = default) =>
         GetAsync<CatalogProductsResult>(ApiRoutes.Products, cancellationToken);

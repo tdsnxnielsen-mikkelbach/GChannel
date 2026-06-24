@@ -262,6 +262,24 @@ customers can take minutes; an interval like 60s would run essentially continuou
 shared project quota that on-demand calls need. A value of **900s (15 min) or more** is a safe
 starting point. See [configuration.md](configuration.md) for the required Google setup.
 
+**Live updates &amp; refresh status.** So the figures fill in *during* a long background run rather than
+jumping at the end, the background path passes an `onPartial` callback (and `partialEvery = 10`) to
+`GetDashboardSummaryAsync`: the aggregation now merges each customer's result into shared accumulators
+under a lock as it completes, and every 10 customers publishes a running snapshot to the **live**
+`dashboard:summary` key only (never the `:last` fallback, which must stay equal to the last *complete*
+run). This costs zero extra Channel API calls — it's driven entirely by the single background run. The
+worker also writes a small `DashboardRefreshStatus` object to `dashboard:refresh:status` at the start of
+each run (`IsRunning = true`, `LastStartedUtc`) and on completion (`IsRunning = false`, `LastCompletedUtc`,
+`LastDurationSeconds`, `LastSkippedCount`), carrying the previous run's outcome forward so "last
+completed" stays meaningful while a new run is in flight; the failure path also clears `IsRunning` so the
+UI never shows "Refreshing…" forever. A cheap `GET /api/dashboard/status` reads that object (returning
+`Enabled = BackgroundRefreshEnabled` when no run has happened yet). The home page polls `/status` every
+30 s; while a run is in progress (or just after one completes) it re-pulls the cache-served `/summary`
+and redraws the cards + product-mix donut, and renders a status line — a "Refreshing…" chip while
+running, an "On demand" chip when the background path is disabled, and "Updated X ago · took Ns" from
+`LastCompletedUtc`. Polling is best-effort: transient failures keep the last good render and never raise
+a toast.
+
 ## Blazor rendering &amp; request cancellation
 
 The Web app uses **Interactive Server** components with prerendering. A component therefore renders

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Services;
+using GChannel.Shared.Contracts;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 
@@ -18,6 +19,9 @@ public static class DashboardEndpoints
 
     /// <summary>Redis key the cheap dashboard overview (count + onboarding) is cached under.</summary>
     public const string OverviewCacheKey = "dashboard:overview";
+
+    /// <summary>Redis key the background refresher's run status (last run + in-progress flag) is stored under.</summary>
+    public const string StatusKey = "dashboard:refresh:status";
 
     /// <summary>
     /// How long the "last known good" fallback copy is kept. Far longer than the live TTL so a
@@ -71,6 +75,25 @@ public static class DashboardEndpoints
             })
             .WithName("GetDashboardOverview")
             .WithSummary("Cheap first-phase dashboard figures (customer count + onboarded-over-time).");
+
+        group.MapGet("/status", async (
+                IDistributedCache cache,
+                IOptions<GoogleChannelOptions> options,
+                CancellationToken cancellationToken) =>
+            {
+                var stored = await cache.GetStringAsync(StatusKey, cancellationToken);
+                var status = stored is not null
+                    ? JsonSerializer.Deserialize<DashboardRefreshStatus>(stored)
+                    : null;
+
+                // No status yet (refresher hasn't ticked, or it's disabled): report configuration only.
+                return Results.Ok(status ?? new DashboardRefreshStatus
+                {
+                    Enabled = options.Value.BackgroundRefreshEnabled
+                });
+            })
+            .WithName("GetDashboardStatus")
+            .WithSummary("Freshness/health of the background dashboard refresher (last run + in-progress flag).");
 
         return app;
     }

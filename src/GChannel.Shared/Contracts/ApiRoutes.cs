@@ -17,6 +17,9 @@ public static class ApiRoutes
     /// <summary>Cheap first-phase dashboard figures (customer count + onboarded-over-time).</summary>
     public const string DashboardOverview = "/api/dashboard/overview";
 
+    /// <summary>Freshness/health of the background dashboard refresher (last run + in-progress flag).</summary>
+    public const string DashboardStatus = "/api/dashboard/status";
+
     // Catalog (read-only) browsing.
     public const string Products = "/api/catalog/products";
     public const string Offers = "/api/catalog/offers";

@@ -97,7 +97,21 @@ public interface IGoogleChannelClient
     /// capped by a time budget so the endpoint always responds within the HTTP timeout. The background
     /// refresher passes <see langword="false"/> to run unbounded and produce a complete result.
     /// </param>
-    Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken, bool applyTimeBudget = true);
+    /// <param name="onPartial">
+    /// Optional progress callback invoked with a running snapshot of the summary every
+    /// <paramref name="partialEvery"/> customers, so the background refresher can publish partial
+    /// results that the UI can poll while a long recompute is still in flight. Best-effort; failures
+    /// are ignored.
+    /// </param>
+    /// <param name="partialEvery">
+    /// How many customers to aggregate between <paramref name="onPartial"/> invocations. 0 (the default)
+    /// disables progress reporting.
+    /// </param>
+    Task<DashboardSummary> GetDashboardSummaryAsync(
+        CancellationToken cancellationToken,
+        bool applyTimeBudget = true,
+        Func<DashboardSummary, Task>? onPartial = null,
+        int partialEvery = 0);
 
     /// <summary>
     /// Builds the cheap, quota-light first phase of the dashboard (customer count + onboarded-over-time)
@@ -545,22 +559,20 @@ public sealed class GoogleChannelClient(
         };
     }
 
-    public async Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken, bool applyTimeBudget = true)
+    public async Task<DashboardSummary> GetDashboardSummaryAsync(
+        CancellationToken cancellationToken,
+        bool applyTimeBudget = true,
+        Func<DashboardSummary, Task>? onPartial = null,
+        int partialEvery = 0)
     {
         EnsureAccountConfigured();
         using var service = CreateService();
 
-        // §2 customers — also drives the onboarded-over-time chart (bucket by create time).
-        var customers = await ListAllCustomersAsync(service, cancellationToken);
-
-        // §1 catalog — one offers.list resolves both offer- and product-level names for the labels.
-        var (offerLookup, productLookup) = await BuildCatalogLookupsAsync(service, cancellationToken);
-
         // §3 entitlements — one List call per customer is unavoidable (there is no cross-customer
         // list). To guarantee the endpoint responds well within the caller's HTTP attempt timeout
-        // (so it never gets cut off mid-flight and the cached result can warm up), the per-customer
-        // aggregation runs under a time budget with bounded parallelism. Customers not reached within
-        // the budget, or that error out, are reported as skipped together with the reason why.
+        // (so it never gets cut off mid-flight and the cached result can warm up), the whole
+        // aggregation runs under a single time budget with bounded parallelism. Customers not reached
+        // within the budget, or that error out, are reported as skipped together with the reason why.
         // The background refresher (applyTimeBudget: false) runs unbounded so its cached result is
         // complete even for large estates where the on-demand budget would otherwise truncate it.
         var budgetSeconds = Math.Max(5, _options.DashboardBudgetSeconds);
@@ -571,6 +583,27 @@ public sealed class GoogleChannelClient(
         }
         var budgetToken = budget.Token;
 
+        List<Customer> customers;
+        IReadOnlyDictionary<string, OfferDisplay> offerLookup;
+        IReadOnlyDictionary<string, string> productLookup;
+        try
+        {
+            // §2 customers — also drives the onboarded-over-time chart (bucket by create time).
+            customers = await ListAllCustomersAsync(service, budgetToken);
+
+            // §1 catalog — one offers.list resolves both offer- and product-level names for the labels.
+            (offerLookup, productLookup) = await BuildCatalogLookupsAsync(service, budgetToken);
+        }
+        catch (OperationCanceledException) when (applyTimeBudget && !cancellationToken.IsCancellationRequested)
+        {
+            // The budget tripped while loading the customer list / catalog — almost always because the
+            // per-minute quota was exhausted and the request was stuck in retry back-off. Fail fast
+            // with a non-cancellation exception so the endpoint serves the last-known-good cached
+            // result instead of the caller blowing its HTTP timeout waiting for a doomed aggregation.
+            throw new TimeoutException(
+                $"Dashboard aggregation did not load the customer list within the {budgetSeconds}s time budget.");
+        }
+
         using var throttle = new SemaphoreSlim(Math.Max(1, _options.DashboardMaxConcurrency));
 
         // Pace the per-customer entitlements.list calls to stay under the Channel API's per-minute
@@ -580,8 +613,44 @@ public sealed class GoogleChannelClient(
             ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _options.DashboardRequestsPerMinute))
             : null;
 
-        var results = await Task.WhenAll(customers.Select(async customer =>
+        // The onboarding chart is constant across the run; compute it once for every snapshot.
+        var onboarded = BuildMonthlyOnboarded(customers);
+
+        // Accumulators merged as each customer completes (rather than after the whole Task.WhenAll) so
+        // the background refresher can publish a growing partial summary while the quota-paced
+        // aggregation is still in flight. All mutation happens under the gate.
+        var gate = new object();
+        var active = 0;
+        var trials = 0;
+        var suspended = 0;
+        long activeSeats = 0;
+        var notReached = 0;
+        var failed = 0;
+        var completed = 0;
+        var failureReasons = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var productMix = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        // Builds a summary from the accumulators as they currently stand. Caller must hold the gate.
+        DashboardSummary BuildSnapshotLocked() => new()
         {
+            CustomerCount = customers.Count,
+            ActiveEntitlementCount = active,
+            TrialEntitlementCount = trials,
+            SuspendedEntitlementCount = suspended,
+            ActiveSeats = activeSeats,
+            SkippedCustomerCount = notReached + failed,
+            IncompleteReason = BuildIncompleteReason(notReached, failed, failureReasons, budgetSeconds),
+            CustomersOnboarded = onboarded,
+            ProductMix = productMix
+                .OrderByDescending(kv => kv.Value)
+                .Take(8)
+                .Select(kv => new DashboardProductSlice { Product = kv.Key, Count = kv.Value })
+                .ToList()
+        };
+
+        await Task.WhenAll(customers.Select(async customer =>
+        {
+            CustomerLoadResult result;
             var acquired = false;
             try
             {
@@ -589,21 +658,21 @@ public sealed class GoogleChannelClient(
                 acquired = true;
                 var aggregate = await AggregateCustomerEntitlementsAsync(
                     service, customer.Id, offerLookup, productLookup, pacer, budgetToken);
-                return CustomerLoadResult.Loaded(aggregate);
+                result = CustomerLoadResult.Loaded(aggregate);
             }
             catch (OperationCanceledException)
             {
                 // Either the caller went away (request token) or the time budget elapsed. Swallow
                 // per task so the debugger doesn't flag each in-flight parallel call as
                 // user-unhandled; the genuine-cancellation check below decides whether to abort.
-                return CustomerLoadResult.NotReached;
+                result = CustomerLoadResult.NotReached;
             }
             catch (Google.GoogleApiException ex)
             {
                 // One customer failing to list entitlements (e.g. permission/transient) must not
                 // sink the whole dashboard. Record the reason and skip it.
                 logger.LogWarning(ex, "Skipping customer {Customer} in dashboard summary: {Status}", customer.Id, ex.HttpStatusCode);
-                return CustomerLoadResult.Failed(DescribeApiError(ex));
+                result = CustomerLoadResult.Failed(DescribeApiError(ex));
             }
             finally
             {
@@ -612,69 +681,69 @@ public sealed class GoogleChannelClient(
                     throttle.Release();
                 }
             }
+
+            DashboardSummary? snapshot = null;
+            lock (gate)
+            {
+                switch (result.Outcome)
+                {
+                    case CustomerLoadOutcome.NotReachedInTime:
+                        notReached++;
+                        break;
+                    case CustomerLoadOutcome.Failed:
+                        failed++;
+                        var reason = result.FailureReason ?? "unknown error";
+                        failureReasons[reason] = failureReasons.GetValueOrDefault(reason) + 1;
+                        break;
+                    default:
+                        var aggregate = result.Aggregate;
+                        active += aggregate.Active;
+                        trials += aggregate.Trials;
+                        suspended += aggregate.Suspended;
+                        activeSeats += aggregate.ActiveSeats;
+                        foreach (var (label, count) in aggregate.ProductMix)
+                        {
+                            productMix[label] = productMix.GetValueOrDefault(label) + count;
+                        }
+                        break;
+                }
+
+                completed++;
+                if (onPartial is not null && partialEvery > 0 && completed % partialEvery == 0)
+                {
+                    snapshot = BuildSnapshotLocked();
+                }
+            }
+
+            if (snapshot is not null)
+            {
+                try
+                {
+                    await onPartial!(snapshot);
+                }
+                catch
+                {
+                    // Publishing progress is best-effort; never let it disturb the aggregation.
+                }
+            }
         }));
 
         // Only abort if the caller actually went away; a tripped time budget is expected and yields
         // a partial (but timely) summary rather than a failure.
         cancellationToken.ThrowIfCancellationRequested();
 
-        var active = 0;
-        var trials = 0;
-        var suspended = 0;
-        long activeSeats = 0;
-        var notReached = 0;
-        var failed = 0;
-        var failureReasons = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var productMix = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var result in results)
+        DashboardSummary summary;
+        lock (gate)
         {
-            switch (result.Outcome)
-            {
-                case CustomerLoadOutcome.NotReachedInTime:
-                    notReached++;
-                    continue;
-                case CustomerLoadOutcome.Failed:
-                    failed++;
-                    var reason = result.FailureReason ?? "unknown error";
-                    failureReasons[reason] = failureReasons.GetValueOrDefault(reason) + 1;
-                    continue;
-            }
-
-            var aggregate = result.Aggregate;
-            active += aggregate.Active;
-            trials += aggregate.Trials;
-            suspended += aggregate.Suspended;
-            activeSeats += aggregate.ActiveSeats;
-
-            foreach (var (label, count) in aggregate.ProductMix)
-            {
-                productMix[label] = productMix.GetValueOrDefault(label) + count;
-            }
+            summary = BuildSnapshotLocked();
         }
 
-        var incompleteReason = BuildIncompleteReason(notReached, failed, failureReasons, budgetSeconds);
-        if (incompleteReason is not null)
+        if (summary.IncompleteReason is not null)
         {
-            logger.LogWarning("Dashboard summary incomplete: {Reason}", incompleteReason);
+            logger.LogWarning("Dashboard summary incomplete: {Reason}", summary.IncompleteReason);
         }
 
-        return new DashboardSummary
-        {
-            CustomerCount = customers.Count,
-            ActiveEntitlementCount = active,
-            TrialEntitlementCount = trials,
-            SuspendedEntitlementCount = suspended,
-            ActiveSeats = activeSeats,
-            SkippedCustomerCount = notReached + failed,
-            IncompleteReason = incompleteReason,
-            CustomersOnboarded = BuildMonthlyOnboarded(customers),
-            ProductMix = productMix
-                .OrderByDescending(kv => kv.Value)
-                .Take(8)
-                .Select(kv => new DashboardProductSlice { Product = kv.Key, Count = kv.Value })
-                .ToList()
-        };
+        return summary;
     }
 
     private enum CustomerLoadOutcome { Loaded, NotReachedInTime, Failed }

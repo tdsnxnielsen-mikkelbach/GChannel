@@ -7,9 +7,35 @@
 <PageTitle>Dashboard · GChannel</PageTitle>
 
 <MudText Typo="Typo.h4" GutterBottom="true">Dashboard</MudText>
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<MudText Typo="Typo.body1" Class="mb-2" Color="Color.Secondary">
     Reseller overview for your Google Cloud Channel estate.
 </MudText>
+
+@if (_status is not null)
+{
+    <div class="d-flex align-center mb-6" style="gap: 8px;">
+        @if (_status.IsRunning)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
+                     Icon="@Icons.Material.Filled.Sync">Refreshing…</MudChip>
+        }
+        else if (!_status.Enabled)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
+                     Icon="@Icons.Material.Filled.Bolt">On demand</MudChip>
+        }
+        @if (_status.LastCompletedUtc is { } completed)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Updated @FormatAgo(completed)@(_status.LastDurationSeconds is { } secs ? $" · took {secs}s" : "")
+            </MudText>
+        }
+        else if (_status is { Enabled: true, IsRunning: false })
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Awaiting first background refresh…</MudText>
+        }
+    </div>
+}
 
 @if (_data is { SkippedCustomerCount: > 0 })
 {
@@ -109,11 +135,17 @@
 
     private DashboardOverview? _overview;
     private DashboardSummary? _data;
+    private DashboardRefreshStatus? _status;
     private bool _overviewLoading = true;
     private bool _entitlementsLoading = true;
     private readonly List<MonthlyPoint> _monthly = [];
     private readonly List<ProductSlice> _products = [];
     private readonly CancellationTokenSource _cts = new();
+
+    // How often to poll the background-refresh status (and, while a run is in progress, re-pull the
+    // summary so the figures update live). Cheap: status is a tiny cached object and the summary is
+    // served straight from Redis.
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
 
     // The customer count + onboarding chart come from the cheap overview (phase 1); the entitlement
     // cards + product mix come from the slower summary (phase 2). Each shows a spinner until ready.
@@ -157,6 +189,56 @@
         StateHasChanged();
         await LoadSummaryAsync(token);
         StateHasChanged();
+
+        // Pull the initial refresh status, then keep the page live: poll every 30s so the figures
+        // (and the "Updated X ago" / "Refreshing…" indicator) track the background refresher.
+        await LoadStatusAsync(token);
+        StateHasChanged();
+        _ = PollLoopAsync(token);
+    }
+
+    // Polls the refresh status on a fixed cadence and, while a background run is in progress or one
+    // has just finished, re-pulls the summary so the product mix + cards redraw without a page reload.
+    private async Task PollLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(PollInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                DashboardRefreshStatus? status;
+                try
+                {
+                    status = await Api.GetDashboardStatusAsync(cancellationToken);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+                {
+                    break;
+                }
+                catch
+                {
+                    // Transient; keep the last status and try again next tick.
+                    continue;
+                }
+
+                var previous = _status;
+                _status = status;
+
+                // Re-pull the (cache-served) summary while a run is in progress to show partials
+                // filling in, and once more when a run completes to land on the final figures.
+                var completedChanged = status?.LastCompletedUtc != previous?.LastCompletedUtc;
+                if (status is { IsRunning: true } || completedChanged)
+                {
+                    await RefreshSummaryAsync(cancellationToken);
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Circuit/component torn down — stop polling.
+        }
     }
 
     private async Task LoadOverviewAsync(CancellationToken cancellationToken)
@@ -217,6 +299,78 @@
         {
             _entitlementsLoading = false;
         }
+    }
+
+    // Quiet re-pull used by the polling loop: updates the cards/charts from the cached summary without
+    // toggling the loading spinners or showing error snackbars (polling is best-effort).
+    private async Task RefreshSummaryAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var data = await Api.GetDashboardSummaryAsync(cancellationToken);
+            if (data is null)
+            {
+                return;
+            }
+
+            _data = data;
+
+            _monthly.Clear();
+            foreach (var point in data.CustomersOnboarded)
+            {
+                _monthly.Add(new MonthlyPoint(point.Month, point.Customers));
+            }
+
+            _products.Clear();
+            foreach (var slice in data.ProductMix)
+            {
+                _products.Add(new ProductSlice(slice.Product, slice.Count));
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Benign teardown.
+        }
+        catch
+        {
+            // Keep the last good render; the next tick will try again.
+        }
+    }
+
+    private async Task LoadStatusAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _status = await Api.GetDashboardStatusAsync(cancellationToken);
+        }
+        catch
+        {
+            // The status indicator is purely informational; ignore failures.
+        }
+    }
+
+    // Renders "just now" / "5 min ago" / "2 h ago" / "3 d ago" from a UTC timestamp.
+    private static string FormatAgo(DateTimeOffset whenUtc)
+    {
+        var delta = DateTimeOffset.UtcNow - whenUtc;
+        if (delta < TimeSpan.Zero)
+        {
+            delta = TimeSpan.Zero;
+        }
+
+        if (delta.TotalSeconds < 60)
+        {
+            return "just now";
+        }
+        if (delta.TotalMinutes < 60)
+        {
+            return $"{(int)delta.TotalMinutes} min ago";
+        }
+        if (delta.TotalHours < 24)
+        {
+            return $"{(int)delta.TotalHours} h ago";
+        }
+        return $"{(int)delta.TotalDays} d ago";
     }
 
     public void Dispose()
