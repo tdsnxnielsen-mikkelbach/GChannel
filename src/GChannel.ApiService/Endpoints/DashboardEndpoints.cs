@@ -13,17 +13,31 @@ namespace GChannel.ApiService.Endpoints;
 /// </summary>
 public static class DashboardEndpoints
 {
+    /// <summary>Redis key the dashboard summary is cached under (shared with the background refresher).</summary>
+    public const string CacheKey = "dashboard:summary";
+
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard");
 
-        group.MapGet("/summary", (
+        group.MapGet("/summary", async (
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
                 IOptions<GoogleChannelOptions> options,
                 CancellationToken cancellationToken) =>
-                CachedAsync(cache, "dashboard:summary", options.Value.CacheSeconds,
-                    () => channel.GetDashboardSummaryAsync(cancellationToken), cancellationToken))
+            {
+                try
+                {
+                    return await CachedAsync(cache, CacheKey, options.Value.CacheSeconds,
+                        () => channel.GetDashboardSummaryAsync(cancellationToken), cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Benign: the caller (Blazor circuit) went away mid-aggregation. Caught here in
+                    // user code so the debugger doesn't flag it as user-unhandled; nothing to return.
+                    return Results.StatusCode(499);
+                }
+            })
             .WithName("GetDashboardSummary")
             .WithSummary("Aggregated reseller figures derived from customers and entitlements.");
 

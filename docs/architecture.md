@@ -171,18 +171,49 @@ read paths:
   area chart, which buckets customers into the trailing six months by their create time.
 - **Entitlements** (per-customer `entitlements.list`) drives the active / trial / suspended counters,
   the active-seat total (`num_units`), and the *product mix* donut (active entitlements grouped by
-  product, top 8). A single `offers.list` lookup (the same one the entitlement pages use) resolves
-  opaque product ids to friendly labels.
+  product, top 8). A single `offers.list` pass builds two lookups: an offer-id→display map (used by the
+  entitlement pages) and a product-id→name map. The donut label prefers the offer's product name and
+  falls back to the product-id→name map when an entitlement's specific offer is no longer listed, so
+  the chart shows friendly names instead of opaque sku/product ids.
 
 The aggregation makes N+1 Channel API calls (customers + per-customer entitlements). The per-customer
-entitlement lists run with **bounded parallelism** (6 concurrent) so the whole call stays within the
-request timeout and the cached result can warm up; throttled `429`s are retried by the shared
-resilience handler and the partial aggregates are merged single-threaded. The summary is **cached in
-Redis** for `CacheSeconds` (default 300s). The page loads in `OnAfterRenderAsync(firstRender)`
-(prerender-safe) behind a loading bar, ties the request to a `CancellationTokenSource` disposed with
-the component, and treats `OperationCanceledException` as benign (no error toast on navigation away).
-Like the other pages it carries no hardcoded data — empty states render when there are no
-customers/entitlements.
+entitlement lists run with **bounded parallelism** (6 concurrent) under a **time budget** (35s) that is
+kept comfortably below the HTTP client's per-attempt timeout, so the endpoint always responds in time
+(and its Redis cache can warm up) instead of being cut off mid-flight and retried. Customers that
+error out (`GoogleApiException`) or aren't reached within the budget are reported via
+`SkippedCustomerCount`, which the home page surfaces as an "N customers couldn't be loaded" warning.
+The two outcomes are tracked separately and summarised in `IncompleteReason` (e.g. "78 not loaded
+within the 35s time budget" vs "3 failed (2× 403 Forbidden, 1× API error)"), which is logged and shown
+under the warning so the cause is visible rather than opaque; the rest of the figures are still shown. Throttled `429`s are retried by the shared resilience handler
+and the partial aggregates are merged single-threaded. The summary is **cached in Redis** for
+`CacheSeconds` (default 300s). The page loads in `OnAfterRenderAsync(firstRender)` (prerender-safe)
+behind a loading bar, ties the request to a `CancellationTokenSource` disposed with the component, and
+treats `OperationCanceledException` as benign (no error toast on navigation away). Like the other
+pages it carries no hardcoded data — empty states render when there are no customers/entitlements.
+
+### Credential source &amp; optional background refresh
+
+`GoogleChannelClient` gets its credential from an injected `IGoogleChannelCredentialSource` rather than
+reading the request directly. The default `RequestTokenCredentialSource` (scoped) uses the signed-in
+user's forwarded Bearer token. A `ServiceAccountCredentialSource` builds a service-account credential
+that impersonates a reseller admin via **domain-wide delegation** (the Channel API has no
+service-account identity of its own).
+
+When `GoogleChannel:BackgroundRefreshSeconds` &gt; 0 and a service account + impersonation user are
+configured, a hosted `DashboardRefreshService` recomputes the summary off the request path on that
+interval and writes it to the same `dashboard:summary` Redis key (with a TTL of twice the interval).
+The user endpoint then serves a ready-made, complete result instead of running the slow aggregation
+on demand — solving the large-estate case where even the time-budgeted on-demand path returns only a
+partial. Because it runs off the HTTP request (no attempt timeout), the background path calls
+`GetDashboardSummaryAsync(..., applyTimeBudget: false)` so it runs **unbounded** and produces a
+complete result; the 35s budget applies only to the on-demand request path. Because the worker runs
+as a hosted service inside the API process, scaling the API to multiple replicas would otherwise have
+every replica refresh on its own timer. To keep it
+single-flight, each tick first takes a best-effort Redis lock (`dashboard:refresh:lock`, set with
+`When.NotExists` and a TTL of one interval); only the replica that wins recomputes, and the key is
+left to expire so it doubles as an "already refreshed this interval" marker. The worker is a no-op
+(logs and exits) unless fully configured, so on-demand remains the default. See
+[configuration.md](configuration.md) for the required Google setup.
 
 ## Blazor rendering &amp; request cancellation
 

@@ -22,6 +22,15 @@ public sealed record DashboardSummary
     /// <summary>Sum of seats (<c>num_units</c>) across active entitlements.</summary>
     public long ActiveSeats { get; init; }
 
+    /// <summary>Customers whose entitlements could not be loaded (skipped during aggregation).</summary>
+    public int SkippedCustomerCount { get; init; }
+
+    /// <summary>
+    /// Human-readable explanation of why some customers were skipped (e.g. the aggregation time
+    /// budget was hit, or specific API errors), or <c>null</c> when nothing was skipped.
+    /// </summary>
+    public string? IncompleteReason { get; init; }
+
     /// <summary>Customers onboarded per month over the trailing 6 months (oldest first).</summary>
     public IReadOnlyList<DashboardMonthlyPoint> CustomersOnboarded { get; init; } = [];
 

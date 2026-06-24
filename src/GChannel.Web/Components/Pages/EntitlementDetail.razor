@@ -8,7 +8,8 @@
 
 @if (_loading)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+    <LoadingPanel Title="Loading entitlement…"
+                  Hint="Fetching the entitlement and its change history." />
 }
 else if (_entitlement is null)
 {

@@ -74,7 +74,8 @@
     <MudItem xs="12" md="7">
         @if (_busy)
         {
-            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+            <LoadingPanel Title="Checking Cloud Identity…"
+                          Hint="Asking Google whether a Cloud Identity account already exists for this domain." />
         }
         else if (_result is not null)
         {

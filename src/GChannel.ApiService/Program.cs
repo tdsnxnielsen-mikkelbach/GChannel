@@ -18,11 +18,20 @@ builder.AddSqlServerDbContext<GChannelDbContext>("gchanneldb");
 // Redis distributed cache via Aspire — connection name must match AppHost ("cache").
 builder.AddRedisDistributedCache("cache");
 
+// Redis client (IConnectionMultiplexer) on the same connection — used by the background dashboard
+// refresher to take a cluster-wide lock so only one replica recomputes per interval.
+builder.AddRedisClient("cache");
+
 builder.Services
     .AddOptions<GoogleChannelOptions>()
     .Bind(builder.Configuration.GetSection(GoogleChannelOptions.SectionName));
 
+builder.Services.AddScoped<IGoogleChannelCredentialSource, RequestTokenCredentialSource>();
 builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
+
+// Keeps the dashboard summary cache warm out-of-band using a service account (no-op unless
+// GoogleChannel service-account + impersonation user + BackgroundRefreshSeconds are configured).
+builder.Services.AddHostedService<DashboardRefreshService>();
 
 var app = builder.Build();
 

@@ -160,11 +160,13 @@ breaking-change risk:
     donut labels.
 
   The aggregation makes N+1 Channel API calls (customers + per-customer entitlements); the
-  per-customer lists run with bounded parallelism (6 concurrent) so the call completes within the
-  request timeout and the cached result warms up. The home page ties the request to the component
-  lifetime and treats cancellation as benign. The former **Channel links** and **Pending checks**
-  cards were replaced with **Trials** / **Suspended** because channel partner links (§5) are not yet
-  implemented.
+  per-customer lists run with bounded parallelism (6 concurrent) under a 35s time budget so the call
+  always completes within the HTTP attempt timeout and the cached result warms up. Customers that
+  error out or aren't reached within the budget are reported via `SkippedCustomerCount` and surfaced
+  on the home page as an "N customers couldn't be loaded" warning. The home page ties the request to
+  the component lifetime and treats cancellation as benign. The former **Channel links** and **Pending
+  checks** cards were replaced with **Trials** / **Suspended** because channel partner links (§5) are
+  not yet implemented.
 
 ## Notes
 

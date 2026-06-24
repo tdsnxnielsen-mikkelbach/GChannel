@@ -11,7 +11,8 @@
 
 @if (_loading)
 {
-    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+    <LoadingPanel Title="Loading customer…"
+                  Hint="Fetching the customer's current details." />
 }
 else
 {

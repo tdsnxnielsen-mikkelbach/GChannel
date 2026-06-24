@@ -1,13 +1,11 @@
 using GChannel.ApiService.Configuration;
 using GChannel.Shared.Contracts;
-using Google.Apis.Auth.OAuth2;
 using Google.Apis.Cloudchannel.v1;
 using Google.Apis.Cloudchannel.v1.Data;
 using Google.Apis.Http;
 using Google.Apis.Services;
 using Google.Apis.Util;
 using Microsoft.Extensions.Options;
-using Microsoft.Net.Http.Headers;
 using System.Globalization;
 using System.Net;
 
@@ -94,15 +92,21 @@ public interface IGoogleChannelClient
     Task<EntitlementOperation> StartPaidServiceAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
 
     /// <summary>Builds the aggregated home-dashboard figures from customers + entitlements.</summary>
-    Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken);
+    /// <param name="applyTimeBudget">
+    /// When <see langword="true"/> (the default, used on the request path) the per-customer phase is
+    /// capped by a time budget so the endpoint always responds within the HTTP timeout. The background
+    /// refresher passes <see langword="false"/> to run unbounded and produce a complete result.
+    /// </param>
+    Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken, bool applyTimeBudget = true);
 }
 
 /// <summary>
-/// Builds a per-request <see cref="CloudchannelService"/> using the caller's Google OAuth
-/// access token (forwarded as a Bearer token by the Blazor front end).
+/// Builds a <see cref="CloudchannelService"/> using a credential from the injected
+/// <see cref="IGoogleChannelCredentialSource"/> (the signed-in user's forwarded token for normal
+/// requests, or a service-account credential for the background refresher).
 /// </summary>
 public sealed class GoogleChannelClient(
-    IHttpContextAccessor httpContextAccessor,
+    IGoogleChannelCredentialSource credentialSource,
     IOptions<GoogleChannelOptions> options,
     ILogger<GoogleChannelClient> logger) : IGoogleChannelClient
 {
@@ -518,7 +522,7 @@ public sealed class GoogleChannelClient(
         return new EntitlementsResult { Entitlements = entitlements };
     }
 
-    public async Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken)
+    public async Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken, bool applyTimeBudget = true)
     {
         EnsureAccountConfigured();
         using var service = CreateService();
@@ -541,45 +545,102 @@ public sealed class GoogleChannelClient(
         }
         while (!string.IsNullOrEmpty(pageToken));
 
-        // §1 catalog — one offer lookup resolves product/SKU names for the donut labels.
-        var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
+        // §1 catalog — one offers.list resolves both offer- and product-level names for the labels.
+        var (offerLookup, productLookup) = await BuildCatalogLookupsAsync(service, cancellationToken);
 
         // §3 entitlements — one List call per customer is unavoidable (there is no cross-customer
-        // list), so the per-customer aggregation runs with bounded parallelism to keep the whole
-        // call within the request timeout and let the cached result warm up. 429s are retried by
-        // the shared resilience handler; partials are merged single-threaded to avoid locks.
+        // list). To guarantee the endpoint responds well within the caller's HTTP attempt timeout
+        // (so it never gets cut off mid-flight and the cached result can warm up), the per-customer
+        // aggregation runs under a time budget with bounded parallelism. Customers not reached within
+        // the budget, or that error out, are reported as skipped together with the reason why.
+        // The background refresher (applyTimeBudget: false) runs unbounded so its cached result is
+        // complete even for large estates where the on-demand budget would otherwise truncate it.
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (applyTimeBudget)
+        {
+            budget.CancelAfter(DashboardEntitlementBudget);
+        }
+        var budgetToken = budget.Token;
+
         using var throttle = new SemaphoreSlim(MaxDashboardConcurrency);
 
-        var partials = await Task.WhenAll(customers.Select(async customer =>
+        var results = await Task.WhenAll(customers.Select(async customer =>
         {
-            await throttle.WaitAsync(cancellationToken);
+            var acquired = false;
             try
             {
-                return await AggregateCustomerEntitlementsAsync(service, customer.Id, offerLookup, cancellationToken);
+                await throttle.WaitAsync(budgetToken);
+                acquired = true;
+                var aggregate = await AggregateCustomerEntitlementsAsync(
+                    service, customer.Id, offerLookup, productLookup, budgetToken);
+                return CustomerLoadResult.Loaded(aggregate);
+            }
+            catch (OperationCanceledException)
+            {
+                // Either the caller went away (request token) or the time budget elapsed. Swallow
+                // per task so the debugger doesn't flag each in-flight parallel call as
+                // user-unhandled; the genuine-cancellation check below decides whether to abort.
+                return CustomerLoadResult.NotReached;
+            }
+            catch (Google.GoogleApiException ex)
+            {
+                // One customer failing to list entitlements (e.g. permission/transient) must not
+                // sink the whole dashboard. Record the reason and skip it.
+                logger.LogWarning(ex, "Skipping customer {Customer} in dashboard summary: {Status}", customer.Id, ex.HttpStatusCode);
+                return CustomerLoadResult.Failed(DescribeApiError(ex));
             }
             finally
             {
-                throttle.Release();
+                if (acquired)
+                {
+                    throttle.Release();
+                }
             }
         }));
+
+        // Only abort if the caller actually went away; a tripped time budget is expected and yields
+        // a partial (but timely) summary rather than a failure.
+        cancellationToken.ThrowIfCancellationRequested();
 
         var active = 0;
         var trials = 0;
         var suspended = 0;
         long activeSeats = 0;
+        var notReached = 0;
+        var failed = 0;
+        var failureReasons = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var productMix = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var partial in partials)
+        foreach (var result in results)
         {
-            active += partial.Active;
-            trials += partial.Trials;
-            suspended += partial.Suspended;
-            activeSeats += partial.ActiveSeats;
+            switch (result.Outcome)
+            {
+                case CustomerLoadOutcome.NotReachedInTime:
+                    notReached++;
+                    continue;
+                case CustomerLoadOutcome.Failed:
+                    failed++;
+                    var reason = result.FailureReason ?? "unknown error";
+                    failureReasons[reason] = failureReasons.GetValueOrDefault(reason) + 1;
+                    continue;
+            }
 
-            foreach (var (label, count) in partial.ProductMix)
+            var aggregate = result.Aggregate;
+            active += aggregate.Active;
+            trials += aggregate.Trials;
+            suspended += aggregate.Suspended;
+            activeSeats += aggregate.ActiveSeats;
+
+            foreach (var (label, count) in aggregate.ProductMix)
             {
                 productMix[label] = productMix.GetValueOrDefault(label) + count;
             }
+        }
+
+        var incompleteReason = BuildIncompleteReason(notReached, failed, failureReasons);
+        if (incompleteReason is not null)
+        {
+            logger.LogWarning("Dashboard summary incomplete: {Reason}", incompleteReason);
         }
 
         return new DashboardSummary
@@ -589,6 +650,8 @@ public sealed class GoogleChannelClient(
             TrialEntitlementCount = trials,
             SuspendedEntitlementCount = suspended,
             ActiveSeats = activeSeats,
+            SkippedCustomerCount = notReached + failed,
+            IncompleteReason = incompleteReason,
             CustomersOnboarded = BuildMonthlyOnboarded(customers),
             ProductMix = productMix
                 .OrderByDescending(kv => kv.Value)
@@ -601,6 +664,62 @@ public sealed class GoogleChannelClient(
     /// <summary>Max concurrent per-customer entitlement list calls when building the dashboard summary.</summary>
     private const int MaxDashboardConcurrency = 6;
 
+    /// <summary>
+    /// Time budget for the per-customer entitlement phase of the dashboard summary. Kept comfortably
+    /// under the HTTP client's per-attempt timeout so the endpoint always responds in time (returning
+    /// a partial result if needed) and the cached value can warm up instead of being cut off.
+    /// </summary>
+    private static readonly TimeSpan DashboardEntitlementBudget = TimeSpan.FromSeconds(35);
+
+    private enum CustomerLoadOutcome { Loaded, NotReachedInTime, Failed }
+
+    /// <summary>Outcome of loading one customer's entitlements during the dashboard aggregation.</summary>
+    private readonly record struct CustomerLoadResult(
+        CustomerLoadOutcome Outcome, EntitlementAggregate Aggregate, string? FailureReason)
+    {
+        public static CustomerLoadResult Loaded(EntitlementAggregate aggregate) =>
+            new(CustomerLoadOutcome.Loaded, aggregate, null);
+
+        public static readonly CustomerLoadResult NotReached =
+            new(CustomerLoadOutcome.NotReachedInTime, default, null);
+
+        public static CustomerLoadResult Failed(string reason) =>
+            new(CustomerLoadOutcome.Failed, default, reason);
+    }
+
+    /// <summary>Turns a Channel API error into a short reason string for the "incomplete" note.</summary>
+    private static string DescribeApiError(Google.GoogleApiException ex)
+    {
+        var code = (int)ex.HttpStatusCode;
+        return code > 0 ? $"{code} {ex.HttpStatusCode}" : "API error";
+    }
+
+    /// <summary>Builds the human-readable "why is this incomplete" note, or null when nothing was skipped.</summary>
+    private static string? BuildIncompleteReason(
+        int notReached, int failed, IReadOnlyDictionary<string, int> failureReasons)
+    {
+        if (notReached == 0 && failed == 0)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        if (notReached > 0)
+        {
+            parts.Add($"{notReached} not loaded within the {DashboardEntitlementBudget.TotalSeconds:0}s time budget");
+        }
+
+        if (failed > 0)
+        {
+            var detail = string.Join(", ", failureReasons
+                .OrderByDescending(kv => kv.Value)
+                .Select(kv => $"{kv.Value}\u00d7 {kv.Key}"));
+            parts.Add($"{failed} failed ({detail})");
+        }
+
+        return string.Join("; ", parts) + ".";
+    }
+
     private readonly record struct EntitlementAggregate(
         int Active, int Trials, int Suspended, long ActiveSeats, IReadOnlyDictionary<string, int> ProductMix);
 
@@ -609,6 +728,7 @@ public sealed class GoogleChannelClient(
         CloudchannelService service,
         string customerId,
         IReadOnlyDictionary<string, OfferDisplay> offerLookup,
+        IReadOnlyDictionary<string, string> productLookup,
         CancellationToken cancellationToken)
     {
         var active = 0;
@@ -640,7 +760,13 @@ public sealed class GoogleChannelClient(
                         activeSeats += n;
                     }
 
-                    var label = entitlement.ProductDisplayName ?? entitlement.ProductId ?? "Other";
+                    // Prefer the offer's product name; fall back to the catalog product map (covers
+                    // entitlements whose specific offer is no longer listed), then the raw product id.
+                    var label = entitlement.ProductDisplayName
+                        ?? (entitlement.ProductId is { Length: > 0 } pid && productLookup.TryGetValue(pid, out var productName)
+                            ? productName
+                            : entitlement.ProductId)
+                        ?? "Other";
                     productMix[label] = productMix.GetValueOrDefault(label) + 1;
                 }
 
@@ -941,16 +1067,23 @@ public sealed class GoogleChannelClient(
     /// <summary>Friendly display names for an offer (and its SKU/product), resolved from the Catalog.</summary>
     private readonly record struct OfferDisplay(string? OfferDisplayName, string? SkuDisplayName, string? ProductDisplayName);
 
+    /// <summary>Catalog display-name lookups resolved from a single <c>offers.list</c> pass.</summary>
+    private readonly record struct CatalogLookups(
+        IReadOnlyDictionary<string, OfferDisplay> Offers,
+        IReadOnlyDictionary<string, string> Products);
+
     /// <summary>
-    /// Builds a lookup of offer id -> friendly display names from the reseller's offer catalog,
-    /// used to turn opaque entitlement ids into human-readable names. A single <c>offers.list</c>
-    /// resolves the offer, SKU and product names at once. Failures are non-fatal: entitlements
-    /// still render with their ids if the catalog can't be loaded.
+    /// Builds offer- and product-level display-name lookups from the reseller's offer catalog in a
+    /// single <c>offers.list</c> pass. The offer map turns opaque entitlement offer ids into names;
+    /// the product map (keyed by product id) is a robust fallback for the dashboard product mix when
+    /// an entitlement's specific offer is no longer listed but its product still is. Failures are
+    /// non-fatal: callers fall back to raw ids.
     /// </summary>
-    private async Task<IReadOnlyDictionary<string, OfferDisplay>> BuildOfferDisplayLookupAsync(
+    private async Task<CatalogLookups> BuildCatalogLookupsAsync(
         CloudchannelService service, CancellationToken cancellationToken)
     {
-        var map = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
+        var offers = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
+        var products = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             string? pageToken = null;
@@ -963,15 +1096,20 @@ public sealed class GoogleChannelClient(
                 foreach (var offer in response.Offers ?? [])
                 {
                     var offerId = LastSegment(offer.Name);
-                    if (string.IsNullOrEmpty(offerId))
+                    if (!string.IsNullOrEmpty(offerId))
                     {
-                        continue;
+                        offers[offerId] = new OfferDisplay(
+                            offer.MarketingInfo?.DisplayName,
+                            offer.Sku?.MarketingInfo?.DisplayName,
+                            offer.Sku?.Product?.MarketingInfo?.DisplayName);
                     }
 
-                    map[offerId] = new OfferDisplay(
-                        offer.MarketingInfo?.DisplayName,
-                        offer.Sku?.MarketingInfo?.DisplayName,
-                        offer.Sku?.Product?.MarketingInfo?.DisplayName);
+                    var productId = LastSegment(offer.Sku?.Product?.Name);
+                    var productName = offer.Sku?.Product?.MarketingInfo?.DisplayName;
+                    if (!string.IsNullOrEmpty(productId) && !string.IsNullOrEmpty(productName))
+                    {
+                        products[productId] = productName;
+                    }
                 }
 
                 pageToken = response.NextPageToken;
@@ -984,11 +1122,16 @@ public sealed class GoogleChannelClient(
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "Could not resolve offer display names; entitlements will show ids.");
+            logger.LogDebug(ex, "Could not resolve catalog display names; entitlements will show ids.");
         }
 
-        return map;
+        return new CatalogLookups(offers, products);
     }
+
+    /// <summary>Offer id -&gt; friendly display names (a thin view over <see cref="BuildCatalogLookupsAsync"/>).</summary>
+    private async Task<IReadOnlyDictionary<string, OfferDisplay>> BuildOfferDisplayLookupAsync(
+        CloudchannelService service, CancellationToken cancellationToken)
+        => (await BuildCatalogLookupsAsync(service, cancellationToken)).Offers;
 
     /// <summary>Maps a Google entitlement-change resource to the UI-facing <see cref="EntitlementChange"/>.</summary>
     private static EntitlementChange MapEntitlementChange(GoogleCloudChannelV1EntitlementChange change, IReadOnlyDictionary<string, OfferDisplay>? offerLookup = null)
@@ -1179,7 +1322,7 @@ public sealed class GoogleChannelClient(
 
     private CloudchannelService CreateService()
     {
-        var credential = GoogleCredential.FromAccessToken(GetAccessToken());
+        var credential = credentialSource.GetCredential();
         var service = new CloudchannelService(new BaseClientService.Initializer
         {
             HttpClientInitializer = credential,
@@ -1204,17 +1347,6 @@ public sealed class GoogleChannelClient(
         }
 
         return service;
-    }
-
-    private string GetAccessToken()
-    {
-        var header = httpContextAccessor.HttpContext?.Request.Headers[HeaderNames.Authorization].ToString();
-        if (string.IsNullOrWhiteSpace(header) || !header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new MissingGoogleTokenException();
-        }
-
-        return header["Bearer ".Length..].Trim();
     }
 
     private void EnsureAccountConfigured()

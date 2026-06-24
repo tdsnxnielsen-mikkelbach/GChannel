@@ -1,0 +1,29 @@
+@namespace GChannel.Web.Components
+
+@*
+    Shared loading indicator. Replaces a bare top-of-page progress bar with a centered spinner plus
+    a short title and an optional explanatory hint so the user knows what is being fetched and why
+    it might take a moment (some Channel API aggregations are slow).
+*@
+
+<MudPaper Elevation="0" Class="@($"d-flex flex-column align-center justify-center pa-8 my-4 {Class}")">
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+    <MudText Typo="Typo.subtitle1" Class="mt-4">@Title</MudText>
+    @if (!string.IsNullOrWhiteSpace(Hint))
+    {
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="MudBlazor.Align.Center" Class="mt-1" Style="max-width:32rem">
+            @Hint
+        </MudText>
+    }
+</MudPaper>
+
+@code {
+    /// <summary>Short headline describing what is loading, e.g. "Loading customers…".</summary>
+    [Parameter] public string Title { get; set; } = "Loading…";
+
+    /// <summary>Optional secondary line giving extra context (data source, expected wait, etc.).</summary>
+    [Parameter] public string? Hint { get; set; }
+
+    /// <summary>Extra CSS classes to apply to the wrapper.</summary>
+    [Parameter] public string? Class { get; set; }
+}
