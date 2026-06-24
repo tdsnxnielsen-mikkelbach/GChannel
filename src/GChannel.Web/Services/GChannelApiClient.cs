@@ -93,6 +93,57 @@ public sealed class GChannelApiClient(
     public Task<PurchasableOffersResult?> ListPurchasableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken = default) =>
         GetAsync<PurchasableOffersResult>(ApiRoutes.CustomerPurchasableOffers(customerId, productId, skuId), cancellationToken);
 
+    /// <summary>Lists a customer's entitlements.</summary>
+    public Task<EntitlementsResult?> ListEntitlementsAsync(string customerId, CancellationToken cancellationToken = default) =>
+        GetAsync<EntitlementsResult>(ApiRoutes.Entitlements(customerId), cancellationToken);
+
+    /// <summary>Gets a single entitlement.</summary>
+    public Task<Entitlement?> GetEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken = default) =>
+        GetAsync<Entitlement>(ApiRoutes.Entitlement(customerId, entitlementId), cancellationToken);
+
+    /// <summary>Lists an entitlement's change history.</summary>
+    public Task<EntitlementChangesResult?> ListEntitlementChangesAsync(string customerId, string entitlementId, CancellationToken cancellationToken = default) =>
+        GetAsync<EntitlementChangesResult>(ApiRoutes.EntitlementChanges(customerId, entitlementId), cancellationToken);
+
+    /// <summary>Looks up the Offer backing an entitlement.</summary>
+    public Task<CatalogOffer?> LookupEntitlementOfferAsync(string customerId, string entitlementId, CancellationToken cancellationToken = default) =>
+        GetAsync<CatalogOffer>(ApiRoutes.EntitlementOffer(customerId, entitlementId), cancellationToken);
+
+    /// <summary>Purchases (creates) an entitlement.</summary>
+    public Task<EntitlementOperation?> PurchaseEntitlementAsync(string customerId, PurchaseEntitlementRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.Entitlements(customerId), request, cancellationToken);
+
+    /// <summary>Changes the Offer of an entitlement.</summary>
+    public Task<EntitlementOperation?> ChangeEntitlementOfferAsync(string customerId, string entitlementId, ChangeOfferRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.EntitlementChangeOffer(customerId, entitlementId), request, cancellationToken);
+
+    /// <summary>Changes the parameters (e.g. seats) of an entitlement.</summary>
+    public Task<EntitlementOperation?> ChangeEntitlementParametersAsync(string customerId, string entitlementId, ChangeParametersRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.EntitlementChangeParameters(customerId, entitlementId), request, cancellationToken);
+
+    /// <summary>Changes the renewal settings of an entitlement.</summary>
+    public Task<EntitlementOperation?> ChangeEntitlementRenewalAsync(string customerId, string entitlementId, ChangeRenewalSettingsRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.EntitlementChangeRenewal(customerId, entitlementId), request, cancellationToken);
+
+    /// <summary>Activates a suspended entitlement.</summary>
+    public Task<EntitlementOperation?> ActivateEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.EntitlementActivate(customerId, entitlementId), EmptyBody, cancellationToken);
+
+    /// <summary>Suspends an entitlement.</summary>
+    public Task<EntitlementOperation?> SuspendEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.EntitlementSuspend(customerId, entitlementId), EmptyBody, cancellationToken);
+
+    /// <summary>Cancels an entitlement.</summary>
+    public Task<EntitlementOperation?> CancelEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.EntitlementCancel(customerId, entitlementId), EmptyBody, cancellationToken);
+
+    /// <summary>Starts paid service for a trial entitlement.</summary>
+    public Task<EntitlementOperation?> StartPaidServiceAsync(string customerId, string entitlementId, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.EntitlementStartPaid(customerId, entitlementId), EmptyBody, cancellationToken);
+
+    /// <summary>Shared empty JSON body for state-change POSTs that carry no payload.</summary>
+    private static readonly object EmptyBody = new();
+
     private async Task<T?> GetAsync<T>(string route, CancellationToken cancellationToken)
     {
         using var message = new HttpRequestMessage(HttpMethod.Get, route);

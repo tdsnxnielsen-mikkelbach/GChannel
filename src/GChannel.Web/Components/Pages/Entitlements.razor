@@ -1,0 +1,219 @@
+@page "/customers/{CustomerId}/entitlements"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Entitlements · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-2">
+    <div>
+        <MudText Typo="Typo.h4">Entitlements</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            @(_customer?.OrgDisplayName ?? CustomerId)@(string.IsNullOrEmpty(_customer?.Domain) ? "" : $" · {_customer!.Domain}")
+        </MudText>
+    </div>
+    <div class="d-flex gap-2">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
+                   Href="@($"/customers/{CustomerId}")">Customer</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddShoppingCart"
+                   Href="@($"/customers/{CustomerId}/entitlements/new")">Purchase</MudButton>
+    </div>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    The subscriptions this customer holds. Each entitlement maps to a Catalog SKU/Offer; use the
+    actions menu to modify or change its lifecycle state.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_entitlements is { Count: > 0 })
+{
+    <MudTable Items="_entitlements" Hover="true" Elevation="2" Dense="false">
+        <HeaderContent>
+            <MudTh>Offer / SKU</MudTh>
+            <MudTh>Product</MudTh>
+            <MudTh>State</MudTh>
+            <MudTh>Seats</MudTh>
+            <MudTh>Created</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Offer / SKU">
+                @if (!string.IsNullOrEmpty(context.SkuId))
+                {
+                    <MudLink Href="@($"/catalog/offers?sku={context.SkuId}")">@(context.OfferId ?? context.Id)</MudLink>
+                }
+                else
+                {
+                    @(context.OfferId ?? context.Id)
+                }
+            </MudTd>
+            <MudTd DataLabel="Product">
+                @if (!string.IsNullOrEmpty(context.ProductId))
+                {
+                    <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
+                        @(context.ProductId)
+                    </MudLink>
+                }
+                else
+                {
+                    <span>—</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="State">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.ProvisioningState)">
+                    @(context.ProvisioningState ?? "—")
+                </MudChip>
+                @if (context.IsTrial)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">Trial</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Seats">@(Seats(context) ?? "—")</MudTd>
+            <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudTooltip Text="View">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                   Href="@($"/customers/{CustomerId}/entitlements/{context.Id}")" />
+                </MudTooltip>
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    @if (IsSuspended(context))
+                    {
+                        <MudMenuItem Icon="@Icons.Material.Filled.PlayArrow" OnClick="@(() => ActivateAsync(context))">Activate</MudMenuItem>
+                    }
+                    else
+                    {
+                        <MudMenuItem Icon="@Icons.Material.Filled.Pause" OnClick="@(() => SuspendAsync(context))">Suspend</MudMenuItem>
+                    }
+                    @if (context.IsTrial)
+                    {
+                        <MudMenuItem Icon="@Icons.Material.Filled.Paid" OnClick="@(() => StartPaidAsync(context))">Start paid service</MudMenuItem>
+                    }
+                    <MudMenuItem Icon="@Icons.Material.Filled.Cancel" IconColor="Color.Error" OnClick="@(() => CancelAsync(context))">Cancel</MudMenuItem>
+                </MudMenu>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Info">
+        No entitlements yet. Use <strong>Purchase</strong> to sell this customer their first SKU.
+    </MudAlert>
+}
+
+@code {
+    [Parameter]
+    public string CustomerId { get; set; } = string.Empty;
+
+    private Customer? _customer;
+    private IReadOnlyList<Entitlement>? _entitlements;
+    private bool _loading = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _customer = await Api.GetCustomerAsync(CustomerId);
+            var result = await Api.ListEntitlementsAsync(CustomerId);
+            _entitlements = result?.Entitlements ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
+            _entitlements = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static bool IsSuspended(Entitlement e) =>
+        string.Equals(e.ProvisioningState, "SUSPENDED", StringComparison.OrdinalIgnoreCase);
+
+    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    {
+        "ACTIVE" => Color.Success,
+        "SUSPENDED" => Color.Warning,
+        "CANCELLED" or "CANCELED" => Color.Error,
+        "PENDING" => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string? Seats(Entitlement e) =>
+        e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
+        ?? e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
+
+    private Task ActivateAsync(Entitlement e) =>
+        RunAsync(e, "Activate", $"Activate entitlement '{e.OfferId ?? e.Id}'?",
+            () => Api.ActivateEntitlementAsync(CustomerId, e.Id));
+
+    private Task SuspendAsync(Entitlement e) =>
+        RunAsync(e, "Suspend", $"Suspend entitlement '{e.OfferId ?? e.Id}'? The customer loses access until reactivated.",
+            () => Api.SuspendEntitlementAsync(CustomerId, e.Id));
+
+    private Task StartPaidAsync(Entitlement e) =>
+        RunAsync(e, "Start paid service", $"Start paid service for '{e.OfferId ?? e.Id}'? This ends the trial and begins billing.",
+            () => Api.StartPaidServiceAsync(CustomerId, e.Id));
+
+    private Task CancelAsync(Entitlement e) =>
+        RunAsync(e, "Cancel", $"Cancel entitlement '{e.OfferId ?? e.Id}'? This cannot be undone.",
+            () => Api.CancelEntitlementAsync(CustomerId, e.Id), destructive: true);
+
+    private async Task RunAsync(Entitlement e, string action, string confirm, Func<Task<EntitlementOperation?>> call, bool destructive = false)
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            $"{action} entitlement",
+            confirm,
+            yesText: action,
+            cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            var op = await call();
+            Snackbar.Add(OperationMessage(action, op), op?.Done == true ? Severity.Success : Severity.Info);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"{action} failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string OperationMessage(string action, EntitlementOperation? op)
+    {
+        if (op is null)
+        {
+            return $"{action} submitted.";
+        }
+
+        if (!string.IsNullOrEmpty(op.Error))
+        {
+            return $"{action} failed: {op.Error}";
+        }
+
+        return op.Done
+            ? $"{action} completed."
+            : $"{action} submitted — Google is processing it, this may take a moment.";
+    }
+}

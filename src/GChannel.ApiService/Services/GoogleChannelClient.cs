@@ -8,6 +8,7 @@ using Google.Apis.Services;
 using Google.Apis.Util;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
+using System.Globalization;
 using System.Net;
 
 namespace GChannel.ApiService.Services;
@@ -55,6 +56,42 @@ public interface IGoogleChannelClient
 
     /// <summary>Lists a customer's purchasable offers for a SKU (<c>customers.listPurchasableOffers</c>).</summary>
     Task<PurchasableOffersResult> ListPurchasableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken);
+
+    /// <summary>Lists a customer's entitlements (<c>entitlements.list</c>).</summary>
+    Task<EntitlementsResult> ListEntitlementsAsync(string customerId, CancellationToken cancellationToken);
+
+    /// <summary>Gets a single entitlement (<c>entitlements.get</c>).</summary>
+    Task<Entitlement> GetEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
+
+    /// <summary>Lists an entitlement's change history (<c>entitlements.listEntitlementChanges</c>).</summary>
+    Task<EntitlementChangesResult> ListEntitlementChangesAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
+
+    /// <summary>Looks up the Offer backing an entitlement (<c>entitlements.lookupOffer</c>).</summary>
+    Task<CatalogOffer> LookupEntitlementOfferAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
+
+    /// <summary>Purchases (creates) an entitlement (<c>entitlements.create</c>).</summary>
+    Task<EntitlementOperation> CreateEntitlementAsync(string customerId, PurchaseEntitlementRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Changes the Offer of an entitlement (<c>entitlements.changeOffer</c>).</summary>
+    Task<EntitlementOperation> ChangeEntitlementOfferAsync(string customerId, string entitlementId, ChangeOfferRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Changes the parameters (e.g. seats) of an entitlement (<c>entitlements.changeParameters</c>).</summary>
+    Task<EntitlementOperation> ChangeEntitlementParametersAsync(string customerId, string entitlementId, ChangeParametersRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Changes the renewal settings of an entitlement (<c>entitlements.changeRenewalSettings</c>).</summary>
+    Task<EntitlementOperation> ChangeEntitlementRenewalAsync(string customerId, string entitlementId, ChangeRenewalSettingsRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Activates a suspended entitlement (<c>entitlements.activate</c>).</summary>
+    Task<EntitlementOperation> ActivateEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
+
+    /// <summary>Suspends an entitlement (<c>entitlements.suspend</c>).</summary>
+    Task<EntitlementOperation> SuspendEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
+
+    /// <summary>Cancels an entitlement (<c>entitlements.cancel</c>).</summary>
+    Task<EntitlementOperation> CancelEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
+
+    /// <summary>Starts paid service for a trial entitlement (<c>entitlements.startPaidService</c>).</summary>
+    Task<EntitlementOperation> StartPaidServiceAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -448,6 +485,350 @@ public sealed class GoogleChannelClient(
 
         return new PurchasableOffersResult { Offers = offers };
     }
+
+    public async Task<EntitlementsResult> ListEntitlementsAsync(string customerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var entitlements = new List<Entitlement>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.Entitlements.List(CustomerName(customerId));
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var entitlement in response.Entitlements ?? [])
+            {
+                entitlements.Add(MapEntitlement(entitlement));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new EntitlementsResult { Entitlements = entitlements };
+    }
+
+    public async Task<Entitlement> GetEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(entitlementId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var response = await service.Accounts.Customers.Entitlements
+            .Get(EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapEntitlement(response);
+    }
+
+    public async Task<EntitlementChangesResult> ListEntitlementChangesAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(entitlementId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var changes = new List<EntitlementChange>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.Entitlements
+                .ListEntitlementChanges(EntitlementName(customerId, entitlementId));
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var change in response.EntitlementChanges ?? [])
+            {
+                changes.Add(MapEntitlementChange(change));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new EntitlementChangesResult { Changes = changes };
+    }
+
+    public async Task<CatalogOffer> LookupEntitlementOfferAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(entitlementId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var offer = await service.Accounts.Customers.Entitlements
+            .LookupOffer(EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return new CatalogOffer
+        {
+            Name = offer.Name ?? string.Empty,
+            DisplayName = offer.MarketingInfo?.DisplayName,
+            Description = offer.MarketingInfo?.Description,
+            SkuName = offer.Sku?.Name,
+            SkuId = LastSegment(offer.Sku?.Name),
+            ProductId = ProductIdFromResourceName(offer.Sku?.Name),
+            DealCode = offer.DealCode
+        };
+    }
+
+    public async Task<EntitlementOperation> CreateEntitlementAsync(string customerId, PurchaseEntitlementRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.OfferId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = new GoogleCloudChannelV1CreateEntitlementRequest
+        {
+            Entitlement = new GoogleCloudChannelV1Entitlement
+            {
+                Offer = OfferName(request.OfferId),
+                Parameters = ToGoogleParameters(request.Parameters),
+                PurchaseOrderId = string.IsNullOrWhiteSpace(request.PurchaseOrderId) ? null : request.PurchaseOrderId
+            }
+        };
+
+        logger.LogInformation("Purchasing entitlement for customer {Customer} on offer {Offer}", customerId, request.OfferId);
+
+        var operation = await service.Accounts.Customers.Entitlements
+            .Create(body, CustomerName(customerId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapOperation(operation);
+    }
+
+    public async Task<EntitlementOperation> ChangeEntitlementOfferAsync(string customerId, string entitlementId, ChangeOfferRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(entitlementId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.OfferId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = new GoogleCloudChannelV1ChangeOfferRequest
+        {
+            Offer = OfferName(request.OfferId),
+            Parameters = ToGoogleParameters(request.Parameters),
+            PurchaseOrderId = string.IsNullOrWhiteSpace(request.PurchaseOrderId) ? null : request.PurchaseOrderId
+        };
+
+        var operation = await service.Accounts.Customers.Entitlements
+            .ChangeOffer(body, EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapOperation(operation);
+    }
+
+    public async Task<EntitlementOperation> ChangeEntitlementParametersAsync(string customerId, string entitlementId, ChangeParametersRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(entitlementId);
+        ArgumentNullException.ThrowIfNull(request.Parameters);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = new GoogleCloudChannelV1ChangeParametersRequest
+        {
+            Parameters = ToGoogleParameters(request.Parameters),
+            PurchaseOrderId = string.IsNullOrWhiteSpace(request.PurchaseOrderId) ? null : request.PurchaseOrderId
+        };
+
+        var operation = await service.Accounts.Customers.Entitlements
+            .ChangeParameters(body, EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapOperation(operation);
+    }
+
+    public async Task<EntitlementOperation> ChangeEntitlementRenewalAsync(string customerId, string entitlementId, ChangeRenewalSettingsRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(entitlementId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = new GoogleCloudChannelV1ChangeRenewalSettingsRequest
+        {
+            RenewalSettings = new GoogleCloudChannelV1RenewalSettings
+            {
+                EnableRenewal = request.EnableRenewal
+            }
+        };
+
+        var operation = await service.Accounts.Customers.Entitlements
+            .ChangeRenewalSettings(body, EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapOperation(operation);
+    }
+
+    public async Task<EntitlementOperation> ActivateEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
+    {
+        EnsureEntitlementArgs(customerId, entitlementId);
+        using var service = CreateService();
+
+        var operation = await service.Accounts.Customers.Entitlements
+            .Activate(new GoogleCloudChannelV1ActivateEntitlementRequest(), EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapOperation(operation);
+    }
+
+    public async Task<EntitlementOperation> SuspendEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
+    {
+        EnsureEntitlementArgs(customerId, entitlementId);
+        using var service = CreateService();
+
+        var operation = await service.Accounts.Customers.Entitlements
+            .Suspend(new GoogleCloudChannelV1SuspendEntitlementRequest(), EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapOperation(operation);
+    }
+
+    public async Task<EntitlementOperation> CancelEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
+    {
+        EnsureEntitlementArgs(customerId, entitlementId);
+        using var service = CreateService();
+
+        var operation = await service.Accounts.Customers.Entitlements
+            .Cancel(new GoogleCloudChannelV1CancelEntitlementRequest(), EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapOperation(operation);
+    }
+
+    public async Task<EntitlementOperation> StartPaidServiceAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
+    {
+        EnsureEntitlementArgs(customerId, entitlementId);
+        using var service = CreateService();
+
+        var operation = await service.Accounts.Customers.Entitlements
+            .StartPaidService(new GoogleCloudChannelV1StartPaidServiceRequest(), EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapOperation(operation);
+    }
+
+    /// <summary>Maps a Google entitlement resource to the UI-facing <see cref="Entitlement"/> contract.</summary>
+    private static Entitlement MapEntitlement(GoogleCloudChannelV1Entitlement entitlement) => new()
+    {
+        Name = entitlement.Name ?? string.Empty,
+        Id = LastSegment(entitlement.Name),
+        OfferName = entitlement.Offer,
+        OfferId = LastSegment(entitlement.Offer),
+        ProductId = entitlement.ProvisionedService?.ProductId,
+        SkuId = entitlement.ProvisionedService?.SkuId,
+        ProvisioningState = entitlement.ProvisioningState,
+        PurchaseOrderId = entitlement.PurchaseOrderId,
+        BillingAccount = entitlement.BillingAccount,
+        CreateTime = entitlement.CreateTimeDateTimeOffset,
+        UpdateTime = entitlement.UpdateTimeDateTimeOffset,
+        SuspensionReasons = entitlement.SuspensionReasons is { } reasons ? [.. reasons] : [],
+        IsTrial = entitlement.TrialSettings?.Trial ?? false,
+        TrialEndTime = entitlement.TrialSettings?.EndTimeDateTimeOffset,
+        Commitment = entitlement.CommitmentSettings is { } commitment
+            ? new EntitlementCommitment
+            {
+                StartTime = commitment.StartTimeDateTimeOffset,
+                EndTime = commitment.EndTimeDateTimeOffset,
+                RenewalEnabled = commitment.RenewalSettings?.EnableRenewal,
+                PaymentPlan = commitment.RenewalSettings?.PaymentPlan
+            }
+            : null,
+        Parameters = entitlement.Parameters is { } parameters
+            ? parameters.Select(MapParameter).ToList()
+            : []
+    };
+
+    /// <summary>Maps a Google entitlement-change resource to the UI-facing <see cref="EntitlementChange"/>.</summary>
+    private static EntitlementChange MapEntitlementChange(GoogleCloudChannelV1EntitlementChange change) => new()
+    {
+        ChangeType = change.ChangeType,
+        OfferId = LastSegment(change.Offer),
+        OperatorType = change.OperatorType,
+        CreateTime = change.CreateTimeDateTimeOffset,
+        Reason = change.ActivationReason
+            ?? change.CancellationReason
+            ?? change.SuspensionReason
+            ?? change.OtherChangeReason
+    };
+
+    private static EntitlementParameter MapParameter(GoogleCloudChannelV1Parameter parameter) => new()
+    {
+        Name = parameter.Name ?? string.Empty,
+        Value = ValueToString(parameter.Value),
+        Editable = parameter.Editable ?? false
+    };
+
+    private static string? ValueToString(GoogleCloudChannelV1Value? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value.StringValue is not null)
+        {
+            return value.StringValue;
+        }
+
+        if (value.Int64Value.HasValue)
+        {
+            return value.Int64Value.Value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (value.DoubleValue.HasValue)
+        {
+            return value.DoubleValue.Value.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return value.BoolValue.HasValue ? (value.BoolValue.Value ? "true" : "false") : null;
+    }
+
+    /// <summary>Translates UI parameter inputs to Google typed parameters (numeric -> int64, else string).</summary>
+    private static IList<GoogleCloudChannelV1Parameter>? ToGoogleParameters(IReadOnlyList<EntitlementParameterInput> inputs) =>
+        inputs is { Count: > 0 }
+            ? inputs.Select(p => new GoogleCloudChannelV1Parameter
+            {
+                Name = p.Name,
+                Value = new GoogleCloudChannelV1Value
+                {
+                    Int64Value = p.IntValue,
+                    StringValue = p.IntValue.HasValue ? null : p.StringValue
+                }
+            }).ToList()
+            : null;
+
+    /// <summary>Wraps a long-running operation into the UI-facing <see cref="EntitlementOperation"/>.</summary>
+    private static EntitlementOperation MapOperation(GoogleLongrunningOperation operation) => new()
+    {
+        OperationName = operation.Name,
+        Done = operation.Done ?? false,
+        Error = operation.Error?.Message
+    };
+
+    private static void EnsureEntitlementArgs(string customerId, string entitlementId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(entitlementId);
+    }
+
+    /// <summary>Builds the full entitlement resource name for a customer + entitlement id.</summary>
+    private string EntitlementName(string customerId, string entitlementId) =>
+        $"{_options.AccountName}/customers/{customerId}/entitlements/{entitlementId}";
+
+    /// <summary>Resolves an offer id or full resource name to a full offer resource name.</summary>
+    private string OfferName(string offerIdOrName) =>
+        offerIdOrName.Contains('/', StringComparison.Ordinal)
+            ? offerIdOrName
+            : $"{_options.AccountName}/offers/{offerIdOrName}";
 
     /// <summary>Maps a Google customer resource to the UI-facing <see cref="Customer"/> contract.</summary>
     private Customer MapCustomer(GoogleCloudChannelV1Customer customer) => new()

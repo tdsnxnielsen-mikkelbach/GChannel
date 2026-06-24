@@ -35,4 +35,49 @@ public static class ApiRoutes
     /// <summary>Purchasable offers for a customer for a specific SKU.</summary>
     public static string CustomerPurchasableOffers(string customerId, string productId, string skuId) =>
         $"/api/customers/{customerId}/purchasable-offers?productId={productId}&skuId={skuId}";
+
+    // Entitlement lifecycle (the core selling flow). All entitlement routes are nested under a customer.
+
+    /// <summary>Lists a customer's entitlements.</summary>
+    public static string Entitlements(string customerId) => $"/api/customers/{customerId}/entitlements";
+
+    /// <summary>A single entitlement by id.</summary>
+    public static string Entitlement(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}";
+
+    /// <summary>Change history for an entitlement.</summary>
+    public static string EntitlementChanges(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/changes";
+
+    /// <summary>The Offer currently backing an entitlement (<c>lookupOffer</c>).</summary>
+    public static string EntitlementOffer(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/offer";
+
+    /// <summary>Change the Offer of an entitlement.</summary>
+    public static string EntitlementChangeOffer(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/change-offer";
+
+    /// <summary>Change the parameters (e.g. seats) of an entitlement.</summary>
+    public static string EntitlementChangeParameters(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/change-parameters";
+
+    /// <summary>Change the renewal settings of an entitlement.</summary>
+    public static string EntitlementChangeRenewal(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/change-renewal";
+
+    /// <summary>Activate a suspended entitlement.</summary>
+    public static string EntitlementActivate(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/activate";
+
+    /// <summary>Suspend an entitlement.</summary>
+    public static string EntitlementSuspend(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/suspend";
+
+    /// <summary>Cancel an entitlement.</summary>
+    public static string EntitlementCancel(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/cancel";
+
+    /// <summary>Start paid service for a trial entitlement.</summary>
+    public static string EntitlementStartPaid(string customerId, string entitlementId) =>
+        $"/api/customers/{customerId}/entitlements/{entitlementId}/start-paid-service";
 }

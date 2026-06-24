@@ -39,6 +39,7 @@ app.MapDefaultEndpoints();
 app.MapAccountsEndpoints();
 app.MapCatalogEndpoints();
 app.MapCustomersEndpoints();
+app.MapEntitlementsEndpoints();
 
 app.Run();
 

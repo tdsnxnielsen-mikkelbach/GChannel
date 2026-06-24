@@ -61,6 +61,10 @@ else if (_customers is { Count: > 0 })
                     <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
                                    Href="@($"/customers/{context.Id}")" />
                 </MudTooltip>
+                <MudTooltip Text="Entitlements">
+                    <MudIconButton Icon="@Icons.Material.Filled.Subscriptions" Size="Size.Small"
+                                   Href="@($"/customers/{context.Id}/entitlements")" />
+                </MudTooltip>
                 <MudTooltip Text="Edit">
                     <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
                                    Href="@($"/customers/edit/{context.Id}")" />

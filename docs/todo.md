@@ -63,11 +63,32 @@ advanced distributor/billing features.
 
 ### 3. Entitlement lifecycle (the core selling flow)
 
-- [ ] **List / view entitlements** — `entitlements.list` + `entitlements.get` +
+- [x] **List / view entitlements** — `entitlements.list` + `entitlements.get` +
   `listEntitlementChanges` (history) + `lookupOffer`.
-- [ ] **Purchase** — `entitlements.create`.
-- [ ] **Modify** — `changeOffer`, `changeParameters` (seats), `changeRenewalSettings`.
-- [ ] **State changes** — `activate`, `suspend`, `cancel`, `startPaidService` (trial → paid).
+- [x] **Purchase** — `entitlements.create`.
+- [x] **Modify** — `changeOffer`, `changeParameters` (seats), `changeRenewalSettings`.
+- [x] **State changes** — `activate`, `suspend`, `cancel`, `startPaidService` (trial → paid).
+
+> **Implemented.** The full entitlement lifecycle is live end-to-end: shared contracts in
+> `GChannel.Shared/Contracts/Entitlements.cs`, `IGoogleChannelClient` entitlement methods (list/get
+> with pagination, change history, offer lookup, plus the mutating create/modify/state-change calls)
+> in the API, cached entitlement endpoints under `/api/customers/{id}/entitlements/*` (Redis,
+> `CacheSeconds` TTL, cache invalidated on every mutation), the `GChannelApiClient` typed-client
+> methods, and three Blazor pages — `Entitlements` (list + state-change actions),
+> `EntitlementDetail` (details, commitment/renewal, modify seats/offer, lifecycle actions and change
+> history) and `PurchaseEntitlement` (product → SKU → offer purchase flow).
+>
+> **Correlation/navigation.** Entitlements hang off a **Customer** (§2): the customer list and
+> detail pages link straight to `/customers/{id}/entitlements`. Each entitlement cross-links back to
+> the **Catalog** (§1) by id — offer rows link to `/catalog/offers?sku=`, product/SKU links open
+> `/catalog/products?product=&sku=`, and the purchase flow reuses the per-customer purchasable SKUs
+> and offers (`listPurchasableSkus` / `listPurchasableOffers`) so the offer the customer is eligible
+> to buy resolves to the same Catalog ids.
+>
+> **LROs.** The mutating calls (create/modify/state-change) return long-running operations. Full
+> operation polling is **§7**; until then the UI surfaces the operation as accepted (showing
+> *completed* when Google finishes inline, otherwise *submitted — processing*) and reloads the list,
+> so a freshly purchased or changed entitlement appears once provisioning finishes.
 
 ### 4. Transfers
 

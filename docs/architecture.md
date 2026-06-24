@@ -120,6 +120,31 @@ Customer CRUD is exposed under `/api/customers` (list, get, create `POST`, updat
   per-row **Check** action that deep-links to `/accounts/cloud-identity?domain={domain}`, which
   prefills and runs the check for that domain.
 
+## Entitlement lifecycle
+
+Entitlements (a customer's subscriptions) are the core selling artefact and are nested under a
+customer at `/api/customers/{customerId}/entitlements`. The read paths (list, get, change history,
+offer lookup) are cached in Redis like the customer reads; every mutation **invalidates** the
+affected customer's entitlement caches (list + the specific entitlement's get/changes/offer keys).
+
+- **Pages.** `/customers/{id}/entitlements` lists entitlements with state chips and a state-change
+  actions menu; `/customers/{id}/entitlements/{eid}` shows full detail (commitment/renewal, modify
+  seats/offer, lifecycle actions, change history); `/customers/{id}/entitlements/new` is the
+  purchase flow.
+- **Catalog correlation.** Each entitlement carries the provisioned `productId`/`skuId` and backing
+  `offerId`, so rows deep-link to `/catalog/offers?sku={skuId}` and
+  `/catalog/products?product={productId}&sku={skuId}`. The purchase and *change offer* flows reuse
+  the customer's purchasable SKUs/offers (`listPurchasableSkus`/`listPurchasableOffers`) so the
+  eligible offer resolves to the same catalog ids.
+- **Typed parameters.** Seat counts are the `num_units` entitlement parameter; the UI sends them as
+  a typed `int64` value (`EntitlementParameterInput.IntValue`) on purchase and `changeParameters`.
+- **Long-running operations.** Mutating calls (`create`, `changeOffer`, `changeParameters`,
+  `changeRenewalSettings`, `activate`, `suspend`, `cancel`, `startPaidService`) return LROs. Full
+  operation polling is deferred (roadmap §7); endpoints return `202 Accepted` with an
+  `EntitlementOperation` (`OperationName`, `Done`, `Error`). The UI reports *completed* when Google
+  finishes inline, otherwise *submitted — processing*, then reloads so the change appears once
+  provisioning finishes.
+
 ## Blazor rendering &amp; request cancellation
 
 The Web app uses **Interactive Server** components with prerendering. A component therefore renders

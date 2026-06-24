@@ -18,12 +18,24 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Customers → delete** | `accounts.customers.delete` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/delete) |
 | **Customers → purchasable SKUs** | `accounts.customers.listPurchasableSkus` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableSkus) |
 | **Customers → purchasable offers** | `accounts.customers.listPurchasableOffers` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/listPurchasableOffers) |
+| **Entitlements → list / detail** | `accounts.customers.entitlements.list` / `.get` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/list) |
+| **Entitlements → change history** | `accounts.customers.entitlements.listEntitlementChanges` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/listEntitlementChanges) |
+| **Entitlements → offer lookup** | `accounts.customers.entitlements.lookupOffer` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/lookupOffer) |
+| **Entitlements → purchase** | `accounts.customers.entitlements.create` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/create) |
+| **Entitlements → change offer / parameters / renewal** | `.changeOffer` / `.changeParameters` / `.changeRenewalSettings` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/changeOffer) |
+| **Entitlements → activate / suspend / cancel / start paid** | `.activate` / `.suspend` / `.cancel` / `.startPaidService` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/activate) |
 
 > **Cross-navigation.** Catalog resources are correlated by id (product ↔ SKU ↔ offer ↔ billable
 > SKU) so the UI can deep-link between products, offers, and SKU groups. Customers extend this: the
 > detail page's purchasable SKUs deep-link into the catalog, and each customer row links to the
-> Cloud Identity check for its domain (`/accounts/cloud-identity?domain=`). See
+> Cloud Identity check for its domain (`/accounts/cloud-identity?domain=`). Entitlements complete the
+> chain: they hang off a customer (`/customers/{id}/entitlements`) and link back to the catalog by id
+> (offer/product/SKU), while the purchase flow reuses the customer's purchasable SKUs/offers. See
 > [architecture.md](architecture.md#catalog-correlation--navigation).
+
+> **Long-running operations.** Mutating entitlement calls (create/change/state-change) return LROs.
+> Operation polling is deferred to the roadmap's §7; the UI currently reflects the operation as
+> *completed* (when Google finishes inline) or *submitted — processing* and reloads the list.
 
 > **Resilience.** All Channel API calls retry `429`/`503` with exponential back-off and surface a
 > clean `ProblemDetails` (with `Retry-After` on 429) when throttled. Idempotent reads are cached in
@@ -47,6 +59,10 @@ Most customer methods are now **implemented** (see the table above). The followi
 | [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs. *(N-tier distributor billing — deferred.)* |
 
 ### Entitlements (subscriptions / lifecycle)
+
+All entitlement methods below are now **implemented** (see the *Implemented* table above), except
+`listEntitlementChanges`/`lookupOffer` which back the detail page's history and offer cards. The
+mutating calls return long-running operations (see §7 for the deferred polling work).
 
 | Resource.method | Purpose |
 | --- | --- |

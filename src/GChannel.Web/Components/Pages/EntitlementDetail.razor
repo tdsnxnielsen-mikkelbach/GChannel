@@ -1,0 +1,399 @@
+@page "/customers/{CustomerId}/entitlements/{Id}"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Entitlement · GChannel</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else if (_entitlement is null)
+{
+    <MudAlert Severity="Severity.Error">Entitlement not found.</MudAlert>
+    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="@($"/customers/{CustomerId}/entitlements")"
+               StartIcon="@Icons.Material.Filled.ArrowBack">Back to entitlements</MudButton>
+}
+else
+{
+    <div class="d-flex justify-space-between align-center mb-4">
+        <div>
+            <MudText Typo="Typo.h4">@(_entitlement.OfferId ?? _entitlement.Id)</MudText>
+            <div class="d-flex gap-2 align-center mt-1">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(_entitlement.ProvisioningState)">
+                    @(_entitlement.ProvisioningState ?? "—")
+                </MudChip>
+                @if (_entitlement.IsTrial)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">Trial</MudChip>
+                }
+            </div>
+        </div>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
+                   Href="@($"/customers/{CustomerId}/entitlements")">Entitlements</MudButton>
+    </div>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Details</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            <tr><td><strong>Entitlement id</strong></td><td>@_entitlement.Id</td></tr>
+                            <tr>
+                                <td><strong>Offer</strong></td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(_entitlement.SkuId))
+                                    {
+                                        <MudLink Href="@($"/catalog/offers?sku={_entitlement.SkuId}")">@(_entitlement.OfferId ?? "—")</MudLink>
+                                    }
+                                    else { <span>@(_entitlement.OfferId ?? "—")</span> }
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Product / SKU</strong></td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(_entitlement.ProductId))
+                                    {
+                                        <MudLink Href="@($"/catalog/products?product={_entitlement.ProductId}&sku={_entitlement.SkuId}")">
+                                            @(_entitlement.ProductId) / @(_entitlement.SkuId)
+                                        </MudLink>
+                                    }
+                                    else { <span>—</span> }
+                                </td>
+                            </tr>
+                            <tr><td><strong>Seats</strong></td><td>@(Seats(_entitlement) ?? "—")</td></tr>
+                            <tr><td><strong>Purchase order</strong></td><td>@(_entitlement.PurchaseOrderId ?? "—")</td></tr>
+                            <tr><td><strong>Billing account</strong></td><td>@(_entitlement.BillingAccount ?? "—")</td></tr>
+                            <tr><td><strong>Created</strong></td><td>@(_entitlement.CreateTime?.ToString("u") ?? "—")</td></tr>
+                            <tr><td><strong>Updated</strong></td><td>@(_entitlement.UpdateTime?.ToString("u") ?? "—")</td></tr>
+                            @if (_entitlement.IsTrial && _entitlement.TrialEndTime is not null)
+                            {
+                                <tr><td><strong>Trial ends</strong></td><td>@_entitlement.TrialEndTime.Value.ToString("u")</td></tr>
+                            }
+                            @if (_entitlement.SuspensionReasons.Count > 0)
+                            {
+                                <tr><td><strong>Suspension reasons</strong></td><td>@string.Join(", ", _entitlement.SuspensionReasons)</td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudCardContent>
+            </MudCard>
+
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Commitment &amp; renewal</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Elevation="0" Class="mb-2">
+                        <tbody>
+                            <tr><td><strong>Payment plan</strong></td><td>@(_entitlement.Commitment?.PaymentPlan ?? "—")</td></tr>
+                            <tr><td><strong>Commitment start</strong></td><td>@(_entitlement.Commitment?.StartTime?.ToString("u") ?? "—")</td></tr>
+                            <tr><td><strong>Commitment end</strong></td><td>@(_entitlement.Commitment?.EndTime?.ToString("u") ?? "—")</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                    <div class="d-flex align-center gap-4">
+                        <MudSwitch T="bool" @bind-Value="_renewalEnabled" Color="Color.Primary" Label="Auto-renew" />
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="_busy" OnClick="SaveRenewalAsync">
+                            Save renewal
+                        </MudButton>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Modify</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Seats</MudText>
+                    <div class="d-flex align-center gap-4 mb-4">
+                        <MudNumericField T="int" @bind-Value="_newSeats" Label="num_units" Min="1" Style="max-width:160px" />
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="_busy" OnClick="ChangeSeatsAsync">
+                            Update seats
+                        </MudButton>
+                    </div>
+
+                    <MudDivider Class="my-3" />
+
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Change offer</MudText>
+                    @if (_offers is null)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.SwapHoriz" OnClick="LoadOffersAsync" Disabled="_offersLoading">
+                            @(_offersLoading ? "Loading offers…" : "Load eligible offers")
+                        </MudButton>
+                    }
+                    else if (_offers.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No alternative offers available for this SKU.</MudText>
+                    }
+                    else
+                    {
+                        <div class="d-flex align-center gap-4">
+                            <MudSelect T="string" Label="New offer" @bind-Value="_changeOfferName" Dense="true" Style="max-width:320px">
+                                @foreach (var offer in _offers)
+                                {
+                                    <MudSelectItem Value="@offer.OfferName">@(offer.DisplayName ?? offer.OfferName)</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="@(_busy || string.IsNullOrEmpty(_changeOfferName))"
+                                       OnClick="ChangeOfferAsync">Change</MudButton>
+                        </div>
+                    }
+                </MudCardContent>
+            </MudCard>
+
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Lifecycle</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    <div class="d-flex flex-wrap gap-2">
+                        @if (IsSuspended(_entitlement))
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.PlayArrow"
+                                       Disabled="_busy" OnClick="ActivateAsync">Activate</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Pause"
+                                       Disabled="_busy" OnClick="SuspendAsync">Suspend</MudButton>
+                        }
+                        @if (_entitlement.IsTrial)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Paid"
+                                       Disabled="_busy" OnClick="StartPaidAsync">Start paid service</MudButton>
+                        }
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Cancel"
+                                   Disabled="_busy" OnClick="CancelAsync">Cancel</MudButton>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    <MudCard Elevation="2" Class="mt-2">
+        <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Change history</MudText></CardHeaderContent></MudCardHeader>
+        <MudCardContent>
+            @if (_changes is null)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_changes.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No recorded changes.</MudText>
+            }
+            else
+            {
+                <MudTable Items="_changes" Dense="true" Hover="true" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>When</MudTh>
+                        <MudTh>Change</MudTh>
+                        <MudTh>Offer</MudTh>
+                        <MudTh>By</MudTh>
+                        <MudTh>Reason</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="When">@(context.CreateTime?.ToString("u") ?? "—")</MudTd>
+                        <MudTd DataLabel="Change">@(context.ChangeType ?? "—")</MudTd>
+                        <MudTd DataLabel="Offer">
+                            @if (!string.IsNullOrEmpty(context.OfferId))
+                            {
+                                <MudLink Href="@($"/catalog/offers?sku={_entitlement.SkuId}")">@context.OfferId</MudLink>
+                            }
+                            else { <span>—</span> }
+                        </MudTd>
+                        <MudTd DataLabel="By">@(context.OperatorType ?? "—")</MudTd>
+                        <MudTd DataLabel="Reason">@(context.Reason ?? "—")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    [Parameter]
+    public string CustomerId { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Id { get; set; } = string.Empty;
+
+    private Entitlement? _entitlement;
+    private IReadOnlyList<EntitlementChange>? _changes;
+    private bool _loading = true;
+    private bool _busy;
+
+    private bool _renewalEnabled;
+    private int _newSeats = 1;
+
+    private IReadOnlyList<PurchasableOffer>? _offers;
+    private bool _offersLoading;
+    private string? _changeOfferName;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _changes = null;
+        _offers = null;
+        _changeOfferName = null;
+        try
+        {
+            _entitlement = await Api.GetEntitlementAsync(CustomerId, Id);
+            if (_entitlement is not null)
+            {
+                _renewalEnabled = _entitlement.Commitment?.RenewalEnabled ?? false;
+                _newSeats = int.TryParse(Seats(_entitlement), out var seats) ? seats : 1;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load entitlement: {ex.Message}", Severity.Error);
+            _entitlement = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        if (_entitlement is not null)
+        {
+            try
+            {
+                var changes = await Api.ListEntitlementChangesAsync(CustomerId, Id);
+                _changes = changes?.Changes ?? [];
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to load change history: {ex.Message}", Severity.Error);
+                _changes = [];
+            }
+        }
+    }
+
+    private async Task LoadOffersAsync()
+    {
+        if (_entitlement is null || string.IsNullOrEmpty(_entitlement.ProductId) || string.IsNullOrEmpty(_entitlement.SkuId))
+        {
+            Snackbar.Add("This entitlement has no resolvable product/SKU to look up offers.", Severity.Warning);
+            return;
+        }
+
+        _offersLoading = true;
+        try
+        {
+            var result = await Api.ListPurchasableOffersAsync(CustomerId, _entitlement.ProductId, _entitlement.SkuId);
+            _offers = result?.Offers ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _offersLoading = false;
+        }
+    }
+
+    private async Task ChangeSeatsAsync()
+    {
+        await MutateAsync("Update seats", () => Api.ChangeEntitlementParametersAsync(CustomerId, Id, new ChangeParametersRequest
+        {
+            Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = _newSeats }]
+        }));
+    }
+
+    private async Task ChangeOfferAsync()
+    {
+        if (string.IsNullOrEmpty(_changeOfferName))
+        {
+            return;
+        }
+
+        await MutateAsync("Change offer", () => Api.ChangeEntitlementOfferAsync(CustomerId, Id, new ChangeOfferRequest
+        {
+            OfferId = _changeOfferName!
+        }));
+    }
+
+    private Task SaveRenewalAsync() =>
+        MutateAsync(_renewalEnabled ? "Enable renewal" : "Disable renewal",
+            () => Api.ChangeEntitlementRenewalAsync(CustomerId, Id, new ChangeRenewalSettingsRequest { EnableRenewal = _renewalEnabled }));
+
+    private Task ActivateAsync() =>
+        ConfirmMutateAsync("Activate", "Activate this entitlement?", () => Api.ActivateEntitlementAsync(CustomerId, Id));
+
+    private Task SuspendAsync() =>
+        ConfirmMutateAsync("Suspend", "Suspend this entitlement? The customer loses access until reactivated.",
+            () => Api.SuspendEntitlementAsync(CustomerId, Id));
+
+    private Task StartPaidAsync() =>
+        ConfirmMutateAsync("Start paid service", "Start paid service? This ends the trial and begins billing.",
+            () => Api.StartPaidServiceAsync(CustomerId, Id));
+
+    private Task CancelAsync() =>
+        ConfirmMutateAsync("Cancel", "Cancel this entitlement? This cannot be undone.",
+            () => Api.CancelEntitlementAsync(CustomerId, Id));
+
+    private async Task ConfirmMutateAsync(string action, string confirm, Func<Task<EntitlementOperation?>> call)
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync($"{action} entitlement", confirm, yesText: action, cancelText: "Cancel");
+        if (confirmed == true)
+        {
+            await MutateAsync(action, call);
+        }
+    }
+
+    private async Task MutateAsync(string action, Func<Task<EntitlementOperation?>> call)
+    {
+        _busy = true;
+        try
+        {
+            var op = await call();
+            if (!string.IsNullOrEmpty(op?.Error))
+            {
+                Snackbar.Add($"{action} failed: {op!.Error}", Severity.Error);
+                return;
+            }
+
+            Snackbar.Add(op?.Done == true
+                ? $"{action} completed."
+                : $"{action} submitted — Google is processing it, this may take a moment.",
+                op?.Done == true ? Severity.Success : Severity.Info);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"{action} failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static bool IsSuspended(Entitlement e) =>
+        string.Equals(e.ProvisioningState, "SUSPENDED", StringComparison.OrdinalIgnoreCase);
+
+    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    {
+        "ACTIVE" => Color.Success,
+        "SUSPENDED" => Color.Warning,
+        "CANCELLED" or "CANCELED" => Color.Error,
+        "PENDING" => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string? Seats(Entitlement e) =>
+        e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
+        ?? e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
+}

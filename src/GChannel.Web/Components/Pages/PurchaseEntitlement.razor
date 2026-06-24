@@ -1,0 +1,231 @@
+@page "/customers/{CustomerId}/entitlements/new"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Purchase entitlement · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-2">
+    <div>
+        <MudText Typo="Typo.h4">Purchase entitlement</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            @(_customer?.OrgDisplayName ?? CustomerId)@(string.IsNullOrEmpty(_customer?.Domain) ? "" : $" · {_customer!.Domain}")
+        </MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
+               Href="@($"/customers/{CustomerId}/entitlements")">Back</MudButton>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Pick a product, then a SKU and Offer the customer is eligible to purchase, set the seat count
+    and submit. The order is provisioned asynchronously by Google.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+}
+else
+{
+    <MudCard Elevation="2" Style="max-width:640px">
+        <MudCardContent>
+            <MudSelect T="string" Label="Product" Value="_productId" ValueChanged="OnProductSelected"
+                       Dense="true" Class="mb-4" Required="true">
+                @foreach (var product in _products ?? [])
+                {
+                    <MudSelectItem Value="@product.Id">@(product.DisplayName ?? product.Id)</MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (_skusLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_skus is not null)
+            {
+                <MudSelect T="string" Label="SKU" Value="_skuId" ValueChanged="OnSkuSelected"
+                           Dense="true" Class="mb-4" Required="true" Disabled="_skus.Count == 0">
+                    @foreach (var sku in _skus)
+                    {
+                        <MudSelectItem Value="@sku.SkuId">@(sku.DisplayName ?? sku.SkuId)</MudSelectItem>
+                    }
+                </MudSelect>
+                @if (_skus.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">No purchasable SKUs for this product.</MudText>
+                }
+            }
+
+            @if (_offersLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_offers is not null)
+            {
+                <MudSelect T="string" Label="Offer" @bind-Value="_offerId"
+                           Dense="true" Class="mb-4" Required="true" Disabled="_offers.Count == 0">
+                    @foreach (var offer in _offers)
+                    {
+                        <MudSelectItem Value="@OfferKey(offer)">@(offer.DisplayName ?? OfferKey(offer))</MudSelectItem>
+                    }
+                </MudSelect>
+                @if (_offers.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">No purchasable offers for this SKU.</MudText>
+                }
+            }
+
+            <MudNumericField T="int" @bind-Value="_seats" Label="Seats (num_units)" Min="1"
+                             Class="mb-4" HelperText="Number of licensed seats to purchase." />
+
+            <MudTextField T="string" @bind-Value="_purchaseOrderId" Label="Purchase order id (optional)"
+                          Class="mb-4" />
+        </MudCardContent>
+        <MudCardActions>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ShoppingCartCheckout"
+                       Disabled="@(_submitting || string.IsNullOrEmpty(_offerId))" OnClick="SubmitAsync">
+                @(_submitting ? "Submitting…" : "Purchase")
+            </MudButton>
+        </MudCardActions>
+    </MudCard>
+}
+
+@code {
+    [Parameter]
+    public string CustomerId { get; set; } = string.Empty;
+
+    private Customer? _customer;
+    private IReadOnlyList<CatalogProduct>? _products;
+    private string? _productId;
+
+    private IReadOnlyList<PurchasableSku>? _skus;
+    private string? _skuId;
+    private bool _skusLoading;
+
+    private IReadOnlyList<PurchasableOffer>? _offers;
+    private string? _offerId;
+    private bool _offersLoading;
+
+    private int _seats = 1;
+    private string? _purchaseOrderId;
+    private bool _loading = true;
+    private bool _submitting;
+
+    // The offer resource name uniquely identifies the offer to purchase.
+    private static string OfferKey(PurchasableOffer offer) => offer.OfferName;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _customer = await Api.GetCustomerAsync(CustomerId);
+            var products = await Api.ListProductsAsync();
+            _products = products?.Products ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load catalog: {ex.Message}", Severity.Error);
+            _products = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnProductSelected(string productId)
+    {
+        _productId = productId;
+        _skuId = null;
+        _skus = null;
+        _offerId = null;
+        _offers = null;
+        _skusLoading = true;
+        try
+        {
+            var result = await Api.ListPurchasableSkusAsync(CustomerId, productId);
+            _skus = result?.Skus ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
+            _skus = [];
+        }
+        finally
+        {
+            _skusLoading = false;
+        }
+    }
+
+    private async Task OnSkuSelected(string skuId)
+    {
+        _skuId = skuId;
+        _offerId = null;
+        _offers = null;
+        _offersLoading = true;
+        try
+        {
+            var result = await Api.ListPurchasableOffersAsync(CustomerId, _productId ?? string.Empty, skuId);
+            _offers = result?.Offers ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
+            _offers = [];
+        }
+        finally
+        {
+            _offersLoading = false;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrEmpty(_offerId))
+        {
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            var request = new PurchaseEntitlementRequest
+            {
+                OfferId = _offerId,
+                PurchaseOrderId = string.IsNullOrWhiteSpace(_purchaseOrderId) ? null : _purchaseOrderId,
+                Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = _seats }]
+            };
+
+            var op = await Api.PurchaseEntitlementAsync(CustomerId, request);
+            if (!string.IsNullOrEmpty(op?.Error))
+            {
+                Snackbar.Add($"Purchase failed: {op!.Error}", Severity.Error);
+                return;
+            }
+
+            Snackbar.Add(op?.Done == true
+                ? "Entitlement purchased."
+                : "Purchase submitted — Google is provisioning it, this may take a moment.", Severity.Success);
+            Nav.NavigateTo($"/customers/{CustomerId}/entitlements");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Purchase failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}
