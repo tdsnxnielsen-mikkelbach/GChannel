@@ -11,6 +11,9 @@ public static class ApiRoutes
     /// <summary>Recent Cloud Identity checks (latest result per domain).</summary>
     public const string IdentityCheckHistory = "/api/accounts/check-cloud-identity/history";
 
+    /// <summary>Aggregated home-dashboard figures derived from customers + entitlements.</summary>
+    public const string DashboardSummary = "/api/dashboard/summary";
+
     // Catalog (read-only) browsing.
     public const string Products = "/api/catalog/products";
     public const string Offers = "/api/catalog/offers";

@@ -114,6 +114,8 @@ advanced distributor/billing features.
 
 - [ ] **Manage links** — `accounts.channelPartnerLinks` (list/get/create/patch).
 - [ ] **Customers under a partner** — `accounts.channelPartnerLinks.customers.*`.
+- [ ] **Revisit dashboard card** — once links exist, restore a **Channel links** figure on the home
+  dashboard (it was swapped for **Trials** while this section is unimplemented; see *Known placeholders*).
 
 ### 6. Repricing / rebilling margin
 
@@ -140,24 +142,27 @@ breaking-change risk:
 
 ## Known placeholders
 
-- The dashboard figures on the home page are placeholders. **Note:** the `accounts.reports.*` and
-  `accounts.reportJobs.fetchReportResults` endpoints are **deprecated** in `v1`, so derive these
-  figures from entitlement/customer data rather than the legacy reporting API.
+- ~~The dashboard figures on the home page are placeholders.~~ **Implemented.** The home page now
+  consumes a derived `GET /api/dashboard/summary` endpoint via `GChannelApiClient` instead of the
+  hardcoded arrays. **Note:** the `accounts.reports.*` and `accounts.reportJobs.fetchReportResults`
+  endpoints are **deprecated** in `v1`, so the figures are aggregated from entitlement/customer data
+  rather than the legacy reporting API.
 
-  Wiring the dashboard to real data therefore has **no single reporting endpoint** — it must
-  aggregate the read-path roadmap items above, roughly in this dependency order:
+  `GetDashboardSummaryAsync` in `GoogleChannelClient` aggregates the read paths (cached in Redis for
+  `CacheSeconds`):
 
   - **§2 Customer management** (`accounts.customers.list`) — drives the **Customers** card and the
-    *customers onboarded over time* area chart (bucket by customer create timestamps).
-  - **§3 Entitlement lifecycle** (`entitlements.list`) — drives **Active SKUs**, the **Product mix**
-    donut (group entitlements by product/SKU), and counters such as channel links / pending checks.
-  - **§1 Catalog browsing** (`products.list` / `products.skus.list`) — optional, only to resolve raw
-    SKU/product IDs into friendly labels for the donut.
+    *customers onboarded* area chart (buckets customers into the trailing 6 months by create time).
+  - **§3 Entitlement lifecycle** (`entitlements.list`) — drives **Active SKUs** (active count),
+    **Trials**, **Suspended**, active-seat totals, and the **Product mix** donut (active entitlements
+    grouped by product, top 8).
+  - **§1 Catalog browsing** — a single `offers.list` lookup resolves SKU/product IDs into friendly
+    donut labels.
 
-  Implementation shape: build §1 → §2 → §3 read paths, then expose a single derived summary
-  endpoint (e.g. `GET /api/dashboard/summary`) that the home page consumes via `GChannelApiClient`,
-  replacing the hardcoded arrays in `Home.razor`. This slice is pure reads (low risk) and does not
-  need the long-running-operations / Pub/Sub work in §7.
+  The aggregation makes N+1 Channel API calls (customers + per-customer entitlements); acceptable for
+  this read-only slice because the result is cached and covered by the raised request timeout. The
+  former **Channel links** and **Pending checks** cards were replaced with **Trials** / **Suspended**
+  because channel partner links (§5) are not yet implemented.
 
 ## Notes
 

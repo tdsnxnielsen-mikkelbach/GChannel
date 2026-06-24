@@ -24,6 +24,7 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Entitlements → purchase** | `accounts.customers.entitlements.create` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/create) |
 | **Entitlements → change offer / parameters / renewal** | `.changeOffer` / `.changeParameters` / `.changeRenewalSettings` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/changeOffer) |
 | **Entitlements → activate / suspend / cancel / start paid** | `.activate` / `.suspend` / `.cancel` / `.startPaidService` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/activate) |
+| **Home → dashboard summary** | *derived* (`accounts.customers.list` + `accounts.customers.entitlements.list` + `accounts.offers.list`) | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) |
 
 > **Cross-navigation.** Catalog resources are correlated by id (product ↔ SKU ↔ offer ↔ billable
 > SKU) so the UI can deep-link between products, offers, and SKU groups. Customers extend this: the
@@ -50,6 +51,13 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > Idempotent reads are cached in Redis (customer list/get are cached with invalidation on writes).
 > Cloud Identity checks are also persisted to SQL with a history/recheck (cache-bypass) path —
 > internal endpoint `GET /api/accounts/check-cloud-identity/history`.
+
+> **Derived dashboard.** The home page is backed by a single internal `GET /api/dashboard/summary`
+> endpoint (there is no Channel API reporting endpoint — `accounts.reports.*` is deprecated in `v1`).
+> It aggregates customer counts + onboarded-by-month buckets (from `accounts.customers.list` create
+> times) and active/trial/suspended entitlement counts, active seats, and a product-mix breakdown
+> (from `accounts.customers.entitlements.list`, with `accounts.offers.list` resolving friendly product
+> labels). The result is cached in Redis for `CacheSeconds`.
 
 ## Available possibilities
 

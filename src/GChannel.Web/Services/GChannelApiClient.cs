@@ -39,6 +39,10 @@ public sealed class GChannelApiClient(
     public Task<IdentityCheckHistoryResult?> GetIdentityCheckHistoryAsync(CancellationToken cancellationToken = default) =>
         GetAsync<IdentityCheckHistoryResult>(ApiRoutes.IdentityCheckHistory, cancellationToken);
 
+    /// <summary>Gets the aggregated home-dashboard figures (customers + entitlements).</summary>
+    public Task<DashboardSummary?> GetDashboardSummaryAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<DashboardSummary>(ApiRoutes.DashboardSummary, cancellationToken);
+
     /// <summary>Lists the products the reseller is authorized to sell.</summary>
     public Task<CatalogProductsResult?> ListProductsAsync(CancellationToken cancellationToken = default) =>
         GetAsync<CatalogProductsResult>(ApiRoutes.Products, cancellationToken);

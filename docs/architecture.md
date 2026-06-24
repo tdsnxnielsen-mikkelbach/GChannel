@@ -160,6 +160,26 @@ affected customer's entitlement caches (list + the specific entitlement's get/ch
   finishes inline, otherwise *submitted — processing*, then reloads so the change appears once
   provisioning finishes.
 
+## Home dashboard (derived summary)
+
+The home page (`/`) is backed by a single internal `GET /api/dashboard/summary` endpoint. There is
+no Channel API reporting endpoint to call (`accounts.reports.*` / `accounts.reportJobs.*` are
+**deprecated** in `v1`), so `GetDashboardSummaryAsync` derives the figures by aggregating the
+read paths:
+
+- **Customers** (`accounts.customers.list`) drives the customer count and the *customers onboarded*
+  area chart, which buckets customers into the trailing six months by their create time.
+- **Entitlements** (per-customer `entitlements.list`) drives the active / trial / suspended counters,
+  the active-seat total (`num_units`), and the *product mix* donut (active entitlements grouped by
+  product, top 8). A single `offers.list` lookup (the same one the entitlement pages use) resolves
+  opaque product ids to friendly labels.
+
+The aggregation makes N+1 Channel API calls (customers + per-customer entitlements), so the whole
+summary is **cached in Redis** for `CacheSeconds` (default 300s) and covered by the raised request
+timeout. The page loads in `OnAfterRenderAsync(firstRender)` (prerender-safe) and shows a loading bar
+until the summary arrives. Like the other pages it carries no hardcoded data — empty states render
+when there are no customers/entitlements.
+
 ## Blazor rendering &amp; request cancellation
 
 The Web app uses **Interactive Server** components with prerendering. A component therefore renders

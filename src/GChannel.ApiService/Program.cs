@@ -40,6 +40,7 @@ app.MapAccountsEndpoints();
 app.MapCatalogEndpoints();
 app.MapCustomersEndpoints();
 app.MapEntitlementsEndpoints();
+app.MapDashboardEndpoints();
 
 app.Run();
 

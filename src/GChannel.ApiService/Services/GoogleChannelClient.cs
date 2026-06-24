@@ -92,6 +92,9 @@ public interface IGoogleChannelClient
 
     /// <summary>Starts paid service for a trial entitlement (<c>entitlements.startPaidService</c>).</summary>
     Task<EntitlementOperation> StartPaidServiceAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
+
+    /// <summary>Builds the aggregated home-dashboard figures from customers + entitlements.</summary>
+    Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -513,6 +516,123 @@ public sealed class GoogleChannelClient(
         while (!string.IsNullOrEmpty(pageToken));
 
         return new EntitlementsResult { Entitlements = entitlements };
+    }
+
+    public async Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken)
+    {
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        // §2 customers — also drives the onboarded-over-time chart (bucket by create time).
+        var customers = new List<Customer>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.List(_options.AccountName);
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var customer in response.Customers ?? [])
+            {
+                customers.Add(MapCustomer(customer));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        // §1 catalog — one offer lookup resolves product/SKU names for the donut labels.
+        var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
+
+        // §3 entitlements — counters + product mix, aggregated across all customers.
+        var active = 0;
+        var trials = 0;
+        var suspended = 0;
+        long activeSeats = 0;
+        var productMix = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var customer in customers)
+        {
+            string? entitlementToken = null;
+            do
+            {
+                var request = service.Accounts.Customers.Entitlements.List(CustomerName(customer.Id));
+                request.PageToken = entitlementToken;
+                var response = await request.ExecuteAsync(cancellationToken);
+
+                foreach (var raw in response.Entitlements ?? [])
+                {
+                    var entitlement = MapEntitlement(raw, offerLookup);
+                    var isActive = string.Equals(entitlement.ProvisioningState, "ACTIVE", StringComparison.OrdinalIgnoreCase);
+
+                    if (isActive)
+                    {
+                        active++;
+
+                        var seats = entitlement.Parameters
+                            .FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value;
+                        if (long.TryParse(seats, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                        {
+                            activeSeats += n;
+                        }
+
+                        var label = entitlement.ProductDisplayName ?? entitlement.ProductId ?? "Other";
+                        productMix[label] = productMix.GetValueOrDefault(label) + 1;
+                    }
+
+                    if (entitlement.IsTrial)
+                    {
+                        trials++;
+                    }
+
+                    if (string.Equals(entitlement.ProvisioningState, "SUSPENDED", StringComparison.OrdinalIgnoreCase))
+                    {
+                        suspended++;
+                    }
+                }
+
+                entitlementToken = response.NextPageToken;
+            }
+            while (!string.IsNullOrEmpty(entitlementToken));
+        }
+
+        return new DashboardSummary
+        {
+            CustomerCount = customers.Count,
+            ActiveEntitlementCount = active,
+            TrialEntitlementCount = trials,
+            SuspendedEntitlementCount = suspended,
+            ActiveSeats = activeSeats,
+            CustomersOnboarded = BuildMonthlyOnboarded(customers),
+            ProductMix = productMix
+                .OrderByDescending(kv => kv.Value)
+                .Take(8)
+                .Select(kv => new DashboardProductSlice { Product = kv.Key, Count = kv.Value })
+                .ToList()
+        };
+    }
+
+    /// <summary>Buckets customers into the trailing six months by their create time (oldest first).</summary>
+    private static List<DashboardMonthlyPoint> BuildMonthlyOnboarded(IReadOnlyList<Customer> customers)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var firstOfThisMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var points = new List<DashboardMonthlyPoint>(6);
+        for (var i = 5; i >= 0; i--)
+        {
+            var monthStart = firstOfThisMonth.AddMonths(-i);
+            var monthEnd = monthStart.AddMonths(1);
+            var count = customers.Count(c => c.CreateTime is { } t && t >= monthStart && t < monthEnd);
+
+            points.Add(new DashboardMonthlyPoint
+            {
+                Month = monthStart.ToString("MMM", CultureInfo.InvariantCulture),
+                Customers = count
+            });
+        }
+
+        return points;
     }
 
     public async Task<Entitlement> GetEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
