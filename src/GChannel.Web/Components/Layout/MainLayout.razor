@@ -1,6 +1,7 @@
 ﻿@inherits LayoutComponentBase
+@inject IJSRuntime JS
 
-<MudThemeProvider Theme="_theme" @bind-IsDarkMode="_isDarkMode" />
+<MudThemeProvider @ref="_mudThemeProvider" Theme="_theme" @bind-IsDarkMode="_isDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -12,7 +13,7 @@
         <MudText Typo="Typo.h6" Class="ml-2">GChannel</MudText>
         <MudSpacer />
         <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                       Color="Color.Inherit" OnClick="@(() => _isDarkMode = !_isDarkMode)" />
+                       Color="Color.Inherit" OnClick="ToggleDarkModeAsync" />
         <AuthorizeView>
             <Authorized>
                 <MudText Typo="Typo.body2" Class="mx-3">@context.User.Identity?.Name</MudText>
@@ -54,7 +55,37 @@
 </div>
 
 @code {
+    // Browser localStorage key the chosen theme is persisted under so it survives a page refresh.
+    private const string ThemeStorageKey = "gchannel-theme";
+
     private bool _drawerOpen = true;
     private bool _isDarkMode;
+    private MudThemeProvider _mudThemeProvider = null!;
     private readonly MudTheme _theme = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        // localStorage is only reachable once the interactive circuit is connected (not during the
+        // static prerender), so restore the saved preference here and re-render with the right theme.
+        var stored = await JS.InvokeAsync<string?>("localStorage.getItem", ThemeStorageKey);
+        _isDarkMode = stored switch
+        {
+            "dark" => true,
+            "light" => false,
+            // No saved choice yet: honour the operating-system / browser preference.
+            _ => await _mudThemeProvider.GetSystemDarkModeAsync()
+        };
+        StateHasChanged();
+    }
+
+    private async Task ToggleDarkModeAsync()
+    {
+        _isDarkMode = !_isDarkMode;
+        await JS.InvokeVoidAsync("localStorage.setItem", ThemeStorageKey, _isDarkMode ? "dark" : "light");
+    }
 }

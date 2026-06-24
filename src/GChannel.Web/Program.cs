@@ -5,11 +5,23 @@ using GChannel.Web.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.HttpOverrides;
 using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+
+// The Azure Container Apps ingress terminates TLS and forwards the request to the container over
+// plain HTTP, carrying the original scheme/client in X-Forwarded-Proto / X-Forwarded-For. Honour
+// those so the app treats the request as HTTPS (secure auth cookies + correct OAuth redirect URIs).
+// The ingress address isn't known ahead of time, so don't restrict by known proxy/network.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -80,11 +92,16 @@ builder.Services.AddHttpClient<GChannelApiClient>(client =>
 
 var app = builder.Build();
 
+// Apply the forwarded scheme/client from the ingress before anything that depends on the request
+// scheme (HSTS, HTTPS redirect, secure cookies, OAuth redirect-URI generation).
+app.UseForwardedHeaders();
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
+    app.UseHttpsRedirection();
 }
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
