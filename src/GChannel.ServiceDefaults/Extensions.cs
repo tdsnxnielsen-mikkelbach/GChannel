@@ -28,8 +28,17 @@ public static class Extensions
 
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
-            // Turn on resilience by default
-            http.AddStandardResilienceHandler();
+            // Turn on resilience by default. The default total-request timeout is 30s,
+            // which is too aggressive for calls that fan out to the Google Channel API
+            // (credential setup + exponential back-off retries can legitimately exceed
+            // 30s on a cold start). Allow longer attempt/total windows.
+            http.AddStandardResilienceHandler(options =>
+            {
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(60);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(120);
+                // Circuit breaker sampling duration must be at least 2x the attempt timeout.
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(120);
+            });
 
             // Turn on service discovery by default
             http.AddServiceDiscovery();

@@ -4,9 +4,13 @@ using Azure.Provisioning.Sql;
 var builder = DistributedApplication.CreateBuilder(args);
 
 // Azure SQL Database — serverless General Purpose with auto-pause.
-// Runs as a local SQL Server container during development.
+// Runs as a local SQL Server container during development. The container keeps
+// a persistent data volume and a persistent lifetime so the database survives
+// between debug sessions (no reseeding required).
 var sql = builder.AddAzureSqlServer("sql")
-    .RunAsContainer();
+    .RunAsContainer(container => container
+        .WithLifetime(ContainerLifetime.Persistent)
+        .WithDataVolume("gchannel-sql-data"));
 
 var database = sql.AddDatabase("gchanneldb");
 
@@ -25,9 +29,14 @@ sql.ConfigureInfrastructure(infra =>
 });
 
 // Azure Managed Redis — entry-level Balanced B0 tier ("managed redis, basic").
-// Runs as a local Redis container during development.
+// Runs as a local Redis container during development. A persistent data volume
+// plus RDB snapshotting and a persistent lifetime keep the cache warm between
+// debug sessions.
 var cache = builder.AddAzureManagedRedis("cache")
-    .RunAsContainer();
+    .RunAsContainer(container => container
+        .WithLifetime(ContainerLifetime.Persistent)
+        .WithDataVolume("gchannel-redis-data")
+        .WithPersistence());
 
 cache.ConfigureInfrastructure(infra =>
 {

@@ -17,6 +17,21 @@ public sealed class GoogleApiExceptionHandler(ILogger<GoogleApiExceptionHandler>
         Exception exception,
         CancellationToken cancellationToken)
     {
+        // Benign: the caller (browser/Blazor circuit) disconnected mid-request, so the request's
+        // CancellationToken fired — often while the Google client was in its retry back-off Wait.
+        // ASP.NET is already aborting the response; classify it as a client-closed request, log at
+        // Debug and short-circuit so it never surfaces as a 500/502.
+        if (exception is OperationCanceledException && httpContext.RequestAborted.IsCancellationRequested)
+        {
+            logger.LogDebug(exception, "Request aborted by the client; suppressing benign cancellation.");
+            if (!httpContext.Response.HasStarted)
+            {
+                httpContext.Response.StatusCode = 499; // Client Closed Request (nginx convention).
+            }
+
+            return true;
+        }
+
         var (status, title) = exception switch
         {
             MissingGoogleTokenException =>
