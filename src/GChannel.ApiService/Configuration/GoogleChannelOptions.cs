@@ -23,6 +23,13 @@ public sealed class GoogleChannelOptions
     /// </summary>
     public int MaxRetryAttempts { get; set; } = 3;
 
+    /// <summary>
+    /// Maximum number of per-customer <c>entitlements.list</c> calls the dashboard aggregation runs
+    /// concurrently. The Channel API enforces a per-minute request quota, so a high value bursts past
+    /// it and triggers HTTP 429s; lower this if the dashboard reports throttled customers. Minimum 1.
+    /// </summary>
+    public int DashboardMaxConcurrency { get; set; } = 6;
+
     /// <summary>OAuth scope required to call the Channel reseller (order) APIs.</summary>
     public const string ChannelScope = "https://www.googleapis.com/auth/apps.order";
 

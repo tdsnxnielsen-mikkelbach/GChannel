@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Endpoints;
@@ -42,6 +43,7 @@ public sealed class DashboardRefreshService(
         // Keep the cached value alive comfortably past one interval so it never expires between runs.
         var interval = TimeSpan.FromSeconds(opts.BackgroundRefreshSeconds);
         var ttl = TimeSpan.FromSeconds(opts.BackgroundRefreshSeconds * 2);
+        var db = redis.GetDatabase();
         using var timer = new PeriodicTimer(interval);
 
         logger.LogInformation(
@@ -50,13 +52,15 @@ public sealed class DashboardRefreshService(
 
         do
         {
+            var acquired = false;
+            var startedAt = Stopwatch.GetTimestamp();
             try
             {
                 // Take a best-effort distributed lock so that when the API scales to multiple
                 // replicas only one of them runs the expensive aggregation per interval. The lock
                 // is not released on purpose — letting it expire after one interval also stops a
                 // second replica from immediately recomputing what was just cached.
-                var acquired = await redis.GetDatabase().StringSetAsync(
+                acquired = await db.StringSetAsync(
                     RefreshLockKey, Environment.MachineName, interval, when: When.NotExists);
                 if (!acquired)
                 {
@@ -84,6 +88,25 @@ public sealed class DashboardRefreshService(
             {
                 // Never let a transient failure kill the worker; log and try again next tick.
                 logger.LogWarning(ex, "Background dashboard refresh failed; will retry on the next interval.");
+            }
+            finally
+            {
+                // If an unbounded refresh outran its interval the lock set at the start has already
+                // expired, so the next timer tick would re-run it immediately and saturate the
+                // Channel API (starving interactive calls). Re-arm the lock from completion to force
+                // at least one interval of cooldown; fast runs keep their original per-interval lock.
+                if (acquired && !stoppingToken.IsCancellationRequested
+                    && Stopwatch.GetElapsedTime(startedAt) >= interval)
+                {
+                    try
+                    {
+                        await db.StringSetAsync(RefreshLockKey, Environment.MachineName, interval);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogDebug(ex, "Could not re-arm the dashboard refresh cooldown lock.");
+                    }
+                }
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

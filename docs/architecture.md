@@ -171,15 +171,23 @@ read paths:
   area chart, which buckets customers into the trailing six months by their create time.
 - **Entitlements** (per-customer `entitlements.list`) drives the active / trial / suspended counters,
   the active-seat total (`num_units`), and the *product mix* donut (active entitlements grouped by
-  product, top 8). A single `offers.list` pass builds two lookups: an offer-id→display map (used by the
-  entitlement pages) and a product-id→name map. The donut label prefers the offer's product name and
-  falls back to the product-id→name map when an entitlement's specific offer is no longer listed, so
-  the chart shows friendly names instead of opaque sku/product ids.
+  product, top 8). Product names are resolved from a product-id→name map seeded from the full
+  `products.list` catalog (authoritative, so it covers products whose specific offer is no longer
+  listed) and supplemented from `offers.list`, which also yields the offer-id→display map used by the
+  entitlement pages. The donut therefore shows friendly names instead of opaque product/sku ids.
 
 The aggregation makes N+1 Channel API calls (customers + per-customer entitlements). The per-customer
-entitlement lists run with **bounded parallelism** (6 concurrent) under a **time budget** (35s) that is
+entitlement lists run with **bounded parallelism** (`GoogleChannel:DashboardMaxConcurrency`, default 6)
+under a **time budget** (35s) that is
 kept comfortably below the HTTP client's per-attempt timeout, so the endpoint always responds in time
-(and its Redis cache can warm up) instead of being cut off mid-flight and retried. Customers that
+(and its Redis cache can warm up) instead of being cut off mid-flight and retried. The Channel API
+enforces a **per-minute request quota**, so on large estates the burst of `entitlements.list` calls
+can return **HTTP 429**; the client retries those with exponential back-off
+(`GoogleChannel:MaxRetryAttempts`), but customers whose retries are exhausted within the budget are
+reported as failures. Lower `DashboardMaxConcurrency` to reduce 429s (at the cost of fewer customers
+reached within the budget), or — the proper fix for large estates — enable the background refresh
+below so the dashboard serves a pre-computed, complete result instead of aggregating on the request
+path. Customers that
 error out (`GoogleApiException`) or aren't reached within the budget are reported via
 `SkippedCustomerCount`, which the home page surfaces as an "N customers couldn't be loaded" warning.
 The two outcomes are tracked separately and summarised in `IncompleteReason` (e.g. "78 not loaded
@@ -212,7 +220,11 @@ every replica refresh on its own timer. To keep it
 single-flight, each tick first takes a best-effort Redis lock (`dashboard:refresh:lock`, set with
 `When.NotExists` and a TTL of one interval); only the replica that wins recomputes, and the key is
 left to expire so it doubles as an "already refreshed this interval" marker. The worker is a no-op
-(logs and exits) unless fully configured, so on-demand remains the default. See
+(logs and exits) unless fully configured, so on-demand remains the default. Because the unbounded
+refresh can outrun its interval on a large estate (the lock set at the start would then expire mid-run
+and let the next tick re-run it immediately, saturating the Channel API and starving interactive
+calls), a refresh that runs longer than its interval re-arms the lock on completion to enforce at
+least one interval of cooldown. See
 [configuration.md](configuration.md) for the required Google setup.
 
 ## Blazor rendering &amp; request cancellation

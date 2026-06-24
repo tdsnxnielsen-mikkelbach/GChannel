@@ -27,6 +27,7 @@ app code reads `Authentication:Google:ClientSecret` the same way in both environ
 | --- | --- | --- |
 | `GoogleChannel:CacheSeconds` | `300` | Redis TTL for idempotent reads (catalog, identity checks). |
 | `GoogleChannel:MaxRetryAttempts` | `3` | Exponential back-off retries for throttled (429) / transient (503) Channel API calls. Set `0` to disable. |
+| `GoogleChannel:DashboardMaxConcurrency` | `6` | Max concurrent per-customer `entitlements.list` calls when building the dashboard. Lower it if the dashboard reports throttled (429) customers; the Channel API enforces a per-minute request quota. Minimum 1. |
 | `GoogleChannel:BackgroundRefreshSeconds` | `0` (off) | Interval for the background worker that recomputes the dashboard summary with a service account and warms the Redis cache. Requires a service account + impersonation user (below). |
 | `GoogleChannel:ServiceAccountKeyJson` | _empty_ | Raw JSON of a Google service-account key used by the background refresher. Treat as a secret. |
 | `GoogleChannel:ServiceAccountKeyPath` | _empty_ | Alternative to `ServiceAccountKeyJson`: path to a service-account key file. |

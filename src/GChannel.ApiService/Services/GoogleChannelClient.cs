@@ -562,7 +562,7 @@ public sealed class GoogleChannelClient(
         }
         var budgetToken = budget.Token;
 
-        using var throttle = new SemaphoreSlim(MaxDashboardConcurrency);
+        using var throttle = new SemaphoreSlim(Math.Max(1, _options.DashboardMaxConcurrency));
 
         var results = await Task.WhenAll(customers.Select(async customer =>
         {
@@ -660,9 +660,6 @@ public sealed class GoogleChannelClient(
                 .ToList()
         };
     }
-
-    /// <summary>Max concurrent per-customer entitlement list calls when building the dashboard summary.</summary>
-    private const int MaxDashboardConcurrency = 6;
 
     /// <summary>
     /// Time budget for the per-customer entitlement phase of the dashboard summary. Kept comfortably
@@ -1067,16 +1064,16 @@ public sealed class GoogleChannelClient(
     /// <summary>Friendly display names for an offer (and its SKU/product), resolved from the Catalog.</summary>
     private readonly record struct OfferDisplay(string? OfferDisplayName, string? SkuDisplayName, string? ProductDisplayName);
 
-    /// <summary>Catalog display-name lookups resolved from a single <c>offers.list</c> pass.</summary>
+    /// <summary>Catalog display-name lookups for entitlement and dashboard labels.</summary>
     private readonly record struct CatalogLookups(
         IReadOnlyDictionary<string, OfferDisplay> Offers,
         IReadOnlyDictionary<string, string> Products);
 
     /// <summary>
-    /// Builds offer- and product-level display-name lookups from the reseller's offer catalog in a
-    /// single <c>offers.list</c> pass. The offer map turns opaque entitlement offer ids into names;
-    /// the product map (keyed by product id) is a robust fallback for the dashboard product mix when
-    /// an entitlement's specific offer is no longer listed but its product still is. Failures are
+    /// Builds offer- and product-level display-name lookups from the reseller's catalog. The product
+    /// map is seeded from the full <c>products.list</c> catalog (authoritative, so it covers products
+    /// whose specific offer is no longer listed) and supplemented from <c>offers.list</c>, which also
+    /// yields the offer map that turns opaque entitlement offer ids into names. Failures are
     /// non-fatal: callers fall back to raw ids.
     /// </summary>
     private async Task<CatalogLookups> BuildCatalogLookupsAsync(
@@ -1084,6 +1081,44 @@ public sealed class GoogleChannelClient(
     {
         var offers = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
         var products = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Authoritative product-id -> name map from the full product catalog. Covers products whose
+        // specific offer is no longer listed (the dashboard would otherwise show raw product ids).
+        try
+        {
+            string? pageToken = null;
+            do
+            {
+                var request = service.Products.List();
+                request.Account = _options.AccountName;
+                request.PageToken = pageToken;
+                var response = await request.ExecuteAsync(cancellationToken);
+
+                foreach (var product in response.Products ?? [])
+                {
+                    var productId = LastSegment(product.Name);
+                    var productName = product.MarketingInfo?.DisplayName;
+                    if (!string.IsNullOrEmpty(productId) && !string.IsNullOrEmpty(productName))
+                    {
+                        products[productId] = productName;
+                    }
+                }
+
+                pageToken = response.NextPageToken;
+            }
+            while (!string.IsNullOrEmpty(pageToken));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not list products for display-name resolution.");
+        }
+
+        // Offer-id -> display names (also supplements the product map for any product not already
+        // covered above).
         try
         {
             string? pageToken = null;
@@ -1108,7 +1143,7 @@ public sealed class GoogleChannelClient(
                     var productName = offer.Sku?.Product?.MarketingInfo?.DisplayName;
                     if (!string.IsNullOrEmpty(productId) && !string.IsNullOrEmpty(productName))
                     {
-                        products[productId] = productName;
+                        products.TryAdd(productId, productName);
                     }
                 }
 
@@ -1122,7 +1157,7 @@ public sealed class GoogleChannelClient(
         }
         catch (Exception ex)
         {
-            logger.LogDebug(ex, "Could not resolve catalog display names; entitlements will show ids.");
+            logger.LogDebug(ex, "Could not resolve catalog offer display names; entitlements may show ids.");
         }
 
         return new CatalogLookups(offers, products);
