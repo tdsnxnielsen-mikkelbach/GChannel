@@ -11,12 +11,6 @@
     Reseller overview for your Google Cloud Channel estate.
 </MudText>
 
-@if (_loading)
-{
-    <LoadingPanel Title="Loading dashboard…"
-                  Hint="Aggregating your customers and entitlements from the Channel API. This can take a moment for large estates." />
-}
-
 @if (_data is { SkippedCustomerCount: > 0 })
 {
     <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
@@ -37,7 +31,14 @@
                     <div class="d-flex justify-space-between align-center">
                         <div>
                             <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@card.Label</MudText>
-                            <MudText Typo="Typo.h5">@card.Value</MudText>
+                            @if (card.Ready)
+                            {
+                                <MudText Typo="Typo.h5">@card.Value</MudText>
+                            }
+                            else
+                            {
+                                <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="@card.Color" Class="mt-1" />
+                            }
                         </div>
                         <MudIcon Icon="@card.Icon" Color="@card.Color" Size="Size.Large" />
                     </div>
@@ -60,6 +61,12 @@
                                      YValue="@(p => p.Customers)" />
                 </ApexChart>
             }
+            else if (_overviewLoading)
+            {
+                <div class="d-flex align-center" style="height: 200px;">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
+                </div>
+            }
             else
             {
                 <MudText Typo="Typo.body2" Color="Color.Secondary">No customer history yet.</MudText>
@@ -81,6 +88,12 @@
                                      YValue="@(p => p.Count)" />
                 </ApexChart>
             }
+            else if (_entitlementsLoading)
+            {
+                <div class="d-flex align-center" style="height: 200px;">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
+                </div>
+            }
             else
             {
                 <MudText Typo="Typo.body2" Color="Color.Secondary">No active entitlements yet.</MudText>
@@ -90,43 +103,83 @@
 </MudGrid>
 
 @code {
-    private record SummaryCard(string Label, string Value, string Icon, Color Color);
+    private record SummaryCard(string Label, string Value, string Icon, Color Color, bool Ready);
     private record MonthlyPoint(string Month, decimal Customers);
     private record ProductSlice(string Product, decimal Count);
 
+    private DashboardOverview? _overview;
     private DashboardSummary? _data;
-    private bool _loading = true;
+    private bool _overviewLoading = true;
+    private bool _entitlementsLoading = true;
     private readonly List<MonthlyPoint> _monthly = [];
     private readonly List<ProductSlice> _products = [];
     private readonly CancellationTokenSource _cts = new();
 
-    // Cards derive from the loaded summary; before load they show zeros.
+    // The customer count + onboarding chart come from the cheap overview (phase 1); the entitlement
+    // cards + product mix come from the slower summary (phase 2). Each shows a spinner until ready.
     private SummaryCard[] Cards =>
     [
-        new("Customers", (_data?.CustomerCount ?? 0).ToString(), Icons.Material.Filled.Business, Color.Primary),
-        new("Active SKUs", (_data?.ActiveEntitlementCount ?? 0).ToString(), Icons.Material.Filled.Inventory2, Color.Success),
-        new("Trials", (_data?.TrialEntitlementCount ?? 0).ToString(), Icons.Material.Filled.Schedule, Color.Info),
-        new("Suspended", (_data?.SuspendedEntitlementCount ?? 0).ToString(), Icons.Material.Filled.PauseCircle, Color.Warning),
+        new("Customers", (_overview?.CustomerCount ?? _data?.CustomerCount ?? 0).ToString(),
+            Icons.Material.Filled.Business, Color.Primary, _overview is not null || _data is not null),
+        new("Active SKUs", (_data?.ActiveEntitlementCount ?? 0).ToString(),
+            Icons.Material.Filled.Inventory2, Color.Success, _data is not null),
+        new("Trials", (_data?.TrialEntitlementCount ?? 0).ToString(),
+            Icons.Material.Filled.Schedule, Color.Info, _data is not null),
+        new("Suspended", (_data?.SuspendedEntitlementCount ?? 0).ToString(),
+            Icons.Material.Filled.PauseCircle, Color.Warning, _data is not null),
     ];
 
-    // Load after the first interactive render so the API call runs once on the live circuit
+    // Load after the first interactive render so the API calls run once on the live circuit
     // (avoiding a canceled prerender request), mirroring the other data-heavy pages.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            await LoadAsync();
+            // Phase 1 then phase 2: the cheap overview renders the customer count + onboarding chart
+            // immediately while the quota-bound entitlement aggregation streams in afterwards.
+            await LoadOverviewAsync();
+            StateHasChanged();
+            await LoadSummaryAsync();
             StateHasChanged();
         }
     }
 
-    private async Task LoadAsync()
+    private async Task LoadOverviewAsync()
     {
-        _loading = true;
+        _overviewLoading = true;
+        try
+        {
+            _overview = await Api.GetDashboardOverviewAsync(_cts.Token);
+
+            _monthly.Clear();
+            foreach (var point in _overview?.CustomersOnboarded ?? [])
+            {
+                _monthly.Add(new MonthlyPoint(point.Month, point.Customers));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Benign: navigation away or circuit teardown.
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load dashboard: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _overviewLoading = false;
+        }
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        _entitlementsLoading = true;
         try
         {
             _data = await Api.GetDashboardSummaryAsync(_cts.Token);
 
+            // The summary carries authoritative onboarding data too; refresh the chart from it in
+            // case the overview cache lagged behind.
             _monthly.Clear();
             foreach (var point in _data?.CustomersOnboarded ?? [])
             {
@@ -141,8 +194,7 @@
         }
         catch (OperationCanceledException)
         {
-            // Benign: the dashboard aggregation is slow and the request was canceled
-            // (navigation away or circuit teardown). Nothing to surface to the user.
+            // Benign: the entitlement aggregation is slow and the request was canceled.
         }
         catch (Exception ex)
         {
@@ -150,7 +202,7 @@
         }
         finally
         {
-            _loading = false;
+            _entitlementsLoading = false;
         }
     }
 

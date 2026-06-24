@@ -24,11 +24,25 @@ public sealed class GoogleChannelOptions
     public int MaxRetryAttempts { get; set; } = 3;
 
     /// <summary>
-    /// Maximum number of per-customer <c>entitlements.list</c> calls the dashboard aggregation runs
-    /// concurrently. The Channel API enforces a per-minute request quota, so a high value bursts past
-    /// it and triggers HTTP 429s; lower this if the dashboard reports throttled customers. Minimum 1.
+    /// Upper bound (seconds) on how long a single throttled retry waits. The Channel API may send a
+    /// <c>Retry-After</c> header on 429s (which we honour); this caps it so a large value can't stall
+    /// the request beyond the dashboard's time budget.
+    /// </summary>
+    public int MaxRetryDelaySeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Max concurrent per-customer <c>entitlements.list</c> calls when building the dashboard summary.
+    /// The Channel API enforces a per-minute request quota, so a high value bursts past it and
+    /// triggers HTTP 429s; lower this if the dashboard reports throttled customers. Minimum 1.
     /// </summary>
     public int DashboardMaxConcurrency { get; set; } = 6;
+
+    /// <summary>
+    /// Client-side pacing (requests per minute) for the dashboard's <c>entitlements.list</c> calls so
+    /// the aggregation stays under the Channel API's "ListEntitlements requests per minute" quota and
+    /// avoids 429s. Set to match (or just under) your project's quota; <c>0</c> disables pacing.
+    /// </summary>
+    public int DashboardRequestsPerMinute { get; set; } = 60;
 
     /// <summary>OAuth scope required to call the Channel reseller (order) APIs.</summary>
     public const string ChannelScope = "https://www.googleapis.com/auth/apps.order";

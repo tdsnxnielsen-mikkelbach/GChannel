@@ -16,6 +16,9 @@ public static class DashboardEndpoints
     /// <summary>Redis key the dashboard summary is cached under (shared with the background refresher).</summary>
     public const string CacheKey = "dashboard:summary";
 
+    /// <summary>Redis key the cheap dashboard overview (count + onboarding) is cached under.</summary>
+    public const string OverviewCacheKey = "dashboard:overview";
+
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/dashboard").WithTags("Dashboard");
@@ -40,6 +43,25 @@ public static class DashboardEndpoints
             })
             .WithName("GetDashboardSummary")
             .WithSummary("Aggregated reseller figures derived from customers and entitlements.");
+
+        group.MapGet("/overview", async (
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                IOptions<GoogleChannelOptions> options,
+                CancellationToken cancellationToken) =>
+            {
+                try
+                {
+                    return await CachedAsync(cache, OverviewCacheKey, options.Value.CacheSeconds,
+                        () => channel.GetDashboardOverviewAsync(cancellationToken), cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return Results.StatusCode(499);
+                }
+            })
+            .WithName("GetDashboardOverview")
+            .WithSummary("Cheap first-phase dashboard figures (customer count + onboarded-over-time).");
 
         return app;
     }

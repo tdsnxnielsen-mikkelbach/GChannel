@@ -52,12 +52,15 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > Cloud Identity checks are also persisted to SQL with a history/recheck (cache-bypass) path —
 > internal endpoint `GET /api/accounts/check-cloud-identity/history`.
 
-> **Derived dashboard.** The home page is backed by a single internal `GET /api/dashboard/summary`
-> endpoint (there is no Channel API reporting endpoint — `accounts.reports.*` is deprecated in `v1`).
-> It aggregates customer counts + onboarded-by-month buckets (from `accounts.customers.list` create
-> times) and active/trial/suspended entitlement counts, active seats, and a product-mix breakdown
-> (from `accounts.customers.entitlements.list`, with `accounts.offers.list` resolving friendly product
-> labels). The result is cached in Redis for `CacheSeconds`.
+> **Derived dashboard.** The home page is backed by two internal endpoints:
+> `GET /api/dashboard/overview` (cheap phase 1 — customer count + onboarded-by-month buckets from
+> `accounts.customers.list` create times only) and `GET /api/dashboard/summary` (full aggregation).
+> There is no Channel API reporting endpoint — `accounts.reports.*` is deprecated in `v1`.
+> The summary adds active/trial/suspended entitlement counts, active seats, and a product-mix breakdown
+> (from `accounts.customers.entitlements.list`, with `accounts.offers.list`/`accounts.products.list`
+> resolving friendly product labels). Those per-customer entitlement calls are paced under the
+> per-minute quota (`DashboardRequestsPerMinute`) and 429s are retried honouring `Retry-After`. Both
+> results are cached in Redis for `CacheSeconds`.
 
 ## Available possibilities
 

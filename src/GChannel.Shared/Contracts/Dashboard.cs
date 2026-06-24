@@ -38,6 +38,20 @@ public sealed record DashboardSummary
     public IReadOnlyList<DashboardProductSlice> ProductMix { get; init; } = [];
 }
 
+/// <summary>
+/// Cheap first phase of the dashboard: the headline customer count and onboarded-over-time chart,
+/// which need only the customer list (no per-customer entitlement calls). The UI renders these
+/// immediately, then fills in the entitlement figures from <see cref="DashboardSummary"/>.
+/// </summary>
+public sealed record DashboardOverview
+{
+    /// <summary>Total customers linked to the reseller account.</summary>
+    public int CustomerCount { get; init; }
+
+    /// <summary>Customers onboarded per month over the trailing 6 months (oldest first).</summary>
+    public IReadOnlyList<DashboardMonthlyPoint> CustomersOnboarded { get; init; } = [];
+}
+
 /// <summary>A single month bucket of onboarded customers.</summary>
 public sealed record DashboardMonthlyPoint
 {

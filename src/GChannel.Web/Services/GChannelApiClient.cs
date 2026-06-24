@@ -43,6 +43,10 @@ public sealed class GChannelApiClient(
     public Task<DashboardSummary?> GetDashboardSummaryAsync(CancellationToken cancellationToken = default) =>
         GetAsync<DashboardSummary>(ApiRoutes.DashboardSummary, cancellationToken);
 
+    /// <summary>Gets the cheap first-phase dashboard figures (customer count + onboarded-over-time).</summary>
+    public Task<DashboardOverview?> GetDashboardOverviewAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<DashboardOverview>(ApiRoutes.DashboardOverview, cancellationToken);
+
     /// <summary>Lists the products the reseller is authorized to sell.</summary>
     public Task<CatalogProductsResult?> ListProductsAsync(CancellationToken cancellationToken = default) =>
         GetAsync<CatalogProductsResult>(ApiRoutes.Products, cancellationToken);

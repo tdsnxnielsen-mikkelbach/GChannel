@@ -65,10 +65,13 @@ reseller account id) are passed as normal parameters/environment variables.
 The Channel API enforces per-project quotas, so bursts of reads can return **429 Too Many
 Requests**. Two layers keep this graceful:
 
-- **Client-side back-off.** Each `CloudchannelService` is created with a `BackOffHandler` that
-  retries `429` (and transient `503`) responses with exponential back-off, up to
-  `GoogleChannel:MaxRetryAttempts` (default 3). The library's default 503-only policy is disabled
-  in favour of this combined handler.
+- **Client-side back-off.** Each `CloudchannelService` is created with a custom
+  `RetryAfterBackOffHandler` that retries `429` (and transient `503`) responses up to
+  `GoogleChannel:MaxRetryAttempts` (default 3). When the response carries a **`Retry-After`** header
+  (the Channel API sends one on quota errors) the handler waits exactly that long — capped by
+  `GoogleChannel:MaxRetryDelaySeconds` (default 60) — otherwise it falls back to exponential back-off
+  with jitter. The handler also widens `ConfigurableMessageHandler.NumTries` (which otherwise caps
+  total tries) and the library's default 503-only policy is disabled in favour of this handler.
 - **Clean surfacing.** If retries are exhausted, `GoogleApiExceptionHandler` (an `IExceptionHandler`)
   maps the `GoogleApiException` to the same HTTP status (e.g. `429` with a `Retry-After` hint, or
   `403`/`404`) and a `ProblemDetails` body, instead of a generic `500`. A missing access token
@@ -181,23 +184,39 @@ entitlement lists run with **bounded parallelism** (`GoogleChannel:DashboardMaxC
 under a **time budget** (35s) that is
 kept comfortably below the HTTP client's per-attempt timeout, so the endpoint always responds in time
 (and its Redis cache can warm up) instead of being cut off mid-flight and retried. The Channel API
-enforces a **per-minute request quota**, so on large estates the burst of `entitlements.list` calls
-can return **HTTP 429**; the client retries those with exponential back-off
-(`GoogleChannel:MaxRetryAttempts`), but customers whose retries are exhausted within the budget are
-reported as failures. Lower `DashboardMaxConcurrency` to reduce 429s (at the cost of fewer customers
-reached within the budget), or — the proper fix for large estates — enable the background refresh
-below so the dashboard serves a pre-computed, complete result instead of aggregating on the request
-path. Customers that
+enforces a **per-minute request quota** ("ListEntitlements requests per minute"), so on large estates
+a burst of `entitlements.list` calls would otherwise blow past it and trigger a wave of **HTTP 429s**.
+Two layers prevent that: (1) the calls are **proactively paced** to
+`GoogleChannel:DashboardRequestsPerMinute` (default 60 ⇒ one request/second) by a small token-bucket
+pacer, so the quota is respected up-front rather than after the fact — concurrency alone can't do this
+because six in-flight calls still burst; and (2) any residual `429` is retried honouring the server's
+`Retry-After` header (see *Resilience & throttling*). Pacing trades 429 errors for clean, paced results:
+on a large estate the on-demand path now loads as many customers as fit in the 35s budget at the paced
+rate (the rest reported as not-reached) **without** the 429 storm. Set `DashboardRequestsPerMinute` to
+match your project's actual quota (raise it if your quota is higher, `0` to disable), lower
+`DashboardMaxConcurrency` to further reduce pressure, or — the proper fix for large estates — enable the
+background refresh below so the dashboard serves a pre-computed, complete result instead of aggregating
+on the request path. Customers that
 error out (`GoogleApiException`) or aren't reached within the budget are reported via
 `SkippedCustomerCount`, which the home page surfaces as an "N customers couldn't be loaded" warning.
 The two outcomes are tracked separately and summarised in `IncompleteReason` (e.g. "78 not loaded
 within the 35s time budget" vs "3 failed (2× 403 Forbidden, 1× API error)"), which is logged and shown
-under the warning so the cause is visible rather than opaque; the rest of the figures are still shown. Throttled `429`s are retried by the shared resilience handler
-and the partial aggregates are merged single-threaded. The summary is **cached in Redis** for
-`CacheSeconds` (default 300s). The page loads in `OnAfterRenderAsync(firstRender)` (prerender-safe)
-behind a loading bar, ties the request to a `CancellationTokenSource` disposed with the component, and
-treats `OperationCanceledException` as benign (no error toast on navigation away). Like the other
-pages it carries no hardcoded data — empty states render when there are no customers/entitlements.
+under the warning so the cause is visible rather than opaque; the rest of the figures are still shown.
+The partial aggregates are merged single-threaded. The summary is **cached in Redis** for
+`CacheSeconds` (default 300s).
+
+**Progressive (two-phase) loading.** Because the entitlement aggregation is inherently quota-bound and
+slow on a cold cache, the dashboard renders in two phases so the page populates while results arrive.
+A separate cheap `GET /api/dashboard/overview` (`GetDashboardOverviewAsync`) returns only the customer
+count and onboarding chart — derived from `accounts.customers.list` alone, with **no** per-customer
+entitlement calls — and is cached under `dashboard:overview`. The home page loads the overview first
+(filling the *Customers* card and *customers onboarded* chart immediately), then loads the full
+`/summary` to fill the *Active SKUs / Trials / Suspended* cards and *product mix* donut; the
+not-yet-loaded cards and the product-mix panel show inline spinners until phase 2 completes. The page
+loads both phases in `OnAfterRenderAsync(firstRender)` (prerender-safe), ties both requests to a
+`CancellationTokenSource` disposed with the component, and treats `OperationCanceledException` as
+benign (no error toast on navigation away). Like the other pages it carries no hardcoded data — empty
+states render when there are no customers/entitlements.
 
 ### Credential source &amp; optional background refresh
 

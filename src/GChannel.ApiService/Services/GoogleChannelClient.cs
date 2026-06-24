@@ -98,6 +98,12 @@ public interface IGoogleChannelClient
     /// refresher passes <see langword="false"/> to run unbounded and produce a complete result.
     /// </param>
     Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken, bool applyTimeBudget = true);
+
+    /// <summary>
+    /// Builds the cheap, quota-light first phase of the dashboard (customer count + onboarded-over-time)
+    /// so the UI can render those immediately before the slower entitlement aggregation completes.
+    /// </summary>
+    Task<DashboardOverview> GetDashboardOverviewAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -522,28 +528,30 @@ public sealed class GoogleChannelClient(
         return new EntitlementsResult { Entitlements = entitlements };
     }
 
+    public async Task<DashboardOverview> GetDashboardOverviewAsync(CancellationToken cancellationToken)
+    {
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        // Cheap, quota-light first phase of the dashboard: just the customer list (one paginated
+        // call set) drives the headline customer count and the onboarded-over-time chart, so the UI
+        // can render these immediately while the slow per-customer entitlement aggregation loads.
+        var customers = await ListAllCustomersAsync(service, cancellationToken);
+
+        return new DashboardOverview
+        {
+            CustomerCount = customers.Count,
+            CustomersOnboarded = BuildMonthlyOnboarded(customers)
+        };
+    }
+
     public async Task<DashboardSummary> GetDashboardSummaryAsync(CancellationToken cancellationToken, bool applyTimeBudget = true)
     {
         EnsureAccountConfigured();
         using var service = CreateService();
 
         // §2 customers — also drives the onboarded-over-time chart (bucket by create time).
-        var customers = new List<Customer>();
-        string? pageToken = null;
-        do
-        {
-            var request = service.Accounts.Customers.List(_options.AccountName);
-            request.PageToken = pageToken;
-            var response = await request.ExecuteAsync(cancellationToken);
-
-            foreach (var customer in response.Customers ?? [])
-            {
-                customers.Add(MapCustomer(customer));
-            }
-
-            pageToken = response.NextPageToken;
-        }
-        while (!string.IsNullOrEmpty(pageToken));
+        var customers = await ListAllCustomersAsync(service, cancellationToken);
 
         // §1 catalog — one offers.list resolves both offer- and product-level names for the labels.
         var (offerLookup, productLookup) = await BuildCatalogLookupsAsync(service, cancellationToken);
@@ -564,6 +572,13 @@ public sealed class GoogleChannelClient(
 
         using var throttle = new SemaphoreSlim(Math.Max(1, _options.DashboardMaxConcurrency));
 
+        // Pace the per-customer entitlements.list calls to stay under the Channel API's per-minute
+        // "ListEntitlements" quota. Without this, bounded concurrency alone still bursts past the
+        // quota on large estates and the project gets a wave of 429s. Disabled when set to 0.
+        var pacer = _options.DashboardRequestsPerMinute > 0
+            ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _options.DashboardRequestsPerMinute))
+            : null;
+
         var results = await Task.WhenAll(customers.Select(async customer =>
         {
             var acquired = false;
@@ -572,7 +587,7 @@ public sealed class GoogleChannelClient(
                 await throttle.WaitAsync(budgetToken);
                 acquired = true;
                 var aggregate = await AggregateCustomerEntitlementsAsync(
-                    service, customer.Id, offerLookup, productLookup, budgetToken);
+                    service, customer.Id, offerLookup, productLookup, pacer, budgetToken);
                 return CustomerLoadResult.Loaded(aggregate);
             }
             catch (OperationCanceledException)
@@ -726,6 +741,7 @@ public sealed class GoogleChannelClient(
         string customerId,
         IReadOnlyDictionary<string, OfferDisplay> offerLookup,
         IReadOnlyDictionary<string, string> productLookup,
+        RequestPacer? pacer,
         CancellationToken cancellationToken)
     {
         var active = 0;
@@ -737,6 +753,12 @@ public sealed class GoogleChannelClient(
         string? entitlementToken = null;
         do
         {
+            // Each page is one ListEntitlements request against the per-minute quota, so pace it.
+            if (pacer is not null)
+            {
+                await pacer.WaitAsync(cancellationToken);
+            }
+
             var request = service.Accounts.Customers.Entitlements.List(CustomerName(customerId));
             request.PageToken = entitlementToken;
             var response = await request.ExecuteAsync(cancellationToken);
@@ -783,6 +805,29 @@ public sealed class GoogleChannelClient(
         while (!string.IsNullOrEmpty(entitlementToken));
 
         return new EntitlementAggregate(active, trials, suspended, activeSeats, productMix);
+    }
+
+    /// <summary>Paginates the full reseller customer list (shared by the overview and summary).</summary>
+    private async Task<List<Customer>> ListAllCustomersAsync(CloudchannelService service, CancellationToken cancellationToken)
+    {
+        var customers = new List<Customer>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.List(_options.AccountName);
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var customer in response.Customers ?? [])
+            {
+                customers.Add(MapCustomer(customer));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return customers;
     }
 
     /// <summary>Buckets customers into the trailing six months by their create time (oldest first).</summary>
@@ -1362,23 +1407,24 @@ public sealed class GoogleChannelClient(
         {
             HttpClientInitializer = credential,
             ApplicationName = _options.ApplicationName,
-            // We install our own back-off handler below (covering 429 and 503), so turn off the
-            // library default which only retries 503.
+            // We install our own back-off handler below (covering 429 and 503 and honouring the
+            // server's Retry-After), so turn off the library default which only retries 503.
             DefaultExponentialBackOffPolicy = ExponentialBackOffPolicy.None
         });
 
-        // Retry throttling (429 Too Many Requests) and transient 503s with exponential back-off so a
-        // burst of catalog reads degrades gracefully instead of failing outright. If retries are
-        // exhausted the original 429/503 surfaces and is mapped to a clean response upstream.
+        // Retry throttling (429 Too Many Requests) and transient 503s, honouring the server's
+        // Retry-After header when present (Channel API quota errors include it) and otherwise using
+        // exponential back-off with jitter. If retries are exhausted the original 429/503 surfaces
+        // and is mapped to a clean response upstream.
         if (_options.MaxRetryAttempts > 0)
         {
-            var backOff = new BackOffHandler(new BackOffHandler.Initializer(
-                new ExponentialBackOff(TimeSpan.FromMilliseconds(500), _options.MaxRetryAttempts))
-            {
-                HandleUnsuccessfulResponseFunc = static response =>
-                    response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable
-            });
-            service.HttpClient.MessageHandler.AddUnsuccessfulResponseHandler(backOff);
+            // ConfigurableMessageHandler caps total tries independently of the handler, so widen it.
+            service.HttpClient.MessageHandler.NumTries =
+                Math.Max(service.HttpClient.MessageHandler.NumTries, _options.MaxRetryAttempts + 1);
+            service.HttpClient.MessageHandler.AddUnsuccessfulResponseHandler(
+                new RetryAfterBackOffHandler(
+                    _options.MaxRetryAttempts,
+                    TimeSpan.FromSeconds(Math.Max(1, _options.MaxRetryDelaySeconds))));
         }
 
         return service;
@@ -1390,6 +1436,99 @@ public sealed class GoogleChannelClient(
         {
             throw new InvalidOperationException(
                 "GoogleChannel:AccountId is not configured. Set the reseller account resource name (accounts/...).");
+        }
+    }
+
+    /// <summary>
+    /// Unsuccessful-response handler that retries 429/503 responses, honouring the server's
+    /// <c>Retry-After</c> header (the Channel API sends it on quota errors) and otherwise falling back
+    /// to exponential back-off with jitter. Waits are capped and cancellable.
+    /// </summary>
+    private sealed class RetryAfterBackOffHandler(int maxRetries, TimeSpan maxDelay) : IHttpUnsuccessfulResponseHandler
+    {
+        public async Task<bool> HandleResponseAsync(HandleUnsuccessfulResponseArgs args)
+        {
+            if (!args.SupportsRetry
+                || args.CurrentFailedTry > maxRetries
+                || args.Response.StatusCode is not (HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable))
+            {
+                return false;
+            }
+
+            var delay = RetryAfterDelay(args.Response) ?? ExponentialBackOff(args.CurrentFailedTry);
+            if (delay > maxDelay)
+            {
+                delay = maxDelay;
+            }
+
+            try
+            {
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, args.CancellationToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static TimeSpan? RetryAfterDelay(HttpResponseMessage response)
+        {
+            var retryAfter = response.Headers.RetryAfter;
+            if (retryAfter is null)
+            {
+                return null;
+            }
+
+            if (retryAfter.Delta is { } delta)
+            {
+                return delta > TimeSpan.Zero ? delta : TimeSpan.Zero;
+            }
+
+            if (retryAfter.Date is { } date)
+            {
+                var until = date - DateTimeOffset.UtcNow;
+                return until > TimeSpan.Zero ? until : TimeSpan.Zero;
+            }
+
+            return null;
+        }
+
+        private static TimeSpan ExponentialBackOff(int attempt)
+        {
+            // 1s, 2s, 4s, ... plus up to 1s of jitter to de-correlate concurrent retries.
+            var seconds = Math.Pow(2, Math.Max(0, attempt - 1));
+            return TimeSpan.FromSeconds(seconds + Random.Shared.NextDouble());
+        }
+    }
+
+    /// <summary>
+    /// Paces calls to at most one per <c>interval</c> (a token-bucket of size 1) so a burst of
+    /// concurrent dashboard <c>entitlements.list</c> calls stays under the Channel API's per-minute
+    /// quota instead of triggering 429s. Thread-safe; <c>WaitAsync</c> returns when the caller's slot
+    /// is due (or throws if cancelled first).
+    /// </summary>
+    private sealed class RequestPacer(TimeSpan interval)
+    {
+        private readonly Lock _gate = new();
+        private DateTimeOffset _nextSlot = DateTimeOffset.MinValue;
+
+        public Task WaitAsync(CancellationToken cancellationToken)
+        {
+            DateTimeOffset slot;
+            lock (_gate)
+            {
+                var now = DateTimeOffset.UtcNow;
+                slot = _nextSlot > now ? _nextSlot : now;
+                _nextSlot = slot + interval;
+            }
+
+            var delay = slot - DateTimeOffset.UtcNow;
+            return delay > TimeSpan.Zero ? Task.Delay(delay, cancellationToken) : Task.CompletedTask;
         }
     }
 }
