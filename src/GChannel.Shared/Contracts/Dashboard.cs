@@ -48,6 +48,9 @@ public sealed record DashboardOverview
     /// <summary>Total customers linked to the reseller account.</summary>
     public int CustomerCount { get; init; }
 
+    /// <summary>Channel partner links (§5) on the reseller account, across all states.</summary>
+    public int ChannelLinkCount { get; init; }
+
     /// <summary>Customers onboarded per month over the trailing 6 months (oldest first).</summary>
     public IReadOnlyList<DashboardMonthlyPoint> CustomersOnboarded { get; init; } = [];
 }

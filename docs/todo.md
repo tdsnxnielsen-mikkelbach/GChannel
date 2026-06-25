@@ -138,10 +138,36 @@ advanced distributor/billing features.
 
 ### 5. Distributor / n-tier (channel partner links)
 
-- [ ] **Manage links** — `accounts.channelPartnerLinks` (list/get/create/patch).
-- [ ] **Customers under a partner** — `accounts.channelPartnerLinks.customers.*`.
-- [ ] **Revisit dashboard card** — once links exist, restore a **Channel links** figure on the home
-  dashboard (it was swapped for **Trials** while this section is unimplemented; see *Known placeholders*).
+- [x] **Manage links** — `accounts.channelPartnerLinks` (list/get/create/patch).
+- [x] **Customers under a partner** — `accounts.channelPartnerLinks.customers.*`.
+- [x] **Revisit dashboard card** — restored the **Channel links** figure on the home dashboard
+  (it replaces the temporary **Trials** card; **Suspended** stays).
+
+> **Implemented.** Linking downstream resellers (channel partners) is live end-to-end: shared
+> contracts in `GChannel.Shared/Contracts/ChannelPartnerLinks.cs` (`ChannelPartnerLink`,
+> `ChannelPartnerLinksResult`, `CreateChannelPartnerLinkRequest`, `UpdateChannelPartnerLinkRequest`),
+> `IGoogleChannelClient` methods (`ListChannelPartnerLinksAsync` / `GetChannelPartnerLinkAsync`
+> (FULL view, so the partner's Cloud Identity comes back), `CreateChannelPartnerLinkAsync` (starts a
+> link in the `INVITED` state), `UpdateChannelPartnerLinkStateAsync` (`patch` with
+> `update_mask = channel_partner_link.link_state`), and `ListChannelPartnerCustomersAsync`) in the
+> API, cached minimal-API endpoints under `/api/channel-partner-links` (list/create),
+> `/api/channel-partner-links/{id}` (get), `/api/channel-partner-links/{id}/state` (patch) and
+> `/api/channel-partner-links/{id}/customers` (Redis, `CacheSeconds` TTL, list + per-link caches
+> invalidated on create/patch), the `GChannelApiClient` typed-client methods, and Blazor pages — a
+> **Partner links** list (`/channel-partner-links`), an **Invite partner** form
+> (`/channel-partner-links/new`), and a **link detail** page (`/channel-partner-links/{id}`) that
+> shows the invitation URI, partner Cloud Identity, an Activate/Suspend state control, and the
+> customers the partner owns — all reachable from a new **Channel partners** nav group.
+>
+> **Correlation/navigation.** A channel partner link's short id is exactly a customer's
+> `ChannelPartnerId` (§2): the **Customer detail** page now shows a **Channel partner** row linking to
+> the owning link (or "Direct (no partner)"), and the **link detail** page lists the partner's
+> customers via `channelPartnerLinks.customers.list`, each row linking back to the customer. The home
+> **Channel links** card counts links via a cheap account-level `channelPartnerLinks.list` (BASIC
+> view) folded into the quota-light dashboard *overview* phase.
+>
+> **LROs.** `channelPartnerLinks.create` and `patch` return the link resource directly (not
+> long-running operations), so the UI reflects the new state immediately.
 
 ### 6. Repricing / rebilling margin
 
@@ -190,9 +216,10 @@ breaking-change risk:
   always completes within the HTTP attempt timeout and the cached result warms up. Customers that
   error out or aren't reached within the budget are reported via `SkippedCustomerCount` and surfaced
   on the home page as an "N customers couldn't be loaded" warning. The home page ties the request to
-  the component lifetime and treats cancellation as benign. The former **Channel links** and **Pending
-  checks** cards were replaced with **Trials** / **Suspended** because channel partner links (§5) are
-  not yet implemented.
+  the component lifetime and treats cancellation as benign. The former **Pending checks** card was
+  replaced with **Suspended**; the **Channel links** card was restored with §5 (it counts channel
+  partner links via a cheap account-level `channelPartnerLinks.list` folded into the overview phase)
+  and now sits alongside **Customers**, **Active SKUs** and **Suspended**.
 
 ## Notes
 

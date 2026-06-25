@@ -100,11 +100,14 @@ public sealed class DashboardRefreshService(
                     onPartial: partial => PublishPartialAsync(partial, ttl, stoppingToken),
                     partialEvery: PartialPublishEvery);
 
-                // The overview (count + onboarding) is a strict subset of the summary, so derive and
-                // warm it here too — no extra Channel API calls.
+                // The overview's customer figures are a strict subset of the summary, so derive those
+                // here for free. The "Channel links" headline isn't part of the summary, so warm it
+                // with one extra account-level (quota-light) count so the card fills from cache too.
+                var channelLinkCount = await client.CountChannelPartnerLinksAsync(stoppingToken);
                 var overview = new DashboardOverview
                 {
                     CustomerCount = summary.CustomerCount,
+                    ChannelLinkCount = channelLinkCount,
                     CustomersOnboarded = summary.CustomersOnboarded,
                 };
 

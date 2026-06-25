@@ -26,7 +26,10 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Entitlements → activate / suspend / cancel / start paid** | `.activate` / `.suspend` / `.cancel` / `.startPaidService` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/activate) |
 | **Customers → transferable SKUs / offers** | `accounts.listTransferableSkus` / `accounts.listTransferableOffers` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/listTransferableSkus) |
 | **Customers → transfer in / to Google** | `accounts.customers.transferEntitlements` / `.transferEntitlementsToGoogle` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/transferEntitlements) |
-| **Home → dashboard summary** | *derived* (`accounts.customers.list` + `accounts.customers.entitlements.list` + `accounts.offers.list`) | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) |
+| **Channel partners → links list / detail** | `accounts.channelPartnerLinks.list` / `.get` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/list) |
+| **Channel partners → invite / change state** | `accounts.channelPartnerLinks.create` / `.patch` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/create) |
+| **Channel partners → customers under a partner** | `accounts.channelPartnerLinks.customers.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers/list) |
+| **Home → dashboard summary** | *derived* (`accounts.customers.list` + `accounts.customers.entitlements.list` + `accounts.offers.list` + `accounts.channelPartnerLinks.list`) | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) |
 
 > **Cross-navigation.** Catalog resources are correlated by id (product ↔ SKU ↔ offer ↔ billable
 > SKU) so the UI can deep-link between products, offers, and SKU groups. Customers extend this: the
@@ -35,13 +38,45 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > chain: they hang off a customer (`/customers/{id}/entitlements`) and link back to the catalog by id
 > (offer/product/SKU), while the purchase flow reuses the customer's purchasable SKUs/offers.
 > **Transfers** reuse the same model — the transfer page (`/customers/{id}/transfer`) hangs off a
-> customer, and its transferable SKUs/offers resolve to the same catalog ids/friendly names. See
+> customer, and its transferable SKUs/offers resolve to the same catalog ids/friendly names.
+> **Channel partner links** correlate the other way: a link's short id is a customer's
+> `ChannelPartnerId`, so the customer-detail page links to its owning partner and the partner-detail
+> page lists (and links back to) the customers it owns. See
 > [architecture.md](architecture.md#catalog-correlation--navigation).
 
 > **Long-running operations.** Mutating entitlement **and transfer** calls
 > (create/change/state-change, `transferEntitlements`/`transferEntitlementsToGoogle`) return LROs.
 > Operation polling is deferred to the roadmap's §7; the UI currently reflects the operation as
 > *completed* (when Google finishes inline) or *submitted — processing* and reloads the list.
+
+> **Transfers.** Moving an existing subscription into the reseller is exposed under
+> `/api/customers/{id}`: `GET /transferable-skus` and `GET /transferable-offers?productId=&skuId=`
+> (cached in Redis for `CacheSeconds`) list what can be transferred, and `POST /transfer-entitlements`
+> / `POST /transfer-entitlements-to-google` execute the transfer — both return the LRO and invalidate
+> the customer's transferable-SKU and entitlement-list caches. The Blazor **Transfer** page
+> (`/customers/{id}/transfer`, reachable from the customer-detail and entitlements page headers) lists
+> the eligible SKUs (ineligible ones are disabled with the reason), lazy-loads each SKU's transferable
+> offers on expand, and builds a basket of offers to transfer (per-line seats + purchase order, plus
+> an optional transfer auth token). Transferable SKUs/offers resolve to the same Catalog ids and
+> friendly names as a purchase, so a transfer hangs off a customer and cross-links to the catalog
+> exactly like an entitlement. `transferEntitlementsToGoogle` (handing a subscription back to direct
+> Google billing) is wired through the API for completeness; the basket drives the standard
+> `transferEntitlements` reseller flow.
+
+> **Channel partner links.** Linking downstream resellers (n-tier / distributor) is exposed under
+> `/api/channel-partner-links`: `GET /` (list) and `GET /{id}` (get, FULL view so the partner's Cloud
+> Identity comes back) read the links, `POST /` invites a reseller (the link starts in the `INVITED`
+> state), `PUT /{id}/state` changes the link state (`patch` with
+> `update_mask = channel_partner_link.link_state`), and `GET /{id}/customers` lists the customers the
+> partner owns (`channelPartnerLinks.customers.list`). All reads are cached in Redis for `CacheSeconds`
+> with the list + per-link caches invalidated on create/patch. The Blazor **Partner links** list
+> (`/channel-partner-links`), **Invite partner** form (`/channel-partner-links/new`) and **link
+> detail** page (`/channel-partner-links/{id}`) live under a new **Channel partners** nav group; the
+> detail page surfaces the invitation URI, partner Cloud Identity, an Activate/Suspend control, and
+> the partner's customers. **Correlation:** a link's short id is exactly a customer's
+> `ChannelPartnerId`, so the customer-detail page links to its owning partner and the link-detail page
+> lists (and links back to) the partner's customers. Unlike entitlements/transfers, `create`/`patch`
+> return the link resource directly (not LROs), so the UI updates immediately.
 
 > **Friendly names.** Entitlements and their change history carry only opaque ids; the API resolves
 > human-readable **offer / SKU / product** names from the offer catalog (`accounts.offers.list`,
@@ -59,7 +94,8 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 
 > **Derived dashboard.** The home page is backed by two internal endpoints:
 > `GET /api/dashboard/overview` (cheap phase 1 — customer count + onboarded-by-month buckets from
-> `accounts.customers.list` create times only) and `GET /api/dashboard/summary` (full aggregation).
+> `accounts.customers.list` create times, plus the **Channel links** count from a BASIC-view
+> `accounts.channelPartnerLinks.list`) and `GET /api/dashboard/summary` (full aggregation).
 > There is no Channel API reporting endpoint — `accounts.reports.*` is deprecated in `v1`.
 > The summary adds active/trial/suspended entitlement counts, active seats, and a product-mix breakdown
 > (from `accounts.customers.entitlements.list`, with `accounts.offers.list`/`accounts.products.list`
@@ -120,13 +156,17 @@ mutating calls return long-running operations (see §7 for the deferred polling 
 
 ### Channel partner links (n-tier / distributor)
 
+The link-management and customers-under-a-partner methods below are now **implemented** (see the
+*Implemented* table above); only the repricing configs remain (§6). `create`/`patch` return the link
+resource directly (not long-running operations).
+
 | Resource.method | Purpose |
 | --- | --- |
-| [`accounts.channelPartnerLinks.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/list) | List channel partner links. |
-| [`accounts.channelPartnerLinks.get`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/get) | Get a channel partner link. |
-| [`accounts.channelPartnerLinks.create`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/create) | Initiate a distributor↔reseller link. |
-| [`accounts.channelPartnerLinks.patch`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/patch) | Update a channel partner link. |
-| `accounts.channelPartnerLinks.customers.*` | Manage customers under a channel partner ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers)). |
+| [`accounts.channelPartnerLinks.list`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/list) | List channel partner links. **(implemented)** |
+| [`accounts.channelPartnerLinks.get`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/get) | Get a channel partner link. **(implemented)** |
+| [`accounts.channelPartnerLinks.create`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/create) | Initiate a distributor↔reseller link. **(implemented)** |
+| [`accounts.channelPartnerLinks.patch`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/patch) | Update a channel partner link. **(implemented)** |
+| `accounts.channelPartnerLinks.customers.*` | Manage customers under a channel partner ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers)). `list` is **(implemented)**; create/import/get/patch/delete remain. |
 
 ### Repricing (rebilling margin)
 

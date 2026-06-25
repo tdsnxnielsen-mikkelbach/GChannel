@@ -169,6 +169,26 @@ public sealed class GChannelApiClient(
     public Task<EntitlementOperation?> TransferEntitlementsToGoogleAsync(string customerId, TransferEntitlementsToGoogleRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.TransferEntitlementsToGoogle(customerId), request, cancellationToken);
 
+    /// <summary>Lists the reseller account's channel partner links.</summary>
+    public Task<ChannelPartnerLinksResult?> ListChannelPartnerLinksAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<ChannelPartnerLinksResult>(ApiRoutes.ChannelPartnerLinks, cancellationToken);
+
+    /// <summary>Gets a single channel partner link.</summary>
+    public Task<ChannelPartnerLink?> GetChannelPartnerLinkAsync(string linkId, CancellationToken cancellationToken = default) =>
+        GetAsync<ChannelPartnerLink>(ApiRoutes.ChannelPartnerLink(linkId), cancellationToken);
+
+    /// <summary>Lists the customers owned by a channel partner link.</summary>
+    public Task<CustomersResult?> ListChannelPartnerCustomersAsync(string linkId, CancellationToken cancellationToken = default) =>
+        GetAsync<CustomersResult>(ApiRoutes.ChannelPartnerCustomers(linkId), cancellationToken);
+
+    /// <summary>Invites a downstream reseller by creating a channel partner link.</summary>
+    public Task<ChannelPartnerLink?> CreateChannelPartnerLinkAsync(CreateChannelPartnerLinkRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<ChannelPartnerLink>(HttpMethod.Post, ApiRoutes.ChannelPartnerLinks, request, cancellationToken);
+
+    /// <summary>Updates a channel partner link's state.</summary>
+    public Task<ChannelPartnerLink?> UpdateChannelPartnerLinkStateAsync(string linkId, UpdateChannelPartnerLinkRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<ChannelPartnerLink>(HttpMethod.Put, ApiRoutes.ChannelPartnerLinkState(linkId), request, cancellationToken);
+
     /// <summary>Shared empty JSON body for state-change POSTs that carry no payload.</summary>
     private static readonly object EmptyBody = new();
 

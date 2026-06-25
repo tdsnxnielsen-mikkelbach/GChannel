@@ -50,6 +50,21 @@ else
                             <tr><td><strong>Language</strong></td><td>@(_customer.LanguageCode ?? "—")</td></tr>
                             <tr><td><strong>Cloud Identity id</strong></td><td>@(_customer.CloudIdentityId ?? "—")</td></tr>
                             <tr><td><strong>Created</strong></td><td>@(_customer.CreateTime?.ToString("u") ?? "—")</td></tr>
+                            <tr>
+                                <td><strong>Channel partner</strong></td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(_customer.ChannelPartnerId))
+                                    {
+                                        <MudLink Href="@($"/channel-partner-links/{_customer.ChannelPartnerId}")">
+                                            @_customer.ChannelPartnerId
+                                        </MudLink>
+                                    }
+                                    else
+                                    {
+                                        <span>Direct (no partner)</span>
+                                    }
+                                </td>
+                            </tr>
                         </tbody>
                     </MudSimpleTable>
                 </MudCardContent>

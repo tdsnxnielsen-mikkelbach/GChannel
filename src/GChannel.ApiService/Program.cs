@@ -50,6 +50,7 @@ app.MapCatalogEndpoints();
 app.MapCustomersEndpoints();
 app.MapEntitlementsEndpoints();
 app.MapTransfersEndpoints();
+app.MapChannelPartnerLinksEndpoints();
 app.MapDashboardEndpoints();
 
 app.Run();

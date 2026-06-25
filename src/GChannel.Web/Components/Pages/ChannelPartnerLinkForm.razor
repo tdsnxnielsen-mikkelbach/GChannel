@@ -1,0 +1,90 @@
+@page "/channel-partner-links/new"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Invite channel partner · GChannel</PageTitle>
+
+<div class="d-flex align-center mb-4" style="gap: 8px;">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/channel-partner-links" />
+    <MudText Typo="Typo.h4">Invite channel partner</MudText>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Link a downstream reseller to your distributor account. Enter the reseller's Cloud Identity ID;
+    the link starts in the <strong>INVITED</strong> state and the partner accepts it via the
+    invitation link shown afterwards.
+</MudText>
+
+<MudPaper Class="pa-6" Elevation="2" Style="max-width: 640px;">
+    <MudForm @ref="_form">
+        <MudTextField @bind-Value="_resellerCloudIdentityId"
+                      Label="Reseller Cloud Identity ID"
+                      Required="true" RequiredError="A reseller Cloud Identity ID is required."
+                      HelperText="The downstream reseller's Cloud Identity customer ID."
+                      Variant="Variant.Outlined" Class="mb-4" />
+
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.AddLink"
+                       OnClick="SubmitAsync" Disabled="_submitting">
+                @(_submitting ? "Inviting…" : "Invite partner")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Href="/channel-partner-links" Disabled="_submitting">
+                Cancel
+            </MudButton>
+        </div>
+    </MudForm>
+</MudPaper>
+
+@code {
+    private MudForm? _form;
+    private string _resellerCloudIdentityId = string.Empty;
+    private bool _submitting;
+
+    private async Task SubmitAsync()
+    {
+        if (_form is not null)
+        {
+            await _form.Validate();
+            if (!_form.IsValid)
+            {
+                return;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(_resellerCloudIdentityId))
+        {
+            Snackbar.Add("A reseller Cloud Identity ID is required.", Severity.Warning);
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            var created = await Api.CreateChannelPartnerLinkAsync(new CreateChannelPartnerLinkRequest
+            {
+                ResellerCloudIdentityId = _resellerCloudIdentityId.Trim()
+            });
+
+            Snackbar.Add("Channel partner link created.", Severity.Success);
+            if (created is not null)
+            {
+                Nav.NavigateTo($"/channel-partner-links/{created.Id}");
+            }
+            else
+            {
+                Nav.NavigateTo("/channel-partner-links");
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create channel partner link: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

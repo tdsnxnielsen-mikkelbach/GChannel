@@ -193,6 +193,34 @@ transferred subscriptions show up once provisioning finishes.
   reseller flow; `transferEntitlementsToGoogle` (handing a subscription back to direct Google
   billing) is wired through the API for completeness.
 
+## Channel partner links (n-tier / distributor)
+
+A distributor links a downstream reseller (a *channel partner*) to their account; customers can then
+be owned by that partner. Links live at the **account** level (not under a customer), so they are
+rooted off `/api/channel-partner-links` and managed by `IGoogleChannelClient`'s
+`ListChannelPartnerLinksAsync` / `GetChannelPartnerLinkAsync` / `CreateChannelPartnerLinkAsync` /
+`UpdateChannelPartnerLinkStateAsync` / `ListChannelPartnerCustomersAsync`.
+
+- **Endpoints.** `GET /api/channel-partner-links` (list), `POST /api/channel-partner-links` (invite),
+  `GET /api/channel-partner-links/{id}` (get), `PUT /api/channel-partner-links/{id}/state` (change
+  state) and `GET /api/channel-partner-links/{id}/customers`. Reads are cached in Redis for
+  `CacheSeconds`; the list + per-link caches are invalidated on create/patch. List/get use the **FULL**
+  view so the partner's Cloud Identity info comes back for display.
+- **Lifecycle.** `create` always starts the link in the `INVITED` state; the partner accepts via the
+  output-only `InviteLinkUri`. `patch` is scoped by `update_mask = channel_partner_link.link_state`
+  (the only mutable field), driving the Activate/Suspend control. Unlike entitlements/transfers, both
+  `create` and `patch` return the **link resource directly** (not LROs), so the UI updates immediately.
+- **Pages.** A **Partner links** list (`/channel-partner-links`), an **Invite partner** form
+  (`/channel-partner-links/new`) and a **link detail** page (`/channel-partner-links/{id}`) under a new
+  **Channel partners** nav group. The detail page shows the invitation URI, partner Cloud Identity,
+  state control, and the customers the partner owns.
+- **Correlation.** A link's short id is exactly a customer's `ChannelPartnerId` (§2): the
+  **Customer detail** page shows a *Channel partner* row linking to the owning link (or "Direct (no
+  partner)"), and the **link detail** page lists the partner's customers via
+  `channelPartnerLinks.customers.list`, each row linking back to the customer. The home **Channel
+  links** card counts links via a cheap account-level `channelPartnerLinks.list` (BASIC view) folded
+  into the dashboard *overview* phase.
+
 ## Home dashboard (derived summary)
 
 The home page (`/`) is backed by a single internal `GET /api/dashboard/summary` endpoint. There is
@@ -248,10 +276,12 @@ swallowed silently because the summary phase carries the same customer count and
 slow on a cold cache, the dashboard renders in two phases so the page populates while results arrive.
 A separate cheap `GET /api/dashboard/overview` (`GetDashboardOverviewAsync`) returns only the customer
 count and onboarding chart — derived from `accounts.customers.list` alone, with **no** per-customer
-entitlement calls — and is cached under `dashboard:overview`. The home page loads the overview first
-(filling the *Customers* card and *customers onboarded* chart immediately), then loads the full
-`/summary` to fill the *Active SKUs / Trials / Suspended* cards and *product mix* donut; the
-not-yet-loaded cards and the product-mix panel show inline spinners until phase 2 completes. The page
+entitlement calls — plus the **Channel links** count from a BASIC-view `accounts.channelPartnerLinks.list`
+(an account-level call with no per-customer fan-out), and is cached under `dashboard:overview`. The home
+page loads the overview first (filling the *Customers* and *Channel links* cards and *customers onboarded*
+chart immediately), then loads the full `/summary` to fill the *Active SKUs / Suspended* cards and
+*product mix* donut; the not-yet-loaded cards and the product-mix panel show inline spinners until phase 2
+completes. The page
 loads both phases in `OnAfterRenderAsync(firstRender)` (prerender-safe), ties both requests to a
 `CancellationTokenSource` disposed with the component, and treats `OperationCanceledException` as
 benign (no error toast on navigation away). Like the other pages it carries no hardcoded data — empty

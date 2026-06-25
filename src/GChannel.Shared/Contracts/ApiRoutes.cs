@@ -108,4 +108,19 @@ public static class ApiRoutes
     /// <summary>Transfers entitlements back to Google (direct) billing.</summary>
     public static string TransferEntitlementsToGoogle(string customerId) =>
         $"/api/customers/{customerId}/transfer-entitlements-to-google";
+
+    // Channel partner links (§5 — distributor / n-tier). A distributor links downstream resellers
+    // ("channel partners") to their account; customers can then be owned by a partner.
+
+    /// <summary>Lists the reseller account's channel partner links.</summary>
+    public const string ChannelPartnerLinks = "/api/channel-partner-links";
+
+    /// <summary>A single channel partner link by id.</summary>
+    public static string ChannelPartnerLink(string linkId) => $"/api/channel-partner-links/{linkId}";
+
+    /// <summary>Updates a channel partner link's state.</summary>
+    public static string ChannelPartnerLinkState(string linkId) => $"/api/channel-partner-links/{linkId}/state";
+
+    /// <summary>Lists the customers owned by a channel partner link.</summary>
+    public static string ChannelPartnerCustomers(string linkId) => $"/api/channel-partner-links/{linkId}/customers";
 }

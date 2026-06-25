@@ -1,0 +1,251 @@
+@page "/channel-partner-links/{Id}"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_link?.PublicId ?? "Channel partner link") · GChannel</PageTitle>
+
+@if (_loading)
+{
+    <LoadingPanel Title="Loading channel partner link…"
+                  Hint="Fetching the link details and the customers it owns." />
+}
+else if (_link is null)
+{
+    <MudAlert Severity="Severity.Error">Channel partner link not found.</MudAlert>
+    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="/channel-partner-links" StartIcon="@Icons.Material.Filled.ArrowBack">
+        Back to links
+    </MudButton>
+}
+else
+{
+    <div class="d-flex justify-space-between align-center mb-4">
+        <div class="d-flex align-center" style="gap: 8px;">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/channel-partner-links" />
+            <div>
+                <MudText Typo="Typo.h4">@(_link.ChannelPartner?.PrimaryDomain ?? _link.ResellerCloudIdentityId ?? _link.Id)</MudText>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(_link.LinkState)">
+                    @(_link.LinkState ?? "—")
+                </MudChip>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Outlined" Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="@(() => ChangeStateAsync("ACTIVE"))"
+                       Disabled="@(_busy || IsState("ACTIVE"))">Activate</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Warning"
+                       StartIcon="@Icons.Material.Filled.PauseCircle"
+                       OnClick="@(() => ChangeStateAsync("SUSPENDED"))"
+                       Disabled="@(_busy || IsState("SUSPENDED"))">Suspend</MudButton>
+        </div>
+    </div>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Details</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            <tr><td><strong>Link id</strong></td><td>@_link.Id</td></tr>
+                            <tr><td><strong>Reseller Cloud Identity</strong></td><td>@(_link.ResellerCloudIdentityId ?? "—")</td></tr>
+                            <tr><td><strong>Public id</strong></td><td>@(_link.PublicId ?? "—")</td></tr>
+                            <tr><td><strong>State</strong></td><td>@(_link.LinkState ?? "—")</td></tr>
+                            <tr><td><strong>Created</strong></td><td>@(_link.CreateTime?.ToString("u") ?? "—")</td></tr>
+                            <tr><td><strong>Updated</strong></td><td>@(_link.UpdateTime?.ToString("u") ?? "—")</td></tr>
+                            <tr>
+                                <td><strong>Invitation</strong></td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(_link.InviteLinkUri))
+                                    {
+                                        <MudLink Href="@_link.InviteLinkUri" Target="_blank">Open invitation</MudLink>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                            </tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Partner Cloud Identity</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    @if (_link.ChannelPartner is { } ci)
+                    {
+                        <MudSimpleTable Dense="true" Elevation="0">
+                            <tbody>
+                                <tr><td><strong>Type</strong></td><td>@(ci.CustomerType ?? "—")</td></tr>
+                                <tr><td><strong>Primary domain</strong></td><td>@(ci.PrimaryDomain ?? "—")</td></tr>
+                                <tr>
+                                    <td><strong>Domain verified</strong></td>
+                                    <td>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                                 Color="@(ci.IsDomainVerified ? Color.Success : Color.Warning)">
+                                            @(ci.IsDomainVerified ? "Verified" : "Unverified")
+                                        </MudChip>
+                                    </td>
+                                </tr>
+                                <tr><td><strong>Alternate email</strong></td><td>@(ci.AlternateEmail ?? "—")</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            No Cloud Identity info yet (the partner may not have accepted the invitation).
+                        </MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    <MudCard Elevation="2" Class="mt-2">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6">Customers owned by this partner</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Customers whose <code>ChannelPartnerId</code> resolves to this link.
+                </MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (_customersLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_customers is { Count: > 0 })
+            {
+                <MudTable Items="_customers" Hover="true" Elevation="0" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Organization</MudTh>
+                        <MudTh>Domain</MudTh>
+                        <MudTh>Created</MudTh>
+                        <MudTh Style="text-align:right">Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Organization">@(context.OrgDisplayName ?? context.Id)</MudTd>
+                        <MudTd DataLabel="Domain">@context.Domain</MudTd>
+                        <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+                        <MudTd DataLabel="Actions" Style="text-align:right">
+                            <MudTooltip Text="View customer">
+                                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                               Href="@($"/customers/{context.Id}")" />
+                            </MudTooltip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No customers owned by this partner.</MudText>
+            }
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = string.Empty;
+
+    private ChannelPartnerLink? _link;
+    private IReadOnlyList<Customer>? _customers;
+    private bool _loading = true;
+    private bool _customersLoading = true;
+    private bool _busy;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _link = await Api.GetChannelPartnerLinkAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load channel partner link: {ex.Message}", Severity.Error);
+            _link = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        if (_link is not null)
+        {
+            await LoadCustomersAsync();
+        }
+    }
+
+    private async Task LoadCustomersAsync()
+    {
+        _customersLoading = true;
+        try
+        {
+            var result = await Api.ListChannelPartnerCustomersAsync(Id);
+            _customers = result?.Customers ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load partner customers: {ex.Message}", Severity.Error);
+            _customers = [];
+        }
+        finally
+        {
+            _customersLoading = false;
+        }
+    }
+
+    private bool IsState(string state) =>
+        string.Equals(_link?.LinkState, state, StringComparison.OrdinalIgnoreCase);
+
+    private async Task ChangeStateAsync(string state)
+    {
+        _busy = true;
+        try
+        {
+            var updated = await Api.UpdateChannelPartnerLinkStateAsync(Id, new UpdateChannelPartnerLinkRequest
+            {
+                LinkState = state
+            });
+
+            if (updated is not null)
+            {
+                _link = updated;
+            }
+            Snackbar.Add($"Link set to {state}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to update link state: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    {
+        "ACTIVE" => Color.Success,
+        "INVITED" => Color.Info,
+        "SUSPENDED" => Color.Warning,
+        "REVOKED" => Color.Error,
+        _ => Color.Default
+    };
+}

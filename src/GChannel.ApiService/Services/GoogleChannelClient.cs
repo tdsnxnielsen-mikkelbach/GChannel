@@ -103,6 +103,21 @@ public interface IGoogleChannelClient
     /// <summary>Transfers entitlements back to Google (direct) billing (<c>customers.transferEntitlementsToGoogle</c>).</summary>
     Task<EntitlementOperation> TransferEntitlementsToGoogleAsync(string customerId, TransferEntitlementsToGoogleRequest request, CancellationToken cancellationToken);
 
+    /// <summary>Lists the reseller account's channel partner links (<c>accounts.channelPartnerLinks.list</c>).</summary>
+    Task<ChannelPartnerLinksResult> ListChannelPartnerLinksAsync(CancellationToken cancellationToken);
+
+    /// <summary>Gets a single channel partner link (<c>accounts.channelPartnerLinks.get</c>).</summary>
+    Task<ChannelPartnerLink> GetChannelPartnerLinkAsync(string linkId, CancellationToken cancellationToken);
+
+    /// <summary>Invites a downstream reseller by creating a channel partner link (<c>accounts.channelPartnerLinks.create</c>).</summary>
+    Task<ChannelPartnerLink> CreateChannelPartnerLinkAsync(CreateChannelPartnerLinkRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Updates a channel partner link's state (<c>accounts.channelPartnerLinks.patch</c>).</summary>
+    Task<ChannelPartnerLink> UpdateChannelPartnerLinkStateAsync(string linkId, UpdateChannelPartnerLinkRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Lists the customers owned by a channel partner link (<c>accounts.channelPartnerLinks.customers.list</c>).</summary>
+    Task<CustomersResult> ListChannelPartnerCustomersAsync(string linkId, CancellationToken cancellationToken);
+
     /// <summary>Builds the aggregated home-dashboard figures from customers + entitlements.</summary>
     /// <param name="applyTimeBudget">
     /// When <see langword="true"/> (the default, used on the request path) the per-customer phase is
@@ -130,6 +145,12 @@ public interface IGoogleChannelClient
     /// so the UI can render those immediately before the slower entitlement aggregation completes.
     /// </summary>
     Task<DashboardOverview> GetDashboardOverviewAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Counts the reseller's channel partner links (account-level, quota-light). Used by the
+    /// background refresher to warm the dashboard's "Channel links" headline figure.
+    /// </summary>
+    Task<int> CountChannelPartnerLinksAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -149,6 +170,9 @@ public sealed class GoogleChannelClient(
     /// Only these accounts can be used for downstream reseller actions.
     /// </summary>
     private const string DomainCustomerType = "DOMAIN";
+
+    /// <summary>The <c>link_state</c> a newly created channel partner link starts in.</summary>
+    private const string InvitedLinkState = "INVITED";
 
     public async Task<CheckCloudIdentityResult> CheckCloudIdentityAsync(
         CheckCloudIdentityRequest request,
@@ -564,11 +588,42 @@ public sealed class GoogleChannelClient(
         // can render these immediately while the slow per-customer entitlement aggregation loads.
         var customers = await ListAllCustomersAsync(service, cancellationToken);
 
+        // Channel partner links (§5) are an account-level list (no per-customer fan-out), so counting
+        // them here keeps the overview cheap while restoring the "Channel links" headline figure.
+        var channelLinkCount = await CountChannelPartnerLinksAsync(service, cancellationToken);
+
         return new DashboardOverview
         {
             CustomerCount = customers.Count,
+            ChannelLinkCount = channelLinkCount,
             CustomersOnboarded = BuildMonthlyOnboarded(customers)
         };
+    }
+
+    public async Task<int> CountChannelPartnerLinksAsync(CancellationToken cancellationToken)
+    {
+        EnsureAccountConfigured();
+        using var service = CreateService();
+        return await CountChannelPartnerLinksAsync(service, cancellationToken);
+    }
+
+    /// <summary>Counts the reseller's channel partner links (BASIC view; account-level, quota-light).</summary>
+    private async Task<int> CountChannelPartnerLinksAsync(CloudchannelService service, CancellationToken cancellationToken)
+    {
+        var count = 0;
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.ChannelPartnerLinks.List(_options.AccountName);
+            request.View = AccountsResource.ChannelPartnerLinksResource.ListRequest.ViewEnum.BASIC;
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+            count += response.ChannelPartnerLinks?.Count ?? 0;
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return count;
     }
 
     public async Task<DashboardSummary> GetDashboardSummaryAsync(
@@ -1285,6 +1340,121 @@ public sealed class GoogleChannelClient(
         PurchaseOrderId = string.IsNullOrWhiteSpace(line.PurchaseOrderId) ? null : line.PurchaseOrderId
     };
 
+    public async Task<ChannelPartnerLinksResult> ListChannelPartnerLinksAsync(CancellationToken cancellationToken)
+    {
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var links = new List<ChannelPartnerLink>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.ChannelPartnerLinks.List(_options.AccountName);
+            // FULL includes the partner's Cloud Identity info so the UI can show who's linked.
+            request.View = AccountsResource.ChannelPartnerLinksResource.ListRequest.ViewEnum.FULL;
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var link in response.ChannelPartnerLinks ?? [])
+            {
+                links.Add(MapChannelPartnerLink(link));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new ChannelPartnerLinksResult { Links = links };
+    }
+
+    public async Task<ChannelPartnerLink> GetChannelPartnerLinkAsync(string linkId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var request = service.Accounts.ChannelPartnerLinks.Get(ChannelPartnerLinkName(linkId));
+        request.View = AccountsResource.ChannelPartnerLinksResource.GetRequest.ViewEnum.FULL;
+        var response = await request.ExecuteAsync(cancellationToken);
+        return MapChannelPartnerLink(response);
+    }
+
+    public async Task<ChannelPartnerLink> CreateChannelPartnerLinkAsync(CreateChannelPartnerLinkRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ResellerCloudIdentityId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        // A new link always starts in the INVITED state; the partner accepts it via InviteLinkUri.
+        var body = new GoogleCloudChannelV1ChannelPartnerLink
+        {
+            ResellerCloudIdentityId = request.ResellerCloudIdentityId,
+            LinkState = InvitedLinkState
+        };
+
+        logger.LogInformation("Creating channel partner link for reseller {Reseller}", request.ResellerCloudIdentityId);
+
+        var response = await service.Accounts.ChannelPartnerLinks
+            .Create(body, _options.AccountName)
+            .ExecuteAsync(cancellationToken);
+
+        return MapChannelPartnerLink(response);
+    }
+
+    public async Task<ChannelPartnerLink> UpdateChannelPartnerLinkStateAsync(string linkId, UpdateChannelPartnerLinkRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.LinkState);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        // link_state is the only mutable field; the update mask scopes the patch to it.
+        var body = new GoogleCloudChannelV1UpdateChannelPartnerLinkRequest
+        {
+            ChannelPartnerLink = new GoogleCloudChannelV1ChannelPartnerLink
+            {
+                LinkState = request.LinkState
+            },
+            UpdateMask = "channel_partner_link.link_state"
+        };
+
+        logger.LogInformation("Updating channel partner link {Link} to state {State}", linkId, request.LinkState);
+
+        var response = await service.Accounts.ChannelPartnerLinks
+            .Patch(body, ChannelPartnerLinkName(linkId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapChannelPartnerLink(response);
+    }
+
+    public async Task<CustomersResult> ListChannelPartnerCustomersAsync(string linkId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var customers = new List<Customer>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.ChannelPartnerLinks.Customers.List(ChannelPartnerLinkName(linkId));
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var customer in response.Customers ?? [])
+            {
+                customers.Add(MapCustomer(customer));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new CustomersResult { Customers = customers };
+    }
+
     /// <summary>Maps a Google entitlement resource to the UI-facing <see cref="Entitlement"/> contract.</summary>
     private static Entitlement MapEntitlement(GoogleCloudChannelV1Entitlement entitlement, CatalogLookups lookups = default)
     {
@@ -1693,6 +1863,31 @@ public sealed class GoogleChannelClient(
 
     /// <summary>Builds the full customer resource name for a short customer id.</summary>
     private string CustomerName(string customerId) => $"{_options.AccountName}/customers/{customerId}";
+
+    /// <summary>Builds the full channel partner link resource name for a short link id.</summary>
+    private string ChannelPartnerLinkName(string linkId) => $"{_options.AccountName}/channelPartnerLinks/{linkId}";
+
+    /// <summary>Maps a Google channel partner link resource to the UI-facing <see cref="ChannelPartnerLink"/> contract.</summary>
+    private static ChannelPartnerLink MapChannelPartnerLink(GoogleCloudChannelV1ChannelPartnerLink link) => new()
+    {
+        Name = link.Name ?? string.Empty,
+        Id = LastSegment(link.Name),
+        ResellerCloudIdentityId = link.ResellerCloudIdentityId,
+        LinkState = link.LinkState,
+        InviteLinkUri = link.InviteLinkUri,
+        PublicId = link.PublicId,
+        CreateTime = link.CreateTimeDateTimeOffset,
+        UpdateTime = link.UpdateTimeDateTimeOffset,
+        ChannelPartner = link.ChannelPartnerCloudIdentityInfo is { } info
+            ? new ChannelPartnerCloudIdentity
+            {
+                CustomerType = info.CustomerType,
+                PrimaryDomain = info.PrimaryDomain,
+                IsDomainVerified = info.IsDomainVerified ?? false,
+                AlternateEmail = info.AlternateEmail
+            }
+            : null
+    };
 
     /// <summary>Returns the last "/"-separated segment of a resource name (its short id).</summary>
     private static string LastSegment(string? resourceName) =>

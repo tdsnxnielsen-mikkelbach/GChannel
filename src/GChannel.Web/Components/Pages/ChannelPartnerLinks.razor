@@ -1,0 +1,104 @@
+@page "/channel-partner-links"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Channel partner links · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h4">Channel partner links</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.AddLink"
+               Href="/channel-partner-links/new">
+        Invite partner
+    </MudButton>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Downstream resellers (channel partners) linked to your distributor account. Open a link to view
+    its details and the customers it owns.
+</MudText>
+
+@if (_loading)
+{
+    <LoadingPanel Title="Loading channel partner links…"
+                  Hint="Fetching the resellers linked to your account." />
+}
+else if (_links is { Count: > 0 })
+{
+    <MudTable Items="_links" Hover="true" Elevation="2" Dense="false">
+        <HeaderContent>
+            <MudTh>Reseller Cloud Identity</MudTh>
+            <MudTh>Public id</MudTh>
+            <MudTh>State</MudTh>
+            <MudTh>Created</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Reseller Cloud Identity">@(context.ChannelPartner?.PrimaryDomain ?? context.ResellerCloudIdentityId ?? context.Id)</MudTd>
+            <MudTd DataLabel="Public id">@(context.PublicId ?? "—")</MudTd>
+            <MudTd DataLabel="State">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.LinkState)">
+                    @(context.LinkState ?? "—")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudTooltip Text="View">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                   Href="@($"/channel-partner-links/{context.Id}")" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Info">
+        No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.
+    </MudAlert>
+}
+
+@code {
+    private IReadOnlyList<ChannelPartnerLink>? _links;
+    private bool _loading = true;
+
+    // Load after the first interactive render rather than in OnInitializedAsync, so the API call
+    // runs once on the live circuit instead of being issued (and canceled) during prerendering.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var result = await Api.ListChannelPartnerLinksAsync();
+            _links = result?.Links ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load channel partner links: {ex.Message}", Severity.Error);
+            _links = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    {
+        "ACTIVE" => Color.Success,
+        "INVITED" => Color.Info,
+        "SUSPENDED" => Color.Warning,
+        "REVOKED" => Color.Error,
+        _ => Color.Default
+    };
+}
