@@ -55,6 +55,13 @@ builder.Services
         options.SaveTokens = true;
         options.AccessType = "offline";
         options.Scope.Add("https://www.googleapis.com/auth/apps.order");
+
+        // Google only issues a refresh token on the *first* consent unless we explicitly force the
+        // consent prompt. Without one, the access token captured at sign-in expires after ~1 hour and
+        // GoogleTokenProvider has nothing to refresh with, so it forwards the stale token and the
+        // Channel API rejects it with 401. Forcing "consent" (together with offline access above)
+        // guarantees a refresh token so tokens can be renewed silently for the life of the session.
+        options.AdditionalAuthorizationParameters["prompt"] = "consent";
         options.Events.OnCreatingTicket = context =>
         {
             // Surface the access token as a claim so it is available inside the
