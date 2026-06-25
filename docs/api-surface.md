@@ -24,6 +24,8 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Entitlements → purchase** | `accounts.customers.entitlements.create` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/create) |
 | **Entitlements → change offer / parameters / renewal** | `.changeOffer` / `.changeParameters` / `.changeRenewalSettings` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/changeOffer) |
 | **Entitlements → activate / suspend / cancel / start paid** | `.activate` / `.suspend` / `.cancel` / `.startPaidService` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/activate) |
+| **Customers → transferable SKUs / offers** | `accounts.listTransferableSkus` / `accounts.listTransferableOffers` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/listTransferableSkus) |
+| **Customers → transfer in / to Google** | `accounts.customers.transferEntitlements` / `.transferEntitlementsToGoogle` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/transferEntitlements) |
 | **Home → dashboard summary** | *derived* (`accounts.customers.list` + `accounts.customers.entitlements.list` + `accounts.offers.list`) | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) |
 
 > **Cross-navigation.** Catalog resources are correlated by id (product ↔ SKU ↔ offer ↔ billable
@@ -31,10 +33,13 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > detail page's purchasable SKUs deep-link into the catalog, and each customer row links to the
 > Cloud Identity check for its domain (`/accounts/cloud-identity?domain=`). Entitlements complete the
 > chain: they hang off a customer (`/customers/{id}/entitlements`) and link back to the catalog by id
-> (offer/product/SKU), while the purchase flow reuses the customer's purchasable SKUs/offers. See
+> (offer/product/SKU), while the purchase flow reuses the customer's purchasable SKUs/offers.
+> **Transfers** reuse the same model — the transfer page (`/customers/{id}/transfer`) hangs off a
+> customer, and its transferable SKUs/offers resolve to the same catalog ids/friendly names. See
 > [architecture.md](architecture.md#catalog-correlation--navigation).
 
-> **Long-running operations.** Mutating entitlement calls (create/change/state-change) return LROs.
+> **Long-running operations.** Mutating entitlement **and transfer** calls
+> (create/change/state-change, `transferEntitlements`/`transferEntitlementsToGoogle`) return LROs.
 > Operation polling is deferred to the roadmap's §7; the UI currently reflects the operation as
 > *completed* (when Google finishes inline) or *submitted — processing* and reloads the list.
 
@@ -102,6 +107,9 @@ mutating calls return long-running operations (see §7 for the deferred polling 
 | [`accounts.customers.entitlements.listEntitlementChanges`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.entitlements/listEntitlementChanges) | Entitlement change history. |
 
 ### Transfers
+
+All transfer methods below are now **implemented** (see the *Implemented* table above). The two
+mutating calls return long-running operations (see §7 for the deferred polling work).
 
 | Resource.method | Purpose |
 | --- | --- |

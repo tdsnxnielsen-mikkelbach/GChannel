@@ -89,4 +89,23 @@ public static class ApiRoutes
     /// <summary>Start paid service for a trial entitlement.</summary>
     public static string EntitlementStartPaid(string customerId, string entitlementId) =>
         $"/api/customers/{customerId}/entitlements/{entitlementId}/start-paid-service";
+
+    // Transfers (§4). Bring a customer's existing entitlements into this reseller's account, or hand
+    // them back to Google. Nested under a customer, mirroring the entitlement lifecycle routes.
+
+    /// <summary>Lists the SKUs a customer currently holds that could be transferred in.</summary>
+    public static string TransferableSkus(string customerId) =>
+        $"/api/customers/{customerId}/transferable-skus";
+
+    /// <summary>Lists the offers a customer is eligible to transfer in for a SKU.</summary>
+    public static string TransferableOffers(string customerId, string productId, string skuId) =>
+        $"/api/customers/{customerId}/transferable-offers?productId={productId}&skuId={skuId}";
+
+    /// <summary>Transfers entitlements to this reseller.</summary>
+    public static string TransferEntitlements(string customerId) =>
+        $"/api/customers/{customerId}/transfer-entitlements";
+
+    /// <summary>Transfers entitlements back to Google (direct) billing.</summary>
+    public static string TransferEntitlementsToGoogle(string customerId) =>
+        $"/api/customers/{customerId}/transfer-entitlements-to-google";
 }

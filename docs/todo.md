@@ -105,10 +105,36 @@ advanced distributor/billing features.
 
 ### 4. Transfers
 
-- [ ] **Inspect transferability** — `accounts.listTransferableSkus`,
+- [x] **Inspect transferability** — `accounts.listTransferableSkus`,
   `accounts.listTransferableOffers`.
-- [ ] **Execute transfer** — `customers.transferEntitlements` and
+- [x] **Execute transfer** — `customers.transferEntitlements` and
   `customers.transferEntitlementsToGoogle`.
+
+> **Implemented.** Transferring an existing subscription into the reseller is live end-to-end:
+> shared contracts in `GChannel.Shared/Contracts/Transfers.cs`, `IGoogleChannelClient` transfer
+> methods (`ListTransferableSkusAsync` / `ListTransferableOffersAsync` with pagination, plus the
+> mutating `TransferEntitlementsAsync` and `TransferEntitlementsToGoogleAsync`) in the API, cached
+> minimal-API endpoints under `/api/customers/{id}/transferable-skus`,
+> `/api/customers/{id}/transferable-offers`, `/api/customers/{id}/transfer-entitlements` and
+> `/api/customers/{id}/transfer-entitlements-to-google` (Redis, `CacheSeconds` TTL, transferable-SKU
+> and entitlement-list caches invalidated on every transfer), the `GChannelApiClient` typed-client
+> methods, and a Blazor `Transfer` page (`/customers/{id}/transfer`) reachable from both the
+> **Customer detail** and **Entitlements** pages. The page lists transferable SKUs (eligibility chip,
+> ineligible SKUs disabled), lazy-loads transferable offers on panel expand, and builds a basket of
+> offers to transfer (per-line seats + purchase order, optional transfer auth token).
+>
+> **Correlation/navigation.** Transfers hang off a **Customer** (§2) exactly like entitlements, and
+> cross-link back to the **Catalog** (§1) by id: transferable SKUs/offers resolve their
+> product/SKU/offer ids (and friendly `MarketingInfo.DisplayName` names) from the same offer catalog
+> used by §1/§3. The `transferable-offers` lookup is scoped to a `productId`/`skuId`, so the offer a
+> customer is eligible to transfer resolves to the same Catalog ids surfaced everywhere else.
+>
+> **LROs.** Both transfer calls return long-running operations. Full operation polling is **§7**;
+> until then the UI surfaces the operation as accepted (showing *completed* when Google finishes
+> inline, otherwise *submitted — processing*) and navigates to the customer's entitlements list, so
+> the transferred subscriptions appear once provisioning finishes. `transferEntitlementsToGoogle`
+> (handing a subscription back to direct Google billing) is wired through the API for completeness;
+> the basket UI drives the standard `transferEntitlements` reseller flow.
 
 ### 5. Distributor / n-tier (channel partner links)
 

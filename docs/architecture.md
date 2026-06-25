@@ -163,6 +163,31 @@ affected customer's entitlement caches (list + the specific entitlement's get/ch
   finishes inline, otherwise *submitted — processing*, then reloads so the change appears once
   provisioning finishes.
 
+## Transfers
+
+Transferring an existing subscription into the reseller is modelled like the entitlement lifecycle —
+it hangs off a customer and reuses the same catalog id-correlation. The read paths
+(`accounts.listTransferableSkus`, `accounts.listTransferableOffers`) are cached in Redis; the two
+mutating calls invalidate the customer's transferable-SKU and entitlement-list caches so the
+transferred subscriptions show up once provisioning finishes.
+
+- **Endpoints.** Under `/api/customers/{customerId}`: `GET /transferable-skus`,
+  `GET /transferable-offers?productId={productId}&skuId={skuId}`, `POST /transfer-entitlements`,
+  and `POST /transfer-entitlements-to-google` (the last two return `202 Accepted` with the LRO).
+- **Page.** `/customers/{id}/transfer` lists transferable SKUs (eligibility chip; ineligible SKUs
+  are disabled), lazy-loads transferable offers when a SKU panel is expanded, and builds a basket of
+  offers to transfer with per-line seats + purchase order and an optional transfer auth token. It is
+  reachable from both the **Customer detail** and **Entitlements** page headers.
+- **Catalog correlation.** Transferable SKUs/offers carry the same `productId`/`skuId`/`offerId` as
+  everywhere else and resolve their friendly **product / SKU / offer** names from the offer catalog
+  (reusing `MarketingInfo.DisplayName`), so a transfer resolves to the same catalog ids as a
+  purchase. The `transferable-offers` lookup is scoped to a product/SKU pulled from the chosen SKU.
+- **Long-running operations.** Both `transferEntitlements` and `transferEntitlementsToGoogle` return
+  LROs (handled exactly like the entitlement mutations above — `202 Accepted` +
+  *completed*/*submitted — processing*). The basket UI drives the standard `transferEntitlements`
+  reseller flow; `transferEntitlementsToGoogle` (handing a subscription back to direct Google
+  billing) is wired through the API for completeness.
+
 ## Home dashboard (derived summary)
 
 The home page (`/`) is backed by a single internal `GET /api/dashboard/summary` endpoint. There is

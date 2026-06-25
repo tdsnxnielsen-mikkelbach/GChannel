@@ -153,6 +153,22 @@ public sealed class GChannelApiClient(
     public Task<EntitlementOperation?> StartPaidServiceAsync(string customerId, string entitlementId, CancellationToken cancellationToken = default) =>
         SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.EntitlementStartPaid(customerId, entitlementId), EmptyBody, cancellationToken);
 
+    /// <summary>Lists the SKUs a customer currently holds that could be transferred in.</summary>
+    public Task<TransferableSkusResult?> ListTransferableSkusAsync(string customerId, CancellationToken cancellationToken = default) =>
+        GetAsync<TransferableSkusResult>(ApiRoutes.TransferableSkus(customerId), cancellationToken);
+
+    /// <summary>Lists the offers a customer is eligible to transfer in for a SKU.</summary>
+    public Task<TransferableOffersResult?> ListTransferableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken = default) =>
+        GetAsync<TransferableOffersResult>(ApiRoutes.TransferableOffers(customerId, productId, skuId), cancellationToken);
+
+    /// <summary>Transfers entitlements to this reseller.</summary>
+    public Task<EntitlementOperation?> TransferEntitlementsAsync(string customerId, TransferEntitlementsRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.TransferEntitlements(customerId), request, cancellationToken);
+
+    /// <summary>Transfers entitlements back to Google (direct) billing.</summary>
+    public Task<EntitlementOperation?> TransferEntitlementsToGoogleAsync(string customerId, TransferEntitlementsToGoogleRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.TransferEntitlementsToGoogle(customerId), request, cancellationToken);
+
     /// <summary>Shared empty JSON body for state-change POSTs that carry no payload.</summary>
     private static readonly object EmptyBody = new();
 

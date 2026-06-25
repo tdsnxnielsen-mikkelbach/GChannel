@@ -29,6 +29,8 @@ else
         <div class="d-flex gap-2">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Subscriptions"
                        Href="@($"/customers/{_customer.Id}/entitlements")">Entitlements</MudButton>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.SwapHoriz"
+                       Href="@($"/customers/{_customer.Id}/transfer")">Transfer</MudButton>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
                        Href="@($"/customers/edit/{_customer.Id}")">Edit</MudButton>
             <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete"

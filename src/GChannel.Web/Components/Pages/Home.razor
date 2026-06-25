@@ -78,7 +78,7 @@
             <MudText Typo="Typo.h6" GutterBottom="true">Customers onboarded</MudText>
             @if (_monthly.Count > 0)
             {
-                <ApexChart TItem="MonthlyPoint" Title="Last 6 months">
+                <ApexChart TItem="MonthlyPoint" Title="Last 6 months" Options="_monthlyOptions" @ref="_monthlyChart">
                     <ApexPointSeries TItem="MonthlyPoint"
                                      Items="_monthly"
                                      Name="Customers"
@@ -105,7 +105,7 @@
             <MudText Typo="Typo.h6" GutterBottom="true">Product mix</MudText>
             @if (_products.Count > 0)
             {
-                <ApexChart TItem="ProductSlice" Title="Active SKUs">
+                <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_productOptions" @ref="_productChart">
                     <ApexPointSeries TItem="ProductSlice"
                                      Items="_products"
                                      Name="SKUs"
@@ -132,6 +132,18 @@
     private record SummaryCard(string Label, string Value, string Icon, Color Color, bool Ready);
     private record MonthlyPoint(string Month, decimal Customers);
     private record ProductSlice(string Product, decimal Count);
+
+    // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
+    // its own axis/legend/title text in a fixed colour that ignores MudBlazor's theme, so without this
+    // the labels stay dark and become invisible on the dark background.
+    [CascadingParameter(Name = "IsDarkMode")]
+    private bool IsDarkMode { get; set; }
+
+    private bool? _appliedDarkMode;
+    private ApexChart<MonthlyPoint>? _monthlyChart;
+    private ApexChart<ProductSlice>? _productChart;
+    private readonly ApexChartOptions<MonthlyPoint> _monthlyOptions = new();
+    private readonly ApexChartOptions<ProductSlice> _productOptions = new();
 
     private DashboardOverview? _overview;
     private DashboardSummary? _data;
@@ -161,10 +173,35 @@
             Icons.Material.Filled.PauseCircle, Color.Warning, _data is not null),
     ];
 
+    // Keep the ApexCharts theme in step with the app's light/dark mode. Runs whenever the cascaded
+    // IsDarkMode flips; the options carry the right mode up front too, so charts created later (once
+    // their data lands) render correctly without a toggle.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_appliedDarkMode == IsDarkMode)
+        {
+            return;
+        }
+
+        _appliedDarkMode = IsDarkMode;
+        var mode = IsDarkMode ? Mode.Dark : Mode.Light;
+        _monthlyOptions.Theme = new Theme { Mode = mode };
+        _productOptions.Theme = new Theme { Mode = mode };
+
+        if (_monthlyChart is not null)
+        {
+            await _monthlyChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
+        }
+
+        if (_productChart is not null)
+        {
+            await _productChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
+        }
+    }
+
     // Load after the first interactive render so the API calls run once on the live circuit
     // (avoiding a canceled prerender request), mirroring the other data-heavy pages.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
+    protected override async Task OnAfterRenderAsync(bool firstRender)    {
         if (!firstRender)
         {
             return;

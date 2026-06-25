@@ -43,7 +43,9 @@
 
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-6">
-            @Body
+            <CascadingValue Name="IsDarkMode" Value="_isDarkMode">
+                @Body
+            </CascadingValue>
         </MudContainer>
     </MudMainContent>
 </MudLayout>
