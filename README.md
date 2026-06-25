@@ -22,6 +22,7 @@ Open the `webfrontend` endpoint from the Aspire dashboard.
 
 | Topic | Doc |
 | --- | --- |
+| Using the app (new-user guide) | [docs/UI.md](docs/UI.md) |
 | Architecture, container apps & secrets | [docs/architecture.md](docs/architecture.md) |
 | Prerequisites & configuration | [docs/configuration.md](docs/configuration.md) |
 | Running locally & deploying to Azure | [docs/deployment.md](docs/deployment.md) |

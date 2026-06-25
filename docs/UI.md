@@ -1,0 +1,138 @@
+# Using GChannel — a guide for new users
+
+This is a step-by-step walkthrough of what you can do in the GChannel console. It assumes the app is
+already running (see [deployment.md](deployment.md)) and that an administrator has configured the
+reseller account (`GoogleChannel:AccountId`). You sign in with your Google account.
+
+> **Mental model.** GChannel is a thin, friendly console over the Google Cloud Channel (reseller) API.
+> You manage **customers**, the **catalog** you can sell them (products → SKUs → offers), the
+> **entitlements** (subscriptions) they own, **transfers**, **channel partners**, **repricing**, and
+> **eventing** (operations + notifications). Most things deep-link to each other, so you can follow a
+> trail rather than memorising ids.
+
+## 1. Sign in and get your bearings
+
+1. Open the web app URL and sign in with Google when prompted.
+2. You land on the **Dashboard** (`/`). The left **navigation** is grouped:
+   - **Dashboard** — at-a-glance overview.
+   - **Accounts** — Cloud Identity check.
+   - **Catalog** — Products, Offers, SKU groups.
+   - **Customers** — All customers, New customer.
+   - **Channel partners** — Partner links, Invite partner.
+   - **Eventing** — Operations, Notifications.
+
+### What the Dashboard shows
+- **Summary cards**: Customers, Active SKUs, Suspended, Channel links.
+- **Customers onboarded** — an area chart bucketing new customers into the trailing six months.
+- **Product mix** — a donut of active entitlements grouped by product.
+
+If a banner says "N customers couldn't be loaded", the live aggregation hit its time budget; refresh
+or wait for the background refresh to warm the cache. Nothing is broken — it's a partial result.
+
+## 2. Check a domain (Cloud Identity)
+
+Before creating a customer, check whether their domain already has a Google Cloud Identity (which can
+mean a transfer is required instead of a fresh create).
+
+1. Go to **Accounts → Cloud Identity check** (`/accounts/cloud-identity`).
+2. Enter the customer's primary **domain** and run the check.
+3. The result tells you whether the domain is known to Google. From a customer row elsewhere in the
+   app you can jump straight here via the domain link.
+
+## 3. Browse the catalog (what you can sell)
+
+The catalog is read-only and correlated by id, so you can hop between the three views.
+
+- **Catalog → Products** (`/catalog/products`) — the products you're authorised to resell; drill into a
+  product to see its **SKUs**.
+- **Catalog → Offers** (`/catalog/offers`) — the purchasable offers (an offer pairs a SKU with pricing
+  and terms). This is what you actually buy when creating an entitlement.
+- **Catalog → SKU groups** (`/catalog/sku-groups`) — billable SKU groupings, used for repricing scope.
+
+You don't have to start here — the purchase flow shows a customer's purchasable SKUs/offers directly —
+but it's useful for understanding what's available.
+
+## 4. Create your first customer
+
+1. Go to **Customers → New customer** (`/customers/new`).
+2. Fill in the organisation **display name**, **primary domain**, and the required address/contact
+   fields.
+3. Save. You're taken to the **customer detail** page (`/customers/{id}`), the hub for everything about
+   that customer.
+
+> Tip: if the Cloud Identity check (step 2) said the domain already exists, you likely need a
+> **transfer** (step 7) rather than a create.
+
+## 5. View and manage a customer
+
+From **Customers → All customers** (`/customers`) open any row to reach **customer detail**
+(`/customers/{id}`). From there you can:
+
+- **Edit** the customer (`/customers/edit/{id}`).
+- See and open the customer's **entitlements** (`/customers/{id}/entitlements`).
+- Start a **purchase**, a **transfer**, or **repricing**.
+- Jump to the owning **channel partner** (if the customer has one).
+
+## 6. Buy an entitlement (subscription)
+
+1. From the customer detail (or **Entitlements** list), choose **New / Purchase**
+   (`/customers/{id}/entitlements/new`).
+2. Pick from the customer's **purchasable SKUs/offers** (these deep-link back to the catalog).
+3. Set quantity/seats and any required terms, then submit.
+4. Because Google processes this as a **long-running operation**, the page reflects the result inline —
+   either *completed* (Google finished synchronously) or *submitted — processing*. If it's still
+   processing, you'll get an **operation name** you can track on the **Operations** page (step 9).
+5. Open the **entitlement detail** (`/customers/{id}/entitlements/{id}`) to see status, seats, and
+   lifecycle actions (suspend/activate/change).
+
+## 7. Transfer entitlements
+
+When a customer already has Google subscriptions (e.g. with another reseller), transfer them in:
+
+1. From customer detail choose **Transfer** (`/customers/{id}/transfer`).
+2. The page lists **transferable SKUs/offers** for that customer (resolved to friendly catalog names).
+3. Select what to transfer and submit. Like purchases, transfers are long-running — track them on the
+   **Operations** page.
+
+## 8. Channel partners and repricing
+
+- **Channel partners → Partner links** (`/channel-partner-links`) — see your channel partner links;
+  open one to see (and link back to) the **customers** it owns.
+- **Channel partners → Invite partner** (`/channel-partner-links/new`) — invite a new partner / change
+  link state.
+- **Repricing** — adjust your rebilling margin:
+  - Per customer: `/customers/{id}/repricing` (open from the customer detail header).
+  - Per partner: `/channel-partner-links/{id}/repricing` (whole-partner).
+  - On each form, set the effective **year/month**, the **percentage** adjustment, and the
+    **rebilling basis**.
+
+## 9. Eventing — track operations and watch changes
+
+- **Eventing → Operations** (`/operations`) — track a long-running operation by the name a mutation
+  returned. The page polls it to **done** and deep-links to the affected customer/entitlement. (There's
+  no global "list all" — Google doesn't support it — so you track specific operations.)
+- **Eventing → Notifications** (`/notifications`) — a live feed of Channel change events (entitlement
+  and customer changes) delivered via Google Cloud Pub/Sub. Each row resolves to the customer name and
+  deep-links to the affected resource. The right-hand card manages the **subscriber registration**
+  (which service accounts may receive events). The feed needs an administrator to configure Pub/Sub
+  (see [configuration.md](configuration.md#pubsub-notifications-7)); until then the feed simply stays
+  empty and the rest of the app is unaffected.
+
+## A typical first session, end to end
+
+1. Sign in → land on the **Dashboard**.
+2. **Cloud Identity check** the customer's domain.
+3. **Create the customer** (or **Transfer** if the domain already exists).
+4. Open the customer, **Purchase** an entitlement from their available offers.
+5. If it's still processing, copy the **operation name** and watch it finish on **Operations**.
+6. Later, watch ongoing changes arrive on **Notifications**.
+
+## Tips & troubleshooting
+
+- **Everything deep-links.** Follow links between customers, entitlements, catalog, partners, and
+  events instead of copying ids by hand.
+- **Long-running actions** don't block — submit, then track on **Operations**.
+- **Empty Notifications feed?** That's expected until Pub/Sub is configured; it doesn't affect any
+  other feature.
+- **Partial Dashboard?** The "N customers couldn't be loaded" note means the live aggregation ran out
+  of time budget; it fills in as the cache warms.
