@@ -89,7 +89,10 @@ public sealed class ChannelNotificationsService(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to record a Channel notification (message {MessageId}).", message.MessageId);
+                // Recording failed (e.g. a transient Redis fault) — nack so Pub/Sub redelivers the
+                // message instead of dropping it, preserving at-least-once delivery to the feed.
+                logger.LogWarning(ex, "Failed to record a Channel notification (message {MessageId}); requeuing.", message.MessageId);
+                return SubscriberClient.Reply.Nack;
             }
 
             return SubscriberClient.Reply.Ack;
@@ -119,8 +122,9 @@ public sealed class ChannelNotificationsService(
 
     /// <summary>
     /// Parses a Cloud Channel Pub/Sub message into a correlated notification. The message data is a
-    /// JSON payload with a <c>customerEvent</c> or <c>entitlementEvent</c> object carrying the affected
-    /// resource name and an event type; some deployments also echo ids in the message attributes.
+    /// JSON payload with a <c>customer_event</c> or <c>entitlement_event</c> object (snake_case, as Google
+    /// emits) carrying the affected resource name and an <c>event_type</c>; the message attributes also
+    /// echo <c>subscriber_event_type</c> (ENTITLEMENT_EVENT/CUSTOMER_EVENT) and <c>event_type</c>.
     /// </summary>
     private static ChannelNotification ParseNotification(PubsubMessage message)
     {
@@ -135,17 +139,17 @@ public sealed class ChannelNotificationsService(
             {
                 using var document = JsonDocument.Parse(json);
                 var root = document.RootElement;
-                if (root.TryGetProperty("entitlementEvent", out var entitlementEvent))
+                if (TryGetProperty(root, out var entitlementEvent, "entitlement_event", "entitlementEvent"))
                 {
                     kind = "Entitlement";
                     resourceName = GetString(entitlementEvent, "entitlement");
-                    eventType = GetString(entitlementEvent, "eventType");
+                    eventType = GetString(entitlementEvent, "event_type", "eventType");
                 }
-                else if (root.TryGetProperty("customerEvent", out var customerEvent))
+                else if (TryGetProperty(root, out var customerEvent, "customer_event", "customerEvent"))
                 {
                     kind = "Customer";
                     resourceName = GetString(customerEvent, "customer");
-                    eventType = GetString(customerEvent, "eventType");
+                    eventType = GetString(customerEvent, "event_type", "eventType");
                 }
             }
             catch (JsonException)
@@ -154,20 +158,26 @@ public sealed class ChannelNotificationsService(
             }
         }
 
-        if (resourceName is null && message.Attributes is { } attributes)
+        if (message.Attributes is { } attributes)
         {
-            if (attributes.TryGetValue("entitlement", out var entitlement))
+            if (kind == "Unknown"
+                && attributes.TryGetValue("subscriber_event_type", out var subscriberEventType))
             {
-                kind = kind == "Unknown" ? "Entitlement" : kind;
-                resourceName = entitlement;
-            }
-            else if (attributes.TryGetValue("customer", out var customer))
-            {
-                kind = kind == "Unknown" ? "Customer" : kind;
-                resourceName = customer;
+                kind = subscriberEventType switch
+                {
+                    "ENTITLEMENT_EVENT" => "Entitlement",
+                    "CUSTOMER_EVENT" => "Customer",
+                    _ => kind
+                };
             }
 
-            eventType ??= attributes.TryGetValue("eventType", out var attrEventType) ? attrEventType : null;
+            resourceName ??= attributes.TryGetValue("entitlement", out var entitlement) ? entitlement
+                : attributes.TryGetValue("customer", out var customer) ? customer
+                : null;
+
+            eventType ??= attributes.TryGetValue("event_type", out var attrEventType) ? attrEventType
+                : attributes.TryGetValue("eventType", out var attrEventTypeCamel) ? attrEventTypeCamel
+                : null;
         }
 
         var (customerId, entitlementId) = SplitResource(resourceName);
@@ -184,8 +194,23 @@ public sealed class ChannelNotificationsService(
         };
     }
 
-    private static string? GetString(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+    /// <summary>Returns the first matching property (supports both snake_case and camelCase keys).</summary>
+    private static bool TryGetProperty(JsonElement element, out JsonElement value, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (element.TryGetProperty(name, out value))
+            {
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? GetString(JsonElement element, params string[] names) =>
+        TryGetProperty(element, out var value, names) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
 

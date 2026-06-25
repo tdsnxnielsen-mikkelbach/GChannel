@@ -192,7 +192,39 @@ returned by mutating calls via `operations.get`/`cancel` using the signed-in use
 Channel API does **not** implement `operations.list` — it returns HTTP 501 — so there is no global
 operation list; operations are tracked individually by the name a mutation returns.)
 
-## Local secrets
+#### Notifications feed behaviour & troubleshooting
+
+- **The feed is durable.** Each received event is stored in a capped Redis list
+  (`channel:notifications`, newest first, max `PubSubMaxNotifications`/200). The local Redis container
+  uses a persistent volume + snapshotting, so the feed **survives app and container restarts** — you
+  don't need to keep events flowing to keep history. The **Refresh** button only re-reads this stored
+  list, so it appears to "do nothing" when the list is genuinely empty.
+- **Customer names** are resolved in the UI (the Notifications page looks up each `customerId` via the
+  customers API and shows the org display name, with the raw id underneath). The event payload itself
+  only carries ids.
+- **Don't `pull --auto-ack` to test.** Pub/Sub delivers each message to **exactly one** consumer and
+  drops it once acked, so `gcloud pubsub subscriptions pull … --auto-ack` **steals** events from the
+  app — they will never reach the feed. To peek without consuming, omit `--auto-ack` (the message
+  redelivers) or just let the app drain the subscription and watch the in-app feed.
+- **Payload shape.** Google emits **snake_case** JSON, e.g.
+  `{"entitlement_event":{"event_type":"LICENSE_ASSIGNMENT_CHANGED","entitlement":"accounts/…/customers/…/entitlements/…"}}`,
+  with attributes `subscriber_event_type=ENTITLEMENT_EVENT|CUSTOMER_EVENT` and `event_type=…`. The
+  subscriber parses both the snake_case body and these attributes to correlate the customer/entitlement.
+- **Replaying already-acked events.** Pub/Sub does **not** retain acked messages by default. To make
+  events replayable, enable retention on the subscription and then `seek` back in time:
+
+  ```bash
+  gcloud pubsub subscriptions update gchannel-notifications-sub \
+    --project=tdsgchannel --retain-acked-messages --message-retention-duration=7d
+  # later, to replay everything from the last hour into the app:
+  gcloud pubsub subscriptions seek gchannel-notifications-sub \
+    --project=tdsgchannel --time=$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)
+  ```
+
+  Events acked **before** retention was enabled are gone for good; trigger a fresh change (e.g. a
+  license-assignment change) to populate the feed.
+
+
 
 ```powershell
 dotnet user-secrets --project src/GChannel.Web set "Authentication:Google:ClientId" "<client-id>"

@@ -42,6 +42,7 @@
             <MudTable Items="_feed.Notifications" Hover="true" Elevation="2" Dense="true">
                 <HeaderContent>
                     <MudTh>Kind</MudTh>
+                    <MudTh>Customer</MudTh>
                     <MudTh>Event</MudTh>
                     <MudTh>Received</MudTh>
                     <MudTh Style="text-align:right">Open</MudTh>
@@ -50,6 +51,17 @@
                     <MudTd DataLabel="Kind">
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
                                  Color="@KindColor(context.Kind)">@context.Kind</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Customer">
+                        @if (!string.IsNullOrEmpty(context.CustomerId))
+                        {
+                            <MudText Typo="Typo.body2">@CustomerLabel(context.CustomerId)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.CustomerId</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">—</MudText>
+                        }
                     </MudTd>
                     <MudTd DataLabel="Event">
                         <MudText Typo="Typo.body2">@(context.EventType ?? "—")</MudText>
@@ -136,6 +148,8 @@
     private ChannelNotificationsResult? _feed;
     private bool _feedLoading = true;
 
+    private readonly Dictionary<string, string?> _customerNames = new(StringComparer.Ordinal);
+
     private SubscriberRegistration? _registration;
     private bool _registrationLoading = true;
     private string _newServiceAccount = string.Empty;
@@ -175,7 +189,47 @@
             _feedLoading = false;
             StateHasChanged();
         }
+
+        await ResolveCustomerNamesAsync();
+        StateHasChanged();
     }
+
+    private async Task ResolveCustomerNamesAsync()
+    {
+        if (_feed is not { Notifications.Count: > 0 })
+        {
+            return;
+        }
+
+        var ids = _feed.Notifications
+            .Select(n => n.CustomerId)
+            .Where(id => !string.IsNullOrEmpty(id) && !_customerNames.ContainsKey(id!))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        foreach (var id in ids)
+        {
+            try
+            {
+                var customer = await Api.GetCustomerAsync(id!, _cts.Token);
+                _customerNames[id!] = customer?.OrgDisplayName;
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+            {
+                return;
+            }
+            catch
+            {
+                // Leave unresolved; the row falls back to the raw id.
+                _customerNames[id!] = null;
+            }
+        }
+    }
+
+    private string CustomerLabel(string? customerId) =>
+        customerId is not null && _customerNames.TryGetValue(customerId, out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : customerId ?? "—";
 
     private async Task LoadRegistrationAsync()
     {
@@ -264,6 +318,7 @@
                     continue;
                 }
 
+                await ResolveCustomerNamesAsync();
                 await InvokeAsync(StateHasChanged);
             }
         }
