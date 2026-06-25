@@ -61,6 +61,13 @@ public static class AccountsEndpoints
 
         var result = await channel.CheckCloudIdentityAsync(request, cancellationToken);
 
+        // Cross-correlate against our channel partner links: if a link's Cloud Identity domain
+        // matches this domain, surface it (e.g. a still-pending INVITED invitation we already sent).
+        result = result with
+        {
+            PartnerLink = await FindPartnerLinkForDomainAsync(channel, cache, result, loggerFactory, cancellationToken)
+        };
+
         await cache.SetStringAsync(
             cacheKey,
             JsonSerializer.Serialize(result),
@@ -91,6 +98,82 @@ public static class AccountsEndpoints
         }
 
         return Results.Ok(result);
+    }
+
+    /// <summary>
+    /// Finds a channel partner link that corresponds to <paramref name="result"/>'s domain, trying,
+    /// in order: (1) the link's Cloud Identity primary domain, (2) the reseller Cloud Identity ID
+    /// found by the check, and (3) the domain we recorded when we sent the invitation. Best-effort:
+    /// partner-link discovery must never fail the Cloud Identity check itself.
+    /// </summary>
+    private static async Task<ChannelPartnerLink?> FindPartnerLinkForDomainAsync(
+        IGoogleChannelClient channel,
+        IDistributedCache cache,
+        CheckCloudIdentityResult result,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var links = (await channel.ListChannelPartnerLinksAsync(cancellationToken)).Links;
+            if (links.Count == 0)
+            {
+                return null;
+            }
+
+            var domain = result.Domain;
+
+            // 1) Authoritative: the partner link's Cloud Identity primary domain matches.
+            var match = links.FirstOrDefault(l =>
+                string.Equals(l.ChannelPartner?.PrimaryDomain, domain, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+
+            // 2) Fallback: match a reseller Cloud Identity ID found by the check against a link's
+            //    ResellerCloudIdentityId (covers fresh INVITED links with no primary domain yet).
+            var checkedIds = result.Accounts
+                .Select(a => a.CustomerCloudIdentityId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (checkedIds.Count > 0)
+            {
+                match = links.FirstOrDefault(l =>
+                    !string.IsNullOrWhiteSpace(l.ResellerCloudIdentityId) &&
+                    checkedIds.Contains(l.ResellerCloudIdentityId!));
+                if (match is not null)
+                {
+                    return match;
+                }
+            }
+
+            // 3) Fallback: the domain we recorded when sending the invitation (stored at create time),
+            //    keyed by the reseller Cloud Identity ID.
+            foreach (var link in links)
+            {
+                if (string.IsNullOrWhiteSpace(link.ResellerCloudIdentityId))
+                {
+                    continue;
+                }
+
+                var invitedDomain = await cache.GetStringAsync(
+                    ChannelPartnerLinksEndpoints.InvitedDomainCacheKey(link.ResellerCloudIdentityId!),
+                    cancellationToken);
+                if (string.Equals(invitedDomain, domain, StringComparison.OrdinalIgnoreCase))
+                {
+                    return link;
+                }
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            loggerFactory.CreateLogger("AccountsEndpoints")
+                .LogWarning(ex, "Failed to cross-correlate channel partner links for {Domain}.", result.Domain);
+            return null;
+        }
     }
 
     private static async Task<IResult> GetHistoryAsync(

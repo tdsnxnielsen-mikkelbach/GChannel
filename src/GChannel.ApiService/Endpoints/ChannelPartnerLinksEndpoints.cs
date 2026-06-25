@@ -59,6 +59,19 @@ public static class ChannelPartnerLinksEndpoints
                 CancellationToken cancellationToken) =>
             {
                 var created = await channel.CreateChannelPartnerLinkAsync(request, cancellationToken);
+
+                // Remember the domain we invited (keyed by reseller Cloud Identity ID) so a later
+                // Cloud Identity check on the same domain can correlate this link even before Google
+                // populates the partner's primary domain on a freshly INVITED link.
+                if (!string.IsNullOrWhiteSpace(request.Domain))
+                {
+                    await cache.SetStringAsync(
+                        InvitedDomainCacheKey(request.ResellerCloudIdentityId),
+                        request.Domain.Trim(),
+                        new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(90) },
+                        cancellationToken);
+                }
+
                 await InvalidateAsync(cache, created.Id, cancellationToken);
                 return Results.Created($"/api/channel-partner-links/{created.Id}", created);
             })
@@ -87,6 +100,14 @@ public static class ChannelPartnerLinksEndpoints
     private static string GetCacheKey(string linkId) => $"channel-partner-links:get:{linkId}";
 
     private static string CustomersCacheKey(string linkId) => $"channel-partner-links:{linkId}:customers";
+
+    /// <summary>
+    /// Cache key for the domain we recorded when inviting a reseller, keyed by their Cloud Identity
+    /// ID. Read by the Cloud Identity check to cross-correlate a domain to a (possibly still pending)
+    /// partner link invitation.
+    /// </summary>
+    internal static string InvitedDomainCacheKey(string resellerCloudIdentityId) =>
+        $"cpl-invited-domain:{resellerCloudIdentityId.ToLowerInvariant()}";
 
     /// <summary>Drops the cached link list and a specific link after a mutation.</summary>
     private static async Task InvalidateAsync(IDistributedCache cache, string linkId, CancellationToken cancellationToken)

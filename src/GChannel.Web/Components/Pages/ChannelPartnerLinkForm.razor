@@ -25,6 +25,11 @@
                       HelperText="The downstream reseller's Cloud Identity customer ID."
                       Variant="Variant.Outlined" Class="mb-4" />
 
+        <MudTextField @bind-Value="_resellerDomain"
+                      Label="Reseller domain (optional)"
+                      HelperText="Recorded so a later Cloud Identity check on this domain can find this invitation."
+                      Variant="Variant.Outlined" Class="mb-4" />
+
         <div class="d-flex gap-2">
             <MudButton Variant="Variant.Filled" Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.AddLink"
@@ -41,6 +46,7 @@
 @code {
     private MudForm? _form;
     private string _resellerCloudIdentityId = string.Empty;
+    private string _resellerDomain = string.Empty;
     private bool _submitting;
 
     private async Task SubmitAsync()
@@ -65,7 +71,8 @@
         {
             var created = await Api.CreateChannelPartnerLinkAsync(new CreateChannelPartnerLinkRequest
             {
-                ResellerCloudIdentityId = _resellerCloudIdentityId.Trim()
+                ResellerCloudIdentityId = _resellerCloudIdentityId.Trim(),
+                Domain = string.IsNullOrWhiteSpace(_resellerDomain) ? null : _resellerDomain.Trim()
             });
 
             Snackbar.Add("Channel partner link created.", Severity.Success);

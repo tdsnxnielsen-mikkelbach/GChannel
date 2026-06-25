@@ -53,6 +53,13 @@ public sealed record CreateChannelPartnerLinkRequest
 {
     /// <summary>Cloud Identity ID of the reseller to invite. Required.</summary>
     public required string ResellerCloudIdentityId { get; init; }
+
+    /// <summary>
+    /// Optional primary domain of the reseller being invited. Recorded at create time so a later
+    /// Cloud Identity check on the same domain can correlate this link even before Google populates
+    /// the partner's primary domain on the link itself.
+    /// </summary>
+    public string? Domain { get; init; }
 }
 
 /// <summary>Update payload for a channel partner link's state (<c>channelPartnerLinks.patch</c>).</summary>

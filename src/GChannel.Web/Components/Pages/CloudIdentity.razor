@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject GChannelApiClient Api
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
 <PageTitle>Cloud Identity check · GChannel</PageTitle>
 
@@ -83,15 +84,47 @@
         else if (_result is not null)
         {
             <MudAlert Severity="@(_result.Exists ? Severity.Warning : Severity.Success)" Class="mb-4">
-                @if (_result.Exists)
-                {
-                    <span>A Cloud Identity account already exists for <b>@_result.Domain</b>.</span>
-                }
-                else
-                {
-                    <span>No Cloud Identity account exists for <b>@_result.Domain</b>. You can provision it.</span>
-                }
+                <div class="d-flex align-center justify-space-between" style="width:100%; gap:16px">
+                    @if (_result.Exists)
+                    {
+                        <span>A Cloud Identity account already exists for <b>@_result.Domain</b>.</span>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.People"
+                                   OnClick="ViewCustomers">View customers</MudButton>
+                    }
+                    else
+                    {
+                        <span>No Cloud Identity account exists for <b>@_result.Domain</b>. You can provision it.</span>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.AddBusiness"
+                                   OnClick="ProvisionAsync">Provision customer</MudButton>
+                    }
+                </div>
             </MudAlert>
+
+            @if (_result.PartnerLink is not null)
+            {
+                var link = _result.PartnerLink;
+                var invited = string.Equals(link.LinkState, "INVITED", StringComparison.OrdinalIgnoreCase);
+                <MudAlert Severity="@(invited ? Severity.Warning : Severity.Info)" Class="mb-4">
+                    <div class="d-flex align-center justify-space-between" style="width:100%; gap:16px">
+                        <span>
+                            This domain matches a channel partner link
+                            (<b>@(link.ChannelPartner?.PrimaryDomain ?? _result.Domain)</b>) with state
+                            <MudChip T="string" Size="Size.Small" Class="ml-1"
+                                     Color="@(invited ? Color.Warning : Color.Default)"
+                                     Variant="Variant.Text">@(link.LinkState ?? "UNKNOWN")</MudChip>.
+                            @if (invited)
+                            {
+                                <text>The partner has not accepted our invitation yet.</text>
+                            }
+                        </span>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Hub"
+                                   OnClick="@(() => ViewPartnerLink(link.Id))">View partner link</MudButton>
+                    </div>
+                </MudAlert>
+            }
 
             @if (_result.HasNonDomainAccounts)
             {
@@ -174,6 +207,16 @@
     }
 
     private Task CheckAsync() => RunCheckAsync(forceRefresh: false);
+
+    private void ProvisionAsync()
+    {
+        var domain = _result?.Domain ?? _model.Domain;
+        Nav.NavigateTo($"/customers/new?domain={Uri.EscapeDataString(domain)}");
+    }
+
+    private void ViewCustomers() => Nav.NavigateTo("/customers");
+
+    private void ViewPartnerLink(string id) => Nav.NavigateTo($"/channel-partner-links/{id}");
 
     private async Task RecheckAsync(IdentityCheckHistoryItem item)
     {

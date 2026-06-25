@@ -31,6 +31,13 @@ public sealed record CheckCloudIdentityResult
     public bool HasNonDomainAccounts { get; init; }
 
     public IReadOnlyList<CloudIdentityAccount> Accounts { get; init; } = [];
+
+    /// <summary>
+    /// A channel partner link whose Cloud Identity primary domain matches this domain, if any.
+    /// Cross-correlation surfaced in the UI so the operator can see, e.g., a still-pending
+    /// (<c>INVITED</c>) partner link invitation for the same domain.
+    /// </summary>
+    public ChannelPartnerLink? PartnerLink { get; init; }
 }
 
 /// <summary>A single Cloud Identity account match.</summary>
