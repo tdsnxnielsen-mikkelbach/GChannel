@@ -17,10 +17,13 @@
                Href="@($"/customers/{CustomerId}/entitlements")">Back</MudButton>
 </div>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
-    Pick a product, then a SKU and Offer the customer is eligible to purchase, set the seat count
-    and submit. The order is provisioned asynchronously by Google.
-</MudText>
+<div class="d-flex justify-space-between align-center mb-6">
+    <MudText Typo="Typo.body1" Color="Color.Secondary">
+        Pick a product, then a SKU and Offer the customer is eligible to purchase, set the seat count
+        and submit. The order is provisioned asynchronously by Google.
+    </MudText>
+    <GuidedWalkthrough Id="purchase-entitlement" Steps="_walkthrough" />
+</div>
 
 @if (_loading)
 {
@@ -32,7 +35,7 @@ else
     <MudCard Elevation="2" Style="max-width:640px">
         <MudCardContent>
             <MudSelect T="string" Label="Product" Value="_productId" ValueChanged="OnProductSelected"
-                       Dense="true" Class="mb-4" Required="true">
+                       Dense="true" Class="mb-4" Required="true" data-walkthrough="pe-product">
                 @foreach (var product in _products ?? [])
                 {
                     <MudSelectItem Value="@product.Id">@(product.DisplayName ?? product.Id)</MudSelectItem>
@@ -78,14 +81,14 @@ else
             }
 
             <MudNumericField T="int" @bind-Value="_seats" Label="Seats (num_units)" Min="1"
-                             Class="mb-4" HelperText="Number of licensed seats to purchase." />
+                             Class="mb-4" HelperText="Number of licensed seats to purchase." data-walkthrough="pe-seats" />
 
             <MudTextField T="string" @bind-Value="_purchaseOrderId" Label="Purchase order id (optional)"
                           Class="mb-4" />
         </MudCardContent>
         <MudCardActions>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ShoppingCartCheckout"
-                       Disabled="@(_submitting || string.IsNullOrEmpty(_offerId))" OnClick="SubmitAsync">
+                       Disabled="@(_submitting || string.IsNullOrEmpty(_offerId))" OnClick="SubmitAsync" data-walkthrough="pe-submit">
                 @(_submitting ? "Submitting…" : "Purchase")
             </MudButton>
         </MudCardActions>
@@ -112,6 +115,14 @@ else
     private string? _purchaseOrderId;
     private bool _loading = true;
     private bool _submitting;
+
+    private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
+    [
+        new(null, "Purchase an entitlement", "This short tour shows how to assign a SKU to the customer."),
+        new("[data-walkthrough=\"pe-product\"]", "1. Choose a product", "Select a product; eligible SKUs then load for it."),
+        new("[data-walkthrough=\"pe-seats\"]", "2. Set the seats", "After picking a SKU and Offer, enter how many licensed seats to buy."),
+        new("[data-walkthrough=\"pe-submit\"]", "3. Purchase", "Submit the order — Google provisions it asynchronously; track it under Operations."),
+    ];
 
     // The offer resource name uniquely identifies the offer to purchase.
     private static string OfferKey(PurchasableOffer offer) => offer.OfferName;

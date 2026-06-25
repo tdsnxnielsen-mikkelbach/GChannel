@@ -22,9 +22,8 @@ export function startTour(dotNetRef, steps) {
     // element (steps without an element render as centred modals and are always kept).
     const usable = (steps || []).filter(s => !s.element || document.querySelector(s.element));
     if (usable.length === 0) {
-        if (dotNetRef) {
-            dotNetRef.invokeMethodAsync('OnTourCompleted').catch(() => { });
-        }
+        // Nothing to highlight yet (e.g. a page-scoped walkthrough whose elements haven't rendered).
+        // Don't report completion so it can be retried later.
         return;
     }
 

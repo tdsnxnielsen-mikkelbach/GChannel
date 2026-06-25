@@ -2,6 +2,9 @@ using Microsoft.JSInterop;
 
 namespace GChannel.Web.Services;
 
+/// <summary>A single popover step in a guided walkthrough/tour (serialized to the Driver.js module).</summary>
+public sealed record WalkthroughStep(string? Element, string Title, string Description);
+
 /// <summary>
 /// Drives the §9 phase 2 guided product tour. Wraps the <c>onboarding.js</c> module (Driver.js) and
 /// persists completion via <see cref="OnboardingStateService"/>. Registered scoped so the whole circuit

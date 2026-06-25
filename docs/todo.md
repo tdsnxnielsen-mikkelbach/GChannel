@@ -367,12 +367,15 @@ domain → create a customer → purchase an entitlement) without reading docs.
     cards), skippable/resumable, completion persisted; **Take the product tour** action in the app bar.
   - [x] Stable `data-onboarding` target hooks on nav groups + app-bar buttons.
 - [ ] **Phase 3 — Per-workflow guided walkthroughs / interactive tutorials**
-  - [ ] Scoped popover step sequences on `/accounts/cloud-identity`, `/customers/new`, and the purchase
-    flow; "interactive" variant gates **Next** on the real step completing.
+  - [x] Scoped popover step sequences on `/accounts/cloud-identity`, `/customers/new`, and the purchase
+    flow, via a reusable `GuidedWalkthrough` component (auto-runs once per user + a **Show me how**
+    relaunch button), reusing the phase 2 Driver.js interop.
+  - [ ] "Interactive" variant that gates **Next** on the real step completing (e.g. a field filled).
 - [ ] **Phase 4 — Ambient tooltips + feature beacons**
   - [ ] `MudTooltip` field/icon help (e.g. *rebilling basis*, *Cloud Identity check*).
   - [ ] Pulsing **beacons** on newly added nav links (e.g. **Eventing**) that dismiss on click, per user.
 
-> **Status:** Phases 1–2 are implemented (welcome card + dashboard checklist, browser-persisted; guided
-> Driver.js product tour over the nav + app bar). Phases 3–4 remain open.
+> **Status:** Phases 1–3 are implemented (welcome card + dashboard checklist; guided Driver.js product
+> tour over the nav + app bar; per-workflow walkthroughs on the Cloud Identity, new-customer and purchase
+> pages). Phase 4, plus the optional interactive (input-gated) walkthrough variant, remain open.
 

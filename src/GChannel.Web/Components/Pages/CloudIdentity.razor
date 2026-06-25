@@ -5,7 +5,10 @@
 
 <PageTitle>Cloud Identity check · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">Cloud Identity check</MudText>
+<div class="d-flex justify-space-between align-center">
+    <MudText Typo="Typo.h4" GutterBottom="true">Cloud Identity check</MudText>
+    <GuidedWalkthrough Id="cloud-identity" Steps="_walkthrough" AutoStart="true" />
+</div>
 <MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
     Verify whether a customer domain already has a Google Cloud Identity account before you
     start provisioning.
@@ -22,7 +25,7 @@
                               Required="true"
                               Adornment="Adornment.Start"
                               AdornmentIcon="@Icons.Material.Filled.Language"
-                              Class="mb-4" />
+                              Class="mb-4" data-walkthrough="ci-domain" />
                 <MudTextField @bind-Value="_model.PrimaryAdminEmail"
                               Label="Primary admin email (optional)"
                               Placeholder="admin@example.com"
@@ -33,13 +36,13 @@
                            Variant="Variant.Filled"
                            Color="Color.Primary"
                            StartIcon="@Icons.Material.Filled.Search"
-                           Disabled="_busy">
+                           Disabled="_busy" data-walkthrough="ci-check">
                     @(_busy ? "Checking…" : "Check")
                 </MudButton>
             </EditForm>
         </MudPaper>
 
-        <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudPaper Class="pa-4 mt-4" Elevation="2" data-walkthrough="ci-history">
             <MudText Typo="Typo.subtitle1" GutterBottom="true">Recently checked</MudText>
             @if (_history.Count == 0)
             {
@@ -146,6 +149,13 @@
     private IReadOnlyList<IdentityCheckHistoryItem> _history = [];
     private bool _busy;
     private bool _autoChecked;
+
+    private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
+    [
+        new("[data-walkthrough=\"ci-domain\"]", "Enter a domain", "Type the customer's primary domain (e.g. contoso.com) to check."),
+        new("[data-walkthrough=\"ci-check\"]", "Run the check", "Click Check to see if the domain already has a Google Cloud Identity."),
+        new("[data-walkthrough=\"ci-history\"]", "Recent checks", "Previously checked domains appear here — re-check any to bypass the cache."),
+    ];
 
     protected override async Task OnInitializedAsync() => await LoadHistoryAsync();
 

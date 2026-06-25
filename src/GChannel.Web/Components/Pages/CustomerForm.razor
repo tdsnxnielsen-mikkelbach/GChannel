@@ -7,7 +7,13 @@
 
 <PageTitle>@(IsEdit ? "Edit customer" : "New customer") · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">@(IsEdit ? "Edit customer" : "New customer")</MudText>
+<div class="d-flex justify-space-between align-center">
+    <MudText Typo="Typo.h4" GutterBottom="true">@(IsEdit ? "Edit customer" : "New customer")</MudText>
+    @if (!IsEdit)
+    {
+        <GuidedWalkthrough Id="customer-new" Steps="_walkthrough" AutoStart="true" />
+    }
+</div>
 
 @if (_loading)
 {
@@ -25,17 +31,17 @@ else
             </MudCardHeader>
             <MudCardContent>
                 <MudTextField @bind-Value="_model.OrgDisplayName" Label="Organization name" Required="true"
-                              RequiredError="Organization name is required." Class="mb-3" />
+                              RequiredError="Organization name is required." Class="mb-3" data-walkthrough="cf-org" />
                 <MudTextField @bind-Value="_model.Domain" Label="Primary domain" Required="true"
                               RequiredError="Domain is required." Disabled="IsEdit"
                               HelperText="@(IsEdit ? "Domain cannot be changed after creation." : "e.g. contoso.com")"
-                              Class="mb-3" />
+                              Class="mb-3" data-walkthrough="cf-domain" />
                 <MudTextField @bind-Value="_model.LanguageCode" Label="Language code"
                               HelperText="e.g. en-US" />
             </MudCardContent>
         </MudCard>
 
-        <MudCard Elevation="2" Class="mb-4">
+        <MudCard Elevation="2" Class="mb-4" data-walkthrough="cf-contact">
             <MudCardHeader>
                 <CardHeaderContent>
                     <MudText Typo="Typo.h6">Primary contact</MudText>
@@ -62,7 +68,7 @@ else
             </MudCardContent>
         </MudCard>
 
-        <MudCard Elevation="2" Class="mb-4">
+        <MudCard Elevation="2" Class="mb-4" data-walkthrough="cf-address">
             <MudCardHeader>
                 <CardHeaderContent>
                     <MudText Typo="Typo.h6">Address</MudText>
@@ -91,7 +97,7 @@ else
         </MudCard>
 
         <div class="d-flex gap-3">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving" data-walkthrough="cf-save">
                 @(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create customer"))
             </MudButton>
             <MudButton Variant="Variant.Outlined" OnClick="Cancel" Disabled="_saving">Cancel</MudButton>
@@ -109,6 +115,15 @@ else
     private readonly CustomerEditModel _model = new();
     private bool _loading;
     private bool _saving;
+
+    private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
+    [
+        new("[data-walkthrough=\"cf-org\"]", "Organization name", "The customer's legal/organization name as it should appear in Google."),
+        new("[data-walkthrough=\"cf-domain\"]", "Primary domain", "The domain you verified in the Cloud Identity check — it can't be changed later."),
+        new("[data-walkthrough=\"cf-contact\"]", "Primary contact", "Optional contact details for the customer's main administrator."),
+        new("[data-walkthrough=\"cf-address\"]", "Address", "Region code is required; the rest helps with tax and billing."),
+        new("[data-walkthrough=\"cf-save\"]", "Create the customer", "Submit to create the reseller customer, then purchase entitlements for them."),
+    ];
 
     protected override async Task OnParametersSetAsync()
     {

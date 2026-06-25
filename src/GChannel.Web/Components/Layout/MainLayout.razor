@@ -68,7 +68,15 @@
     private bool _drawerOpen = true;
     private bool _isDarkMode;
     private MudThemeProvider _mudThemeProvider = null!;
-    private readonly MudTheme _theme = new();
+
+    // Descriptive page subtitles, loading text and KPI labels use Color.Secondary as "muted" text.
+    // MudBlazor's default Secondary palette is a pink/red accent, which wrongly reads as an error, so
+    // remap Secondary to the neutral muted-text colour for each mode — keeping it theme-aware.
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight { Secondary = "rgba(0,0,0,0.54)" },
+        PaletteDark = new PaletteDark { Secondary = "rgba(255,255,255,0.5)" },
+    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
