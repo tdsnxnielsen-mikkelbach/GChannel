@@ -221,6 +221,35 @@ rooted off `/api/channel-partner-links` and managed by `IGoogleChannelClient`'s
   links** card counts links via a cheap account-level `channelPartnerLinks.list` (BASIC view) folded
   into the dashboard *overview* phase.
 
+## Repricing (rebilling margin)
+
+A reseller can mark up or discount what a customer is billed, and a distributor can do the same for a
+whole downstream channel partner. Both are modelled as *repricing configs* and share the contracts in
+`GChannel.Shared/Contracts/Repricing.cs` (`RepricingConfig`, `RepricingConfigsResult`,
+`SaveRepricingConfigRequest`, plus `RebillingBases` / `RepricingGranularities` constant classes) and
+the `IGoogleChannelClient` methods `ListCustomerRepricingConfigsAsync` /
+`CreateCustomerRepricingConfigAsync` / `UpdateCustomerRepricingConfigAsync` /
+`DeleteCustomerRepricingConfigAsync` and the four `…ChannelPartnerRepricingConfig…` equivalents.
+
+- **Endpoints.** `GET|POST /api/customers/{customerId}/repricing-configs`,
+  `PUT|DELETE /api/customers/{customerId}/repricing-configs/{configId}` and the matching
+  `/api/channel-partner-links/{linkId}/repricing-configs[/{configId}]`. Reads are cached in Redis for
+  `CacheSeconds`; the list cache is invalidated on create/update/delete.
+- **Config shape.** A config carries the effective invoice month (current or future), a percentage
+  adjustment (positive marks up, negative discounts, carried over the wire as a `GoogleTypeDecimal`
+  string) and a rebilling basis (`COST_AT_LIST` or `DIRECT_CUSTOMER_COST`). Conditional overrides are
+  surfaced read-only as a count.
+- **Granularity.** Customer configs use **entitlement granularity** — each targets one of the
+  customer's entitlements (required) — so the create form populates its entitlement picker from
+  `entitlements.list` (§3). Channel partner configs use **channel-partner granularity** and reprice
+  the whole reseller, so no entitlement is selected.
+- **Pages.** **Customer repricing** (`/customers/{id}/repricing`) and **Channel partner repricing**
+  (`/channel-partner-links/{id}/repricing`), each with an inline create/edit form and a delete action,
+  reached via a **Repricing** action on the customer-detail and link-detail pages.
+- **Correlation.** Each customer config row links its targeted entitlement back to the entitlement
+  detail page (§3). Like channel partner links, `create`/`patch` return the **config resource
+  directly** (not LROs), so the UI updates immediately.
+
 ## Home dashboard (derived summary)
 
 The home page (`/`) is backed by a single internal `GET /api/dashboard/summary` endpoint. There is

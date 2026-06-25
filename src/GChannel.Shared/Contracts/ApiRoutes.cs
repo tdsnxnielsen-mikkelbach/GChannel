@@ -123,4 +123,24 @@ public static class ApiRoutes
 
     /// <summary>Lists the customers owned by a channel partner link.</summary>
     public static string ChannelPartnerCustomers(string linkId) => $"/api/channel-partner-links/{linkId}/customers";
+
+    // Repricing / rebilling margin (§6). Configs hang off a customer (the reseller's margin on that
+    // customer's bill) or a channel partner link (a distributor's margin on a downstream reseller's
+    // bill). They return the config resource directly (not long-running operations).
+
+    /// <summary>Lists a customer's repricing configs.</summary>
+    public static string CustomerRepricingConfigs(string customerId) =>
+        $"/api/customers/{customerId}/repricing-configs";
+
+    /// <summary>A single customer repricing config by id.</summary>
+    public static string CustomerRepricingConfig(string customerId, string configId) =>
+        $"/api/customers/{customerId}/repricing-configs/{configId}";
+
+    /// <summary>Lists a channel partner link's repricing configs.</summary>
+    public static string ChannelPartnerRepricingConfigs(string linkId) =>
+        $"/api/channel-partner-links/{linkId}/repricing-configs";
+
+    /// <summary>A single channel partner repricing config by id.</summary>
+    public static string ChannelPartnerRepricingConfig(string linkId, string configId) =>
+        $"/api/channel-partner-links/{linkId}/repricing-configs/{configId}";
 }

@@ -38,6 +38,8 @@ else
                        StartIcon="@Icons.Material.Filled.PauseCircle"
                        OnClick="@(() => ChangeStateAsync("SUSPENDED"))"
                        Disabled="@(_busy || IsState("SUSPENDED"))">Suspend</MudButton>
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Percent"
+                       Href="@($"/channel-partner-links/{_link.Id}/repricing")">Repricing</MudButton>
         </div>
     </div>
 

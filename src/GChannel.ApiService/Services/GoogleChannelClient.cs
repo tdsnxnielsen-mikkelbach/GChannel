@@ -118,6 +118,30 @@ public interface IGoogleChannelClient
     /// <summary>Lists the customers owned by a channel partner link (<c>accounts.channelPartnerLinks.customers.list</c>).</summary>
     Task<CustomersResult> ListChannelPartnerCustomersAsync(string linkId, CancellationToken cancellationToken);
 
+    /// <summary>Lists a customer's repricing configs (<c>customers.customerRepricingConfigs.list</c>).</summary>
+    Task<RepricingConfigsResult> ListCustomerRepricingConfigsAsync(string customerId, CancellationToken cancellationToken);
+
+    /// <summary>Creates a customer repricing config (<c>customers.customerRepricingConfigs.create</c>).</summary>
+    Task<RepricingConfig> CreateCustomerRepricingConfigAsync(string customerId, SaveRepricingConfigRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Updates a customer repricing config (<c>customers.customerRepricingConfigs.patch</c>).</summary>
+    Task<RepricingConfig> UpdateCustomerRepricingConfigAsync(string customerId, string configId, SaveRepricingConfigRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Deletes a customer repricing config (<c>customers.customerRepricingConfigs.delete</c>).</summary>
+    Task DeleteCustomerRepricingConfigAsync(string customerId, string configId, CancellationToken cancellationToken);
+
+    /// <summary>Lists a channel partner link's repricing configs (<c>channelPartnerLinks.channelPartnerRepricingConfigs.list</c>).</summary>
+    Task<RepricingConfigsResult> ListChannelPartnerRepricingConfigsAsync(string linkId, CancellationToken cancellationToken);
+
+    /// <summary>Creates a channel partner repricing config (<c>channelPartnerLinks.channelPartnerRepricingConfigs.create</c>).</summary>
+    Task<RepricingConfig> CreateChannelPartnerRepricingConfigAsync(string linkId, SaveRepricingConfigRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Updates a channel partner repricing config (<c>channelPartnerLinks.channelPartnerRepricingConfigs.patch</c>).</summary>
+    Task<RepricingConfig> UpdateChannelPartnerRepricingConfigAsync(string linkId, string configId, SaveRepricingConfigRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Deletes a channel partner repricing config (<c>channelPartnerLinks.channelPartnerRepricingConfigs.delete</c>).</summary>
+    Task DeleteChannelPartnerRepricingConfigAsync(string linkId, string configId, CancellationToken cancellationToken);
+
     /// <summary>Builds the aggregated home-dashboard figures from customers + entitlements.</summary>
     /// <param name="applyTimeBudget">
     /// When <see langword="true"/> (the default, used on the request path) the per-customer phase is
@@ -1455,9 +1479,181 @@ public sealed class GoogleChannelClient(
         return new CustomersResult { Customers = customers };
     }
 
-    /// <summary>Maps a Google entitlement resource to the UI-facing <see cref="Entitlement"/> contract.</summary>
-    private static Entitlement MapEntitlement(GoogleCloudChannelV1Entitlement entitlement, CatalogLookups lookups = default)
+    public async Task<RepricingConfigsResult> ListCustomerRepricingConfigsAsync(string customerId, CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var configs = new List<RepricingConfig>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.Customers.CustomerRepricingConfigs.List(CustomerName(customerId));
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var config in response.CustomerRepricingConfigs ?? [])
+            {
+                configs.Add(MapRepricingConfig(config.Name, config.RepricingConfig, config.UpdateTimeDateTimeOffset));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new RepricingConfigsResult { Configs = configs };
+    }
+
+    public async Task<RepricingConfig> CreateCustomerRepricingConfigAsync(string customerId, SaveRepricingConfigRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentNullException.ThrowIfNull(request);
+        // Customer configs always target a specific entitlement (entitlement granularity).
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.EntitlementId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var entitlementName = EntitlementName(customerId, request.EntitlementId!);
+        var body = new GoogleCloudChannelV1CustomerRepricingConfig
+        {
+            RepricingConfig = ToGoogleRepricingConfig(request, entitlementName)
+        };
+
+        logger.LogInformation("Creating customer repricing config for {Customer} entitlement {Entitlement}", customerId, request.EntitlementId);
+
+        var response = await service.Accounts.Customers.CustomerRepricingConfigs
+            .Create(body, CustomerName(customerId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapRepricingConfig(response.Name, response.RepricingConfig, response.UpdateTimeDateTimeOffset);
+    }
+
+    public async Task<RepricingConfig> UpdateCustomerRepricingConfigAsync(string customerId, string configId, SaveRepricingConfigRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configId);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.EntitlementId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var configName = CustomerRepricingConfigName(customerId, configId);
+        var entitlementName = EntitlementName(customerId, request.EntitlementId!);
+        // patch overwrites the existing config; carry the resource name so Google targets the right one.
+        var body = new GoogleCloudChannelV1CustomerRepricingConfig
+        {
+            Name = configName,
+            RepricingConfig = ToGoogleRepricingConfig(request, entitlementName)
+        };
+
+        logger.LogInformation("Updating customer repricing config {Config} for {Customer}", configId, customerId);
+
+        var response = await service.Accounts.Customers.CustomerRepricingConfigs
+            .Patch(body, configName)
+            .ExecuteAsync(cancellationToken);
+
+        return MapRepricingConfig(response.Name, response.RepricingConfig, response.UpdateTimeDateTimeOffset);
+    }
+
+    public async Task DeleteCustomerRepricingConfigAsync(string customerId, string configId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        await service.Accounts.Customers.CustomerRepricingConfigs
+            .Delete(CustomerRepricingConfigName(customerId, configId))
+            .ExecuteAsync(cancellationToken);
+    }
+
+    public async Task<RepricingConfigsResult> ListChannelPartnerRepricingConfigsAsync(string linkId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var configs = new List<RepricingConfig>();
+        string? pageToken = null;
+        do
+        {
+            var request = service.Accounts.ChannelPartnerLinks.ChannelPartnerRepricingConfigs.List(ChannelPartnerLinkName(linkId));
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            foreach (var config in response.ChannelPartnerRepricingConfigs ?? [])
+            {
+                configs.Add(MapRepricingConfig(config.Name, config.RepricingConfig, config.UpdateTimeDateTimeOffset));
+            }
+
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new RepricingConfigsResult { Configs = configs };
+    }
+
+    public async Task<RepricingConfig> CreateChannelPartnerRepricingConfigAsync(string linkId, SaveRepricingConfigRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = new GoogleCloudChannelV1ChannelPartnerRepricingConfig
+        {
+            // No entitlement id ⇒ the config applies to the whole partner's bill.
+            RepricingConfig = ToGoogleRepricingConfig(request, ChannelPartnerEntitlementName(request.EntitlementId))
+        };
+
+        logger.LogInformation("Creating channel partner repricing config for link {Link}", linkId);
+
+        var response = await service.Accounts.ChannelPartnerLinks.ChannelPartnerRepricingConfigs
+            .Create(body, ChannelPartnerLinkName(linkId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapRepricingConfig(response.Name, response.RepricingConfig, response.UpdateTimeDateTimeOffset);
+    }
+
+    public async Task<RepricingConfig> UpdateChannelPartnerRepricingConfigAsync(string linkId, string configId, SaveRepricingConfigRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configId);
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var configName = ChannelPartnerRepricingConfigName(linkId, configId);
+        var body = new GoogleCloudChannelV1ChannelPartnerRepricingConfig
+        {
+            Name = configName,
+            RepricingConfig = ToGoogleRepricingConfig(request, ChannelPartnerEntitlementName(request.EntitlementId))
+        };
+
+        logger.LogInformation("Updating channel partner repricing config {Config} for link {Link}", configId, linkId);
+
+        var response = await service.Accounts.ChannelPartnerLinks.ChannelPartnerRepricingConfigs
+            .Patch(body, configName)
+            .ExecuteAsync(cancellationToken);
+
+        return MapRepricingConfig(response.Name, response.RepricingConfig, response.UpdateTimeDateTimeOffset);
+    }
+
+    public async Task DeleteChannelPartnerRepricingConfigAsync(string linkId, string configId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        await service.Accounts.ChannelPartnerLinks.ChannelPartnerRepricingConfigs
+            .Delete(ChannelPartnerRepricingConfigName(linkId, configId))
+            .ExecuteAsync(cancellationToken);
+    }
+
+    /// <summary>Maps a Google entitlement resource to the UI-facing <see cref="Entitlement"/> contract.</summary>
+    private static Entitlement MapEntitlement(GoogleCloudChannelV1Entitlement entitlement, CatalogLookups lookups = default)    {
         var offerId = LastSegment(entitlement.Offer);
         var productId = entitlement.ProvisionedService?.ProductId;
         var skuId = entitlement.ProvisionedService?.SkuId;
@@ -1866,6 +2062,94 @@ public sealed class GoogleChannelClient(
 
     /// <summary>Builds the full channel partner link resource name for a short link id.</summary>
     private string ChannelPartnerLinkName(string linkId) => $"{_options.AccountName}/channelPartnerLinks/{linkId}";
+
+    /// <summary>Builds the full customer repricing config resource name for a short config id.</summary>
+    private string CustomerRepricingConfigName(string customerId, string configId) =>
+        $"{CustomerName(customerId)}/customerRepricingConfigs/{configId}";
+
+    /// <summary>Builds the full channel partner repricing config resource name for a short config id.</summary>
+    private string ChannelPartnerRepricingConfigName(string linkId, string configId) =>
+        $"{ChannelPartnerLinkName(linkId)}/channelPartnerRepricingConfigs/{configId}";
+
+    /// <summary>
+    /// Resolves the entitlement target for a channel partner config. The UI drives whole-partner
+    /// (channel-partner-granularity) configs, so a blank id means "no entitlement target"; a caller
+    /// may still pass a full entitlement resource name to scope the config to a single entitlement.
+    /// </summary>
+    private static string? ChannelPartnerEntitlementName(string? entitlementId) =>
+        string.IsNullOrWhiteSpace(entitlementId) ? null : entitlementId;
+
+    /// <summary>
+    /// Builds a Google <c>RepricingConfig</c> from the UI request. A non-empty
+    /// <paramref name="entitlementName"/> selects entitlement granularity (the recommended level);
+    /// a blank one falls back to whole-partner (channel-partner) granularity.
+    /// </summary>
+    private static GoogleCloudChannelV1RepricingConfig ToGoogleRepricingConfig(SaveRepricingConfigRequest request, string? entitlementName)
+    {
+        var config = new GoogleCloudChannelV1RepricingConfig
+        {
+            EffectiveInvoiceMonth = new GoogleTypeDate
+            {
+                Year = request.EffectiveInvoiceYear,
+                Month = request.EffectiveInvoiceMonth
+            },
+            RebillingBasis = request.RebillingBasis,
+            Adjustment = new GoogleCloudChannelV1RepricingAdjustment
+            {
+                PercentageAdjustment = new GoogleCloudChannelV1PercentageAdjustment
+                {
+                    Percentage = new GoogleTypeDecimal
+                    {
+                        Value = request.PercentageAdjustment.ToString(CultureInfo.InvariantCulture)
+                    }
+                }
+            }
+        };
+
+        if (!string.IsNullOrWhiteSpace(entitlementName))
+        {
+            config.EntitlementGranularity = new GoogleCloudChannelV1RepricingConfigEntitlementGranularity
+            {
+                Entitlement = entitlementName
+            };
+        }
+        else
+        {
+            config.ChannelPartnerGranularity = new GoogleCloudChannelV1RepricingConfigChannelPartnerGranularity();
+        }
+
+        return config;
+    }
+
+    /// <summary>Maps a Google repricing config (customer or channel partner) to the UI-facing contract.</summary>
+    private static RepricingConfig MapRepricingConfig(string? name, GoogleCloudChannelV1RepricingConfig? config, DateTimeOffset? updateTime)
+    {
+        var entitlementName = config?.EntitlementGranularity?.Entitlement;
+
+        decimal percentage = 0;
+        var rawPercentage = config?.Adjustment?.PercentageAdjustment?.Percentage?.Value;
+        if (!string.IsNullOrWhiteSpace(rawPercentage))
+        {
+            decimal.TryParse(rawPercentage, NumberStyles.Number, CultureInfo.InvariantCulture, out percentage);
+        }
+
+        return new RepricingConfig
+        {
+            Name = name ?? string.Empty,
+            Id = LastSegment(name),
+            EffectiveInvoiceYear = config?.EffectiveInvoiceMonth?.Year ?? 0,
+            EffectiveInvoiceMonth = config?.EffectiveInvoiceMonth?.Month ?? 0,
+            PercentageAdjustment = percentage,
+            RebillingBasis = config?.RebillingBasis,
+            Granularity = string.IsNullOrEmpty(entitlementName)
+                ? RepricingGranularities.ChannelPartner
+                : RepricingGranularities.Entitlement,
+            EntitlementName = entitlementName,
+            EntitlementId = string.IsNullOrEmpty(entitlementName) ? null : LastSegment(entitlementName),
+            ConditionalOverrideCount = config?.ConditionalOverrides?.Count ?? 0,
+            UpdateTime = updateTime
+        };
+    }
 
     /// <summary>Maps a Google channel partner link resource to the UI-facing <see cref="ChannelPartnerLink"/> contract.</summary>
     private static ChannelPartnerLink MapChannelPartnerLink(GoogleCloudChannelV1ChannelPartnerLink link) => new()

@@ -78,6 +78,23 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > lists (and links back to) the partner's customers. Unlike entitlements/transfers, `create`/`patch`
 > return the link resource directly (not LROs), so the UI updates immediately.
 
+> **Repricing (rebilling margin).** Customer and channel-partner repricing configs are exposed under
+> `/api/customers/{customerId}/repricing-configs` and
+> `/api/channel-partner-links/{linkId}/repricing-configs`: `GET /` lists, `POST /` creates,
+> `PUT /{configId}` updates and `DELETE /{configId}` removes a config. A config carries the effective
+> invoice month, a percentage adjustment (positive marks up, negative discounts) and a rebilling basis
+> (`COST_AT_LIST` or `DIRECT_CUSTOMER_COST`). Reads are cached in Redis for `CacheSeconds` with the
+> list cache invalidated on create/update/delete. **Granularity:** customer configs use *entitlement
+> granularity* (each targets one of the customer's entitlements — required), so the create form
+> populates its entitlement picker from `entitlements.list`; channel-partner configs use *channel-
+> partner granularity* and reprice the whole downstream reseller. The Blazor **Customer repricing**
+> (`/customers/{id}/repricing`) and **Channel partner repricing**
+> (`/channel-partner-links/{id}/repricing`) pages each offer an inline create/edit form and a delete
+> action, reachable via a **Repricing** action on the customer-detail and link-detail pages.
+> **Correlation:** each customer config row links its targeted entitlement back to the entitlement
+> detail page. Like channel partner links, `create`/`patch` return the config resource directly (not
+> LROs).
+
 > **Friendly names.** Entitlements and their change history carry only opaque ids; the API resolves
 > human-readable **offer / SKU / product** names from the offer catalog (`accounts.offers.list`,
 > reusing `MarketingInfo.DisplayName`) and the UI shows the name with the id as a tooltip/caption,
@@ -170,10 +187,15 @@ resource directly (not long-running operations).
 
 ### Repricing (rebilling margin)
 
+These configs are now **implemented** (see the *Implemented* table above). `list`/`create`/`patch`
+return the config resource directly (not long-running operations). Customer configs use **entitlement
+granularity** (each targets one of the customer's entitlements — §3); channel partner configs use
+**channel-partner granularity** and reprice the whole downstream reseller.
+
 | Resource.method | Purpose |
 | --- | --- |
-| `accounts.customers.customerRepricingConfigs.*` | How a reseller modifies a customer's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.customerRepricingConfigs)). |
-| `accounts.channelPartnerLinks.channelPartnerRepricingConfigs.*` | How a distributor modifies a channel partner's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.channelPartnerRepricingConfigs)). |
+| `accounts.customers.customerRepricingConfigs.*` | How a reseller modifies a customer's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.customerRepricingConfigs)). `list`/`create`/`patch`/`delete` **(implemented)**. |
+| `accounts.channelPartnerLinks.channelPartnerRepricingConfigs.*` | How a distributor modifies a channel partner's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.channelPartnerRepricingConfigs)). `list`/`create`/`patch`/`delete` **(implemented)**. |
 
 ### Pub/Sub subscribers & operations
 

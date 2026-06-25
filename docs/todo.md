@@ -171,8 +171,35 @@ advanced distributor/billing features.
 
 ### 6. Repricing / rebilling margin
 
-- [ ] **Customer repricing** — `accounts.customers.customerRepricingConfigs.*`.
-- [ ] **Channel partner repricing** — `accounts.channelPartnerLinks.channelPartnerRepricingConfigs.*`.
+- [x] **Customer repricing** — `accounts.customers.customerRepricingConfigs.*`.
+- [x] **Channel partner repricing** — `accounts.channelPartnerLinks.channelPartnerRepricingConfigs.*`.
+
+> **Implemented.** Repricing margins are live end-to-end for both scopes: shared contracts in
+> `GChannel.Shared/Contracts/Repricing.cs` (`RepricingConfig`, `RepricingConfigsResult`,
+> `SaveRepricingConfigRequest`, plus `RebillingBases` and `RepricingGranularities` constant classes),
+> `IGoogleChannelClient` methods (`ListCustomerRepricingConfigsAsync` /
+> `CreateCustomerRepricingConfigAsync` / `UpdateCustomerRepricingConfigAsync` /
+> `DeleteCustomerRepricingConfigAsync` and the four `…ChannelPartnerRepricingConfig…` equivalents) in
+> the API, cached minimal-API endpoints under `/api/customers/{customerId}/repricing-configs` and
+> `/api/channel-partner-links/{linkId}/repricing-configs` (Redis, `CacheSeconds` TTL, list caches
+> invalidated on create/update/delete), the `GChannelApiClient` typed-client methods, and Blazor
+> pages — **Customer repricing** (`/customers/{id}/repricing`) and **Channel partner repricing**
+> (`/channel-partner-links/{id}/repricing`) — each with an inline create/edit form (effective invoice
+> month, percentage adjustment, rebilling basis) and a delete action.
+>
+> **Granularity.** Customer configs use **entitlement granularity**: each config targets one of the
+> customer's entitlements (required), so the create form populates its entitlement picker from
+> `entitlements.list` (§3). Channel partner configs use **channel-partner granularity** and reprice
+> the whole downstream reseller's bill, so no entitlement is selected. The percentage adjustment is
+> carried as a `GoogleTypeDecimal` string; the effective invoice month must be the current or a
+> future month.
+>
+> **Correlation/navigation.** The **Customer detail** page (§2) gains a **Repricing** action, and each
+> config row links its targeted entitlement back to the entitlement detail page (§3). The **Channel
+> partner link detail** page (§5) gains a **Repricing** action for the whole-partner margin.
+>
+> **LROs.** `customerRepricingConfigs` and `channelPartnerRepricingConfigs` `create`/`patch` return
+> the config resource directly (not long-running operations), so the UI reflects changes immediately.
 
 ### 7. Eventing & operations
 

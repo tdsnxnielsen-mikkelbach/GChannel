@@ -189,8 +189,49 @@ public sealed class GChannelApiClient(
     public Task<ChannelPartnerLink?> UpdateChannelPartnerLinkStateAsync(string linkId, UpdateChannelPartnerLinkRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<ChannelPartnerLink>(HttpMethod.Put, ApiRoutes.ChannelPartnerLinkState(linkId), request, cancellationToken);
 
+    /// <summary>Lists a customer's repricing (rebilling-margin) configs.</summary>
+    public Task<RepricingConfigsResult?> ListCustomerRepricingConfigsAsync(string customerId, CancellationToken cancellationToken = default) =>
+        GetAsync<RepricingConfigsResult>(ApiRoutes.CustomerRepricingConfigs(customerId), cancellationToken);
+
+    /// <summary>Creates a customer repricing config.</summary>
+    public Task<RepricingConfig?> CreateCustomerRepricingConfigAsync(string customerId, SaveRepricingConfigRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<RepricingConfig>(HttpMethod.Post, ApiRoutes.CustomerRepricingConfigs(customerId), request, cancellationToken);
+
+    /// <summary>Updates a customer repricing config.</summary>
+    public Task<RepricingConfig?> UpdateCustomerRepricingConfigAsync(string customerId, string configId, SaveRepricingConfigRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<RepricingConfig>(HttpMethod.Put, ApiRoutes.CustomerRepricingConfig(customerId, configId), request, cancellationToken);
+
+    /// <summary>Deletes a customer repricing config.</summary>
+    public Task DeleteCustomerRepricingConfigAsync(string customerId, string configId, CancellationToken cancellationToken = default) =>
+        DeleteAsync(ApiRoutes.CustomerRepricingConfig(customerId, configId), cancellationToken);
+
+    /// <summary>Lists a channel partner link's repricing (rebilling-margin) configs.</summary>
+    public Task<RepricingConfigsResult?> ListChannelPartnerRepricingConfigsAsync(string linkId, CancellationToken cancellationToken = default) =>
+        GetAsync<RepricingConfigsResult>(ApiRoutes.ChannelPartnerRepricingConfigs(linkId), cancellationToken);
+
+    /// <summary>Creates a channel partner repricing config.</summary>
+    public Task<RepricingConfig?> CreateChannelPartnerRepricingConfigAsync(string linkId, SaveRepricingConfigRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<RepricingConfig>(HttpMethod.Post, ApiRoutes.ChannelPartnerRepricingConfigs(linkId), request, cancellationToken);
+
+    /// <summary>Updates a channel partner repricing config.</summary>
+    public Task<RepricingConfig?> UpdateChannelPartnerRepricingConfigAsync(string linkId, string configId, SaveRepricingConfigRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<RepricingConfig>(HttpMethod.Put, ApiRoutes.ChannelPartnerRepricingConfig(linkId, configId), request, cancellationToken);
+
+    /// <summary>Deletes a channel partner repricing config.</summary>
+    public Task DeleteChannelPartnerRepricingConfigAsync(string linkId, string configId, CancellationToken cancellationToken = default) =>
+        DeleteAsync(ApiRoutes.ChannelPartnerRepricingConfig(linkId, configId), cancellationToken);
+
     /// <summary>Shared empty JSON body for state-change POSTs that carry no payload.</summary>
     private static readonly object EmptyBody = new();
+
+    private async Task DeleteAsync(string route, CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Delete, route);
+        await AttachGoogleTokenAsync(message);
+
+        using var response = await http.SendAsync(message, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
 
     private async Task<T?> GetAsync<T>(string route, CancellationToken cancellationToken)
     {

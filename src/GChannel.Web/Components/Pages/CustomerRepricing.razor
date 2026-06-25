@@ -1,0 +1,368 @@
+@page "/customers/{Id}/repricing"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Repricing · @(_customer?.OrgDisplayName ?? Id) · GChannel</PageTitle>
+
+@if (_loading)
+{
+    <LoadingPanel Title="Loading repricing configs…"
+                  Hint="Fetching the customer, their entitlements and any margin configs." />
+}
+else if (_customer is null)
+{
+    <MudAlert Severity="Severity.Error">Customer not found.</MudAlert>
+    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="/customers" StartIcon="@Icons.Material.Filled.ArrowBack">
+        Back to customers
+    </MudButton>
+}
+else
+{
+    <div class="d-flex justify-space-between align-center mb-4">
+        <div class="d-flex align-center" style="gap: 8px;">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="@($"/customers/{Id}")" />
+            <div>
+                <MudText Typo="Typo.h4">Repricing margin</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@(_customer.OrgDisplayName ?? Id) · @_customer.Domain</MudText>
+            </div>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => BeginEdit(null))" Disabled="@(_editing || _entitlements.Count == 0)">
+            New config
+        </MudButton>
+    </div>
+
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+        A repricing config marks up (positive %) or discounts (negative %) what this customer is billed
+        for a single entitlement, starting from the chosen invoice month. Configs can only be created or
+        edited for the current or a future invoice month.
+    </MudAlert>
+
+    @if (_entitlements.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4">
+            This customer has no entitlements yet, so there is nothing to reprice.
+            <MudLink Href="@($"/customers/{Id}/entitlements")">Manage entitlements</MudLink>.
+        </MudAlert>
+    }
+
+    @if (_editing)
+    {
+        <MudCard Elevation="2" Class="mb-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">@(_editingId is null ? "New repricing config" : "Edit repricing config")</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" Label="Entitlement" @bind-Value="_form.EntitlementId"
+                                   Disabled="@(_editingId is not null)" Required="true">
+                            @foreach (var entitlement in _entitlements)
+                            {
+                                <MudSelectItem Value="@entitlement.Id">@EntitlementLabel(entitlement)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" Label="Rebilling basis" @bind-Value="_form.RebillingBasis" Required="true">
+                            <MudSelectItem Value="@RebillingBases.CostAtList">List price (cost at list)</MudSelectItem>
+                            <MudSelectItem Value="@RebillingBases.DirectCustomerCost">Direct customer cost</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6" md="3">
+                        <MudNumericField T="int" Label="Effective year" @bind-Value="_form.Year" Min="2000" Max="2100" />
+                    </MudItem>
+                    <MudItem xs="6" md="3">
+                        <MudNumericField T="int" Label="Effective month" @bind-Value="_form.Month" Min="1" Max="12" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudNumericField T="decimal" Label="Adjustment" @bind-Value="_form.Percentage"
+                                         Adornment="Adornment.End" AdornmentText="%" Step="0.5M"
+                                         HelperText="Positive marks up, negative discounts, 0 passes through." />
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">
+                    @(_editingId is null ? "Create" : "Save")
+                </MudButton>
+                <MudButton Variant="Variant.Text" OnClick="CancelEdit" Disabled="_busy" Class="ml-2">Cancel</MudButton>
+            </MudCardActions>
+        </MudCard>
+    }
+
+    <MudCard Elevation="2">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6">Configured margins</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (_configsLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_configs is { Count: > 0 })
+            {
+                <MudTable Items="_configs" Hover="true" Elevation="0" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Entitlement</MudTh>
+                        <MudTh>Effective month</MudTh>
+                        <MudTh Style="text-align:right">Adjustment</MudTh>
+                        <MudTh>Rebilling basis</MudTh>
+                        <MudTh>Overrides</MudTh>
+                        <MudTh>Updated</MudTh>
+                        <MudTh Style="text-align:right">Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Entitlement">
+                            @if (!string.IsNullOrEmpty(context.EntitlementId))
+                            {
+                                <MudLink Href="@($"/customers/{Id}/entitlements/{context.EntitlementId}")">
+                                    @EntitlementLabelById(context.EntitlementId)
+                                </MudLink>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Effective month">@FormatMonth(context.EffectiveInvoiceYear, context.EffectiveInvoiceMonth)</MudTd>
+                        <MudTd DataLabel="Adjustment" Style="text-align:right">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@AdjustmentColor(context.PercentageAdjustment)">
+                                @FormatPercent(context.PercentageAdjustment)
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Rebilling basis">@RebillingLabel(context.RebillingBasis)</MudTd>
+                        <MudTd DataLabel="Overrides">@context.ConditionalOverrideCount</MudTd>
+                        <MudTd DataLabel="Updated">@(context.UpdateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+                        <MudTd DataLabel="Actions" Style="text-align:right">
+                            <MudTooltip Text="Edit">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                               OnClick="@(() => BeginEdit(context))" Disabled="_editing" />
+                            </MudTooltip>
+                            <MudTooltip Text="Delete">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                               OnClick="@(() => DeleteAsync(context))" Disabled="_busy" />
+                            </MudTooltip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No repricing configs for this customer.</MudText>
+            }
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = string.Empty;
+
+    private Customer? _customer;
+    private IReadOnlyList<Entitlement> _entitlements = [];
+    private IReadOnlyList<RepricingConfig>? _configs;
+    private bool _loading = true;
+    private bool _configsLoading = true;
+    private bool _editing;
+    private bool _busy;
+    private string? _editingId;
+    private readonly RepricingForm _form = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _customer = await Api.GetCustomerAsync(Id);
+            var entitlements = await Api.ListEntitlementsAsync(Id);
+            _entitlements = entitlements?.Entitlements ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
+            _customer = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        if (_customer is not null)
+        {
+            await LoadConfigsAsync();
+        }
+    }
+
+    private async Task LoadConfigsAsync()
+    {
+        _configsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var result = await Api.ListCustomerRepricingConfigsAsync(Id);
+            _configs = result?.Configs ?? [];
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load repricing configs: {ex.Message}", Severity.Error);
+            _configs = [];
+        }
+        finally
+        {
+            _configsLoading = false;
+        }
+    }
+
+    private void BeginEdit(RepricingConfig? config)
+    {
+        var next = NextInvoiceMonth();
+        if (config is null)
+        {
+            _editingId = null;
+            _form.EntitlementId = _entitlements.FirstOrDefault()?.Id ?? string.Empty;
+            _form.Year = next.Year;
+            _form.Month = next.Month;
+            _form.Percentage = 0m;
+            _form.RebillingBasis = RebillingBases.CostAtList;
+        }
+        else
+        {
+            _editingId = config.Id;
+            _form.EntitlementId = config.EntitlementId ?? string.Empty;
+            _form.Year = config.EffectiveInvoiceYear > 0 ? config.EffectiveInvoiceYear : next.Year;
+            _form.Month = config.EffectiveInvoiceMonth > 0 ? config.EffectiveInvoiceMonth : next.Month;
+            _form.Percentage = config.PercentageAdjustment;
+            _form.RebillingBasis = config.RebillingBasis ?? RebillingBases.CostAtList;
+        }
+
+        _editing = true;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = false;
+        _editingId = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_form.EntitlementId))
+        {
+            Snackbar.Add("Select an entitlement to reprice.", Severity.Warning);
+            return;
+        }
+
+        var request = new SaveRepricingConfigRequest
+        {
+            EffectiveInvoiceYear = _form.Year,
+            EffectiveInvoiceMonth = _form.Month,
+            PercentageAdjustment = _form.Percentage,
+            RebillingBasis = _form.RebillingBasis,
+            EntitlementId = _form.EntitlementId
+        };
+
+        _busy = true;
+        try
+        {
+            if (_editingId is null)
+            {
+                await Api.CreateCustomerRepricingConfigAsync(Id, request);
+                Snackbar.Add("Repricing config created.", Severity.Success);
+            }
+            else
+            {
+                await Api.UpdateCustomerRepricingConfigAsync(Id, _editingId, request);
+                Snackbar.Add("Repricing config updated.", Severity.Success);
+            }
+
+            _editing = false;
+            _editingId = null;
+            await LoadConfigsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save repricing config: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteAsync(RepricingConfig config)
+    {
+        _busy = true;
+        try
+        {
+            await Api.DeleteCustomerRepricingConfigAsync(Id, config.Id);
+            Snackbar.Add("Repricing config deleted.", Severity.Success);
+            await LoadConfigsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete repricing config: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string EntitlementLabel(Entitlement entitlement) =>
+        entitlement.OfferDisplayName
+            ?? entitlement.SkuDisplayName
+            ?? entitlement.ProductDisplayName
+            ?? entitlement.Id;
+
+    private string EntitlementLabelById(string entitlementId) =>
+        _entitlements.FirstOrDefault(e => e.Id == entitlementId) is { } match
+            ? EntitlementLabel(match)
+            : entitlementId;
+
+    private static (int Year, int Month) NextInvoiceMonth()
+    {
+        var next = DateTime.UtcNow.AddMonths(1);
+        return (next.Year, next.Month);
+    }
+
+    private static string FormatMonth(int year, int month) =>
+        year > 0 && month is >= 1 and <= 12
+            ? new DateTime(year, month, 1).ToString("MMM yyyy")
+            : "—";
+
+    private static string FormatPercent(decimal value) =>
+        value > 0 ? $"+{value:0.##}%" : $"{value:0.##}%";
+
+    private static Color AdjustmentColor(decimal value) =>
+        value > 0 ? Color.Success : value < 0 ? Color.Warning : Color.Default;
+
+    private static string RebillingLabel(string? basis) => basis switch
+    {
+        RebillingBases.CostAtList => "List price",
+        RebillingBases.DirectCustomerCost => "Direct customer cost",
+        _ => basis ?? "—"
+    };
+
+    private sealed class RepricingForm
+    {
+        public string EntitlementId { get; set; } = string.Empty;
+        public int Year { get; set; }
+        public int Month { get; set; }
+        public decimal Percentage { get; set; }
+        public string RebillingBasis { get; set; } = RebillingBases.CostAtList;
+    }
+}
