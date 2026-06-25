@@ -534,7 +534,7 @@ public sealed class GoogleChannelClient(
         using var service = CreateService();
 
         var entitlements = new List<Entitlement>();
-        var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
+        var lookups = await BuildCatalogLookupsAsync(service, cancellationToken, includeSkus: true);
         string? pageToken = null;
         do
         {
@@ -544,7 +544,7 @@ public sealed class GoogleChannelClient(
 
             foreach (var entitlement in response.Entitlements ?? [])
             {
-                entitlements.Add(MapEntitlement(entitlement, offerLookup));
+                entitlements.Add(MapEntitlement(entitlement, lookups));
             }
 
             pageToken = response.NextPageToken;
@@ -596,15 +596,16 @@ public sealed class GoogleChannelClient(
         var budgetToken = budget.Token;
 
         List<Customer> customers;
-        IReadOnlyDictionary<string, OfferDisplay> offerLookup;
-        IReadOnlyDictionary<string, string> productLookup;
+        CatalogLookups lookups;
         try
         {
             // §2 customers — also drives the onboarded-over-time chart (bucket by create time).
             customers = await ListAllCustomersAsync(service, budgetToken);
 
-            // §1 catalog — one offers.list resolves both offer- and product-level names for the labels.
-            (offerLookup, productLookup) = await BuildCatalogLookupsAsync(service, budgetToken);
+            // §1 catalog — products.list + offers.list + products.skus.list give the full
+            // offer→SKU→product fallback chain so the Product mix labels resolve even when an
+            // entitlement's specific offer is no longer listed.
+            lookups = await BuildCatalogLookupsAsync(service, budgetToken, includeSkus: true);
         }
         catch (OperationCanceledException) when (applyTimeBudget && !cancellationToken.IsCancellationRequested)
         {
@@ -669,7 +670,7 @@ public sealed class GoogleChannelClient(
                 await throttle.WaitAsync(budgetToken);
                 acquired = true;
                 var aggregate = await AggregateCustomerEntitlementsAsync(
-                    service, customer.Id, offerLookup, productLookup, pacer, budgetToken);
+                    service, customer.Id, lookups, pacer, budgetToken);
                 result = CustomerLoadResult.Loaded(aggregate);
             }
             catch (OperationCanceledException)
@@ -814,8 +815,7 @@ public sealed class GoogleChannelClient(
     private async Task<EntitlementAggregate> AggregateCustomerEntitlementsAsync(
         CloudchannelService service,
         string customerId,
-        IReadOnlyDictionary<string, OfferDisplay> offerLookup,
-        IReadOnlyDictionary<string, string> productLookup,
+        CatalogLookups lookups,
         RequestPacer? pacer,
         CancellationToken cancellationToken)
     {
@@ -840,7 +840,7 @@ public sealed class GoogleChannelClient(
 
             foreach (var raw in response.Entitlements ?? [])
             {
-                var entitlement = MapEntitlement(raw, offerLookup);
+                var entitlement = MapEntitlement(raw, lookups);
                 var isActive = string.Equals(entitlement.ProvisioningState, "ACTIVE", StringComparison.OrdinalIgnoreCase);
 
                 if (isActive)
@@ -854,13 +854,9 @@ public sealed class GoogleChannelClient(
                         activeSeats += n;
                     }
 
-                    // Prefer the offer's product name; fall back to the catalog product map (covers
-                    // entitlements whose specific offer is no longer listed), then the raw product id.
-                    var label = entitlement.ProductDisplayName
-                        ?? (entitlement.ProductId is { Length: > 0 } pid && productLookup.TryGetValue(pid, out var productName)
-                            ? productName
-                            : entitlement.ProductId)
-                        ?? "Other";
+                    // MapEntitlement already resolved the product name from the offer/SKU/product
+                    // catalogs; fall back to the raw product id only when nothing could be resolved.
+                    var label = entitlement.ProductDisplayName ?? entitlement.ProductId ?? "Other";
                     productMix[label] = productMix.GetValueOrDefault(label) + 1;
                 }
 
@@ -939,8 +935,8 @@ public sealed class GoogleChannelClient(
             .Get(EntitlementName(customerId, entitlementId))
             .ExecuteAsync(cancellationToken);
 
-        var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
-        return MapEntitlement(response, offerLookup);
+        var lookups = await BuildCatalogLookupsAsync(service, cancellationToken, includeSkus: true);
+        return MapEntitlement(response, lookups);
     }
 
     public async Task<EntitlementChangesResult> ListEntitlementChangesAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
@@ -1290,16 +1286,42 @@ public sealed class GoogleChannelClient(
     };
 
     /// <summary>Maps a Google entitlement resource to the UI-facing <see cref="Entitlement"/> contract.</summary>
-    private static Entitlement MapEntitlement(GoogleCloudChannelV1Entitlement entitlement, IReadOnlyDictionary<string, OfferDisplay>? offerLookup = null)
+    private static Entitlement MapEntitlement(GoogleCloudChannelV1Entitlement entitlement, CatalogLookups lookups = default)
     {
         var offerId = LastSegment(entitlement.Offer);
         var productId = entitlement.ProvisionedService?.ProductId;
         var skuId = entitlement.ProvisionedService?.SkuId;
 
-        OfferDisplay display = default;
-        if (offerLookup is not null && !string.IsNullOrEmpty(offerId))
+        string? offerDisplayName = null;
+        string? skuDisplayName = null;
+        string? productDisplayName = null;
+
+        // 1. Offer catalog (offers.list) — the richest source: resolves offer, SKU and product names
+        //    in one hit. Only present while the entitlement's specific offer is still listed.
+        if (!string.IsNullOrEmpty(offerId) && lookups.Offers is { } offers && offers.TryGetValue(offerId, out var offerDisplay))
         {
-            offerLookup.TryGetValue(offerId, out display);
+            offerDisplayName = offerDisplay.OfferDisplayName;
+            skuDisplayName = offerDisplay.SkuDisplayName;
+            productDisplayName = offerDisplay.ProductDisplayName;
+        }
+
+        // 2. SKU catalog (products.skus.list) — covers entitlements whose offer is no longer listed,
+        //    which is the usual reason the UI fell back to raw SKU/product ids.
+        if (string.IsNullOrEmpty(skuDisplayName) && !string.IsNullOrEmpty(skuId)
+            && lookups.Skus is { } skus && skus.TryGetValue(skuId, out var skuDisplay))
+        {
+            skuDisplayName = skuDisplay.SkuDisplayName;
+            if (string.IsNullOrEmpty(productDisplayName))
+            {
+                productDisplayName = skuDisplay.ProductDisplayName;
+            }
+        }
+
+        // 3. Product catalog (products.list) — last resort for the product name.
+        if (string.IsNullOrEmpty(productDisplayName) && !string.IsNullOrEmpty(productId)
+            && lookups.Products is { } productNames && productNames.TryGetValue(productId, out var productName))
+        {
+            productDisplayName = productName;
         }
 
         return new()
@@ -1308,11 +1330,11 @@ public sealed class GoogleChannelClient(
             Id = LastSegment(entitlement.Name),
             OfferName = entitlement.Offer,
             OfferId = offerId,
-            OfferDisplayName = display.OfferDisplayName,
+            OfferDisplayName = offerDisplayName,
             ProductId = productId,
-            ProductDisplayName = display.ProductDisplayName,
+            ProductDisplayName = productDisplayName,
             SkuId = skuId,
-            SkuDisplayName = display.SkuDisplayName,
+            SkuDisplayName = skuDisplayName,
             ProvisioningState = entitlement.ProvisioningState,
             PurchaseOrderId = entitlement.PurchaseOrderId,
             BillingAccount = entitlement.BillingAccount,
@@ -1339,20 +1361,26 @@ public sealed class GoogleChannelClient(
     /// <summary>Friendly display names for an offer (and its SKU/product), resolved from the Catalog.</summary>
     private readonly record struct OfferDisplay(string? OfferDisplayName, string? SkuDisplayName, string? ProductDisplayName);
 
+    /// <summary>Friendly display names for a SKU (and its product), resolved from <c>products.skus.list</c>.</summary>
+    private readonly record struct SkuDisplay(string? SkuDisplayName, string? ProductDisplayName);
+
     /// <summary>Catalog display-name lookups for entitlement and dashboard labels.</summary>
     private readonly record struct CatalogLookups(
         IReadOnlyDictionary<string, OfferDisplay> Offers,
-        IReadOnlyDictionary<string, string> Products);
+        IReadOnlyDictionary<string, string> Products,
+        IReadOnlyDictionary<string, SkuDisplay> Skus);
 
     /// <summary>
-    /// Builds offer- and product-level display-name lookups from the reseller's catalog. The product
-    /// map is seeded from the full <c>products.list</c> catalog (authoritative, so it covers products
-    /// whose specific offer is no longer listed) and supplemented from <c>offers.list</c>, which also
-    /// yields the offer map that turns opaque entitlement offer ids into names. Failures are
-    /// non-fatal: callers fall back to raw ids.
+    /// Builds offer-, product- and (optionally) SKU-level display-name lookups from the reseller's
+    /// catalog. The product map is seeded from the full <c>products.list</c> catalog (authoritative,
+    /// so it covers products whose specific offer is no longer listed) and supplemented from
+    /// <c>offers.list</c>, which also yields the offer map that turns opaque entitlement offer ids
+    /// into names. When <paramref name="includeSkus"/> is set, a SKU-id -> name map is also built
+    /// from <c>products.skus.list</c> per product, so an entitlement's SKU/product names resolve even
+    /// when its specific offer is no longer listed. Failures are non-fatal: callers fall back to raw ids.
     /// </summary>
     private async Task<CatalogLookups> BuildCatalogLookupsAsync(
-        CloudchannelService service, CancellationToken cancellationToken)
+        CloudchannelService service, CancellationToken cancellationToken, bool includeSkus = false)
     {
         var offers = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
         var products = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1435,7 +1463,65 @@ public sealed class GoogleChannelClient(
             logger.LogDebug(ex, "Could not resolve catalog offer display names; entitlements may show ids.");
         }
 
-        return new CatalogLookups(offers, products);
+        // SKU-id -> name map (and its product name) from the authoritative per-product SKU catalog.
+        // This is what lets an entitlement resolve its SKU/product names when its specific offer is no
+        // longer listed in offers.list (the common reason the UI shows raw ids). Bounded concurrency
+        // keeps the per-product fan-out quick; each product is independently graceful.
+        var skus = new Dictionary<string, SkuDisplay>(StringComparer.OrdinalIgnoreCase);
+        if (includeSkus && products.Count > 0)
+        {
+            var skuGate = new object();
+            using var throttle = new SemaphoreSlim(Math.Max(1, _options.DashboardMaxConcurrency));
+            await Task.WhenAll(products.Select(async kv =>
+            {
+                var productId = kv.Key;
+                var productName = kv.Value;
+                await throttle.WaitAsync(cancellationToken);
+                try
+                {
+                    string? skuToken = null;
+                    do
+                    {
+                        var request = service.Products.Skus.List($"products/{productId}");
+                        request.Account = _options.AccountName;
+                        request.PageToken = skuToken;
+                        var response = await request.ExecuteAsync(cancellationToken);
+
+                        foreach (var sku in response.Skus ?? [])
+                        {
+                            var skuId = LastSegment(sku.Name);
+                            if (string.IsNullOrEmpty(skuId))
+                            {
+                                continue;
+                            }
+
+                            var display = new SkuDisplay(sku.MarketingInfo?.DisplayName, productName);
+                            lock (skuGate)
+                            {
+                                skus[skuId] = display;
+                            }
+                        }
+
+                        skuToken = response.NextPageToken;
+                    }
+                    while (!string.IsNullOrEmpty(skuToken));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Could not list SKUs for product {Product} during display-name resolution.", productId);
+                }
+                finally
+                {
+                    throttle.Release();
+                }
+            }));
+        }
+
+        return new CatalogLookups(offers, products, skus);
     }
 
     /// <summary>Offer id -&gt; friendly display names (a thin view over <see cref="BuildCatalogLookupsAsync"/>).</summary>

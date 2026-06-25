@@ -150,10 +150,15 @@ affected customer's entitlement caches (list + the specific entitlement's get/ch
   the customer's purchasable SKUs/offers (`listPurchasableSkus`/`listPurchasableOffers`) so the
   eligible offer resolves to the same catalog ids.
 - **Friendly names.** Entitlements (and their change history) only carry opaque ids, so the API
-  enriches them with human-readable **offer / SKU / product** names resolved from the offer catalog
-  (a single `offers.list`, reusing the catalog `MarketingInfo.DisplayName`). The UI shows the
-  friendly name with the raw id as a tooltip/secondary caption, and falls back to the id if a name
-  can't be resolved (the lookup is non-fatal).
+  enriches them with human-readable **offer / SKU / product** names resolved from the catalog,
+  reusing each resource's `MarketingInfo.DisplayName`. Resolution uses a **fallback chain** so a name
+  still appears when an entitlement's specific offer is no longer listed (the common cause of raw
+  ids): (1) the offer catalog (`offers.list`) resolves offer + SKU + product in one hit; (2) the
+  per-product SKU catalog (`products.skus.list`, fetched once per product with bounded concurrency)
+  resolves the SKU/product names by `skuId`; (3) the full product catalog (`products.list`) resolves
+  the product name by `productId` as a last resort. The UI shows the friendly name with the raw id as
+  a tooltip/secondary caption, and falls back to the id only if every lookup misses (all lookups are
+  non-fatal). The dashboard skips step (2) since it only needs product names.
 - **Typed parameters.** Seat counts are the `num_units` entitlement parameter; the UI sends them as
   a typed `int64` value (`EntitlementParameterInput.IntValue`) on purchase and `changeParameters`.
 - **Long-running operations.** Mutating calls (`create`, `changeOffer`, `changeParameters`,
