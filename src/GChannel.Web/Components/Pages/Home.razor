@@ -48,6 +48,9 @@
     </MudAlert>
 }
 
+<OnboardingPanel CustomerCount="@(_overview?.CustomerCount ?? _data?.CustomerCount ?? 0)"
+                 EntitlementCount="@EntitlementCount" />
+
 <MudGrid>
     @foreach (var card in Cards)
     {
@@ -172,6 +175,12 @@
         new("Suspended", (_data?.SuspendedEntitlementCount ?? 0).ToString(),
             Icons.Material.Filled.PauseCircle, Color.Warning, _data is not null),
     ];
+
+    // Total entitlements across states — drives the onboarding checklist's "purchase" step.
+    private int EntitlementCount =>
+        (_data?.ActiveEntitlementCount ?? 0)
+        + (_data?.TrialEntitlementCount ?? 0)
+        + (_data?.SuspendedEntitlementCount ?? 0);
 
     // Keep the ApexCharts theme in step with the app's light/dark mode. Runs whenever the cascaded
     // IsDarkMode flips; the options carry the right mode up front too, so charts created later (once

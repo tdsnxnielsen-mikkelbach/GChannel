@@ -1,0 +1,195 @@
+@inject OnboardingStateService Onboarding
+@inject NavigationManager Nav
+
+@* §9 phase 1: first-run welcome card + dashboard onboarding checklist. State persists per-browser. *@
+
+@if (_state is not null && !_state.WelcomeDismissed)
+{
+    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" Class="d-flex align-center justify-center">
+        <MudPaper Elevation="8" Class="pa-6" Style="max-width: 520px;">
+            <div class="d-flex align-center mb-3">
+                <MudIcon Icon="@Icons.Material.Filled.WavingHand" Color="Color.Primary" Size="Size.Large" Class="mr-3" />
+                <MudText Typo="Typo.h5">Welcome to GChannel</MudText>
+            </div>
+            <MudText Typo="Typo.body1" Class="mb-2">
+                This console manages your Google Cloud reseller business — customers, catalog SKUs,
+                entitlements, transfers and eventing.
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                We'll add a short checklist to your dashboard to help you complete the first key steps.
+            </MudText>
+            <div class="d-flex justify-end gap-2">
+                <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="SkipAsync">Skip onboarding</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="GetStartedAsync">Get started</MudButton>
+            </div>
+        </MudPaper>
+    </MudOverlay>
+}
+
+@if (_state is not null && _state.WelcomeDismissed && !_state.ChecklistDismissed)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+        <div class="d-flex align-center justify-space-between mb-2">
+            <div class="d-flex align-center">
+                <MudIcon Icon="@Icons.Material.Filled.Checklist" Color="Color.Primary" Class="mr-2" />
+                <MudText Typo="Typo.h6">Getting started</MudText>
+            </div>
+            <div class="d-flex align-center gap-2">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@CompletedCount of @Steps.Count done</MudText>
+                <MudTooltip Text="Hide this checklist">
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="DismissChecklistAsync" />
+                </MudTooltip>
+            </div>
+        </div>
+
+        <MudProgressLinear Value="ProgressValue" Color="Color.Primary" Rounded="true" Class="mb-3" />
+
+        <MudList T="string" Dense="true">
+            @foreach (var step in Steps)
+            {
+                var done = IsDone(step);
+                <MudListItem T="string" Class="px-0">
+                    <div class="d-flex align-center justify-space-between" style="width: 100%;">
+                        <div class="d-flex align-center">
+                            @if (step.Manual)
+                            {
+                                <MudCheckBox T="bool" Value="done" ValueChanged="@(v => ToggleManualAsync(step, v))"
+                                             Color="Color.Primary" Dense="true" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@(done ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
+                                         Color="@(done ? Color.Success : Color.Default)" Class="mr-3" />
+                            }
+                            <div>
+                                <MudText Typo="Typo.body1"
+                                         Style="@(done ? "text-decoration: line-through; opacity: 0.7;" : null)">
+                                    @step.Title
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@step.Description</MudText>
+                            </div>
+                        </div>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
+                                   EndIcon="@Icons.Material.Filled.ArrowForward"
+                                   OnClick="@(() => Nav.NavigateTo(step.Link))">
+                            @step.Action
+                        </MudButton>
+                    </div>
+                </MudListItem>
+            }
+        </MudList>
+    </MudPaper>
+}
+
+@code {
+    /// <summary>Number of customers from the dashboard — drives the "create a customer" step.</summary>
+    [Parameter]
+    public int CustomerCount { get; set; }
+
+    /// <summary>Total entitlements (active + trial + suspended) — drives the "purchase" step.</summary>
+    [Parameter]
+    public int EntitlementCount { get; set; }
+
+    private OnboardingState? _state;
+
+    private sealed record Step(string Key, string Title, string Description, string Action, string Link, bool Manual);
+
+    private List<Step> Steps =>
+    [
+        new("verify-domain", "Verify a customer's domain", "Check a domain's Cloud Identity status before you onboard it.",
+            "Open", "/accounts/cloud-identity", Manual: true),
+        new("create-customer", "Create your first customer", "Add a reseller customer to start managing entitlements.",
+            "Add", "/customers/new", Manual: false),
+        new("buy-entitlement", "Purchase an entitlement", "Assign a SKU to a customer from the catalog.",
+            "Browse", "/customers", Manual: false),
+        new("eventing", "Explore eventing", "Review operations and Pub/Sub notifications for live activity.",
+            "View", "/notifications", Manual: true),
+    ];
+
+    private bool IsDone(Step step)
+    {
+        if (_state is not null && _state.CompletedSteps.Contains(step.Key))
+        {
+            return true;
+        }
+
+        return step.Key switch
+        {
+            "create-customer" => CustomerCount > 0,
+            "buy-entitlement" => EntitlementCount > 0,
+            _ => false,
+        };
+    }
+
+    private int CompletedCount => Steps.Count(IsDone);
+
+    private double ProgressValue => Steps.Count == 0 ? 0 : (double)CompletedCount / Steps.Count * 100;
+
+    // Protected local storage is only reachable on the live circuit, so load after the first render.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _state = await Onboarding.LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task GetStartedAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        _state.WelcomeDismissed = true;
+        await Onboarding.SaveAsync(_state);
+    }
+
+    private async Task SkipAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        _state.WelcomeDismissed = true;
+        _state.ChecklistDismissed = true;
+        await Onboarding.SaveAsync(_state);
+    }
+
+    private async Task DismissChecklistAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        _state.ChecklistDismissed = true;
+        await Onboarding.SaveAsync(_state);
+    }
+
+    private async Task ToggleManualAsync(Step step, bool done)
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        if (done)
+        {
+            if (!_state.CompletedSteps.Contains(step.Key))
+            {
+                _state.CompletedSteps.Add(step.Key);
+            }
+        }
+        else
+        {
+            _state.CompletedSteps.Remove(step.Key);
+        }
+
+        await Onboarding.SaveAsync(_state);
+    }
+}

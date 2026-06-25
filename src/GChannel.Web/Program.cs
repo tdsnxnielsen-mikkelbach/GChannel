@@ -97,6 +97,9 @@ builder.Services.AddHttpClient<GChannelApiClient>(client =>
     client.BaseAddress = new Uri("https+http://apiservice");
 });
 
+// Per-user onboarding progress (§9 phase 1), persisted in the browser's protected local storage.
+builder.Services.AddScoped<OnboardingStateService>();
+
 var app = builder.Build();
 
 // Apply the forwarded scheme/client from the ingress before anything that depends on the request

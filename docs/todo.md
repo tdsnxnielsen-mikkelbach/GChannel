@@ -351,3 +351,28 @@ domain → create a customer → purchase an entitlement) without reading docs.
   hand-roll coach marks/beacons if needed.
 - Keep every step skippable and keyboard-accessible; never block the UI.
 - Drive step content from the [UI.md](UI.md) walkthrough so docs and the in-app tour stay in sync.
+
+### Implementation phases
+
+- [ ] **Phase 1 — Onboarding checklist + welcome (no JS, highest value)**
+  - [x] `OnboardingState` model + per-user storage (browser `ProtectedLocalStorage` — chosen over a new
+    EF table because the app uses `EnsureCreated` with no migrations; Redis/cross-device is a later
+    upgrade).
+  - [x] First-run **welcome** card (MudBlazor) with *Get started* / *Skip onboarding*.
+  - [x] Dashboard **checklist** that ticks steps off from real signals (customer count, entitlements)
+    plus manual steps (verify a domain, explore eventing), dismissable.
+- [ ] **Phase 2 — App-wide product tour (Driver.js via JS interop)**
+  - [ ] `wwwroot/js/onboarding.js` + `OnboardingInterop` C# wrapper.
+  - [ ] Ordered, cross-page tour (spotlight coach marks + popover step cards), skippable/resumable,
+    completion persisted; **Restart tour** action in a Help menu.
+  - [ ] Stable `data-onboarding` target hooks on nav groups + primary buttons.
+- [ ] **Phase 3 — Per-workflow guided walkthroughs / interactive tutorials**
+  - [ ] Scoped popover step sequences on `/accounts/cloud-identity`, `/customers/new`, and the purchase
+    flow; "interactive" variant gates **Next** on the real step completing.
+- [ ] **Phase 4 — Ambient tooltips + feature beacons**
+  - [ ] `MudTooltip` field/icon help (e.g. *rebilling basis*, *Cloud Identity check*).
+  - [ ] Pulsing **beacons** on newly added nav links (e.g. **Eventing**) that dismiss on click, per user.
+
+> **Status:** Phase 1 is implemented (welcome card + dashboard checklist, browser-persisted). Phases 2–4
+> remain open.
+
