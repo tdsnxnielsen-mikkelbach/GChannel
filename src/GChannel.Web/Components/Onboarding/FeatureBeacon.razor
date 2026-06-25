@@ -1,0 +1,92 @@
+@inject OnboardingStateService Onboarding
+@inject NavigationManager Nav
+@implements IDisposable
+
+@* §9 phase 4: a pulsing "new feature" beacon. Shows once per user next to a nav link and dismisses
+   automatically the first time they visit the feature (or can be dismissed on click). *@
+
+@if (_visible)
+{
+    <MudTooltip Text="@Tooltip">
+        <span class="gchannel-beacon" @onclick="DismissAsync" @onclick:stopPropagation="true"></span>
+    </MudTooltip>
+}
+
+@code {
+    /// <summary>Stable id; dismissal is stored under "beacon:{Id}".</summary>
+    [Parameter, EditorRequired]
+    public string Id { get; set; } = "";
+
+    /// <summary>Relative route that, once visited, auto-dismisses the beacon (e.g. "notifications").</summary>
+    [Parameter]
+    public string? MatchPath { get; set; }
+
+    [Parameter]
+    public string Tooltip { get; set; } = "New";
+
+    private bool _visible;
+    private OnboardingState? _state;
+
+    private string Key => $"beacon:{Id}";
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _state = await Onboarding.LoadAsync();
+        if (_state.CompletedSteps.Contains(Key))
+        {
+            return;
+        }
+
+        // If the user is already on the feature, consider it seen; otherwise show the beacon.
+        if (IsOnMatch())
+        {
+            await DismissAsync();
+        }
+        else
+        {
+            _visible = true;
+            StateHasChanged();
+        }
+    }
+
+    private bool IsOnMatch()
+    {
+        if (string.IsNullOrEmpty(MatchPath))
+        {
+            return false;
+        }
+
+        var current = Nav.ToBaseRelativePath(Nav.Uri).TrimStart('/');
+        return current.StartsWith(MatchPath.TrimStart('/'), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (_visible && IsOnMatch())
+        {
+            await DismissAsync();
+        }
+    }
+
+    private async Task DismissAsync()
+    {
+        _visible = false;
+        _state ??= await Onboarding.LoadAsync();
+        if (!_state.CompletedSteps.Contains(Key))
+        {
+            _state.CompletedSteps.Add(Key);
+            await Onboarding.SaveAsync(_state);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

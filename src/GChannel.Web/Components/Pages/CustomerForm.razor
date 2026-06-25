@@ -118,8 +118,10 @@ else
 
     private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
     [
-        new("[data-walkthrough=\"cf-org\"]", "Organization name", "The customer's legal/organization name as it should appear in Google."),
-        new("[data-walkthrough=\"cf-domain\"]", "Primary domain", "The domain you verified in the Cloud Identity check — it can't be changed later."),
+        new("[data-walkthrough=\"cf-org\"]", "Organization name", "Type the customer's organization name to continue.",
+            RequireValueOf: "[data-walkthrough=\"cf-org\"]"),
+        new("[data-walkthrough=\"cf-domain\"]", "Primary domain", "Enter the domain you verified in the Cloud Identity check — it can't be changed later.",
+            RequireValueOf: "[data-walkthrough=\"cf-domain\"]"),
         new("[data-walkthrough=\"cf-contact\"]", "Primary contact", "Optional contact details for the customer's main administrator."),
         new("[data-walkthrough=\"cf-address\"]", "Address", "Region code is required; the rest helps with tax and billing."),
         new("[data-walkthrough=\"cf-save\"]", "Create the customer", "Submit to create the reseller customer, then purchase entitlements for them."),

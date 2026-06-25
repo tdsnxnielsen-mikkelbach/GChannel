@@ -3,7 +3,14 @@ using Microsoft.JSInterop;
 namespace GChannel.Web.Services;
 
 /// <summary>A single popover step in a guided walkthrough/tour (serialized to the Driver.js module).</summary>
-public sealed record WalkthroughStep(string? Element, string Title, string Description);
+/// <param name="Element">CSS selector of the element to spotlight, or null for a centred modal step.</param>
+/// <param name="Title">Popover heading.</param>
+/// <param name="Description">Popover body text.</param>
+/// <param name="RequireValueOf">
+/// Optional CSS selector of an input the user must fill before <c>Next</c> advances (the "interactive"
+/// gated variant). The inner <c>input/textarea/select</c> is read; an empty value blocks and focuses it.
+/// </param>
+public sealed record WalkthroughStep(string? Element, string Title, string Description, string? RequireValueOf = null);
 
 /// <summary>
 /// Drives the §9 phase 2 guided product tour. Wraps the <c>onboarding.js</c> module (Driver.js) and

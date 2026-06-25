@@ -67,10 +67,15 @@ else
                         </MudSelect>
                     </MudItem>
                     <MudItem xs="12" md="6">
-                        <MudSelect T="string" Label="Rebilling basis" @bind-Value="_form.RebillingBasis" Required="true">
-                            <MudSelectItem Value="@RebillingBases.CostAtList">List price (cost at list)</MudSelectItem>
-                            <MudSelectItem Value="@RebillingBases.DirectCustomerCost">Direct customer cost</MudSelectItem>
-                        </MudSelect>
+                        <div class="d-flex align-center">
+                            <MudSelect T="string" Label="Rebilling basis" @bind-Value="_form.RebillingBasis" Required="true" Class="flex-grow-1">
+                                <MudSelectItem Value="@RebillingBases.CostAtList">List price (cost at list)</MudSelectItem>
+                                <MudSelectItem Value="@RebillingBases.DirectCustomerCost">Direct customer cost</MudSelectItem>
+                            </MudSelect>
+                            <MudTooltip Text="The price your adjustment is applied to. List price = Google's published list price; Direct customer cost = what a direct customer would pay.">
+                                <MudIcon Icon="@Icons.Material.Outlined.Info" Color="Color.Default" Class="ml-2" />
+                            </MudTooltip>
+                        </div>
                     </MudItem>
                     <MudItem xs="6" md="3">
                         <MudNumericField T="int" Label="Effective year" @bind-Value="_form.Year" Min="2000" Max="2100" />

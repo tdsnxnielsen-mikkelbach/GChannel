@@ -37,9 +37,11 @@
     <MudNavGroup Title="Eventing" Icon="@Icons.Material.Filled.Notifications" Expanded="true" data-onboarding="nav-eventing">
         <MudNavLink Href="operations" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Bolt">
             Operations
+            <FeatureBeacon Id="operations-v1" MatchPath="operations" Tooltip="New: track long-running operations" />
         </MudNavLink>
         <MudNavLink Href="notifications" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.NotificationsActive">
             Notifications
+            <FeatureBeacon Id="notifications-v1" MatchPath="notifications" Tooltip="New: live Pub/Sub notifications" />
         </MudNavLink>
     </MudNavGroup>
 </MudNavMenu>

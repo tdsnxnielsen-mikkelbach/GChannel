@@ -39,15 +39,29 @@ export function startTour(dotNetRef, steps) {
         nextBtnText: 'Next',
         prevBtnText: 'Back',
         doneBtnText: 'Done',
-        steps: usable.map(s => ({
-            element: s.element || undefined,
-            popover: {
+        steps: usable.map(s => {
+            const popover = {
                 title: s.title,
                 description: s.description,
                 side: s.side || 'bottom',
                 align: 'start'
+            };
+
+            // Interactive (gated) step: block Next until the referenced input has a value.
+            if (s.requireValueOf) {
+                popover.onNextClick = () => {
+                    const field = fieldValueElement(document.querySelector(s.requireValueOf));
+                    const value = field ? (field.value || '').trim() : '';
+                    if (!value) {
+                        if (field) { field.focus(); }
+                        return; // Stay on this step until the user fills it in.
+                    }
+                    if (activeDriver) { activeDriver.moveNext(); }
+                };
             }
-        })),
+
+            return { element: s.element || undefined, popover };
+        }),
         // Fires on completion AND on close/escape — either way onboarding state is marked done.
         onDestroyed: () => {
             activeDriver = null;
@@ -58,4 +72,16 @@ export function startTour(dotNetRef, steps) {
     });
 
     activeDriver.drive();
+}
+
+// Resolves the actual value-bearing input within a target (MudBlazor wraps inputs in a div carrying
+// the data-walkthrough hook), falling back to the element itself when it is already a form control.
+function fieldValueElement(target) {
+    if (!target) {
+        return null;
+    }
+    if (target.matches && target.matches('input, textarea, select')) {
+        return target;
+    }
+    return target.querySelector('input, textarea, select');
 }

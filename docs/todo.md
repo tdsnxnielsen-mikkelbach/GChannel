@@ -370,12 +370,15 @@ domain → create a customer → purchase an entitlement) without reading docs.
   - [x] Scoped popover step sequences on `/accounts/cloud-identity`, `/customers/new`, and the purchase
     flow, via a reusable `GuidedWalkthrough` component (auto-runs once per user + a **Show me how**
     relaunch button), reusing the phase 2 Driver.js interop.
-  - [ ] "Interactive" variant that gates **Next** on the real step completing (e.g. a field filled).
+  - [x] "Interactive" variant that gates **Next** on the real step completing (the new-customer
+    walkthrough blocks until the organization name + domain are filled, via `WalkthroughStep.RequireValueOf`).
 - [ ] **Phase 4 — Ambient tooltips + feature beacons**
-  - [ ] `MudTooltip` field/icon help (e.g. *rebilling basis*, *Cloud Identity check*).
-  - [ ] Pulsing **beacons** on newly added nav links (e.g. **Eventing**) that dismiss on click, per user.
+  - [x] `MudTooltip` field/icon help (rebilling-basis info icon on the customer + partner repricing pages).
+  - [x] Pulsing **beacons** (`FeatureBeacon`) on the new **Operations**/**Notifications** nav links that
+    auto-dismiss per user once the feature is visited (or on click).
 
-> **Status:** Phases 1–3 are implemented (welcome card + dashboard checklist; guided Driver.js product
-> tour over the nav + app bar; per-workflow walkthroughs on the Cloud Identity, new-customer and purchase
-> pages). Phase 4, plus the optional interactive (input-gated) walkthrough variant, remain open.
+> **Status:** Phases 1–4 are implemented. Phase 1: welcome card + dashboard checklist (with a
+> **Restart tour** action and a dismissed-state launcher). Phase 2: guided Driver.js product tour over
+> the nav + app bar. Phase 3: per-workflow walkthroughs (Cloud Identity, new-customer — input-gated,
+> purchase). Phase 4: ambient rebilling-basis tooltips + auto-dismissing nav feature beacons.
 
