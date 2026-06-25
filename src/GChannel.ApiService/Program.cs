@@ -2,6 +2,10 @@ using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
 using GChannel.ApiService.Endpoints;
 using GChannel.ApiService.Services;
+using GChannel.Shared.Contracts;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,6 +52,11 @@ if (app.Environment.IsDevelopment())
 
 await EnsureDatabaseAsync(app);
 
+if (app.Environment.IsDevelopment())
+{
+    await SeedNotificationsForDevAsync(app);
+}
+
 app.MapDefaultEndpoints();
 app.MapAccountsEndpoints();
 app.MapCatalogEndpoints();
@@ -73,5 +82,52 @@ static async Task EnsureDatabaseAsync(WebApplication app)
     catch (Exception ex)
     {
         app.Logger.LogWarning(ex, "Database initialization was skipped (the server may be paused or unreachable).");
+    }
+}
+
+// Development-only convenience: seed the notification feed with a couple of sample Channel events when
+// it is empty, so the Notifications page shows data without a live Pub/Sub subscription. Never runs in
+// production. The sample resource names resolve to real customers in dev so names display correctly.
+static async Task SeedNotificationsForDevAsync(WebApplication app)
+{
+    try
+    {
+        var redis = app.Services.GetRequiredService<IConnectionMultiplexer>();
+        var db = redis.GetDatabase();
+        if (await db.KeyExistsAsync(ChannelNotificationsService.FeedKey))
+        {
+            return; // Don't clobber a feed that already has (real or previously seeded) events.
+        }
+
+        var options = app.Services.GetRequiredService<IOptions<GoogleChannelOptions>>().Value;
+        var account = string.IsNullOrWhiteSpace(options.AccountName) ? "accounts/C03r1rwb0" : options.AccountName;
+
+        var samples = new[]
+        {
+            ("SV4YDIKAbIBzO8", "SvelaOSyAWM8Sz"),
+            ("SV4YDIKAbIBzO8", "Slx8Y3wbAoWzOn")
+        };
+
+        foreach (var (customerId, entitlementId) in samples)
+        {
+            var notification = new ChannelNotification
+            {
+                Kind = "Entitlement",
+                EventType = "LICENSE_ASSIGNMENT_CHANGED",
+                ResourceName = $"{account}/customers/{customerId}/entitlements/{entitlementId}",
+                CustomerId = customerId,
+                EntitlementId = entitlementId,
+                MessageId = null,
+                ReceivedAt = DateTimeOffset.UtcNow
+            };
+
+            await db.ListLeftPushAsync(ChannelNotificationsService.FeedKey, JsonSerializer.Serialize(notification));
+        }
+
+        app.Logger.LogInformation("Seeded {Count} sample notifications into the development feed.", samples.Length);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Development notification seeding was skipped.");
     }
 }
