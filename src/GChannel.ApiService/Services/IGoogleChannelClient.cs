@@ -175,4 +175,28 @@ public interface IGoogleChannelClient
     /// background refresher to warm the dashboard's "Channel links" headline figure.
     /// </summary>
     Task<int> CountChannelPartnerLinksAsync(CancellationToken cancellationToken);
+
+    // Eventing & operations (§7).
+
+    /// <summary>Lists recent Cloud Channel long-running operations (<c>operations.list</c>).</summary>
+    Task<ChannelOperationsResult> ListOperationsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Gets a single long-running operation by id; poll until done (<c>operations.get</c>).</summary>
+    Task<ChannelOperation> GetOperationAsync(string operationId, CancellationToken cancellationToken);
+
+    /// <summary>Requests cancellation of a long-running operation and returns its current state
+    /// (<c>operations.cancel</c>).</summary>
+    Task<ChannelOperation> CancelOperationAsync(string operationId, CancellationToken cancellationToken);
+
+    /// <summary>Lists the account's Pub/Sub subscriber registration — topic + registered service
+    /// accounts (<c>accounts.listSubscribers</c>).</summary>
+    Task<SubscriberRegistration> ListSubscribersAsync(CancellationToken cancellationToken);
+
+    /// <summary>Registers a service account as a Pub/Sub subscriber and returns the updated
+    /// registration (<c>accounts.register</c>).</summary>
+    Task<SubscriberRegistration> RegisterSubscriberAsync(string serviceAccount, CancellationToken cancellationToken);
+
+    /// <summary>Unregisters a Pub/Sub subscriber service account and returns the updated registration
+    /// (<c>accounts.unregister</c>).</summary>
+    Task<SubscriberRegistration> UnregisterSubscriberAsync(string serviceAccount, CancellationToken cancellationToken);
 }

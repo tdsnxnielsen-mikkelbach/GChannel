@@ -33,6 +33,10 @@ builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
 // GoogleChannel service-account + impersonation user + BackgroundRefreshSeconds are configured).
 builder.Services.AddHostedService<DashboardRefreshService>();
 
+// Streams Channel change notifications from Pub/Sub into a capped Redis feed (no-op unless
+// GoogleChannel PubSubProjectId + PubSubSubscriptionId + a service-account key are configured).
+builder.Services.AddHostedService<ChannelNotificationsService>();
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
@@ -52,6 +56,8 @@ app.MapEntitlementsEndpoints();
 app.MapTransfersEndpoints();
 app.MapChannelPartnerLinksEndpoints();
 app.MapRepricingEndpoints();
+app.MapOperationsEndpoints();
+app.MapNotificationsEndpoints();
 app.MapDashboardEndpoints();
 
 app.Run();

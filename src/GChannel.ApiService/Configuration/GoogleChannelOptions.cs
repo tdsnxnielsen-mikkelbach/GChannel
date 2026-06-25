@@ -81,6 +81,22 @@ public sealed class GoogleChannelOptions
     /// </summary>
     public int BackgroundRefreshSeconds { get; set; }
 
+    /// <summary>
+    /// The Google Cloud project id that hosts the Pub/Sub subscription for Channel notifications.
+    /// This is your own project, where you create a subscription against the Google-owned topic
+    /// returned by <c>accounts.register</c>. Required to run the notification subscriber.
+    /// </summary>
+    public string PubSubProjectId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The Pub/Sub subscription id (within <see cref="PubSubProjectId"/>) the background subscriber
+    /// pulls Channel change events from. Blank disables the subscriber.
+    /// </summary>
+    public string PubSubSubscriptionId { get; set; } = string.Empty;
+
+    /// <summary>Maximum number of recent notifications retained in the rolling Redis feed. Minimum 1.</summary>
+    public int PubSubMaxNotifications { get; set; } = 200;
+
     /// <summary>True when a service-account credential is configured (JSON or file).</summary>
     public bool HasServiceAccountCredential =>
         !string.IsNullOrWhiteSpace(ServiceAccountKeyJson) || !string.IsNullOrWhiteSpace(ServiceAccountKeyPath);
@@ -88,6 +104,15 @@ public sealed class GoogleChannelOptions
     /// <summary>True when the periodic background dashboard refresh should run.</summary>
     public bool BackgroundRefreshEnabled =>
         BackgroundRefreshSeconds > 0 && HasServiceAccountCredential && !string.IsNullOrWhiteSpace(ImpersonateUser);
+
+    /// <summary>
+    /// True when the background Pub/Sub notification subscriber should run: a project + subscription
+    /// are configured and a service-account credential is available to authenticate to Pub/Sub.
+    /// </summary>
+    public bool PubSubEnabled =>
+        !string.IsNullOrWhiteSpace(PubSubProjectId)
+        && !string.IsNullOrWhiteSpace(PubSubSubscriptionId)
+        && HasServiceAccountCredential;
 
     /// <summary>Normalised account name guaranteed to start with "accounts/".</summary>
     public string AccountName =>

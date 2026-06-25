@@ -1,0 +1,333 @@
+@page "/operations"
+@attribute [Authorize]
+@implements IDisposable
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Operations · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-2">
+    <div>
+        <MudText Typo="Typo.h4">Operations</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Long-running operations</MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="RefreshListAsync" Disabled="_listLoading">Refresh</MudButton>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Mutating Channel calls (entitlement create/change/state changes, transfers) run asynchronously and
+    return an operation. Track one by id to watch it complete, then deep-link to the customer or
+    entitlement it affected.
+</MudText>
+
+<MudCard Elevation="2" Class="mb-6">
+    <MudCardContent>
+        <div class="d-flex gap-3 align-center flex-wrap">
+            <MudTextField @bind-Value="_lookupId" Label="Operation id" Variant="Variant.Outlined"
+                          Margin="Margin.Dense" Class="flex-grow-1"
+                          Placeholder="operations/… or the id segment" Immediate="false" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search"
+                       OnClick="TrackAsync" Disabled="@(string.IsNullOrWhiteSpace(_lookupId) || _tracking)">
+                Track
+            </MudButton>
+        </div>
+
+        @if (_tracked is not null)
+        {
+            <MudDivider Class="my-4" />
+            <div class="d-flex justify-space-between align-center mb-2">
+                <div>
+                    <MudText Typo="Typo.subtitle1">@(_tracked.OperationType ?? "Operation")</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@_tracked.Name</MudText>
+                </div>
+                @if (_tracked.Done)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="@(_tracked.Error is null ? Color.Success : Color.Error)"
+                             Icon="@(_tracked.Error is null ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)">
+                        @(_tracked.Error is null ? "Done" : "Failed")
+                    </MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Icon="@Icons.Material.Filled.Sync">
+                        Running
+                    </MudChip>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(_tracked.Error))
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">
+                    @_tracked.Error @(_tracked.ErrorCode is { } code and not 0 ? $"(code {code})" : "")
+                </MudAlert>
+            }
+
+            @if (!string.IsNullOrEmpty(_tracked.CustomerId) || !string.IsNullOrEmpty(_tracked.EntitlementId))
+            {
+                <div class="d-flex gap-2 mb-3 flex-wrap">
+                    @if (!string.IsNullOrEmpty(_tracked.CustomerId))
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Person"
+                                   Href="@($"/customers/{_tracked.CustomerId}")">Customer</MudButton>
+                    }
+                    @if (!string.IsNullOrEmpty(_tracked.CustomerId) && !string.IsNullOrEmpty(_tracked.EntitlementId))
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Subscriptions"
+                                   Href="@($"/customers/{_tracked.CustomerId}/entitlements/{_tracked.EntitlementId}")">Entitlement</MudButton>
+                    }
+                </div>
+            }
+
+            <div class="d-flex gap-2">
+                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="@(() => RefreshTrackedAsync(true))">Refresh</MudButton>
+                @if (!_tracked.Done)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Cancel" OnClick="CancelAsync" Disabled="_cancelling">
+                        Cancel
+                    </MudButton>
+                }
+            </div>
+        }
+    </MudCardContent>
+</MudCard>
+
+<MudText Typo="Typo.h6" Class="mb-2">Recent operations</MudText>
+@if (_listLoading)
+{
+    <LoadingPanel Title="Loading operations…" Hint="Fetching long-running operations from the Channel API." />
+}
+else if (_listUnavailable)
+{
+    <MudAlert Severity="Severity.Info">
+        Listing operations isn't available for this account. Track an operation by id using its name from a
+        mutating call's response.
+    </MudAlert>
+}
+else if (_operations is { Count: > 0 })
+{
+    <MudTable Items="_operations" Hover="true" Elevation="2" Dense="true">
+        <HeaderContent>
+            <MudTh>Type</MudTh>
+            <MudTh>Id</MudTh>
+            <MudTh>State</MudTh>
+            <MudTh>Correlation</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Type">@(context.OperationType ?? "—")</MudTd>
+            <MudTd DataLabel="Id"><code>@context.Id</code></MudTd>
+            <MudTd DataLabel="State">
+                @if (context.Done)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                             Color="@(context.Error is null ? Color.Success : Color.Error)">
+                        @(context.Error is null ? "Done" : "Failed")
+                    </MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info">Running</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Correlation">
+                @if (!string.IsNullOrEmpty(context.CustomerId) && !string.IsNullOrEmpty(context.EntitlementId))
+                {
+                    <MudLink Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")">Entitlement</MudLink>
+                }
+                else if (!string.IsNullOrEmpty(context.CustomerId))
+                {
+                    <MudLink Href="@($"/customers/{context.CustomerId}")">Customer</MudLink>
+                }
+                else
+                {
+                    <span>—</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudTooltip Text="Track">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                                   OnClick="@(() => TrackByIdAsync(context.Id))" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Info">No recent operations.</MudAlert>
+}
+
+@code {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+
+    private readonly CancellationTokenSource _cts = new();
+
+    private string _lookupId = string.Empty;
+    private ChannelOperation? _tracked;
+    private bool _tracking;
+    private bool _cancelling;
+
+    private IReadOnlyList<ChannelOperation>? _operations;
+    private bool _listLoading = true;
+    private bool _listUnavailable;
+    private Task? _pollTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await RefreshListAsync();
+    }
+
+    private async Task RefreshListAsync()
+    {
+        _listLoading = true;
+        _listUnavailable = false;
+        StateHasChanged();
+        try
+        {
+            var result = await Api.ListOperationsAsync(_cts.Token);
+            _operations = result?.Operations ?? [];
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+        catch
+        {
+            // The Channel API may not support listing operations for every account; degrade gracefully.
+            _listUnavailable = true;
+            _operations = [];
+        }
+        finally
+        {
+            _listLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task TrackAsync() => TrackByIdAsync(_lookupId.Trim());
+
+    private async Task TrackByIdAsync(string operationId)
+    {
+        if (string.IsNullOrWhiteSpace(operationId))
+        {
+            return;
+        }
+
+        _lookupId = operationId;
+        _tracking = true;
+        try
+        {
+            _tracked = await Api.GetOperationAsync(operationId, _cts.Token);
+            StartPolling();
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Component torn down.
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load operation: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _tracking = false;
+        }
+    }
+
+    private async Task RefreshTrackedAsync(bool notify)
+    {
+        if (_tracked is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var operation = await Api.GetOperationAsync(_tracked.Id, _cts.Token);
+            _tracked = operation;
+            if (notify && operation is not null)
+            {
+                Snackbar.Add(operation.Done ? "Operation is done." : "Operation still running.", Severity.Info);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Ignore.
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to refresh operation: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void StartPolling()
+    {
+        if (_pollTask is { IsCompleted: false } || _tracked is null || _tracked.Done)
+        {
+            return;
+        }
+
+        _pollTask = PollLoopAsync(_cts.Token);
+    }
+
+    private async Task PollLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(PollInterval);
+            while (_tracked is { Done: false } && await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await RefreshTrackedAsync(false);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Circuit torn down.
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_tracked is null)
+        {
+            return;
+        }
+
+        _cancelling = true;
+        try
+        {
+            _tracked = await Api.CancelOperationAsync(_tracked.Id, _cts.Token);
+            Snackbar.Add("Cancellation requested.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to cancel operation: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _cancelling = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _cts.Dispose();
+    }
+}

@@ -1,0 +1,295 @@
+@page "/notifications"
+@attribute [Authorize]
+@implements IDisposable
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Notifications · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-2">
+    <div>
+        <MudText Typo="Typo.h4">Notifications</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Pub/Sub change events</MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="RefreshFeedAsync" Disabled="_feedLoading">Refresh</MudButton>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+    Google publishes entitlement and customer change events to a Cloud Pub/Sub topic. A background
+    subscriber in the API records them into a live feed so the console reacts to changes without
+    polling. Each event deep-links to the customer or entitlement it concerns.
+</MudText>
+
+@if (!_feedLoading && _feed is not null && !_feed.SubscriberEnabled)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4" Dense="true">
+        The background Pub/Sub subscriber isn't running. Configure <code>GoogleChannel:PubSubProjectId</code>,
+        <code>GoogleChannel:PubSubSubscriptionId</code> and a service-account key to start receiving events.
+        Subscriber registration below still works.
+    </MudAlert>
+}
+
+<MudGrid>
+    <MudItem xs="12" md="7">
+        <MudText Typo="Typo.h6" Class="mb-2">Event feed</MudText>
+        @if (_feedLoading)
+        {
+            <LoadingPanel Title="Loading notifications…" Hint="Reading the recent Channel event feed." />
+        }
+        else if (_feed is { Notifications.Count: > 0 })
+        {
+            <MudTable Items="_feed.Notifications" Hover="true" Elevation="2" Dense="true">
+                <HeaderContent>
+                    <MudTh>Kind</MudTh>
+                    <MudTh>Event</MudTh>
+                    <MudTh>Received</MudTh>
+                    <MudTh Style="text-align:right">Open</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Kind">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                 Color="@KindColor(context.Kind)">@context.Kind</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Event">
+                        <MudText Typo="Typo.body2">@(context.EventType ?? "—")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ResourceName</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Received">@context.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudTd>
+                    <MudTd DataLabel="Open" Style="text-align:right">
+                        @if (!string.IsNullOrEmpty(context.CustomerId) && !string.IsNullOrEmpty(context.EntitlementId))
+                        {
+                            <MudLink Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")">Entitlement</MudLink>
+                        }
+                        else if (!string.IsNullOrEmpty(context.CustomerId))
+                        {
+                            <MudLink Href="@($"/customers/{context.CustomerId}")">Customer</MudLink>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info">No notifications received yet.</MudAlert>
+        }
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudText Typo="Typo.h6" Class="mb-2">Subscriber registration</MudText>
+        <MudCard Elevation="2">
+            <MudCardContent>
+                @if (_registrationLoading)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Topic</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-3">@(_registration?.Topic ?? "— none registered —")</MudText>
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Registered service accounts</MudText>
+                    @if (_registration is { ServiceAccounts.Count: > 0 })
+                    {
+                        <MudList T="string" Dense="true">
+                            @foreach (var account in _registration.ServiceAccounts)
+                            {
+                                <MudListItem T="string">
+                                    <div class="d-flex justify-space-between align-center">
+                                        <MudText Typo="Typo.body2">@account</MudText>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                                       OnClick="@(() => UnregisterAsync(account))" Disabled="_saving" />
+                                    </div>
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Class="mb-2">None.</MudText>
+                    }
+
+                    <MudDivider Class="my-3" />
+                    <MudTextField @bind-Value="_newServiceAccount" Label="Service account email"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Placeholder="name@project.iam.gserviceaccount.com" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="RegisterAsync"
+                               Disabled="@(string.IsNullOrWhiteSpace(_newServiceAccount) || _saving)">
+                        Register subscriber
+                    </MudButton>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(20);
+
+    private readonly CancellationTokenSource _cts = new();
+
+    private ChannelNotificationsResult? _feed;
+    private bool _feedLoading = true;
+
+    private SubscriberRegistration? _registration;
+    private bool _registrationLoading = true;
+    private string _newServiceAccount = string.Empty;
+    private bool _saving;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await RefreshFeedAsync();
+        await LoadRegistrationAsync();
+        _ = PollLoopAsync(_cts.Token);
+    }
+
+    private async Task RefreshFeedAsync()
+    {
+        _feedLoading = true;
+        StateHasChanged();
+        try
+        {
+            _feed = await Api.ListNotificationsAsync(_cts.Token);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load notifications: {ex.Message}", Severity.Error);
+            _feed = new ChannelNotificationsResult();
+        }
+        finally
+        {
+            _feedLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadRegistrationAsync()
+    {
+        _registrationLoading = true;
+        StateHasChanged();
+        try
+        {
+            _registration = await Api.ListSubscribersAsync(_cts.Token);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load subscriber registration: {ex.Message}", Severity.Error);
+            _registration = new SubscriberRegistration();
+        }
+        finally
+        {
+            _registrationLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RegisterAsync()
+    {
+        var serviceAccount = _newServiceAccount.Trim();
+        if (string.IsNullOrWhiteSpace(serviceAccount))
+        {
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            _registration = await Api.RegisterSubscriberAsync(new RegisterSubscriberRequest { ServiceAccount = serviceAccount }, _cts.Token);
+            _newServiceAccount = string.Empty;
+            Snackbar.Add("Subscriber registered.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to register subscriber: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task UnregisterAsync(string serviceAccount)
+    {
+        _saving = true;
+        try
+        {
+            _registration = await Api.UnregisterSubscriberAsync(serviceAccount, _cts.Token);
+            Snackbar.Add("Subscriber unregistered.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to unregister subscriber: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task PollLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(PollInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                try
+                {
+                    _feed = await Api.ListNotificationsAsync(cancellationToken);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+                {
+                    break;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Circuit torn down.
+        }
+    }
+
+    private static Color KindColor(string kind) => kind switch
+    {
+        "Entitlement" => Color.Primary,
+        "Customer" => Color.Info,
+        _ => Color.Default
+    };
+
+    public void Dispose()
+    {
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _cts.Dispose();
+    }
+}

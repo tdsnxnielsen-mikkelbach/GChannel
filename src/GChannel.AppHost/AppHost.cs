@@ -65,6 +65,12 @@ var googleChannelImpersonateUser = builder.AddParameter("GoogleChannelImpersonat
 var googleChannelBackgroundRefreshSeconds = builder.AddParameter("GoogleChannelBackgroundRefreshSeconds");
 var googleChannelServiceAccountKeyParam = builder.AddParameter("GoogleChannelServiceAccountKeyJson", secret: true);
 
+// Optional Pub/Sub notification subscriber (§7). Point these at the subscription you created in your
+// own Google Cloud project against the Channel topic; leave blank to keep the subscriber disabled.
+// Authentication reuses the service-account key above (no domain-wide delegation needed for Pub/Sub).
+var googleChannelPubSubProjectId = builder.AddParameter("GoogleChannelPubSubProjectId");
+var googleChannelPubSubSubscriptionId = builder.AddParameter("GoogleChannelPubSubSubscriptionId");
+
 // Back-end services container app (internal): owns SQL, Redis and the Google Channel API.
 var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithReference(database)
@@ -72,6 +78,8 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithEnvironment("GoogleChannel__AccountId", googleChannelAccountId)
     .WithEnvironment("GoogleChannel__ImpersonateUser", googleChannelImpersonateUser)
     .WithEnvironment("GoogleChannel__BackgroundRefreshSeconds", googleChannelBackgroundRefreshSeconds)
+    .WithEnvironment("GoogleChannel__PubSubProjectId", googleChannelPubSubProjectId)
+    .WithEnvironment("GoogleChannel__PubSubSubscriptionId", googleChannelPubSubSubscriptionId)
     .WaitFor(database)
     .WaitFor(cache);
 

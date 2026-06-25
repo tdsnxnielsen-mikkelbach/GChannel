@@ -369,6 +369,47 @@ running, an "On demand" chip when the background path is disabled, and "Updated 
 `LastCompletedUtc`. Polling is best-effort: transient failures keep the last good render and never raise
 a toast.
 
+## Eventing &amp; operations
+
+Two concerns close the loop on asynchronous work: **long-running operations** (the async result of
+mutating calls) and **change notifications** (events the platform pushes when entitlements/customers
+change). Both correlate back to the customer/entitlement they concern so the UI can deep-link.
+
+**Long-running operations.** Mutating Channel calls (entitlement create/change/state changes,
+transfers) return an `operations/{id}` name rather than completing inline. `GoogleChannelClient`'s
+operations partial wraps `operations.list`/`get`/`cancel` into `ChannelOperation` — extracting the
+`operationType` from the operation **metadata** and the affected resource name from the operation
+**response**, then parsing the customer/entitlement ids out of that name. The endpoints
+(`GET /api/operations`, `GET /api/operations/{id}`, `POST /api/operations/{id}/cancel`) are uncached
+(operations are volatile). The Blazor **Operations** page (`/operations`) tracks an operation by id
+(the name a mutating call returned), polls it every few seconds until `done`, lets you request
+cancellation, and deep-links to the affected customer/entitlement. Listing degrades gracefully — some
+accounts don't support `operations.list`, so the page falls back to lookup-by-id.
+
+**Change notifications (Pub/Sub).** The notification *source* is mandatorily **Google Cloud
+Pub/Sub**: Google publishes entitlement/customer events to a Google-owned topic, and
+`accounts.register` grants a service account subscriber access to it (`listSubscribers`/`unregister`
+manage the set). There is **no Azure messaging** in the path — on Azure the app's managed identity
+only reads the Google service-account key from Key Vault, and that key authenticates to Pub/Sub. A
+hosted `ChannelNotificationsService` (a `BackgroundService`, like the dashboard refresher) streams the
+reseller's subscription and writes each parsed `ChannelNotification` into a **capped Redis list**
+(`channel:notifications`, `LPUSH` + `LTRIM` to `PubSubMaxNotifications`). It uses Redis rather than a
+SQL table because the app provisions its schema with `EnsureCreated` (no migrations), so a new table
+wouldn't apply to existing databases. `GET /api/notifications` serves the feed; the **Notifications**
+page (`/notifications`) renders it (each row deep-linking to its customer/entitlement) and polls every
+20 s, alongside a subscriber-registration admin card.
+
+Unlike the dashboard refresher, the subscriber needs **no distributed lock**: Pub/Sub load-balances
+delivery across all connected subscribers, so when the API scales to multiple replicas they share the
+subscription automatically and each message is processed once. The only requirement is API
+`min-replicas ≥ 1`, and **no separate container** is introduced — the subscriber lives inside the
+existing API container app. It authenticates with the same service-account key as the background
+refresh (Pub/Sub uses the key directly; no domain-wide delegation), and is a **no-op** unless
+`GoogleChannel:PubSubProjectId` + `PubSubSubscriptionId` + a service-account key are configured. Local
+F5 behaves identically using the key from user-secrets. On shutdown the service stops the subscriber
+(via the stopping `CancellationToken`) so in-flight messages drain cleanly. See
+[configuration.md](configuration.md#pubsub-notifications-7) for the Google-side setup.
+
 ## Blazor rendering &amp; request cancellation
 
 The Web app uses **Interactive Server** components with prerendering. A component therefore renders

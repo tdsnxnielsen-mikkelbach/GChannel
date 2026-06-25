@@ -221,6 +221,36 @@ public sealed class GChannelApiClient(
     public Task DeleteChannelPartnerRepricingConfigAsync(string linkId, string configId, CancellationToken cancellationToken = default) =>
         DeleteAsync(ApiRoutes.ChannelPartnerRepricingConfig(linkId, configId), cancellationToken);
 
+    // Eventing & operations (§7).
+
+    /// <summary>Lists recent long-running operations.</summary>
+    public Task<ChannelOperationsResult?> ListOperationsAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<ChannelOperationsResult>(ApiRoutes.Operations, cancellationToken);
+
+    /// <summary>Gets a single long-running operation by id (poll until done).</summary>
+    public Task<ChannelOperation?> GetOperationAsync(string operationId, CancellationToken cancellationToken = default) =>
+        GetAsync<ChannelOperation>(ApiRoutes.Operation(operationId), cancellationToken);
+
+    /// <summary>Requests cancellation of a long-running operation.</summary>
+    public Task<ChannelOperation?> CancelOperationAsync(string operationId, CancellationToken cancellationToken = default) =>
+        SendAsync<ChannelOperation>(HttpMethod.Post, ApiRoutes.OperationCancel(operationId), EmptyBody, cancellationToken);
+
+    /// <summary>Lists recent Channel change notifications received from Pub/Sub.</summary>
+    public Task<ChannelNotificationsResult?> ListNotificationsAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<ChannelNotificationsResult>(ApiRoutes.Notifications, cancellationToken);
+
+    /// <summary>Lists the account's Pub/Sub subscriber registration (topic + service accounts).</summary>
+    public Task<SubscriberRegistration?> ListSubscribersAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<SubscriberRegistration>(ApiRoutes.PubSubSubscribers, cancellationToken);
+
+    /// <summary>Registers a service account as a Pub/Sub subscriber.</summary>
+    public Task<SubscriberRegistration?> RegisterSubscriberAsync(RegisterSubscriberRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<SubscriberRegistration>(HttpMethod.Post, ApiRoutes.PubSubSubscribers, request, cancellationToken);
+
+    /// <summary>Unregisters a Pub/Sub subscriber service account.</summary>
+    public Task<SubscriberRegistration?> UnregisterSubscriberAsync(string serviceAccount, CancellationToken cancellationToken = default) =>
+        SendAsync<SubscriberRegistration>(HttpMethod.Delete, ApiRoutes.PubSubSubscriber(serviceAccount), EmptyBody, cancellationToken);
+
     /// <summary>Shared empty JSON body for state-change POSTs that carry no payload.</summary>
     private static readonly object EmptyBody = new();
 

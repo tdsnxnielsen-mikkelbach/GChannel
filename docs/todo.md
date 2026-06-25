@@ -91,10 +91,11 @@ advanced distributor/billing features.
 > and offers (`listPurchasableSkus` / `listPurchasableOffers`) so the offer the customer is eligible
 > to buy resolves to the same Catalog ids.
 >
-> **LROs.** The mutating calls (create/modify/state-change) return long-running operations. Full
-> operation polling is **§7**; until then the UI surfaces the operation as accepted (showing
-> *completed* when Google finishes inline, otherwise *submitted — processing*) and reloads the list,
-> so a freshly purchased or changed entitlement appears once provisioning finishes.
+> **LROs.** The mutating calls (create/modify/state-change) return long-running operations. The UI
+> surfaces the operation as accepted (showing *completed* when Google finishes inline, otherwise
+> *submitted — processing*) and reloads the list, so a freshly purchased or changed entitlement
+> appears once provisioning finishes. Full operation polling/cancellation is now available on the
+> **Operations** page (§7), which tracks any returned operation name to `done`.
 >
 > **Friendly names.** Entitlements and their change history carry only opaque offer/SKU/product ids;
 > the API resolves human-readable names from the offer catalog (`accounts.offers.list`, reusing
@@ -129,10 +130,11 @@ advanced distributor/billing features.
 > used by §1/§3. The `transferable-offers` lookup is scoped to a `productId`/`skuId`, so the offer a
 > customer is eligible to transfer resolves to the same Catalog ids surfaced everywhere else.
 >
-> **LROs.** Both transfer calls return long-running operations. Full operation polling is **§7**;
-> until then the UI surfaces the operation as accepted (showing *completed* when Google finishes
-> inline, otherwise *submitted — processing*) and navigates to the customer's entitlements list, so
-> the transferred subscriptions appear once provisioning finishes. `transferEntitlementsToGoogle`
+> **LROs.** Both transfer calls return long-running operations. The UI surfaces the operation as
+> accepted (showing *completed* when Google finishes inline, otherwise *submitted — processing*) and
+> navigates to the customer's entitlements list, so the transferred subscriptions appear once
+> provisioning finishes; the returned operation name can be tracked to completion on the
+> **Operations** page (§7). `transferEntitlementsToGoogle`
 > (handing a subscription back to direct Google billing) is wired through the API for completeness;
 > the basket UI drives the standard `transferEntitlements` reseller flow.
 
@@ -203,10 +205,42 @@ advanced distributor/billing features.
 
 ### 7. Eventing & operations
 
-- [ ] **Pub/Sub subscribers** — `accounts.register` / `unregister` / `listSubscribers` to receive
+- [x] **Pub/Sub subscribers** — `accounts.register` / `unregister` / `listSubscribers` to receive
   entitlement-change notifications instead of polling.
-- [ ] **Long-running operations** — surface `operations.get` / `list` for async calls
+- [x] **Long-running operations** — surface `operations.get` / `list` / `cancel` for async calls
   (create/transfer/change return LROs).
+
+> **Implemented.** A new **Eventing** nav group exposes two pages:
+>
+> - **Operations** (`/operations`) — track a long-running operation by id (the `operationName` a
+>   mutating call returns), watch it poll to `done`, request cancellation, and deep-link to the
+>   affected **customer/entitlement** (§2/§3). Backed by `GET /api/operations`,
+>   `GET /api/operations/{id}` and `POST /api/operations/{id}/cancel`
+>   (`operations.list`/`get`/`cancel`). Listing degrades gracefully if the account doesn't support it.
+> - **Notifications** (`/notifications`) — a live feed of Channel change events plus subscriber
+>   registration admin. Backed by `GET /api/notifications` (the feed),
+>   `GET/POST /api/notifications/subscribers` and `DELETE /api/notifications/subscribers/{email}`
+>   (`accounts.listSubscribers`/`register`/`unregister`). Each event deep-links to its customer/
+>   entitlement.
+>
+> **Where the events come from (Azure vs local).** The notification *source* is mandatorily **Google
+> Cloud Pub/Sub** — Google publishes entitlement/customer events to a Google-owned topic
+> (`accounts.register` grants a service account subscriber access and returns the topic name). There
+> is **no Azure Service Bus/Event Grid** equivalent; Azure managed identity is only used to read the
+> Google service-account key from Key Vault, and that key then authenticates to Google Pub/Sub.
+>
+> **Hosting (no new container).** The subscriber runs as a `BackgroundService`
+> (`ChannelNotificationsService`) **inside the existing API container app**, exactly like the
+> dashboard refresher — no separate worker/container is added. Pub/Sub load-balances messages across
+> all connected subscribers, so when the API scales to multiple replicas they share the subscription
+> automatically and **no distributed lock is needed** (unlike the dashboard compute, which must be
+> single-flight). The only requirement is API `min-replicas ≥ 1`. Received events are written to a
+> capped Redis list (`channel:notifications`, trimmed to `PubSubMaxNotifications`) — **not** SQL,
+> because the app uses `EnsureCreated` (no migrations) and a new table wouldn't apply to existing
+> databases. Local F5 is identical: the same `BackgroundService` runs against your subscription using
+> the service-account key from user-secrets. The subscriber is a **no-op** unless
+> `GoogleChannel:PubSubProjectId` + `PubSubSubscriptionId` + a service-account key are configured, so
+> the rest of the app is unaffected when eventing is off.
 
 ### 8. `v1alpha1` preview capabilities (optional, alpha-only)
 
@@ -251,5 +285,6 @@ breaking-change risk:
 ## Notes
 
 - `GoogleChannel:AccountId` is required for every Channel API call and is validated at runtime.
-- Most mutating calls (create/transfer/change) return **long-running operations**; the UI will
-  need to poll `operations` and reflect pending state.
+- Most mutating calls (create/transfer/change) return **long-running operations**; the **Operations**
+  page (§7) polls `operations.get` and reflects pending/done/failed state, and entitlement actions
+  surface the returned operation name for tracking.

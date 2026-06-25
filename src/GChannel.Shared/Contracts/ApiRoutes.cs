@@ -143,4 +143,27 @@ public static class ApiRoutes
     /// <summary>A single channel partner repricing config by id.</summary>
     public static string ChannelPartnerRepricingConfig(string linkId, string configId) =>
         $"/api/channel-partner-links/{linkId}/repricing-configs/{configId}";
+
+    // Eventing & operations (§7). Long-running operations expose the async status of mutating calls;
+    // Pub/Sub subscriber management plus a feed of received Channel change notifications close the
+    // loop so the UI reacts to entitlement/customer events instead of polling.
+
+    /// <summary>Lists recent long-running operations.</summary>
+    public const string Operations = "/api/operations";
+
+    /// <summary>A single long-running operation by id (the segment after "operations/").</summary>
+    public static string Operation(string operationId) => $"/api/operations/{operationId}";
+
+    /// <summary>Requests cancellation of a long-running operation.</summary>
+    public static string OperationCancel(string operationId) => $"/api/operations/{operationId}/cancel";
+
+    /// <summary>Recent Channel change notifications received from Pub/Sub.</summary>
+    public const string Notifications = "/api/notifications";
+
+    /// <summary>The Pub/Sub subscriber registration (topic + registered service accounts).</summary>
+    public const string PubSubSubscribers = "/api/notifications/subscribers";
+
+    /// <summary>A single Pub/Sub subscriber registration (by service-account email).</summary>
+    public static string PubSubSubscriber(string serviceAccount) =>
+        $"/api/notifications/subscribers/{serviceAccount}";
 }

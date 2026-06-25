@@ -29,6 +29,8 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Channel partners → links list / detail** | `accounts.channelPartnerLinks.list` / `.get` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/list) |
 | **Channel partners → invite / change state** | `accounts.channelPartnerLinks.create` / `.patch` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/create) |
 | **Channel partners → customers under a partner** | `accounts.channelPartnerLinks.customers.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers/list) |
+| **Eventing → Operations (track / cancel)** | `operations.get` / `operations.cancel` (`operations.list` returns 501) | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/operations/get) |
+| **Eventing → Notifications (subscriber admin)** | `accounts.register` / `accounts.unregister` / `accounts.listSubscribers` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/listSubscribers) |
 | **Home → dashboard summary** | *derived* (`accounts.customers.list` + `accounts.customers.entitlements.list` + `accounts.offers.list` + `accounts.channelPartnerLinks.list`) | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) |
 
 > **Cross-navigation.** Catalog resources are correlated by id (product ↔ SKU ↔ offer ↔ billable
@@ -46,8 +48,30 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 
 > **Long-running operations.** Mutating entitlement **and transfer** calls
 > (create/change/state-change, `transferEntitlements`/`transferEntitlementsToGoogle`) return LROs.
-> Operation polling is deferred to the roadmap's §7; the UI currently reflects the operation as
-> *completed* (when Google finishes inline) or *submitted — processing* and reloads the list.
+> Operation polling/cancellation is now **implemented** (§7): `GET /api/operations`,
+> `GET /api/operations/{id}` and `POST /api/operations/{id}/cancel` wrap
+> `operations.get`/`cancel`, and the **Operations** page tracks any returned operation name to
+> `done` and deep-links to the affected customer/entitlement. Note the Cloud Channel API does **not**
+> implement `operations.list` (it returns HTTP 501 `notImplemented`), so `GET /api/operations` returns
+> an empty list by design — operations are tracked individually by the name a mutation returns.
+> Mutating pages still also reflect the
+> operation inline as *completed* (when Google finishes synchronously) or *submitted — processing*.
+
+> **Eventing & operations (§7).** Channel change events flow through **Google Cloud Pub/Sub** — Google
+> publishes entitlement/customer events to a Google-owned topic, and `accounts.register` grants a
+> service account subscriber access to it (`listSubscribers`/`unregister` manage the set). There is no
+> Azure messaging in the path: on Azure the app's **managed identity** only reads the Google
+> service-account key from **Key Vault**, and that key authenticates to Pub/Sub. The subscriber runs
+> as a `BackgroundService` (`ChannelNotificationsService`) **inside the existing API container app** —
+> **no extra container** — and writes events to a capped Redis list (`channel:notifications`) that
+> `GET /api/notifications` serves; SQL isn't used because the app runs `EnsureCreated` (no migrations).
+> Pub/Sub load-balances across subscribers, so multiple API replicas share the subscription with **no
+> distributed lock** (only `min-replicas ≥ 1` is required). Local F5 behaves identically using the
+> key from user-secrets. The **Notifications** page shows the live feed (each row deep-linking to its
+> customer/entitlement) plus subscriber registration; the subscriber is a no-op unless
+> `GoogleChannel:PubSubProjectId` + `PubSubSubscriptionId` + a service-account key are set. See
+> [configuration.md](configuration.md#pubsub-notifications-7) and
+> [architecture.md](architecture.md#eventing--operations).
 
 > **Transfers.** Moving an existing subscription into the reseller is exposed under
 > `/api/customers/{id}`: `GET /transferable-skus` and `GET /transferable-offers?productId=&skuId=`
@@ -142,7 +166,8 @@ Most customer methods are now **implemented** (see the table above). The followi
 
 All entitlement methods below are now **implemented** (see the *Implemented* table above), except
 `listEntitlementChanges`/`lookupOffer` which back the detail page's history and offer cards. The
-mutating calls return long-running operations (see §7 for the deferred polling work).
+mutating calls return long-running operations; polling/cancellation is implemented in §7 (see the
+**Operations** page).
 
 | Resource.method | Purpose |
 | --- | --- |
@@ -162,7 +187,8 @@ mutating calls return long-running operations (see §7 for the deferred polling 
 ### Transfers
 
 All transfer methods below are now **implemented** (see the *Implemented* table above). The two
-mutating calls return long-running operations (see §7 for the deferred polling work).
+mutating calls return long-running operations; polling/cancellation is implemented in §7 (see the
+**Operations** page).
 
 | Resource.method | Purpose |
 | --- | --- |
@@ -199,10 +225,14 @@ granularity** (each targets one of the customer's entitlements — §3); channel
 
 ### Pub/Sub subscribers & operations
 
+These are now **implemented** (§7 — see the *Implemented* table above and the **Operations** /
+**Notifications** pages). Subscriber management wraps the Google-owned Pub/Sub topic; a
+`BackgroundService` inside the API streams the subscription into a Redis-backed feed.
+
 | Resource.method | Purpose |
 | --- | --- |
-| `accounts.register` / `accounts.unregister` / `accounts.listSubscribers` | Manage Pub/Sub subscriber service accounts ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts)). |
-| `operations.{get,list,cancel,delete}` | Track long-running operations ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/operations)). |
+| `accounts.register` / `accounts.unregister` / `accounts.listSubscribers` | Manage Pub/Sub subscriber service accounts ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts)). `register`/`unregister`/`listSubscribers` **(implemented)**. |
+| `operations.{get,list,cancel,delete}` | Track long-running operations ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/operations)). `get`/`list`/`cancel` **(implemented)**; `delete` not surfaced. |
 
 ### Reporting (deprecated in v1)
 
