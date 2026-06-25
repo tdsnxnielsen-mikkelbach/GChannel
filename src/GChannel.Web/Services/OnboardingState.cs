@@ -16,6 +16,9 @@ public sealed class OnboardingState
     /// <summary>True once the user hides the dashboard onboarding checklist.</summary>
     public bool ChecklistDismissed { get; set; }
 
+    /// <summary>True once the user has finished (or closed) the guided product tour.</summary>
+    public bool TourCompleted { get; set; }
+
     /// <summary>Keys of manually completed checklist steps (steps without a data signal).</summary>
     public List<string> CompletedSteps { get; set; } = [];
 }

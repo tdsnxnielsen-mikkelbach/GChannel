@@ -1,4 +1,5 @@
 @inject OnboardingStateService Onboarding
+@inject OnboardingTourService Tour
 @inject NavigationManager Nav
 
 @* §9 phase 1: first-run welcome card + dashboard onboarding checklist. State persists per-browser. *@
@@ -20,7 +21,9 @@
             </MudText>
             <div class="d-flex justify-end gap-2">
                 <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="SkipAsync">Skip onboarding</MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="GetStartedAsync">Get started</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="GetStartedAsync">Maybe later</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Tour"
+                           OnClick="TakeTourAsync">Take a tour</MudButton>
             </div>
         </MudPaper>
     </MudOverlay>
@@ -146,6 +149,19 @@
 
         _state.WelcomeDismissed = true;
         await Onboarding.SaveAsync(_state);
+    }
+
+    private async Task TakeTourAsync()
+    {
+        if (_state is null)
+        {
+            return;
+        }
+
+        _state.WelcomeDismissed = true;
+        await Onboarding.SaveAsync(_state);
+        StateHasChanged();
+        await Tour.StartAsync();
     }
 
     private async Task SkipAsync()

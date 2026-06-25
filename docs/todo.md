@@ -362,10 +362,10 @@ domain → create a customer → purchase an entitlement) without reading docs.
   - [x] Dashboard **checklist** that ticks steps off from real signals (customer count, entitlements)
     plus manual steps (verify a domain, explore eventing), dismissable.
 - [ ] **Phase 2 — App-wide product tour (Driver.js via JS interop)**
-  - [ ] `wwwroot/js/onboarding.js` + `OnboardingInterop` C# wrapper.
-  - [ ] Ordered, cross-page tour (spotlight coach marks + popover step cards), skippable/resumable,
-    completion persisted; **Restart tour** action in a Help menu.
-  - [ ] Stable `data-onboarding` target hooks on nav groups + primary buttons.
+  - [x] `wwwroot/js/onboarding.js` + `OnboardingTourService` C# wrapper.
+  - [x] Ordered tour over the always-present nav drawer + app bar (spotlight coach marks + popover step
+    cards), skippable/resumable, completion persisted; **Take the product tour** action in the app bar.
+  - [x] Stable `data-onboarding` target hooks on nav groups + app-bar buttons.
 - [ ] **Phase 3 — Per-workflow guided walkthroughs / interactive tutorials**
   - [ ] Scoped popover step sequences on `/accounts/cloud-identity`, `/customers/new`, and the purchase
     flow; "interactive" variant gates **Next** on the real step completing.
@@ -373,6 +373,6 @@ domain → create a customer → purchase an entitlement) without reading docs.
   - [ ] `MudTooltip` field/icon help (e.g. *rebilling basis*, *Cloud Identity check*).
   - [ ] Pulsing **beacons** on newly added nav links (e.g. **Eventing**) that dismiss on click, per user.
 
-> **Status:** Phase 1 is implemented (welcome card + dashboard checklist, browser-persisted). Phases 2–4
-> remain open.
+> **Status:** Phases 1–2 are implemented (welcome card + dashboard checklist, browser-persisted; guided
+> Driver.js product tour over the nav + app bar). Phases 3–4 remain open.
 

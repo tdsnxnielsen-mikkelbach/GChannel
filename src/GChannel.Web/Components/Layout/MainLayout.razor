@@ -1,5 +1,6 @@
 ﻿@inherits LayoutComponentBase
 @inject IJSRuntime JS
+@inject OnboardingTourService Tour
 
 <MudThemeProvider @ref="_mudThemeProvider" Theme="_theme" @bind-IsDarkMode="_isDarkMode" />
 <MudPopoverProvider />
@@ -12,8 +13,12 @@
                        OnClick="@(() => _drawerOpen = !_drawerOpen)" />
         <MudText Typo="Typo.h6" Class="ml-2">GChannel</MudText>
         <MudSpacer />
+        <MudTooltip Text="Take the product tour">
+            <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Inherit"
+                           OnClick="StartTourAsync" data-onboarding="appbar-help" />
+        </MudTooltip>
         <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                       Color="Color.Inherit" OnClick="ToggleDarkModeAsync" />
+                       Color="Color.Inherit" OnClick="ToggleDarkModeAsync" data-onboarding="appbar-theme" />
         <AuthorizeView>
             <Authorized>
                 <MudText Typo="Typo.body2" Class="mx-3">@context.User.Identity?.Name</MudText>
@@ -90,4 +95,6 @@
         _isDarkMode = !_isDarkMode;
         await JS.InvokeVoidAsync("localStorage.setItem", ThemeStorageKey, _isDarkMode ? "dark" : "light");
     }
+
+    private Task StartTourAsync() => Tour.StartAsync();
 }
