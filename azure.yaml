@@ -8,3 +8,18 @@ services:
     language: dotnet
     project: ./src/GChannel.AppHost/GChannel.AppHost.csproj
     host: containerapp
+
+# Apply tags to the resource group after provisioning. `az tag update --operation merge`
+# adds/updates these tags without removing azd's own tags (e.g. azd-env-name). Add custom
+# values with `azd env set` (e.g. `azd env set TAG_OWNER alice`) and reference them below.
+hooks:
+  postprovision:
+    shell: pwsh
+    continueOnError: false
+    interactive: false
+    run: |
+      $rgId = az group show --name $env:AZURE_RESOURCE_GROUP --query id -o tsv
+      az tag update --resource-id $rgId --operation merge --tags `
+        application=gchannel `
+        environment=$env:AZURE_ENV_NAME `
+        managed-by=azd
