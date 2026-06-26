@@ -32,8 +32,16 @@ else if (_customers is { Count: > 0 })
         <HeaderContent>
             <MudTh>Organization</MudTh>
             <MudTh>Domain</MudTh>
-            <MudTh>Cloud Identity</MudTh>
-            <MudTh>Created</MudTh>
+            <MudTh>
+                <MudTableSortLabel SortBy="new Func<Customer, object>(x => string.IsNullOrEmpty(x.CloudIdentityId) ? 1 : 0)">
+                    Cloud Identity
+                </MudTableSortLabel>
+            </MudTh>
+            <MudTh>
+                <MudTableSortLabel SortBy="new Func<Customer, object>(x => x.CreateTime ?? DateTimeOffset.MinValue)">
+                    Created
+                </MudTableSortLabel>
+            </MudTh>
             <MudTh Style="text-align:right">Actions</MudTh>
         </HeaderContent>
         <RowTemplate>

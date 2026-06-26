@@ -41,21 +41,23 @@ public sealed partial class GoogleChannelClient
     }
 
     /// <summary>
-    /// Lists the reseller's channel partner links (BASIC view; account-level, quota-light) and returns
-    /// both the total and a per-link-state breakdown for the dashboard. The BASIC view already carries
-    /// <c>link_state</c>, so the breakdown costs no extra quota over a plain count.
+    /// Lists the reseller's channel partner links (FULL view; account-level, quota-light) and returns
+    /// the total, a per-link-state breakdown, and a map of each link's short id (which equals a
+    /// customer's <c>ChannelPartnerId</c>) to a friendly reseller label, used to name the indirect
+    /// reseller estate on the dashboard without any per-reseller customer-list calls.
     /// </summary>
-    private async Task<(int Total, IReadOnlyList<DashboardChannelLinkState> ByState)> SummarizeChannelPartnerLinksAsync(
+    private async Task<ChannelPartnerLinkSummary> SummarizeChannelPartnerLinksAsync(
         CloudchannelService service, CancellationToken cancellationToken)
     {
         var total = 0;
         var byState = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var resellerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         string? pageToken = null;
         do
         {
             var request = service.Accounts.ChannelPartnerLinks.List(_options.AccountName);
-            request.View = AccountsResource.ChannelPartnerLinksResource.ListRequest.ViewEnum.BASIC;
+            request.View = AccountsResource.ChannelPartnerLinksResource.ListRequest.ViewEnum.FULL;
             request.PageToken = pageToken;
             var response = await request.ExecuteAsync(cancellationToken);
 
@@ -64,6 +66,14 @@ public sealed partial class GoogleChannelClient
                 total++;
                 var state = string.IsNullOrWhiteSpace(link.LinkState) ? "UNSPECIFIED" : link.LinkState;
                 byState[state] = byState.GetValueOrDefault(state) + 1;
+
+                var id = LastSegment(link.Name);
+                if (!string.IsNullOrEmpty(id))
+                {
+                    resellerNames[id] = link.ChannelPartnerCloudIdentityInfo?.PrimaryDomain
+                        ?? link.ResellerCloudIdentityId
+                        ?? id;
+                }
             }
 
             pageToken = response.NextPageToken;
@@ -75,101 +85,14 @@ public sealed partial class GoogleChannelClient
             .Select(kv => new DashboardChannelLinkState { State = kv.Key, Count = kv.Value })
             .ToList();
 
-        return (total, states);
+        return new ChannelPartnerLinkSummary(total, states, resellerNames);
     }
 
-    /// <summary>
-    /// Counts the downstream end customers across every ACTIVE channel partner link \u2014 the indirect
-    /// (reseller-owned) customer estate. Lists the links (BASIC, quota-light), then fans out one
-    /// <c>channelPartnerLinks.customers.list</c> per ACTIVE link with bounded parallelism, tolerating a
-    /// single link failing (e.g. a permission error) rather than sinking the whole figure. Every
-    /// per-link list call is paced through the shared ListCustomers quota bucket.
-    /// </summary>
-    private async Task<int> CountIndirectCustomersAsync(
-        CloudchannelService service, RequestPacer? customerListPacer, CancellationToken cancellationToken)
-    {
-        var activeLinkNames = await ListActiveChannelPartnerLinkNamesAsync(service, cancellationToken);
-        if (activeLinkNames.Count == 0)
-        {
-            return 0;
-        }
-
-        using var throttle = new SemaphoreSlim(Math.Max(1, _options.DashboardMaxConcurrency));
-
-        var counts = await Task.WhenAll(activeLinkNames.Select(async linkName =>
-        {
-            await throttle.WaitAsync(cancellationToken);
-            try
-            {
-                return await CountLinkCustomersAsync(service, linkName, customerListPacer, cancellationToken);
-            }
-            catch (Google.GoogleApiException ex)
-            {
-                logger.LogWarning(ex,
-                    "Skipping channel partner link {Link} when counting indirect customers: {Status}",
-                    linkName, ex.HttpStatusCode);
-                return 0;
-            }
-            finally
-            {
-                throttle.Release();
-            }
-        }));
-
-        return counts.Sum();
-    }
-
-    /// <summary>Lists the resource names of every ACTIVE channel partner link (BASIC view, quota-light).</summary>
-    private async Task<List<string>> ListActiveChannelPartnerLinkNamesAsync(CloudchannelService service, CancellationToken cancellationToken)
-    {
-        var names = new List<string>();
-        string? pageToken = null;
-        do
-        {
-            var request = service.Accounts.ChannelPartnerLinks.List(_options.AccountName);
-            request.View = AccountsResource.ChannelPartnerLinksResource.ListRequest.ViewEnum.BASIC;
-            request.PageToken = pageToken;
-            var response = await request.ExecuteAsync(cancellationToken);
-
-            foreach (var link in response.ChannelPartnerLinks ?? [])
-            {
-                if (string.Equals(link.LinkState, "ACTIVE", StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrEmpty(link.Name))
-                {
-                    names.Add(link.Name);
-                }
-            }
-
-            pageToken = response.NextPageToken;
-        }
-        while (!string.IsNullOrEmpty(pageToken));
-
-        return names;
-    }
-
-    /// <summary>Paginates a single channel partner link's customer list and returns the count.</summary>
-    private static async Task<int> CountLinkCustomersAsync(
-        CloudchannelService service, string linkName, RequestPacer? pacer, CancellationToken cancellationToken)
-    {
-        var count = 0;
-        string? pageToken = null;
-        do
-        {
-            if (pacer is not null)
-            {
-                await pacer.WaitAsync(cancellationToken);
-            }
-
-            var request = service.Accounts.ChannelPartnerLinks.Customers.List(linkName);
-            request.PageToken = pageToken;
-            var response = await request.ExecuteAsync(cancellationToken);
-            count += response.Customers?.Count ?? 0;
-            pageToken = response.NextPageToken;
-        }
-        while (!string.IsNullOrEmpty(pageToken));
-
-        return count;
-    }
+    /// <summary>Result of <see cref="SummarizeChannelPartnerLinksAsync"/>.</summary>
+    private readonly record struct ChannelPartnerLinkSummary(
+        int Total,
+        IReadOnlyList<DashboardChannelLinkState> ByState,
+        IReadOnlyDictionary<string, string> ResellerNamesById);
 
     public async Task<ChannelPartnerLinksResult> ListChannelPartnerLinksAsync(CancellationToken cancellationToken)
     {

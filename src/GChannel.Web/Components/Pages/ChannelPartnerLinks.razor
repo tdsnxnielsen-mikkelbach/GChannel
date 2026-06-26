@@ -30,8 +30,16 @@ else if (_links is { Count: > 0 })
         <HeaderContent>
             <MudTh>Reseller Cloud Identity</MudTh>
             <MudTh>Public id</MudTh>
-            <MudTh>State</MudTh>
-            <MudTh>Created</MudTh>
+            <MudTh>
+                <MudTableSortLabel SortBy="new Func<ChannelPartnerLink, object>(x => x.LinkState ?? string.Empty)">
+                    State
+                </MudTableSortLabel>
+            </MudTh>
+            <MudTh>
+                <MudTableSortLabel SortBy="new Func<ChannelPartnerLink, object>(x => x.CreateTime ?? DateTimeOffset.MinValue)">
+                    Created
+                </MudTableSortLabel>
+            </MudTh>
             <MudTh Style="text-align:right">Actions</MudTh>
         </HeaderContent>
         <RowTemplate>

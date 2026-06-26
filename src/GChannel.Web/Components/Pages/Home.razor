@@ -86,30 +86,31 @@
                                 case "customers":
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">
                                         <b>Direct</b> = end customers your account owns directly.
-                                        <b>Indirect</b> = downstream end customers owned by your linked resellers,
-                                        summed across every active channel partner link.
+                                        <b>Indirect</b> = downstream end customers owned by your linked resellers
+                                        (customers that carry a channel partner id). Together they make up your
+                                        total customer estate.
                                     </MudText>
                                     <div class="d-flex justify-space-between align-center mt-2">
                                         <MudText Typo="Typo.body2">Direct (your account)</MudText>
-                                        <MudText Typo="Typo.body2"><b>@(_overview?.CustomerCount ?? _data?.CustomerCount ?? 0)</b></MudText>
+                                        <MudText Typo="Typo.body2"><b>@DirectEstate</b></MudText>
                                     </div>
                                     <div class="d-flex justify-space-between align-center">
                                         <MudText Typo="Typo.body2">Via indirect resellers</MudText>
-                                        @if (_data is not null)
+                                        @if (CustomersLoaded)
                                         {
-                                            <MudText Typo="Typo.body2"><b>@_data.IndirectCustomerCount</b></MudText>
+                                            <MudText Typo="Typo.body2"><b>@IndirectEstate</b></MudText>
                                         }
                                         else
                                         {
                                             <MudProgressCircular Indeterminate="true" Size="Size.Small" />
                                         }
                                     </div>
-                                    @if (_data is not null)
+                                    @if (CustomersLoaded)
                                     {
                                         <MudDivider Class="my-1" />
                                         <div class="d-flex justify-space-between align-center">
                                             <MudText Typo="Typo.body2"><b>Total estate</b></MudText>
-                                            <MudText Typo="Typo.body2"><b>@((_overview?.CustomerCount ?? _data.CustomerCount) + _data.IndirectCustomerCount)</b></MudText>
+                                            <MudText Typo="Typo.body2"><b>@TotalEstate</b></MudText>
                                         </div>
                                     }
                                     break;
@@ -234,12 +235,43 @@
             }
         </MudPaper>
     </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" GutterBottom="true">Top indirect resellers</MudText>
+            @if (_resellers.Count > 0)
+            {
+                <ApexChart TItem="ResellerSlice" Title="Customers per reseller" Options="_resellerOptions" @ref="_resellerChart">
+                    <ApexPointSeries TItem="ResellerSlice"
+                                     Items="_resellers"
+                                     Name="Customers"
+                                     SeriesType="SeriesType.Bar"
+                                     XValue="@(r => r.Reseller)"
+                                     YValue="@(r => r.Customers)" />
+                </ApexChart>
+            }
+            else if (_overviewLoading)
+            {
+                <div class="d-flex align-center" style="height: 200px;">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No indirect resellers with customers yet. When a linked reseller owns downstream
+                    customers, they'll appear here ranked by customer count.
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
 </MudGrid>
 
 @code {
     private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
     private record MonthlyPoint(string Month, decimal Customers);
     private record ProductSlice(string Product, decimal Count);
+    private record ResellerSlice(string Reseller, decimal Customers);
 
     // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
     // its own axis/legend/title text in a fixed colour that ignores MudBlazor's theme, so without this
@@ -250,8 +282,13 @@
     private bool? _appliedDarkMode;
     private ApexChart<MonthlyPoint>? _monthlyChart;
     private ApexChart<ProductSlice>? _productChart;
+    private ApexChart<ResellerSlice>? _resellerChart;
     private readonly ApexChartOptions<MonthlyPoint> _monthlyOptions = new();
     private readonly ApexChartOptions<ProductSlice> _productOptions = new();
+    private readonly ApexChartOptions<ResellerSlice> _resellerOptions = new()
+    {
+        PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } }
+    };
 
     private DashboardOverview? _overview;
     private DashboardSummary? _data;
@@ -260,6 +297,7 @@
     private bool _entitlementsLoading = true;
     private readonly List<MonthlyPoint> _monthly = [];
     private readonly List<ProductSlice> _products = [];
+    private readonly List<ResellerSlice> _resellers = [];
     private readonly CancellationTokenSource _cts = new();
 
     // How often to poll the background-refresh status (and, while a run is in progress, re-pull the
@@ -283,6 +321,14 @@
 
     // Tracks which KPI cards have their details panel expanded (keyed by SummaryCard.Key).
     private readonly HashSet<string> _expanded = [];
+
+    // Customer estate figures for the KPI details. The full customer list (overview/summary) is the
+    // total estate; indirect = customers owned by a reseller (carry a ChannelPartnerId); direct is the
+    // remainder. Computed from whichever phase has landed so they never double-count.
+    private bool CustomersLoaded => _overview is not null || _data is not null;
+    private int TotalEstate => _overview?.CustomerCount ?? _data?.CustomerCount ?? 0;
+    private int IndirectEstate => _overview?.IndirectCustomerCount ?? _data?.IndirectCustomerCount ?? 0;
+    private int DirectEstate => Math.Max(0, TotalEstate - IndirectEstate);
 
     private bool IsExpanded(string key) => _expanded.Contains(key);
 
@@ -318,6 +364,7 @@
         var mode = IsDarkMode ? Mode.Dark : Mode.Light;
         _monthlyOptions.Theme = new Theme { Mode = mode };
         _productOptions.Theme = new Theme { Mode = mode };
+        _resellerOptions.Theme = new Theme { Mode = mode };
 
         if (_monthlyChart is not null)
         {
@@ -327,6 +374,11 @@
         if (_productChart is not null)
         {
             await _productChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
+        }
+
+        if (_resellerChart is not null)
+        {
+            await _resellerChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
         }
     }
 
@@ -420,6 +472,12 @@
             foreach (var point in _overview?.CustomersOnboarded ?? [])
             {
                 _monthly.Add(new MonthlyPoint(point.Month, point.Customers));
+            }
+
+            _resellers.Clear();
+            foreach (var reseller in _overview?.TopIndirectResellers ?? [])
+            {
+                _resellers.Add(new ResellerSlice(reseller.Reseller, reseller.CustomerCount));
             }
         }
         catch (Exception)
