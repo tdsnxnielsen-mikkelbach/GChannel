@@ -9,11 +9,14 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Microsoft.EntityFrameworkCore.SqlServer" Version="13.4.6" />
+    <PackageReference Include="Aspire.Microsoft.Azure.StackExchangeRedis" Version="13.4.6" />
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.4.6" />
     <PackageReference Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.4.6" />
     <PackageReference Include="Google.Apis.Cloudchannel.v1" Version="1.75.0.4176" />
     <PackageReference Include="Google.Cloud.PubSub.V1" Version="3.36.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.4" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" Version="7.0.2" />
   </ItemGroup>
 
   <ItemGroup>

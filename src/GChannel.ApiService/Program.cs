@@ -19,12 +19,14 @@ builder.Services.AddHttpContextAccessor();
 // Azure SQL (serverless) via Aspire — connection name must match AppHost ("gchanneldb").
 builder.AddSqlServerDbContext<GChannelDbContext>("gchanneldb");
 
-// Redis distributed cache via Aspire — connection name must match AppHost ("cache").
-builder.AddRedisDistributedCache("cache");
-
-// Redis client (IConnectionMultiplexer) on the same connection — used by the background dashboard
-// refresher to take a cluster-wide lock so only one replica recomputes per interval.
-builder.AddRedisClient("cache");
+// Redis client (IConnectionMultiplexer) + distributed cache via Aspire — connection name must match
+// AppHost ("cache"). WithAzureAuthentication enables Microsoft Entra ID (managed identity) auth for
+// Azure Managed Redis, which is provisioned with access keys disabled; it is a no-op for the local
+// RunAsContainer cache (which uses a password). The IConnectionMultiplexer is used by the background
+// dashboard refresher to take a cluster-wide lock so only one replica recomputes per interval.
+builder.AddRedisClientBuilder("cache")
+    .WithAzureAuthentication()
+    .WithDistributedCache();
 
 builder.Services
     .AddOptions<GoogleChannelOptions>()
