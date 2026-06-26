@@ -10,6 +10,8 @@ obj/
 .azure/
 **/aspire-output/
 *.binlog
+*.log
+azd-*.log
 
 ## Rider / VS Code
 .idea/

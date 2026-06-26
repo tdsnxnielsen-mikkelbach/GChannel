@@ -18,7 +18,17 @@ hooks:
     continueOnError: false
     interactive: false
     run: |
-      $rgId = az group show --name $env:AZURE_RESOURCE_GROUP --query id -o tsv
+      $ErrorActionPreference = 'Stop'
+      # AZURE_RESOURCE_GROUP isn't always populated in the hook env (Aspire "limited mode"),
+      # so fall back to locating the resource group azd tagged with this environment name.
+      $rg = $env:AZURE_RESOURCE_GROUP
+      if ([string]::IsNullOrWhiteSpace($rg)) {
+        $rg = az group list --tag "azd-env-name=$($env:AZURE_ENV_NAME)" --query "[0].name" -o tsv
+      }
+      if ([string]::IsNullOrWhiteSpace($rg)) {
+        throw "Could not resolve the resource group for environment '$($env:AZURE_ENV_NAME)'."
+      }
+      $rgId = az group show --name $rg --query id -o tsv
       az tag update --resource-id $rgId --operation merge --tags `
         application=gchannel `
         environment=$env:AZURE_ENV_NAME `
