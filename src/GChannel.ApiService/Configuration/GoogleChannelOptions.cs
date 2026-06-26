@@ -69,6 +69,25 @@ public sealed class GoogleChannelOptions
     public string ServiceAccountKeyPath { get; set; } = string.Empty;
 
     /// <summary>
+    /// Workload Identity Federation credential configuration (the <c>external_account</c> JSON produced
+    /// by <c>gcloud iam workload-identity-pools create-cred-config</c>). When set, the Pub/Sub subscriber
+    /// authenticates to Google using the host's own identity (e.g. the Azure managed identity) and short-
+    /// lived federated tokens instead of a downloaded service-account key — Google's recommended approach.
+    /// This is configuration, not a secret (it contains no private key). Takes precedence over
+    /// <see cref="ServiceAccountKeyJson"/>/<see cref="ServiceAccountKeyPath"/> for Pub/Sub.
+    /// <para>Note: this does <em>not</em> apply to the background dashboard refresh, which needs
+    /// domain-wide delegation — a capability the .NET auth library only supports on downloaded
+    /// service-account keys.</para>
+    /// </summary>
+    public string WorkloadIdentityCredentialJson { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Path to a Workload Identity Federation credential configuration file. Alternative to
+    /// <see cref="WorkloadIdentityCredentialJson"/>.
+    /// </summary>
+    public string WorkloadIdentityCredentialPath { get; set; } = string.Empty;
+
+    /// <summary>
     /// Reseller admin user the service account impersonates via domain-wide delegation (the Channel
     /// API has no service-account identity of its own). Required for the background refresh.
     /// </summary>
@@ -101,18 +120,23 @@ public sealed class GoogleChannelOptions
     public bool HasServiceAccountCredential =>
         !string.IsNullOrWhiteSpace(ServiceAccountKeyJson) || !string.IsNullOrWhiteSpace(ServiceAccountKeyPath);
 
+    /// <summary>True when a Workload Identity Federation credential configuration is provided (JSON or file).</summary>
+    public bool HasWorkloadIdentityCredential =>
+        !string.IsNullOrWhiteSpace(WorkloadIdentityCredentialJson) || !string.IsNullOrWhiteSpace(WorkloadIdentityCredentialPath);
+
     /// <summary>True when the periodic background dashboard refresh should run.</summary>
     public bool BackgroundRefreshEnabled =>
         BackgroundRefreshSeconds > 0 && HasServiceAccountCredential && !string.IsNullOrWhiteSpace(ImpersonateUser);
 
     /// <summary>
     /// True when the background Pub/Sub notification subscriber should run: a project + subscription
-    /// are configured and a service-account credential is available to authenticate to Pub/Sub.
+    /// are configured and a credential is available to authenticate to Pub/Sub — either a Workload
+    /// Identity Federation configuration (preferred) or a downloaded service-account key.
     /// </summary>
     public bool PubSubEnabled =>
         !string.IsNullOrWhiteSpace(PubSubProjectId)
         && !string.IsNullOrWhiteSpace(PubSubSubscriptionId)
-        && HasServiceAccountCredential;
+        && (HasWorkloadIdentityCredential || HasServiceAccountCredential);
 
     /// <summary>Normalised account name guaranteed to start with "accounts/".</summary>
     public string AccountName =>

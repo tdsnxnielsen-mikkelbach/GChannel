@@ -45,6 +45,8 @@ optional too and enable [Pub/Sub notifications](#pubsub-notifications-7).
 | `GoogleChannel:ImpersonateUser` | _empty_ | Reseller admin email the service account impersonates via domain-wide delegation (required for the background refresh). |
 | `GoogleChannel:PubSubProjectId` | _empty_ | Google Cloud project id that hosts the Pub/Sub **subscription** for Channel notifications (your own project). Required to run the notification subscriber. |
 | `GoogleChannel:PubSubSubscriptionId` | _empty_ | Pub/Sub subscription id (within `PubSubProjectId`) the background subscriber pulls Channel events from. Blank disables the subscriber. |
+| `GoogleChannel:WorkloadIdentityCredentialJson` | _empty_ | Workload Identity Federation credential config (`external_account` JSON) for **key-less** Pub/Sub auth. When set, takes precedence over the service-account key for the subscriber. Not a secret (no private key). Does not apply to the dashboard refresh (domain-wide delegation needs a key). |
+| `GoogleChannel:WorkloadIdentityCredentialPath` | _empty_ | Alternative to `WorkloadIdentityCredentialJson`: path to the WIF credential config file. |
 | `GoogleChannel:PubSubMaxNotifications` | `200` | Maximum recent notifications retained in the rolling Redis feed (`channel:notifications`). Minimum 1. |
 
 ### Background dashboard refresh (optional)
@@ -105,10 +107,13 @@ subscriber access with `accounts.register` (done from the in-app **Notifications
 **subscription** to that topic in your own Google Cloud project and point the app at it. A
 `BackgroundService` inside the **existing** `apiservice` container app pulls that subscription and
 records events into a capped Redis feed — **no extra container** and **no distributed lock** are needed
-(Pub/Sub load-balances delivery across replicas; the API just needs `min-replicas ≥ 1`). The subscriber
-reuses the **same service-account key** as the background dashboard refresh (Pub/Sub uses the key
-directly — no domain-wide delegation), so on Azure the key is read from Key Vault via managed identity
-and locally from user-secrets. The same `BackgroundService` runs identically under local F5.
+(Pub/Sub load-balances delivery across replicas; the API just needs `min-replicas ≥ 1`). Because
+Pub/Sub needs **no domain-wide delegation**, this path can authenticate **key-less** with **Workload
+Identity Federation** (the recommended approach): the Azure managed identity mints short-lived federated
+Google tokens, so no service-account key is downloaded or stored. If WIF is not configured the subscriber
+falls back to the **same service-account key** as the background dashboard refresh (read from Key Vault
+via managed identity on Azure, from user-secrets locally). The same `BackgroundService` runs identically
+under local F5.
 
 One-time Google setup:
 
@@ -157,20 +162,84 @@ gcloud services enable pubsub.googleapis.com
      --role="roles/pubsub.subscriber"
    ```
 4. **Point the app at the subscription** with the parameters below. The subscriber stays disabled until
-   a project id, a subscription id, **and** a service-account key are all present.
+   a project id, a subscription id, **and** a credential (a WIF config **or** a service-account key) are
+   all present.
 
 > IAM cheat-sheet: the SA's access to Google's **topic** is granted by `accounts.register`; you create
 > the **subscription** in your own project; the `roles/pubsub.subscriber` binding goes on that
 > **subscription** (you don't own the topic, so it can't go there).
 
+##### Key-less auth with Workload Identity Federation (recommended)
+
+Instead of downloading a service-account key, let the **Azure managed identity** of the `apiservice`
+container app authenticate to Google. Google's warning on the SA *Keys* page is exactly about avoiding
+downloaded keys; WIF removes the key for this path entirely.
+
+> **Provision first.** The Azure managed identity doesn't exist until `azd` has created the Container
+> Apps infrastructure, and the WIF binding below needs that identity's **object (principal) id**. So the
+> bootstrap order is: **(1)** run `azd up` once *without* the WIF parameter (the subscriber runs on the
+> service-account key, or stays disabled if Pub/Sub isn't configured); **(2)** read the identity's object
+> id; **(3)** do the GCP setup below; **(4)** `azd env set GoogleChannelWorkloadIdentityCredentialJson`
+> and `azd up` again (a config update, not a re-provision). Until you do WIF, deployment behaves exactly
+> as before — it keeps using the service-account key.
+>
+> Get the object id of the user-assigned identity your container apps already use (the same one that
+> reads Key Vault):
+>
+> ```powershell
+> az identity list -g <your-resource-group> --query "[].{name:name, principalId:principalId, clientId:clientId}" -o table
+> ```
+>
+> The `principalId` is the `<managed-identity-object-id>` used in the `workloadIdentityUser` binding
+> below; an Azure managed-identity token's `sub` claim equals that object id. Your Entra **tenant id**
+> (needed in `--issuer-uri`) is known up front — only the binding needs the post-provision object id.
+
+One-time GCP setup (the SA still needs `roles/pubsub.subscriber` from step 3 above):
+
+```powershell
+# 1. Create a workload identity pool + an Azure (OIDC) provider that trusts your Entra tenant.
+gcloud iam workload-identity-pools create gchannel-pool --location=global --project=tdsgchannel
+gcloud iam workload-identity-pools providers create-oidc azure `
+  --location=global --workload-identity-pool=gchannel-pool --project=tdsgchannel `
+  --issuer-uri="https://login.microsoftonline.com/<entra-tenant-id>/v2.0" `
+  --allowed-audiences="api://AzureADTokenExchange" `
+  --attribute-mapping="google.subject=assertion.sub"
+
+# 2. Let the federated identity (the ACA managed identity's object id) impersonate the SA.
+gcloud iam service-accounts add-iam-policy-binding `
+  gchannel-dashboard@tdsgchannel.iam.gserviceaccount.com --project=tdsgchannel `
+  --role=roles/iam.workloadIdentityUser `
+  --member="principal://iam.googleapis.com/projects/<project-number>/locations/global/workloadIdentityPools/gchannel-pool/subject/<managed-identity-object-id>"
+
+# 3. Generate the external_account credential config (holds NO key — safe to store as plain config).
+gcloud iam workload-identity-pools create-cred-config `
+  projects/<project-number>/locations/global/workloadIdentityPools/gchannel-pool/providers/azure `
+  --service-account=gchannel-dashboard@tdsgchannel.iam.gserviceaccount.com `
+  --credential-source-url="http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=api://AzureADTokenExchange" `
+  --credential-source-headers="Metadata=true" `
+  --output-file=wif-credential.json
+```
+
+Then pass the contents of `wif-credential.json` to `GoogleChannelWorkloadIdentityCredentialJson`
+(below). It is **not a secret** — it contains no private key, only the pool/provider/SA URLs and the
+Azure IMDS endpoint to fetch the managed-identity token from — so it is a plain parameter, not a Key
+Vault secret. When set, it **takes precedence** over any service-account key for the Pub/Sub subscriber.
+
+> Domain-wide delegation note: WIF cannot replace the key for the **background dashboard refresh**,
+> which impersonates a reseller admin user (the .NET Google auth library only supports domain-wide
+> delegation on downloaded service-account keys). That path keeps using
+> `GoogleChannelServiceAccountKeyJson`.
+
 | AppHost parameter (`azd env set` name) | Maps to env var → config key | Secret |
 | --- | --- | --- |
 | `GoogleChannelPubSubProjectId` | `GoogleChannel__PubSubProjectId` → `GoogleChannel:PubSubProjectId` | No |
 | `GoogleChannelPubSubSubscriptionId` | `GoogleChannel__PubSubSubscriptionId` → `GoogleChannel:PubSubSubscriptionId` | No |
+| `GoogleChannelWorkloadIdentityCredentialJson` | `GoogleChannel__WorkloadIdentityCredentialJson` → `GoogleChannel:WorkloadIdentityCredentialJson` | No |
 
-These two parameters default to empty in the AppHost configuration, so they **don't prompt** on `azd up`
-or local F5 — set them only when you want eventing on. The service-account key reuses the existing
-`GoogleChannelServiceAccountKeyJson` parameter (and Key Vault secret) from the background-refresh setup.
+These parameters default to empty in the AppHost configuration, so they **don't prompt** on `azd up`
+or local F5 — set them only when you want eventing on. If you leave the WIF parameter empty, the
+subscriber falls back to the existing `GoogleChannelServiceAccountKeyJson` parameter (and Key Vault
+secret) from the background-refresh setup.
 
 **Local (running via the AppHost):**
 

@@ -19,10 +19,11 @@ namespace GChannel.ApiService.Services;
 /// refresher — no separate worker container is needed. Pub/Sub load-balances messages across all
 /// subscribers, so when the API scales to multiple replicas they share the subscription automatically
 /// and <em>no</em> distributed lock is required (unlike the dashboard compute, which must be
-/// single-flight). Authentication uses the same Google service-account key as the background refresh
-/// (Pub/Sub uses the key directly; no domain-wide delegation). On Azure that key is read from Key
-/// Vault via the app's managed identity; locally it comes from user-secrets. Disabled (no-op) unless
-/// a Pub/Sub project + subscription and a service-account credential are configured.</para>
+/// single-flight). Authentication prefers Workload Identity Federation (the Azure managed identity
+/// mints short-lived federated Google tokens, no downloaded key) and falls back to a Google
+/// service-account key when WIF is not configured. Pub/Sub needs no domain-wide delegation, so unlike
+/// the background dashboard refresh this path can run entirely key-less. Disabled (no-op) unless a
+/// Pub/Sub project + subscription and a credential (WIF config or service-account key) are configured.</para>
 /// </summary>
 public sealed class ChannelNotificationsService(
     IOptions<GoogleChannelOptions> options,
@@ -40,7 +41,8 @@ public sealed class ChannelNotificationsService(
             var missing = new List<string>();
             if (string.IsNullOrWhiteSpace(opts.PubSubProjectId)) missing.Add("GoogleChannel:PubSubProjectId");
             if (string.IsNullOrWhiteSpace(opts.PubSubSubscriptionId)) missing.Add("GoogleChannel:PubSubSubscriptionId");
-            if (!opts.HasServiceAccountCredential) missing.Add("GoogleChannel:ServiceAccountKeyJson (or ServiceAccountKeyPath)");
+            if (!opts.HasWorkloadIdentityCredential && !opts.HasServiceAccountCredential)
+                missing.Add("GoogleChannel:WorkloadIdentityCredentialJson (or ServiceAccountKeyJson/ServiceAccountKeyPath)");
 
             logger.LogInformation(
                 "Channel Pub/Sub subscriber is disabled; missing configuration: {Missing}.",
@@ -50,14 +52,7 @@ public sealed class ChannelNotificationsService(
 
         var subscriptionName = SubscriptionName.FromProjectSubscription(opts.PubSubProjectId, opts.PubSubSubscriptionId);
         var builder = new SubscriberClientBuilder { SubscriptionName = subscriptionName };
-        if (!string.IsNullOrWhiteSpace(opts.ServiceAccountKeyJson))
-        {
-            builder.GoogleCredential = CredentialFactory.FromJson(opts.ServiceAccountKeyJson, "service_account");
-        }
-        else if (!string.IsNullOrWhiteSpace(opts.ServiceAccountKeyPath))
-        {
-            builder.GoogleCredential = CredentialFactory.FromFile(opts.ServiceAccountKeyPath, "service_account");
-        }
+        builder.GoogleCredential = ResolveCredential(opts);
 
         SubscriberClient subscriber;
         try
@@ -118,6 +113,27 @@ public sealed class ChannelNotificationsService(
                 logger.LogError(ex, "The Channel Pub/Sub subscriber stopped unexpectedly.");
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves the Google credential the subscriber authenticates with. A Workload Identity Federation
+    /// configuration (Google's recommended key-less approach) is preferred when present — the
+    /// <c>external_account</c> JSON is loaded with auto type-detection so the host's own identity (e.g.
+    /// the Azure managed identity) mints short-lived federated tokens. Otherwise a downloaded
+    /// service-account key is used. Returns <c>null</c> only when nothing is configured, which the
+    /// <see cref="GoogleChannelOptions.PubSubEnabled"/> guard already prevents.
+    /// </summary>
+    private static GoogleCredential? ResolveCredential(GoogleChannelOptions opts)
+    {
+        if (!string.IsNullOrWhiteSpace(opts.WorkloadIdentityCredentialJson))
+            return CredentialFactory.FromJson<GoogleCredential>(opts.WorkloadIdentityCredentialJson);
+        if (!string.IsNullOrWhiteSpace(opts.WorkloadIdentityCredentialPath))
+            return CredentialFactory.FromFile<GoogleCredential>(opts.WorkloadIdentityCredentialPath);
+        if (!string.IsNullOrWhiteSpace(opts.ServiceAccountKeyJson))
+            return CredentialFactory.FromJson(opts.ServiceAccountKeyJson, "service_account");
+        if (!string.IsNullOrWhiteSpace(opts.ServiceAccountKeyPath))
+            return CredentialFactory.FromFile(opts.ServiceAccountKeyPath, "service_account");
+        return null;
     }
 
     /// <summary>

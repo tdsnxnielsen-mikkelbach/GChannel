@@ -67,9 +67,13 @@ var googleChannelServiceAccountKeyParam = builder.AddParameter("GoogleChannelSer
 
 // Optional Pub/Sub notification subscriber (§7). Point these at the subscription you created in your
 // own Google Cloud project against the Channel topic; leave blank to keep the subscriber disabled.
-// Authentication reuses the service-account key above (no domain-wide delegation needed for Pub/Sub).
+// Authentication prefers Workload Identity Federation (key-less, recommended) and falls back to the
+// service-account key above. The WIF credential config is the external_account JSON from
+// `gcloud iam workload-identity-pools create-cred-config` — it holds no private key, so it is a plain
+// (non-secret) parameter; the Azure managed identity supplies the actual identity at run time.
 var googleChannelPubSubProjectId = builder.AddParameter("GoogleChannelPubSubProjectId");
 var googleChannelPubSubSubscriptionId = builder.AddParameter("GoogleChannelPubSubSubscriptionId");
+var googleChannelWorkloadIdentityCredentialJson = builder.AddParameter("GoogleChannelWorkloadIdentityCredentialJson");
 
 // Back-end services container app (internal): owns SQL, Redis and the Google Channel API.
 var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
@@ -80,6 +84,7 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithEnvironment("GoogleChannel__BackgroundRefreshSeconds", googleChannelBackgroundRefreshSeconds)
     .WithEnvironment("GoogleChannel__PubSubProjectId", googleChannelPubSubProjectId)
     .WithEnvironment("GoogleChannel__PubSubSubscriptionId", googleChannelPubSubSubscriptionId)
+    .WithEnvironment("GoogleChannel__WorkloadIdentityCredentialJson", googleChannelWorkloadIdentityCredentialJson)
     .WaitFor(database)
     .WaitFor(cache);
 
