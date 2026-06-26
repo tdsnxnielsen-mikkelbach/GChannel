@@ -65,6 +65,12 @@ var googleChannelImpersonateUser = builder.AddParameter("GoogleChannelImpersonat
 var googleChannelBackgroundRefreshSeconds = builder.AddParameter("GoogleChannelBackgroundRefreshSeconds");
 var googleChannelServiceAccountKeyParam = builder.AddParameter("GoogleChannelServiceAccountKeyJson", secret: true);
 
+// Client-side pacing (requests/minute) so the dashboard aggregation stays under the Channel API's
+// tight per-minute quotas (typically 24/min each for ListEntitlements and ListCustomers). Sourced
+// from config.json; see GoogleChannelOptions for the defaults and semantics.
+var googleChannelDashboardRequestsPerMinute = builder.AddParameter("GoogleChannelDashboardRequestsPerMinute");
+var googleChannelDashboardCustomerListRequestsPerMinute = builder.AddParameter("GoogleChannelDashboardCustomerListRequestsPerMinute");
+
 // Optional Pub/Sub notification subscriber (§7). Point these at the subscription you created in your
 // own Google Cloud project against the Channel topic; leave blank to keep the subscriber disabled.
 // Authentication prefers Workload Identity Federation (key-less, recommended) and falls back to the
@@ -82,6 +88,8 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithEnvironment("GoogleChannel__AccountId", googleChannelAccountId)
     .WithEnvironment("GoogleChannel__ImpersonateUser", googleChannelImpersonateUser)
     .WithEnvironment("GoogleChannel__BackgroundRefreshSeconds", googleChannelBackgroundRefreshSeconds)
+    .WithEnvironment("GoogleChannel__DashboardRequestsPerMinute", googleChannelDashboardRequestsPerMinute)
+    .WithEnvironment("GoogleChannel__DashboardCustomerListRequestsPerMinute", googleChannelDashboardCustomerListRequestsPerMinute)
     .WithEnvironment("GoogleChannel__PubSubProjectId", googleChannelPubSubProjectId)
     .WithEnvironment("GoogleChannel__PubSubSubscriptionId", googleChannelPubSubSubscriptionId)
     .WithEnvironment("GoogleChannel__WorkloadIdentityCredentialJson", googleChannelWorkloadIdentityCredentialJson)

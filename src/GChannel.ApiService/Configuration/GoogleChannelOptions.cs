@@ -40,9 +40,20 @@ public sealed class GoogleChannelOptions
     /// <summary>
     /// Client-side pacing (requests per minute) for the dashboard's <c>entitlements.list</c> calls so
     /// the aggregation stays under the Channel API's "ListEntitlements requests per minute" quota and
-    /// avoids 429s. Set to match (or just under) your project's quota; <c>0</c> disables pacing.
+    /// avoids 429s. The default matches the typical 24/min ListEntitlements quota with a little
+    /// headroom; set it to match (or just under) your project's quota. <c>0</c> disables pacing.
     /// </summary>
-    public int DashboardRequestsPerMinute { get; set; } = 60;
+    public int DashboardRequestsPerMinute { get; set; } = 20;
+
+    /// <summary>
+    /// Client-side pacing (requests per minute) for the dashboard's customer-list calls — both the
+    /// account-level <c>accounts.customers.list</c> and the per-reseller
+    /// <c>channelPartnerLinks.customers.list</c> fan-out behind the indirect customer estate. Both
+    /// draw on the same shared "ListCustomers requests per minute" quota (typically 24/min), so they
+    /// are paced together through one bucket. The default leaves a little headroom under 24/min; set
+    /// it to match (or just under) your project's quota. <c>0</c> disables pacing.
+    /// </summary>
+    public int DashboardCustomerListRequestsPerMinute { get; set; } = 20;
 
     /// <summary>
     /// Time budget (seconds) for the on-demand dashboard's per-customer entitlement phase. Kept under

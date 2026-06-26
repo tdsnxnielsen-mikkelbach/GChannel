@@ -7,8 +7,18 @@ namespace GChannel.Shared.Contracts;
 /// <summary>Aggregated reseller overview figures shown on the home dashboard.</summary>
 public sealed record DashboardSummary
 {
-    /// <summary>Total customers linked to the reseller account.</summary>
+    /// <summary>
+    /// Direct customers owned by this account (<c>accounts.customers</c>) — same figure as
+    /// <see cref="DashboardOverview.CustomerCount"/>.
+    /// </summary>
     public int CustomerCount { get; init; }
+
+    /// <summary>
+    /// Downstream end customers owned by linked indirect resellers, summed across every ACTIVE
+    /// channel partner link (<c>accounts.channelPartnerLinks.customers.list</c>). Lives in the slower
+    /// summary phase because it costs one customer-list call per reseller.
+    /// </summary>
+    public int IndirectCustomerCount { get; init; }
 
     /// <summary>Entitlements currently in the <c>ACTIVE</c> provisioning state.</summary>
     public int ActiveEntitlementCount { get; init; }
@@ -45,14 +55,30 @@ public sealed record DashboardSummary
 /// </summary>
 public sealed record DashboardOverview
 {
-    /// <summary>Total customers linked to the reseller account.</summary>
+    /// <summary>
+    /// Direct customers owned by this account (<c>accounts.customers</c>) — i.e. end customers we
+    /// transact with directly rather than through a downstream indirect reseller. The reseller estate
+    /// is counted separately in <see cref="DashboardSummary.IndirectCustomerCount"/>.
+    /// </summary>
     public int CustomerCount { get; init; }
 
     /// <summary>Channel partner links (§5) on the reseller account, across all states.</summary>
     public int ChannelLinkCount { get; init; }
 
+    /// <summary>Channel partner links broken down by link state (ACTIVE, INVITED, SUSPENDED, …).</summary>
+    public IReadOnlyList<DashboardChannelLinkState> ChannelLinkStates { get; init; } = [];
+
     /// <summary>Customers onboarded per month over the trailing 6 months (oldest first).</summary>
     public IReadOnlyList<DashboardMonthlyPoint> CustomersOnboarded { get; init; } = [];
+}
+
+/// <summary>A count of channel partner links in a given link state, for the dashboard breakdown.</summary>
+public sealed record DashboardChannelLinkState
+{
+    /// <summary>Link state, e.g. <c>ACTIVE</c>, <c>INVITED</c>, <c>SUSPENDED</c>, <c>REVOKED</c>.</summary>
+    public required string State { get; init; }
+
+    public int Count { get; init; }
 }
 
 /// <summary>A single month bucket of onboarded customers.</summary>

@@ -100,16 +100,12 @@ public sealed class DashboardRefreshService(
                     onPartial: partial => PublishPartialAsync(partial, ttl, stoppingToken),
                     partialEvery: PartialPublishEvery);
 
-                // The overview's customer figures are a strict subset of the summary, so derive those
-                // here for free. The "Channel links" headline isn't part of the summary, so warm it
-                // with one extra account-level (quota-light) count so the card fills from cache too.
-                var channelLinkCount = await client.CountChannelPartnerLinksAsync(stoppingToken);
-                var overview = new DashboardOverview
-                {
-                    CustomerCount = summary.CustomerCount,
-                    ChannelLinkCount = channelLinkCount,
-                    CustomersOnboarded = summary.CustomersOnboarded,
-                };
+                // Recompute the full overview so the cached copy the UI reads at phase 1 carries every
+                // headline + breakdown figure (direct customer count, channel-link count and the
+                // per-state breakdown). It re-lists customers and links — cheap and quota-light — and
+                // runs off the request path, so there's no budget pressure here. The indirect customer
+                // estate is part of the summary above (it's the expensive per-reseller fan-out).
+                var overview = await client.GetDashboardOverviewAsync(stoppingToken);
 
                 // Write both the live key (short TTL) and the long-lived "last known good" fallback so
                 // the endpoint can serve a result even when the live recompute later hits the quota.

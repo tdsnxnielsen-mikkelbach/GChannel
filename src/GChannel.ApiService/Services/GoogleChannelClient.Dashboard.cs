@@ -19,19 +19,27 @@ public sealed partial class GoogleChannelClient
         EnsureAccountConfigured();
         using var service = CreateService();
 
+        // Pace the (single) account customer-list call through the shared ListCustomers quota bucket
+        // so the overview stays consistent with the heavier per-reseller fan-out in the summary phase.
+        var customerListPacer = CreateCustomerListPacer();
+
         // Cheap, quota-light first phase of the dashboard: just the customer list (one paginated
-        // call set) drives the headline customer count and the onboarded-over-time chart, so the UI
-        // can render these immediately while the slow per-customer entitlement aggregation loads.
-        var customers = await ListAllCustomersAsync(service, cancellationToken);
+        // call set) drives the headline (direct) customer count and the onboarded-over-time chart, so
+        // the UI can render these immediately while the slower aggregation loads.
+        var customers = await ListAllCustomersAsync(service, customerListPacer, cancellationToken);
 
         // Channel partner links (§5) are an account-level list (no per-customer fan-out), so counting
-        // them here keeps the overview cheap while restoring the "Channel links" headline figure.
-        var channelLinkCount = await CountChannelPartnerLinksAsync(service, cancellationToken);
+        // them here keeps the overview cheap while restoring the "Channel links" headline figure. The
+        // BASIC view carries link_state, so the per-state breakdown costs no extra quota. The
+        // downstream (indirect) customer estate is heavier — one list call per reseller — so it is
+        // computed in the budgeted summary phase, not here.
+        var (channelLinkCount, channelLinkStates) = await SummarizeChannelPartnerLinksAsync(service, cancellationToken);
 
         return new DashboardOverview
         {
             CustomerCount = customers.Count,
             ChannelLinkCount = channelLinkCount,
+            ChannelLinkStates = channelLinkStates,
             CustomersOnboarded = BuildMonthlyOnboarded(customers)
         };
     }
@@ -60,17 +68,32 @@ public sealed partial class GoogleChannelClient
         }
         var budgetToken = budget.Token;
 
+        // Pace every ListCustomers call (the account list plus the per-reseller fan-out below) through
+        // one shared bucket so they stay under the Channel API's "ListCustomers requests per minute"
+        // quota. Disabled when set to 0.
+        var customerListPacer = CreateCustomerListPacer();
+
         List<Customer> customers;
         CatalogLookups lookups;
+        int indirectCustomers;
         try
         {
             // §2 customers — also drives the onboarded-over-time chart (bucket by create time).
-            customers = await ListAllCustomersAsync(service, budgetToken);
+            customers = await ListAllCustomersAsync(service, customerListPacer, budgetToken);
 
             // §1 catalog — products.list + offers.list + products.skus.list give the full
             // offer→SKU→product fallback chain so the Product mix labels resolve even when an
             // entitlement's specific offer is no longer listed.
             lookups = await BuildCatalogLookupsAsync(service, budgetToken, includeSkus: true);
+
+            // §5 distributor estate — the downstream end customers owned by each linked indirect
+            // reseller. One customer-list call per ACTIVE channel partner link, which can be 40+ calls
+            // that cannot fit the on-demand time budget under the tight shared ListCustomers quota. So
+            // only the (unbudgeted) background refresher computes it; the on-demand path leaves it at 0
+            // and the UI shows the last value warmed into the cache by the background run.
+            indirectCustomers = applyTimeBudget
+                ? 0
+                : await CountIndirectCustomersAsync(service, customerListPacer, budgetToken);
         }
         catch (OperationCanceledException) when (applyTimeBudget && !cancellationToken.IsCancellationRequested)
         {
@@ -112,6 +135,7 @@ public sealed partial class GoogleChannelClient
         DashboardSummary BuildSnapshotLocked() => new()
         {
             CustomerCount = customers.Count,
+            IndirectCustomerCount = indirectCustomers,
             ActiveEntitlementCount = active,
             TrialEntitlementCount = trials,
             SuspendedEntitlementCount = suspended,
@@ -343,13 +367,29 @@ public sealed partial class GoogleChannelClient
         return new EntitlementAggregate(active, trials, suspended, activeSeats, productMix);
     }
 
+    /// <summary>
+    /// Builds the pacer that throttles every ListCustomers call (the account list and the per-reseller
+    /// fan-out) through the shared "ListCustomers requests per minute" quota, or <c>null</c> when
+    /// pacing is disabled.
+    /// </summary>
+    private RequestPacer? CreateCustomerListPacer() =>
+        _options.DashboardCustomerListRequestsPerMinute > 0
+            ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _options.DashboardCustomerListRequestsPerMinute))
+            : null;
+
     /// <summary>Paginates the full reseller customer list (shared by the overview and summary).</summary>
-    private async Task<List<Customer>> ListAllCustomersAsync(CloudchannelService service, CancellationToken cancellationToken)
+    private async Task<List<Customer>> ListAllCustomersAsync(
+        CloudchannelService service, RequestPacer? pacer, CancellationToken cancellationToken)
     {
         var customers = new List<Customer>();
         string? pageToken = null;
         do
         {
+            if (pacer is not null)
+            {
+                await pacer.WaitAsync(cancellationToken);
+            }
+
             var request = service.Accounts.Customers.List(_options.AccountName);
             request.PageToken = pageToken;
             var response = await request.ExecuteAsync(cancellationToken);

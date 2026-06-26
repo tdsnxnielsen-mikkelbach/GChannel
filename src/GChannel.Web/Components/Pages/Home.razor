@@ -71,6 +71,111 @@
                         </div>
                         <MudIcon Icon="@card.Icon" Color="@card.Color" Size="Size.Large" />
                     </div>
+
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Class="mt-1 px-1"
+                               Disabled="@(!card.Ready)"
+                               OnClick="@(() => ToggleDetails(card.Key))"
+                               EndIcon="@(IsExpanded(card.Key) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)">
+                        Details
+                    </MudButton>
+
+                    <MudCollapse Expanded="@IsExpanded(card.Key)">
+                        <div class="mt-2">
+                            @switch (card.Key)
+                            {
+                                case "customers":
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        <b>Direct</b> = end customers your account owns directly.
+                                        <b>Indirect</b> = downstream end customers owned by your linked resellers,
+                                        summed across every active channel partner link.
+                                    </MudText>
+                                    <div class="d-flex justify-space-between align-center mt-2">
+                                        <MudText Typo="Typo.body2">Direct (your account)</MudText>
+                                        <MudText Typo="Typo.body2"><b>@(_overview?.CustomerCount ?? _data?.CustomerCount ?? 0)</b></MudText>
+                                    </div>
+                                    <div class="d-flex justify-space-between align-center">
+                                        <MudText Typo="Typo.body2">Via indirect resellers</MudText>
+                                        @if (_data is not null)
+                                        {
+                                            <MudText Typo="Typo.body2"><b>@_data.IndirectCustomerCount</b></MudText>
+                                        }
+                                        else
+                                        {
+                                            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                                        }
+                                    </div>
+                                    @if (_data is not null)
+                                    {
+                                        <MudDivider Class="my-1" />
+                                        <div class="d-flex justify-space-between align-center">
+                                            <MudText Typo="Typo.body2"><b>Total estate</b></MudText>
+                                            <MudText Typo="Typo.body2"><b>@((_overview?.CustomerCount ?? _data.CustomerCount) + _data.IndirectCustomerCount)</b></MudText>
+                                        </div>
+                                    }
+                                    break;
+
+                                case "skus":
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        Active entitlements (purchased SKUs) currently provisioned across all customers.
+                                    </MudText>
+                                    <div class="d-flex justify-space-between align-center mt-2">
+                                        <MudText Typo="Typo.body2">Active seats</MudText>
+                                        <MudText Typo="Typo.body2"><b>@(_data?.ActiveSeats ?? 0)</b></MudText>
+                                    </div>
+                                    @if (_products.Count > 0)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">Top products</MudText>
+                                        @foreach (var slice in _products.Take(4))
+                                        {
+                                            <div class="d-flex justify-space-between align-center">
+                                                <MudText Typo="Typo.body2" Class="text-truncate" Style="max-width: 70%;">@slice.Product</MudText>
+                                                <MudText Typo="Typo.body2"><b>@slice.Count</b></MudText>
+                                            </div>
+                                        }
+                                    }
+                                    break;
+
+                                case "links":
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        Your linked indirect resellers (channel partners), grouped by link state.
+                                    </MudText>
+                                    @if (_overview?.ChannelLinkStates is { Count: > 0 } states)
+                                    {
+                                        @foreach (var state in states)
+                                        {
+                                            <div class="d-flex justify-space-between align-center mt-1">
+                                                <MudText Typo="Typo.body2">@Humanize(state.State)</MudText>
+                                                <MudText Typo="Typo.body2"><b>@state.Count</b></MudText>
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">No channel partner links yet.</MudText>
+                                    }
+                                    break;
+
+                                case "suspended":
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        Entitlements that are paused (e.g. billing or admin action) and may need attention.
+                                        Shown alongside the rest of the entitlement lifecycle for context.
+                                    </MudText>
+                                    <div class="d-flex justify-space-between align-center mt-2">
+                                        <MudText Typo="Typo.body2">Active</MudText>
+                                        <MudText Typo="Typo.body2"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></MudText>
+                                    </div>
+                                    <div class="d-flex justify-space-between align-center">
+                                        <MudText Typo="Typo.body2">Trial</MudText>
+                                        <MudText Typo="Typo.body2"><b>@(_data?.TrialEntitlementCount ?? 0)</b></MudText>
+                                    </div>
+                                    <div class="d-flex justify-space-between align-center">
+                                        <MudText Typo="Typo.body2">Suspended</MudText>
+                                        <MudText Typo="Typo.body2"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></MudText>
+                                    </div>
+                                    break;
+                            }
+                        </div>
+                    </MudCollapse>
                 </MudCardContent>
             </MudCard>
         </MudItem>
@@ -132,7 +237,7 @@
 </MudGrid>
 
 @code {
-    private record SummaryCard(string Label, string Value, string Icon, Color Color, bool Ready);
+    private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
     private record MonthlyPoint(string Month, decimal Customers);
     private record ProductSlice(string Product, decimal Count);
 
@@ -166,15 +271,32 @@
     // cards + product mix come from the slower summary (phase 2). Each shows a spinner until ready.
     private SummaryCard[] Cards =>
     [
-        new("Customers", (_overview?.CustomerCount ?? _data?.CustomerCount ?? 0).ToString(),
+        new("customers", "Customers", (_overview?.CustomerCount ?? _data?.CustomerCount ?? 0).ToString(),
             Icons.Material.Filled.Business, Color.Primary, _overview is not null || _data is not null),
-        new("Active SKUs", (_data?.ActiveEntitlementCount ?? 0).ToString(),
+        new("skus", "Active SKUs", (_data?.ActiveEntitlementCount ?? 0).ToString(),
             Icons.Material.Filled.Inventory2, Color.Success, _data is not null),
-        new("Channel links", (_overview?.ChannelLinkCount ?? 0).ToString(),
+        new("links", "Channel links", (_overview?.ChannelLinkCount ?? 0).ToString(),
             Icons.Material.Filled.Hub, Color.Tertiary, _overview is not null),
-        new("Suspended", (_data?.SuspendedEntitlementCount ?? 0).ToString(),
+        new("suspended", "Suspended", (_data?.SuspendedEntitlementCount ?? 0).ToString(),
             Icons.Material.Filled.PauseCircle, Color.Warning, _data is not null),
     ];
+
+    // Tracks which KPI cards have their details panel expanded (keyed by SummaryCard.Key).
+    private readonly HashSet<string> _expanded = [];
+
+    private bool IsExpanded(string key) => _expanded.Contains(key);
+
+    private void ToggleDetails(string key)
+    {
+        if (!_expanded.Add(key))
+        {
+            _expanded.Remove(key);
+        }
+    }
+
+    // Title-cases a Channel API enum value (e.g. "ACTIVE" -> "Active") for the link-state breakdown.
+    private static string Humanize(string value) =>
+        string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value[1..].ToLowerInvariant();
 
     // Total entitlements across states — drives the onboarding checklist's "purchase" step.
     private int EntitlementCount =>
