@@ -3,6 +3,10 @@ using Azure.Provisioning.Sql;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+// Azure Container Apps environment — required once any resource customises its publish (the worker
+// pins min/max replicas via PublishAsAzureContainerApp); all apps deploy into this environment.
+builder.AddAzureContainerAppEnvironment("gchannel");
+
 // Azure SQL Database — serverless General Purpose with auto-pause.
 // Runs as a local SQL Server container during development. The container keeps
 // a persistent data volume and a persistent lifetime so the database survives
