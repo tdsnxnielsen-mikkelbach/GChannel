@@ -3,11 +3,6 @@ using Azure.Provisioning.Sql;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Azure Container Apps environment — required once any resource customises its publish (the worker
-// pins min/max replicas via PublishAsAzureContainerApp); all apps deploy into this environment.
-// Named "cae" so it resolves to the pre-existing azd-created "cae-<token>" env (no migration).
-builder.AddAzureContainerAppEnvironment("cae");
-
 // Azure SQL Database — serverless General Purpose with auto-pause.
 // Runs as a local SQL Server container during development. The container keeps
 // a persistent data volume and a persistent lifetime so the database survives
@@ -111,8 +106,8 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
 
 // Background worker container app (internal, no HTTP): the dashboard refresh, Pub/Sub subscriber and
 // read-model sync hosted services, extracted from the API so they scale on their own axis. Pinned to a
-// single replica — Redis single-flight locks keep extra replicas idle, and these jobs are scheduled/
-// pulled, so there is no benefit to scaling out and min-replicas≥1 keeps Pub/Sub consuming continuously.
+// single replica via WithReplicas(1) — Redis single-flight locks keep extra replicas idle, and these
+// jobs are scheduled/pulled, so there is no benefit to scaling out.
 var worker = builder.AddProject<Projects.GChannel_Worker>("worker")
     .WithReference(database)
     .WithReference(cache)
@@ -129,16 +124,6 @@ var worker = builder.AddProject<Projects.GChannel_Worker>("worker")
     .WithReplicas(1)
     .WaitFor(database)
     .WaitFor(cache);
-
-if (builder.ExecutionContext.IsPublishMode)
-{
-    // Pin min and max replicas to 1: the cluster-wide Redis locks make extra replicas redundant.
-    worker.PublishAsAzureContainerApp((_, app) =>
-    {
-        app.Template.Scale.MinReplicas = 1;
-        app.Template.Scale.MaxReplicas = 1;
-    });
-}
 
 // Blazor front end container app (external): the dashboard users sign in to.
 var webfrontend = builder.AddProject<Projects.GChannel_Web>("webfrontend")

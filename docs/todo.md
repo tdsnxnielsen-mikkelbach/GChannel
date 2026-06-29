@@ -578,6 +578,29 @@ dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
 - [ ] **Phase 4 — Billing export (optional, out of Channel API).** Document/integrate BigQuery partner
   billing export for *actual* invoiced figures; clearly separated from API list pricing.
 
+### Console parity — customer list, expandable subscriptions & entitlement detail
+
+Goal: bring our customer area in line with `channelservices.cloud.google.com` and add the pricing
+above on top, so a user sees the same shape they know from the console plus computed cost/margin.
+
+- [ ] **Phase 5 — Customer list parity + search.** Render the list as **Name · Domain · Subscriptions
+  · Renewal date** like the console: `Subscriptions` = count of entitlements by state (e.g. `6 Active
+  2 Suspended`, `0 Active`), `Renewal date` = earliest upcoming `commitmentEndTime` + that offer name
+  (`Sep 27, 2027 - Google Workspace for Education Plus`) or `—` when none. All sourced from
+  entitlement state + offer name (§3) aggregated per customer (reuse the §10 read-model so it's cheap).
+  Add a **search box** (by customer name or domain) over the cached customer list, client-side filter
+  first, server-side `accounts.customers.list` pagination later.
+- [ ] **Phase 6 — Expandable customer → subscription cards.** Expanding a customer shows one card per
+  entitlement: offer name, plan summary (`Annual Plan (Monthly Payment)`), `Renewal <date>`,
+  `assigned / total licenses` (`2 / 3`) and state badge (`Active`). Renewal/plan/licenses from
+  entitlement+offer; **assigned-seat count is _not_ in the Channel API** (it's Admin SDK / Directory
+  usage) — show total seats only or a clearly-flagged estimate until that source is added.
+- [ ] **Phase 7 — Subscription detail (licenses + payment + billing).** Clicking a card shows
+  **Licenses** (total `num_units`, assigned where available, manage link → §3), **Payment** (cycle +
+  computed `/month` estimate from §11 pricing, marked *estimated*, renewal datetime), `Renewal` term
+  text, and **Billing account name + ID** from the entitlement's `billingAccount`. Pricing reuses
+  Phases 1–2; billing actuals stay out (Phase 4 caveat).
+
 ### Risks &amp; caveats
 
 - **Estimates, not invoices** — must be labelled everywhere; promo/tier/contract terms can diverge from
