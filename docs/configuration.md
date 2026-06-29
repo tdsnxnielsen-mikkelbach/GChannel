@@ -16,17 +16,18 @@
 | --- | --- | --- | --- |
 | `Authentication:Google:ClientId` | Web | user-secrets | `GoogleClientId` azd param (env var) |
 | `Authentication:Google:ClientSecret` | Web | user-secrets | `GoogleClientSecret` azd param → **Key Vault** |
-| `GoogleChannel:AccountId` | ApiService | user-secrets | `GoogleChannelAccountId` azd param (env var) |
-| `GoogleChannel:ServiceAccountKeyJson` | ApiService | `Parameters:` (AppHost) | `GoogleChannelServiceAccountKeyJson` azd param → **Key Vault** |
-| `GoogleChannel:ImpersonateUser` | ApiService | `Parameters:` (AppHost) | `GoogleChannelImpersonateUser` azd param (env var) |
-| `GoogleChannel:BackgroundRefreshSeconds` | ApiService | `Parameters:` (AppHost) | `GoogleChannelBackgroundRefreshSeconds` azd param (env var) |
-| `GoogleChannel:PubSubProjectId` | ApiService | `Parameters:` (AppHost) | `GoogleChannelPubSubProjectId` azd param (env var) |
-| `GoogleChannel:PubSubSubscriptionId` | ApiService | `Parameters:` (AppHost) | `GoogleChannelPubSubSubscriptionId` azd param (env var) |
+| `GoogleChannel:AccountId` | ApiService + Worker | user-secrets | `GoogleChannelAccountId` azd param (env var) |
+| `GoogleChannel:ServiceAccountKeyJson` | Worker | `Parameters:` (AppHost) | `GoogleChannelServiceAccountKeyJson` azd param → **Key Vault** |
+| `GoogleChannel:ImpersonateUser` | Worker | `Parameters:` (AppHost) | `GoogleChannelImpersonateUser` azd param (env var) |
+| `GoogleChannel:BackgroundRefreshSeconds` | Worker | `Parameters:` (AppHost) | `GoogleChannelBackgroundRefreshSeconds` azd param (env var) |
+| `GoogleChannel:PubSubProjectId` | Worker | `Parameters:` (AppHost) | `GoogleChannelPubSubProjectId` azd param (env var) |
+| `GoogleChannel:PubSubSubscriptionId` | Worker | `Parameters:` (AppHost) | `GoogleChannelPubSubSubscriptionId` azd param (env var) |
 
 In Azure the client secret lives in Key Vault; locally it is resolved from user-secrets, so the
 app code reads `Authentication:Google:ClientSecret` the same way in both environments. The
 service-account / impersonation / refresh rows are optional — they enable the
-[background dashboard refresh](#background-dashboard-refresh-optional); the two `PubSub` rows are
+[background dashboard refresh](#background-dashboard-refresh-optional) and run in the separate
+**GChannel.Worker** container app; the two `PubSub` rows are
 optional too and enable [Pub/Sub notifications](#pubsub-notifications-7).
 
 ### Optional tuning (defaults shown)

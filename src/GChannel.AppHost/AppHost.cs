@@ -104,6 +104,37 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WaitFor(database)
     .WaitFor(cache);
 
+// Background worker container app (internal, no HTTP): the dashboard refresh, Pub/Sub subscriber and
+// read-model sync hosted services, extracted from the API so they scale on their own axis. Pinned to a
+// single replica — Redis single-flight locks keep extra replicas idle, and these jobs are scheduled/
+// pulled, so there is no benefit to scaling out and min-replicas≥1 keeps Pub/Sub consuming continuously.
+var worker = builder.AddProject<Projects.GChannel_Worker>("worker")
+    .WithReference(database)
+    .WithReference(cache)
+    .WithEnvironment("GoogleChannel__AccountId", googleChannelAccountId)
+    .WithEnvironment("GoogleChannel__ImpersonateUser", googleChannelImpersonateUser)
+    .WithEnvironment("GoogleChannel__BackgroundRefreshSeconds", googleChannelBackgroundRefreshSeconds)
+    .WithEnvironment("GoogleChannel__DashboardRequestsPerMinute", googleChannelDashboardRequestsPerMinute)
+    .WithEnvironment("GoogleChannel__DashboardCustomerListRequestsPerMinute", googleChannelDashboardCustomerListRequestsPerMinute)
+    .WithEnvironment("GoogleChannel__UseReadModel", googleChannelUseReadModel)
+    .WithEnvironment("GoogleChannel__ReadModelLinksPerCycle", googleChannelReadModelLinksPerCycle)
+    .WithEnvironment("GoogleChannel__PubSubProjectId", googleChannelPubSubProjectId)
+    .WithEnvironment("GoogleChannel__PubSubSubscriptionId", googleChannelPubSubSubscriptionId)
+    .WithEnvironment("GoogleChannel__WorkloadIdentityCredentialJson", googleChannelWorkloadIdentityCredentialJson)
+    .WithReplicas(1)
+    .WaitFor(database)
+    .WaitFor(cache);
+
+if (builder.ExecutionContext.IsPublishMode)
+{
+    // Pin min and max replicas to 1: the cluster-wide Redis locks make extra replicas redundant.
+    worker.PublishAsAzureContainerApp((_, app) =>
+    {
+        app.Template.Scale.MinReplicas = 1;
+        app.Template.Scale.MaxReplicas = 1;
+    });
+}
+
 // Blazor front end container app (external): the dashboard users sign in to.
 var webfrontend = builder.AddProject<Projects.GChannel_Web>("webfrontend")
     .WithExternalHttpEndpoints()
@@ -130,6 +161,12 @@ if (builder.ExecutionContext.IsPublishMode)
     apiService
         .WithReference(keyVault)
         .WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKey);
+
+    // The worker performs the actual service-account work (dashboard refresh + read-model sync), so it
+    // also needs the key from Key Vault.
+    worker
+        .WithReference(keyVault)
+        .WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKey);
 }
 else
 {
@@ -137,6 +174,7 @@ else
     // parameter values (sourced from user secrets) directly.
     webfrontend.WithEnvironment("Authentication__Google__ClientSecret", googleClientSecretParam);
     apiService.WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKeyParam);
+    worker.WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKeyParam);
 }
 
 builder.Build().Run();

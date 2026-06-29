@@ -1,7 +1,7 @@
 # Architecture
 
-GChannel is built with **.NET Aspire** so the front end and back-end services run as two
-independently scalable **Azure Container Apps**, with **Azure SQL (serverless)** storage and
+GChannel is built with **.NET Aspire** so the front end, back-end API and background worker run as
+three independently scalable **Azure Container Apps**, with **Azure SQL (serverless)** storage and
 **Azure Managed Redis** caching.
 
 ## Solution layout
@@ -14,14 +14,20 @@ src/
   GChannel.ServiceDefaults        # OpenTelemetry, health checks, resilience
   GChannel.Shared                 # DTOs/contracts shared by Web + API
   GChannel.ApiService             # Web API + Google Channel client (internal ingress)
+  GChannel.Worker                 # background jobs: refresh, Pub/Sub, read-model sync (no ingress)
   GChannel.Web                    # Blazor (MudBlazor + ApexCharts), Google login (external ingress)
 ```
 
-## Why two container apps?
+## Why three container apps?
 
-`GChannel.Web` (the UI) and `GChannel.ApiService` (the Google integration + data/cache) are
-separate Container Apps so they scale independently. The UI is the only one with **external**
-ingress; the API service is **internal** and reached over the Container Apps network.
+`GChannel.Web` (the UI), `GChannel.ApiService` (the Google integration + data/cache) and
+`GChannel.Worker` (the scheduled/streamed background jobs) are separate Container Apps so they scale
+on independent axes. The UI is the only one with **external** ingress; the API service is **internal**
+and reached over the Container Apps network; the worker has **no ingress** at all. Splitting the
+workers out lets the API scale on HTTP traffic (and down to zero) while the worker stays pinned at a
+single replica — its cluster-wide Redis locks make extra replicas redundant, and `min-replicas = 1`
+keeps the Pub/Sub subscriber consuming. The worker reuses the API's client/data/options assemblies via
+a project reference; the API still owns schema creation on startup.
 
 ## Diagram
 
@@ -30,8 +36,11 @@ flowchart LR
     User[[Reseller]] -- Google sign-in --> Web[GChannel.Web<br/>Blazor / MudBlazor<br/>external ingress]
     Web -- Bearer: Google access token --> Api[GChannel.ApiService<br/>internal ingress]
     Api -- typed client --> Google[(Google Cloud<br/>Channel API)]
+    Worker[GChannel.Worker<br/>no ingress, 1 replica] -- typed client --> Google
     Api --> Sql[(Azure SQL<br/>serverless, auto-pause)]
     Api --> Redis[(Azure Managed Redis<br/>Balanced B0)]
+    Worker --> Sql
+    Worker --> Redis
     Web -. managed identity .-> Kv[(Azure Key Vault<br/>OAuth client secret)]
 ```
 
@@ -335,9 +344,11 @@ The user endpoint then serves a ready-made, complete result instead of running t
 on demand — solving the large-estate case where even the time-budgeted on-demand path returns only a
 partial. Because it runs off the HTTP request (no attempt timeout), the background path calls
 `GetDashboardSummaryAsync(..., applyTimeBudget: false)` so it runs **unbounded** and produces a
-complete result; the time budget applies only to the on-demand request path. Because the worker runs
-as a hosted service inside the API process, scaling the API to multiple replicas would otherwise have
-every replica refresh on its own timer. To keep it
+complete result; the time budget applies only to the on-demand request path. These hosted services
+(`DashboardRefreshService`, `ChannelNotificationsService`, `ReadModelSyncService`) run in the
+separate **GChannel.Worker** container app rather than inside the API process, so the API scales on
+HTTP traffic (and to zero) without spawning duplicate timers; the worker is pinned to a single
+replica. To keep it
 single-flight, each tick first takes a best-effort Redis lock (`dashboard:refresh:lock`, set with
 `When.NotExists` and a TTL of one interval); only the replica that wins recomputes, and the key is
 left to expire so it doubles as an "already refreshed this interval" marker. The worker is a no-op

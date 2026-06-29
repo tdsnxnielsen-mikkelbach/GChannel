@@ -37,5 +37,6 @@ src/
   GChannel.ServiceDefaults  # OpenTelemetry, health checks, resilience
   GChannel.Shared           # DTOs/contracts shared by Web + API
   GChannel.ApiService       # Web API + Google Channel client (internal ingress)
+  GChannel.Worker           # background jobs: refresh, Pub/Sub, read-model sync (no ingress)
   GChannel.Web              # Blazor UI, Google login (external ingress)
 ```

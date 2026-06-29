@@ -163,6 +163,7 @@ public sealed class ReadModelSyncService(
             {
                 row = new ResellerLinkRecord { LinkId = l.Id, LastSyncedUtc = now };
                 db.ResellerLinks.Add(row);
+                existing[l.Id] = row; // guard against duplicate ids in the same list (would double-add the PK)
             }
             row.ResellerCloudId = l.ResellerCloudIdentityId;
             row.PrimaryDomain = l.ChannelPartner?.PrimaryDomain;
@@ -189,6 +190,7 @@ public sealed class ReadModelSyncService(
             {
                 row = new CustomerRecord { CustomerId = c.Id };
                 db.CustomerRecords.Add(row);
+                byId[c.Id] = row; // guard against duplicate ids in the same list (would double-add the PK)
             }
             row.OrgName = c.OrgDisplayName;
             row.Domain = c.Domain;
@@ -243,6 +245,7 @@ public sealed class ReadModelSyncService(
             {
                 row = new EntitlementRecord { EntitlementId = e.Id };
                 db.EntitlementRecords.Add(row);
+                byId[e.Id] = row; // guard against duplicate ids in the same list (would double-add the PK)
             }
             row.CustomerId = customerId;
             row.OwningLinkId = owningLinkId;

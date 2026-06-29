@@ -5,5 +5,6 @@
     <Project Path="src/GChannel.ServiceDefaults/GChannel.ServiceDefaults.csproj" />
     <Project Path="src/GChannel.Shared/GChannel.Shared.csproj" />
     <Project Path="src/GChannel.Web/GChannel.Web.csproj" />
+    <Project Path="src/GChannel.Worker/GChannel.Worker.csproj" />
   </Folder>
 </Solution>

@@ -6,8 +6,8 @@
 dotnet run --project src/GChannel.AppHost
 ```
 
-This starts the Aspire dashboard, spins up SQL Server and Redis containers, and launches both
-services. Open the `webfrontend` endpoint from the dashboard.
+This starts the Aspire dashboard, spins up SQL Server and Redis containers, and launches all three
+services (API, worker, web). Open the `webfrontend` endpoint from the dashboard.
 
 The SQL and Redis containers use a **persistent lifetime** and named **data volumes**
 (`gchannel-sql-data`, `gchannel-redis-data`), so they stay running and keep their data between
@@ -26,9 +26,10 @@ azd up
 
 `azd` provisions the Container Apps environment, **Azure Key Vault**, the serverless Azure SQL
 database (`GP_S_Gen5_2`, auto-pause after 60 min, min capacity 0.5) and Azure Managed Redis
-(`Balanced B0`), then deploys both container apps. You will be prompted for `GoogleClientId`,
+(`Balanced B0`), then deploys all three container apps. You will be prompted for `GoogleClientId`,
 `GoogleClientSecret` and `GoogleChannelAccountId`; the client secret is written to Key Vault and
-the Web app's managed identity is granted access automatically. After the first deploy, add the
+the Web app's managed identity is granted access automatically. The worker is deployed with a fixed
+single replica (min = max = 1, no ingress); the API and web scale independently. After the first deploy, add the
 Web app's public URL plus `/signin-google` to the authorized redirect URIs of your Google OAuth
 client.
 
@@ -36,7 +37,7 @@ client.
 
 `azd` provisions the **Container Apps environment with the managed Aspire dashboard enabled
 automatically** — there's no switch to flip. It surfaces the same telemetry as the local dashboard
-(structured logs, distributed traces, metrics) collected over OTLP from `apiservice` and
+(structured logs, distributed traces, metrics) collected over OTLP from `apiservice`, `worker` and
 `webfrontend` (wired by `AddServiceDefaults()`). Its URL appears in the `azd up` output and on the
 Container Apps **environment** resource in the portal.
 

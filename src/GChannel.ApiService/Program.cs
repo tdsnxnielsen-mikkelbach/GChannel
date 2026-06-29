@@ -36,17 +36,10 @@ builder.Services
 builder.Services.AddScoped<IGoogleChannelCredentialSource, RequestTokenCredentialSource>();
 builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
 
-// Keeps the dashboard summary cache warm out-of-band using a service account (no-op unless
-// GoogleChannel service-account + impersonation user + BackgroundRefreshSeconds are configured).
-builder.Services.AddHostedService<DashboardRefreshService>();
-
-// Streams Channel change notifications from Pub/Sub into a capped Redis feed (no-op unless
-// GoogleChannel PubSubProjectId + PubSubSubscriptionId + a service-account key are configured).
-builder.Services.AddHostedService<ChannelNotificationsService>();
-
-// Incrementally materialises the estate (links + customers) into SQL for scale-out dashboards
-// (no-op unless GoogleChannel UseReadModel + service-account + impersonation user are configured).
-builder.Services.AddHostedService<ReadModelSyncService>();
+// The background workers (dashboard refresh, Pub/Sub subscriber, read-model sync) have been extracted
+// into the GChannel.Worker container so they scale independently of HTTP traffic (fixed single replica)
+// and the API can scale to zero. The API still owns the read schema (created on startup) and serves the
+// estate/dashboard endpoints from the cache + SQL those workers populate.
 
 var app = builder.Build();
 
