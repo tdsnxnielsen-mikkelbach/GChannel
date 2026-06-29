@@ -14,12 +14,20 @@ public sealed record DashboardSummary
     public int CustomerCount { get; init; }
 
     /// <summary>
-    /// Downstream end customers owned by linked indirect resellers. Derived from the single
-    /// <c>accounts.customers.list</c> estate by counting customers that carry a
-    /// <c>ChannelPartnerId</c> (i.e. belong to a reseller rather than this account directly), so it
-    /// adds no extra quota cost over the headline customer count.
+    /// Downstream end customers owned by linked indirect resellers, summed across every ACTIVE
+    /// channel partner link (<c>accounts.channelPartnerLinks.customers.list</c>). This is a separate
+    /// set from the direct <see cref="CustomerCount"/> (a distributor's <c>accounts.customers.list</c>
+    /// returns only its own direct customers), so the total estate is the two added together. Computed
+    /// by the (unbudgeted) background refresher because it costs one customer-list call per reseller.
     /// </summary>
     public int IndirectCustomerCount { get; init; }
+
+    /// <summary>
+    /// Indirect resellers ranked by how many downstream customers they own (most first), for the
+    /// "top resellers" chart. Built from the same per-reseller customer-list fan-out as
+    /// <see cref="IndirectCustomerCount"/> and labelled with each link's primary domain when available.
+    /// </summary>
+    public IReadOnlyList<DashboardResellerCustomers> TopIndirectResellers { get; init; } = [];
 
     /// <summary>Entitlements currently in the <c>ACTIVE</c> provisioning state.</summary>
     public int ActiveEntitlementCount { get; init; }
@@ -69,25 +77,11 @@ public sealed record DashboardOverview
     /// <summary>Channel partner links broken down by link state (ACTIVE, INVITED, SUSPENDED, …).</summary>
     public IReadOnlyList<DashboardChannelLinkState> ChannelLinkStates { get; init; } = [];
 
-    /// <summary>
-    /// Downstream end customers owned by linked indirect resellers — customers in the account estate
-    /// that carry a <c>ChannelPartnerId</c>. Same value as <see cref="DashboardSummary.IndirectCustomerCount"/>,
-    /// surfaced in the cheap overview phase so the home page can show it immediately.
-    /// </summary>
-    public int IndirectCustomerCount { get; init; }
-
-    /// <summary>
-    /// Indirect resellers ranked by how many downstream customers they own (most first), for the
-    /// "top resellers" chart. Each customer is grouped by its <c>ChannelPartnerId</c> and labelled
-    /// with the matching channel partner link's primary domain when available.
-    /// </summary>
-    public IReadOnlyList<DashboardResellerCustomers> TopIndirectResellers { get; init; } = [];
-
     /// <summary>Customers onboarded per month over the trailing 6 months (oldest first).</summary>
     public IReadOnlyList<DashboardMonthlyPoint> CustomersOnboarded { get; init; } = [];
 }
 
-/// <summary>An indirect reseller and how many downstream customers it owns, for the top-resellers chart.</summary>
+/// <summary>An indirect reseller and its downstream estate (customers + seats), for the top-resellers chart.</summary>
 public sealed record DashboardResellerCustomers
 {
     /// <summary>Friendly reseller label — the channel partner link's primary domain, else its id.</summary>
@@ -95,6 +89,13 @@ public sealed record DashboardResellerCustomers
 
     /// <summary>Number of downstream end customers owned by this reseller.</summary>
     public int CustomerCount { get; init; }
+
+    /// <summary>
+    /// Total active seats (<c>num_units</c>) across all of this reseller's downstream customers'
+    /// entitlements. The top-resellers chart ranks by this so a reseller with many small customers
+    /// doesn't outrank one with fewer but much larger customers.
+    /// </summary>
+    public long SeatCount { get; init; }
 }
 
 /// <summary>A count of channel partner links in a given link state, for the dashboard breakdown.</summary>

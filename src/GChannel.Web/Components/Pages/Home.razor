@@ -96,7 +96,7 @@
                                     </div>
                                     <div class="d-flex justify-space-between align-center">
                                         <MudText Typo="Typo.body2">Via indirect resellers</MudText>
-                                        @if (CustomersLoaded)
+                                        @if (IndirectLoaded)
                                         {
                                             <MudText Typo="Typo.body2"><b>@IndirectEstate</b></MudText>
                                         }
@@ -105,7 +105,7 @@
                                             <MudProgressCircular Indeterminate="true" Size="Size.Small" />
                                         }
                                     </div>
-                                    @if (CustomersLoaded)
+                                    @if (IndirectLoaded)
                                     {
                                         <MudDivider Class="my-1" />
                                         <div class="d-flex justify-space-between align-center">
@@ -241,16 +241,16 @@
             <MudText Typo="Typo.h6" GutterBottom="true">Top indirect resellers</MudText>
             @if (_resellers.Count > 0)
             {
-                <ApexChart TItem="ResellerSlice" Title="Customers per reseller" Options="_resellerOptions" @ref="_resellerChart">
+                <ApexChart TItem="ResellerSlice" Title="Seats per reseller" Options="_resellerOptions" @ref="_resellerChart">
                     <ApexPointSeries TItem="ResellerSlice"
                                      Items="_resellers"
-                                     Name="Customers"
+                                     Name="Seats"
                                      SeriesType="SeriesType.Bar"
                                      XValue="@(r => r.Reseller)"
-                                     YValue="@(r => r.Customers)" />
+                                     YValue="@(r => r.Seats)" />
                 </ApexChart>
             }
-            else if (_overviewLoading)
+            else if (_entitlementsLoading)
             {
                 <div class="d-flex align-center" style="height: 200px;">
                     <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
@@ -260,7 +260,7 @@
             {
                 <MudText Typo="Typo.body2" Color="Color.Secondary">
                     No indirect resellers with customers yet. When a linked reseller owns downstream
-                    customers, they'll appear here ranked by customer count.
+                    customers, they'll appear here ranked by total active seats.
                 </MudText>
             }
         </MudPaper>
@@ -271,7 +271,7 @@
     private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
     private record MonthlyPoint(string Month, decimal Customers);
     private record ProductSlice(string Product, decimal Count);
-    private record ResellerSlice(string Reseller, decimal Customers);
+    private record ResellerSlice(string Reseller, decimal Customers, decimal Seats);
 
     // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
     // its own axis/legend/title text in a fixed colour that ignores MudBlazor's theme, so without this
@@ -322,13 +322,13 @@
     // Tracks which KPI cards have their details panel expanded (keyed by SummaryCard.Key).
     private readonly HashSet<string> _expanded = [];
 
-    // Customer estate figures for the KPI details. The full customer list (overview/summary) is the
-    // total estate; indirect = customers owned by a reseller (carry a ChannelPartnerId); direct is the
-    // remainder. Computed from whichever phase has landed so they never double-count.
-    private bool CustomersLoaded => _overview is not null || _data is not null;
-    private int TotalEstate => _overview?.CustomerCount ?? _data?.CustomerCount ?? 0;
-    private int IndirectEstate => _overview?.IndirectCustomerCount ?? _data?.IndirectCustomerCount ?? 0;
-    private int DirectEstate => Math.Max(0, TotalEstate - IndirectEstate);
+    // Customer estate figures for the KPI details. Direct customers come from the cheap overview; the
+    // indirect (reseller-owned) estate is a separate set surfaced by the slower, background-computed
+    // summary, so the total is the two added together (they never overlap).
+    private bool IndirectLoaded => _data is not null;
+    private int DirectEstate => _overview?.CustomerCount ?? _data?.CustomerCount ?? 0;
+    private int IndirectEstate => _data?.IndirectCustomerCount ?? 0;
+    private int TotalEstate => DirectEstate + IndirectEstate;
 
     private bool IsExpanded(string key) => _expanded.Contains(key);
 
@@ -473,12 +473,6 @@
             {
                 _monthly.Add(new MonthlyPoint(point.Month, point.Customers));
             }
-
-            _resellers.Clear();
-            foreach (var reseller in _overview?.TopIndirectResellers ?? [])
-            {
-                _resellers.Add(new ResellerSlice(reseller.Reseller, reseller.CustomerCount));
-            }
         }
         catch (Exception)
         {
@@ -511,6 +505,12 @@
             foreach (var slice in _data?.ProductMix ?? [])
             {
                 _products.Add(new ProductSlice(slice.Product, slice.Count));
+            }
+
+            _resellers.Clear();
+            foreach (var reseller in _data?.TopIndirectResellers ?? [])
+            {
+                _resellers.Add(new ResellerSlice(reseller.Reseller, reseller.CustomerCount, reseller.SeatCount));
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
@@ -551,6 +551,12 @@
             foreach (var slice in data.ProductMix)
             {
                 _products.Add(new ProductSlice(slice.Product, slice.Count));
+            }
+
+            _resellers.Clear();
+            foreach (var reseller in data.TopIndirectResellers)
+            {
+                _resellers.Add(new ResellerSlice(reseller.Reseller, reseller.CustomerCount, reseller.SeatCount));
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)

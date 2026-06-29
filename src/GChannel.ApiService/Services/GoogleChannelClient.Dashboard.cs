@@ -31,23 +31,16 @@ public sealed partial class GoogleChannelClient
 
         // Channel partner links (§5) are an account-level list (no per-customer fan-out), so counting
         // them here keeps the overview cheap while restoring the "Channel links" headline figure. The
-        // FULL view carries link_state (for the per-state breakdown) and the partner's Cloud Identity
-        // (used to name resellers in the indirect estate below), both at no extra quota over a count.
-        var links = await SummarizeChannelPartnerLinksAsync(service, cancellationToken);
-
-        // §5 indirect estate — every customer in the account list carries a ChannelPartnerId when it
-        // belongs to a downstream reseller (empty when we own it directly). So the indirect headcount
-        // and the per-reseller breakdown both fall out of the single customer list we already have —
-        // no per-reseller customer-list fan-out, and no double counting against the direct estate.
-        var (indirectCount, topResellers) = BuildIndirectEstate(customers, links.ResellerNamesById);
+        // BASIC view carries link_state, so the per-state breakdown costs no extra quota. The
+        // downstream (indirect) customer estate is heavier — one list call per reseller — so it is
+        // computed in the (background-only) summary phase, not here.
+        var (channelLinkCount, channelLinkStates) = await SummarizeChannelPartnerLinksAsync(service, cancellationToken);
 
         return new DashboardOverview
         {
             CustomerCount = customers.Count,
-            ChannelLinkCount = links.Total,
-            ChannelLinkStates = links.ByState,
-            IndirectCustomerCount = indirectCount,
-            TopIndirectResellers = topResellers,
+            ChannelLinkCount = channelLinkCount,
+            ChannelLinkStates = channelLinkStates,
             CustomersOnboarded = BuildMonthlyOnboarded(customers)
         };
     }
@@ -76,14 +69,23 @@ public sealed partial class GoogleChannelClient
         }
         var budgetToken = budget.Token;
 
-        // Pace the (paginated) account customers.list call through the shared ListCustomers quota
-        // bucket. The indirect estate is derived from this same list (no per-reseller fan-out), so
-        // this is the only ListCustomers traffic. Disabled when set to 0.
+        // Pace the (paginated) account customers.list call plus the per-reseller fan-out below through
+        // one shared ListCustomers quota bucket so they stay under the Channel API's "ListCustomers
+        // requests per minute" quota. Disabled when set to 0.
         var customerListPacer = CreateCustomerListPacer();
+
+        // Pace the per-customer entitlements.list calls to stay under the Channel API's per-minute
+        // "ListEntitlements" quota. Without this, bounded concurrency alone still bursts past the
+        // quota on large estates and the project gets a wave of 429s. Disabled when set to 0. Shared
+        // by the direct aggregation below and the indirect per-reseller seat sum.
+        var pacer = _options.DashboardRequestsPerMinute > 0
+            ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _options.DashboardRequestsPerMinute))
+            : null;
 
         List<Customer> customers;
         CatalogLookups lookups;
         int indirectCustomers;
+        IReadOnlyList<DashboardResellerCustomers> topResellers;
         try
         {
             // §2 customers — also drives the onboarded-over-time chart (bucket by create time).
@@ -94,11 +96,15 @@ public sealed partial class GoogleChannelClient
             // entitlement's specific offer is no longer listed.
             lookups = await BuildCatalogLookupsAsync(service, budgetToken, includeSkus: true);
 
-            // §5 indirect estate — the downstream end customers owned by linked resellers. Every such
-            // customer is already in the list above tagged with a ChannelPartnerId, so this is a free
-            // partition of the estate rather than a per-reseller customer-list fan-out, and it can run
-            // on the budgeted on-demand path without burning the ListCustomers quota.
-            indirectCustomers = CountIndirectCustomers(customers);
+            // §5 indirect estate — the downstream end customers owned by each linked indirect
+            // reseller. A distributor's accounts.customers.list returns only its own direct customers,
+            // so the reseller estate must be enumerated with one channelPartnerLinks.customers.list per
+            // ACTIVE link — 40+ calls that cannot fit the on-demand time budget under the tight shared
+            // ListCustomers quota. So only the (unbudgeted) background refresher computes it; the
+            // on-demand path leaves it empty and the UI shows the last value warmed into the cache.
+            (indirectCustomers, topResellers) = applyTimeBudget
+                ? (0, [])
+                : await GetIndirectEstateAsync(service, customerListPacer, pacer, budgetToken);
         }
         catch (OperationCanceledException) when (applyTimeBudget && !cancellationToken.IsCancellationRequested)
         {
@@ -111,13 +117,6 @@ public sealed partial class GoogleChannelClient
         }
 
         using var throttle = new SemaphoreSlim(Math.Max(1, _options.DashboardMaxConcurrency));
-
-        // Pace the per-customer entitlements.list calls to stay under the Channel API's per-minute
-        // "ListEntitlements" quota. Without this, bounded concurrency alone still bursts past the
-        // quota on large estates and the project gets a wave of 429s. Disabled when set to 0.
-        var pacer = _options.DashboardRequestsPerMinute > 0
-            ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _options.DashboardRequestsPerMinute))
-            : null;
 
         // The onboarding chart is constant across the run; compute it once for every snapshot.
         var onboarded = BuildMonthlyOnboarded(customers);
@@ -141,6 +140,7 @@ public sealed partial class GoogleChannelClient
         {
             CustomerCount = customers.Count,
             IndirectCustomerCount = indirectCustomers,
+            TopIndirectResellers = topResellers,
             ActiveEntitlementCount = active,
             TrialEntitlementCount = trials,
             SuspendedEntitlementCount = suspended,
@@ -381,38 +381,6 @@ public sealed partial class GoogleChannelClient
         _options.DashboardCustomerListRequestsPerMinute > 0
             ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _options.DashboardCustomerListRequestsPerMinute))
             : null;
-
-    /// <summary>
-    /// Counts the indirect (reseller-owned) customers in the estate — those carrying a
-    /// <c>ChannelPartnerId</c>. Direct customers (owned by this account) have no partner id.
-    /// </summary>
-    private static int CountIndirectCustomers(IReadOnlyList<Customer> customers) =>
-        customers.Count(c => !string.IsNullOrEmpty(c.ChannelPartnerId));
-
-    /// <summary>
-    /// Splits the estate into the indirect headcount and the per-reseller breakdown (most customers
-    /// first, capped for the chart). Customers are grouped by <c>ChannelPartnerId</c> and labelled
-    /// from the channel partner link map; ids without a matching link fall back to the raw id.
-    /// </summary>
-    private static (int IndirectCount, IReadOnlyList<DashboardResellerCustomers> TopResellers) BuildIndirectEstate(
-        IReadOnlyList<Customer> customers, IReadOnlyDictionary<string, string> resellerNamesById)
-    {
-        var byPartner = customers
-            .Where(c => !string.IsNullOrEmpty(c.ChannelPartnerId))
-            .GroupBy(c => c.ChannelPartnerId!, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new DashboardResellerCustomers
-            {
-                Reseller = resellerNamesById.GetValueOrDefault(g.Key, g.Key),
-                CustomerCount = g.Count()
-            })
-            .OrderByDescending(r => r.CustomerCount)
-            .ThenBy(r => r.Reseller, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        var indirectCount = byPartner.Sum(r => r.CustomerCount);
-        var topResellers = byPartner.Count > 15 ? byPartner.Take(15).ToList() : byPartner;
-        return (indirectCount, topResellers);
-    }
 
     /// <summary>Paginates the full reseller customer list (shared by the overview and summary).</summary>
     private async Task<List<Customer>> ListAllCustomersAsync(
