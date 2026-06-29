@@ -15,11 +15,46 @@
                OnClick="RefreshListAsync" Disabled="_listLoading">Refresh</MudButton>
 </div>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<MudText Typo="Typo.body1" Class="mb-3" Color="Color.Secondary">
     Mutating Channel calls (entitlement create/change/state changes, transfers) run asynchronously and
     return an operation. Track one by id to watch it complete, then deep-link to the customer or
     entitlement it affected.
 </MudText>
+
+<MudExpansionPanels Elevation="0" Class="mb-6">
+    <MudExpansionPanel Icon="@Icons.Material.Filled.HelpOutline" Text="How operations work &amp; examples">
+        <MudText Typo="Typo.subtitle2" Class="mb-1">Where the id comes from</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+            When you buy/change/suspend an entitlement or run a transfer, the API returns an operation name
+            like <code>operations/abc-123-def</code>. Paste that whole string, or just the
+            <code>abc-123-def</code> id segment, into the box below. You usually don't need this page for
+            small accounts — most actions finish in seconds — but it's handy for transfers and bulk changes
+            that stay <em>Running</em> for a while.
+        </MudText>
+
+        <MudText Typo="Typo.subtitle2" Class="mb-1">What you'll see</MudText>
+        <MudList T="string" Dense="true" Class="mb-3">
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Sync">
+                <b>Running</b> — still processing; refresh or leave the chip polling until it settles.
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle">
+                <b>Done</b> — finished; jump straight to the affected Customer or Entitlement.
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Error">
+                <b>Failed</b> — shows the error message + code (e.g. quota, invalid state) so you can retry.
+            </MudListItem>
+        </MudList>
+
+        <MudText Typo="Typo.subtitle2" Class="mb-1">Examples</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            • Purchase a Workspace SKU → track the op to confirm provisioning before assigning licenses.<br />
+            • Transfer customers from another reseller → watch the op finish, then open the entitlement.<br />
+            • Suspend/cancel/start-paid-service → confirm the state change actually applied.<br />
+            <em>Note:</em> Google's Channel API has no global "list all operations", so track by id rather
+            than browse — you can still cancel a still-running operation.
+        </MudText>
+    </MudExpansionPanel>
+</MudExpansionPanels>
 
 <MudCard Elevation="2" Class="mb-6">
     <MudCardContent>

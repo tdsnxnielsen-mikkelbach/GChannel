@@ -7,6 +7,8 @@
     <UserSecretsId>c8d2f7a1-4f3b-4f9d-9c2a-7e6b1a0d5e44</UserSecretsId>
     <!-- Worker SDK doesn't enable SDK container publish by default (Web SDK does); azd needs it. -->
     <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
+    <!-- References ApiService, whose appsettings.json collides with the worker's own; keep the worker's. -->
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
   </PropertyGroup>
 
   <ItemGroup>

@@ -45,6 +45,10 @@
         {
             <MudText Typo="Typo.caption">@_data.IncompleteReason</MudText>
         }
+        @if (_status is { Enabled: true })
+        {
+            <MudText Typo="Typo.caption">These will be retrieved during the next background refresh; figures will fill in automatically.</MudText>
+        }
     </MudAlert>
 }
 
