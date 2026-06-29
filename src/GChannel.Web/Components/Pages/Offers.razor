@@ -103,7 +103,7 @@ else
         var price = offer.Pricing.FirstOrDefault(p => p.EffectivePrice is not null) ?? offer.Pricing.FirstOrDefault();
         if (price?.EffectivePrice is null)
         {
-            return "—";
+            return "Varies by customer";
         }
         var cycle = string.IsNullOrEmpty(offer.PaymentCycle) ? "" : $" / {offer.PaymentCycle.ToLowerInvariant()}";
         return $"{price.EffectivePrice.Display}{cycle}";
