@@ -107,6 +107,39 @@ else
                     </div>
                 </MudCardContent>
             </MudCard>
+
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Pricing (estimated)</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    @if (_pricingLoading)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                    }
+                    else if (SeatPrice is { } seat)
+                    {
+                        <MudSimpleTable Dense="true" Elevation="0">
+                            <tbody>
+                                <tr><td><strong>Wholesale / seat</strong></td><td>@seat.Display@(string.IsNullOrEmpty(_offerCycle) ? "" : $" · {_offerCycle.ToLowerInvariant()}")</td></tr>
+                                <tr><td><strong>Seats</strong></td><td>@SeatCount</td></tr>
+                                <tr><td><strong>Wholesale total</strong></td><td>@($"{seat.CurrencyCode} {WholesaleTotal:0.00}")</td></tr>
+                                @if (_repricingPercent is { } pct)
+                                {
+                                    <tr><td><strong>Repricing</strong></td><td>@(pct >= 0 ? "+" : "")@pct.ToString("0.##")%</td></tr>
+                                    <tr><td><strong>Computed price</strong></td><td>@($"{seat.CurrencyCode} {ComputedTotal:0.00}")</td></tr>
+                                    <tr><td><strong>Est. margin</strong></td><td>@($"{seat.CurrencyCode} {(ComputedTotal - WholesaleTotal):0.00}")</td></tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Estimated wholesale list pricing × seats@(_repricingPercent is null ? " (no repricing config; computed price = wholesale)" : "") — not an invoiced amount.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No list pricing available for this offer.</MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
         </MudItem>
 
         <MudItem xs="12" md="6">
@@ -239,6 +272,16 @@ else
     private bool _offersLoading;
     private string? _changeOfferName;
 
+    private bool _pricingLoading;
+    private CatalogOffer? _offerPricing;
+    private string? _offerCycle;
+    private double? _repricingPercent;
+
+    private MoneyAmount? SeatPrice => _offerPricing?.Pricing?.FirstOrDefault() is { } p ? (p.EffectivePrice ?? p.BasePrice) : null;
+    private int SeatCount => int.TryParse(Seats(_entitlement!), out var s) ? s : 1;
+    private decimal WholesaleTotal => (SeatPrice?.Value ?? 0) * SeatCount;
+    private decimal ComputedTotal => WholesaleTotal * (1 + (decimal)(_repricingPercent ?? 0) / 100);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -285,6 +328,34 @@ else
                 Snackbar.Add($"Failed to load change history: {ex.Message}", Severity.Error);
                 _changes = [];
             }
+
+            await LoadPricingAsync();
+        }
+    }
+
+    private async Task LoadPricingAsync()
+    {
+        _pricingLoading = true;
+        _offerPricing = null;
+        _offerCycle = null;
+        _repricingPercent = null;
+        try
+        {
+            _offerPricing = await Api.LookupEntitlementOfferAsync(CustomerId, Id);
+            _offerCycle = _offerPricing?.PaymentCycle;
+
+            var configs = await Api.ListCustomerRepricingConfigsAsync(CustomerId);
+            var match = configs?.Configs?.FirstOrDefault(c =>
+                string.Equals(c.EntitlementId, Id, StringComparison.OrdinalIgnoreCase));
+            _repricingPercent = match is null ? null : (double)match.PercentageAdjustment;
+        }
+        catch
+        {
+            // pricing is best-effort; leave card empty on failure
+        }
+        finally
+        {
+            _pricingLoading = false;
         }
     }
 

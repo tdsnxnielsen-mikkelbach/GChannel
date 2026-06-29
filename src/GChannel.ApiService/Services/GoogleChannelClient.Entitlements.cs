@@ -142,7 +142,10 @@ public sealed partial class GoogleChannelClient
             SkuName = offer.Sku?.Name,
             SkuId = LastSegment(offer.Sku?.Name),
             ProductId = ProductIdFromResourceName(offer.Sku?.Name),
-            DealCode = offer.DealCode
+            DealCode = offer.DealCode,
+            Pricing = MapOfferPricing(offer),
+            PaymentPlan = offer.Plan?.PaymentPlan,
+            PaymentCycle = PaymentCycleLabel(offer.Plan)
         };
     }
 

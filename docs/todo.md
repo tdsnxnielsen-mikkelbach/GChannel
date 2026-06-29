@@ -572,7 +572,7 @@ dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
   `CatalogOffer`/`PurchasableOffer` gained `Pricing` + `PaymentCycle`; `MapOfferPricing`/`MapMoney`/
   `PaymentCycleLabel` helpers; Offers table "Price (est. list)" column; purchase flow shows
   per-seat × seats estimate, labelled not-invoiced.*
-- [ ] **Phase 2 — Per-entitlement cost.** On entitlement detail/list, resolve the entitlement's offer
+- [x] **Phase 2 — Per-entitlement cost.** On entitlement detail/list, resolve the entitlement's offer
   price × `num_units` = wholesale total; overlay §6 `RepricingConfig` to compute end-customer price +
   margin. Cache offer pricing (a single `offers.list`, reuse the catalog lookup).
 - [ ] **Phase 3 — Estate rollups (optional).** Estimated monthly wholesale cost + repriced revenue +
