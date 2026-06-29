@@ -5,7 +5,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 // Azure Container Apps environment — required once any resource customises its publish (the worker
 // pins min/max replicas via PublishAsAzureContainerApp); all apps deploy into this environment.
-builder.AddAzureContainerAppEnvironment("gchannel");
+// Named "cae" so it resolves to the pre-existing azd-created "cae-<token>" env (no migration).
+builder.AddAzureContainerAppEnvironment("cae");
 
 // Azure SQL Database — serverless General Purpose with auto-pause.
 // Runs as a local SQL Server container during development. The container keeps
