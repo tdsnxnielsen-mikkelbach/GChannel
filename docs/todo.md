@@ -565,10 +565,13 @@ dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
 
 ### Phases
 
-- [ ] **Phase 1 — Map offer pricing (read-only).** Extend offer mapping to read `priceByResources` /
+- [x] **Phase 1 — Map offer pricing (read-only).** Extend offer mapping to read `priceByResources` /
   `pricePhases` / `priceTiers` into `OfferPrice`; show price on the **Offers** page (§1) and the
   **Purchase entitlement** flow (price-per-seat, currency, cycle). One `Money` → decimal helper
-  (`units + nanos/1e9`).
+  (`units + nanos/1e9`). *Implemented: `MoneyAmount`/`OfferPrice`/`OfferPriceTier` contracts,
+  `CatalogOffer`/`PurchasableOffer` gained `Pricing` + `PaymentCycle`; `MapOfferPricing`/`MapMoney`/
+  `PaymentCycleLabel` helpers; Offers table "Price (est. list)" column; purchase flow shows
+  per-seat × seats estimate, labelled not-invoiced.*
 - [ ] **Phase 2 — Per-entitlement cost.** On entitlement detail/list, resolve the entitlement's offer
   price × `num_units` = wholesale total; overlay §6 `RepricingConfig` to compute end-customer price +
   margin. Cache offer pricing (a single `offers.list`, reuse the catalog lookup).

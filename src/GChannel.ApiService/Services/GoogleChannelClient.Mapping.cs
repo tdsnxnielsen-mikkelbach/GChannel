@@ -556,4 +556,71 @@ public sealed partial class GoogleChannelClient
         var index = Array.IndexOf(segments, "products");
         return index >= 0 && index + 1 < segments.Length ? segments[index + 1] : string.Empty;
     }
+
+    /// <summary>Maps an offer's wholesale list pricing (price-by-resource + tiers) into contract DTOs.</summary>
+    private static IReadOnlyList<OfferPrice> MapOfferPricing(GoogleCloudChannelV1Offer? offer)
+    {
+        if (offer?.PriceByResources is not { Count: > 0 } prices)
+        {
+            return [];
+        }
+
+        var result = new List<OfferPrice>(prices.Count);
+        foreach (var p in prices)
+        {
+            var price = p.Price;
+            // Tiers live on the price phases (seat-count banding), not on the flat price.
+            var tiers = (p.PricePhases ?? [])
+                .SelectMany(ph => ph.PriceTiers ?? [])
+                .Select(t => new OfferPriceTier
+                {
+                    FirstResource = t.FirstResource ?? 0,
+                    LastResource = t.LastResource ?? 0,
+                    EffectivePrice = MapMoney(t.Price?.EffectivePrice)
+                })
+                .ToList();
+
+            result.Add(new OfferPrice
+            {
+                ResourceType = p.ResourceType,
+                BasePrice = MapMoney(price?.BasePrice),
+                EffectivePrice = MapMoney(price?.EffectivePrice),
+                DiscountPercent = (decimal)(price?.Discount ?? 0),
+                Tiers = tiers
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>Maps a <c>google.type.Money</c> into a <see cref="MoneyAmount"/>; null when no currency.</summary>
+    private static MoneyAmount? MapMoney(GoogleTypeMoney? money) =>
+        money is null || string.IsNullOrEmpty(money.CurrencyCode)
+            ? null
+            : new MoneyAmount
+            {
+                CurrencyCode = money.CurrencyCode,
+                Units = money.Units ?? 0,
+                Nanos = money.Nanos ?? 0
+            };
+
+    /// <summary>Friendly payment cycle (e.g. "Monthly", "Annual") from an offer plan; null when absent.</summary>
+    private static string? PaymentCycleLabel(GoogleCloudChannelV1Plan? plan)
+    {
+        var period = plan?.PaymentCycle;
+        if (period?.PeriodType is not { Length: > 0 } type)
+        {
+            return null;
+        }
+
+        var count = period.Duration ?? 1;
+        var unit = type.ToUpperInvariant() switch
+        {
+            "MONTH" => count == 12 ? "Annual" : count == 1 ? "Monthly" : $"{count}-monthly",
+            "YEAR" => count == 1 ? "Annual" : $"{count}-yearly",
+            "DAY" => count == 1 ? "Daily" : $"{count}-daily",
+            _ => $"{count} {type.ToLowerInvariant()}"
+        };
+        return unit;
+    }
 }

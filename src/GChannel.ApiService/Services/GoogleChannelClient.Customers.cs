@@ -168,7 +168,9 @@ public sealed partial class GoogleChannelClient
                     DisplayName = purchasable.Offer?.MarketingInfo?.DisplayName,
                     SkuId = LastSegment(purchasable.Offer?.Sku?.Name) is { Length: > 0 } sid ? sid : skuId,
                     ProductId = ProductIdFromResourceName(purchasable.Offer?.Sku?.Name) is { Length: > 0 } pid ? pid : productId,
-                    PriceReferenceId = purchasable.PriceReferenceId
+                    PriceReferenceId = purchasable.PriceReferenceId,
+                    Pricing = MapOfferPricing(purchasable.Offer),
+                    PaymentCycle = PaymentCycleLabel(purchasable.Offer?.Plan)
                 });
             }
 

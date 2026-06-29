@@ -102,6 +102,12 @@ public sealed record PurchasableOffer
     public string? SkuId { get; init; }
     public string? ProductId { get; init; }
     public string? PriceReferenceId { get; init; }
+
+    /// <summary>Wholesale list pricing per priced resource (seats, GB, etc.). Empty if not exposed.</summary>
+    public IReadOnlyList<OfferPrice> Pricing { get; init; } = [];
+
+    /// <summary>Human-friendly payment cycle (e.g. "Monthly", "Annual"). Null when unknown.</summary>
+    public string? PaymentCycle { get; init; }
 }
 
 /// <summary>Result of listing a customer's purchasable offers for a SKU.</summary>

@@ -69,6 +69,53 @@ public sealed record CatalogOffer
     public string? ProductId { get; init; }
 
     public string? DealCode { get; init; }
+
+    /// <summary>Wholesale list pricing for each priced resource (seats, GB, etc.). Empty if not exposed.</summary>
+    public IReadOnlyList<OfferPrice> Pricing { get; init; } = [];
+
+    /// <summary>Payment plan (e.g. COMMITMENT, FLEXIBLE) from the offer plan.</summary>
+    public string? PaymentPlan { get; init; }
+
+    /// <summary>Human-friendly payment cycle (e.g. "Monthly", "Annual").</summary>
+    public string? PaymentCycle { get; init; }
+}
+
+/// <summary>A monetary amount mapped from <c>google.type.Money</c> (currency + whole units + nano fraction).</summary>
+public sealed record MoneyAmount
+{
+    public required string CurrencyCode { get; init; }
+    public long Units { get; init; }
+    public int Nanos { get; init; }
+
+    /// <summary>Decimal value (units + nanos/1e9), useful for arithmetic.</summary>
+    public decimal Value => Units + (Nanos / 1_000_000_000m);
+
+    /// <summary>Pre-formatted display string, e.g. "EUR 4.32".</summary>
+    public string Display => $"{CurrencyCode} {Value:0.00}";
+}
+
+/// <summary>Wholesale price for one resource type on an offer (the reseller's cost from Google).</summary>
+public sealed record OfferPrice
+{
+    /// <summary>Priced resource: SEAT, MAU, GB, LICENSED_USER, MINUTES, IAAS_USAGE, SUBSCRIPTION, …</summary>
+    public string? ResourceType { get; init; }
+
+    public MoneyAmount? BasePrice { get; init; }
+    public MoneyAmount? EffectivePrice { get; init; }
+
+    /// <summary>Discount as a percentage (0.2 = 20%) applied to base price.</summary>
+    public decimal DiscountPercent { get; init; }
+
+    /// <summary>Optional per-resource tier banding (e.g. seat-count price breaks).</summary>
+    public IReadOnlyList<OfferPriceTier> Tiers { get; init; } = [];
+}
+
+/// <summary>A per-resource price tier (first/last resource count and its effective price).</summary>
+public sealed record OfferPriceTier
+{
+    public int FirstResource { get; init; }
+    public int LastResource { get; init; }
+    public MoneyAmount? EffectivePrice { get; init; }
 }
 
 /// <summary>Result of listing the sellable offers.</summary>

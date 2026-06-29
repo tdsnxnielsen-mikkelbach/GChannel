@@ -83,6 +83,15 @@ else
             <MudNumericField T="int" @bind-Value="_seats" Label="Seats (num_units)" Min="1"
                              Class="mb-4" HelperText="Number of licensed seats to purchase." data-walkthrough="pe-seats" />
 
+            @if (SelectedOffer is { } sel && SelectedSeatPrice(sel) is { } seat)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                    Est. list price: @seat.Display / seat@(string.IsNullOrEmpty(sel.PaymentCycle) ? "" : $" · {sel.PaymentCycle.ToLowerInvariant()}")
+                    · @_seats seat@(_seats == 1 ? "" : "s") ≈ @($"{seat.CurrencyCode} {(seat.Value * _seats):0.00}")
+                    <MudText Typo="Typo.caption">Estimated wholesale list pricing, not an invoiced amount.</MudText>
+                </MudAlert>
+            }
+
             <MudTextField T="string" @bind-Value="_purchaseOrderId" Label="Purchase order id (optional)"
                           Class="mb-4" />
         </MudCardContent>
@@ -126,6 +135,15 @@ else
 
     // The offer resource name uniquely identifies the offer to purchase.
     private static string OfferKey(PurchasableOffer offer) => offer.OfferName;
+
+    // The offer currently selected (by resource name) for the price summary.
+    private PurchasableOffer? SelectedOffer =>
+        _offers?.FirstOrDefault(o => string.Equals(OfferKey(o), _offerId, StringComparison.Ordinal));
+
+    // Effective per-seat price: prefer SEAT resource, else the first priced resource.
+    private static MoneyAmount? SelectedSeatPrice(PurchasableOffer offer) =>
+        (offer.Pricing.FirstOrDefault(p => string.Equals(p.ResourceType, "SEAT", StringComparison.OrdinalIgnoreCase))
+            ?? offer.Pricing.FirstOrDefault(p => p.EffectivePrice is not null))?.EffectivePrice;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
