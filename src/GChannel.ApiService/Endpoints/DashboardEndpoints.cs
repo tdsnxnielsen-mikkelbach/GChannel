@@ -177,6 +177,16 @@ public static class DashboardEndpoints
     {
         var indirectCount = await db.CustomerRecords
             .CountAsync(c => !c.IsDeleted && c.OwningLinkId != null, cancellationToken);
+
+        // Direct-estate backfill: when the live aggregation skipped customers (typically 429s), serve the
+        // last-synced direct figures from EntitlementRecords so the headline KPIs fill in from the DB
+        // instead of showing partial numbers. Only kicks in when something was skipped and the read-model
+        // has direct entitlement rows synced.
+        if (summary.SkippedCustomerCount > 0)
+        {
+            summary = await BackfillDirectEstateAsync(summary, db, cancellationToken);
+        }
+
         if (indirectCount == 0)
         {
             return summary; // Nothing synced yet — keep the live values.
@@ -206,4 +216,43 @@ public static class DashboardEndpoints
                 .ToList()
         };
     }
+
+    // Replaces the partial live direct figures with read-model totals for direct customers (OwningLinkId
+    // null) when the live run skipped some, so the dashboard fills from SQL rather than under-reporting.
+    private static async Task<DashboardSummary> BackfillDirectEstateAsync(
+        DashboardSummary summary, GChannelDbContext db, CancellationToken cancellationToken)
+    {
+        var rows = db.EntitlementRecords.Where(e => !e.IsDeleted && e.OwningLinkId == null);
+        var hasData = await rows.AnyAsync(cancellationToken);
+        if (!hasData)
+        {
+            return summary; // Read-model hasn't synced direct entitlements yet — keep live partials.
+        }
+
+        var active = await rows.CountAsync(e => e.State == "ACTIVE" && !e.IsTrial, cancellationToken);
+        var trials = await rows.CountAsync(e => e.IsTrial, cancellationToken);
+        var suspended = await rows.CountAsync(e => e.State == "SUSPENDED", cancellationToken);
+        var seats = await rows.Where(e => e.State == "ACTIVE").SumAsync(e => e.Seats, cancellationToken);
+
+        var mix = await rows.Where(e => e.State == "ACTIVE")
+            .GroupBy(e => e.ProductId ?? "Other")
+            .Select(g => new { Product = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .Take(8)
+            .ToListAsync(cancellationToken);
+
+        return summary with
+        {
+            ActiveEntitlementCount = Math.Max(summary.ActiveEntitlementCount, active),
+            TrialEntitlementCount = Math.Max(summary.TrialEntitlementCount, trials),
+            SuspendedEntitlementCount = Math.Max(summary.SuspendedEntitlementCount, suspended),
+            ActiveSeats = Math.Max(summary.ActiveSeats, seats),
+            SkippedCustomerCount = 0,
+            IncompleteReason = null,
+            ProductMix = summary.ProductMix is { Count: > 0 }
+                ? summary.ProductMix
+                : mix.Select(m => new DashboardProductSlice { Product = m.Product, Count = m.Count }).ToList()
+        };
+    }
 }
+
