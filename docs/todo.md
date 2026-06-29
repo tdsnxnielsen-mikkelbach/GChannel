@@ -384,11 +384,12 @@ domain → create a customer → purchase an entitlement) without reading docs.
 
 ## 10. Persistent read-model (scale-out for a large distributor)
 
-> **Status:** Phases 1–4 implemented (durable read-model + incremental sync worker + SQL-backed
-> indirect estate / seat-ranked top resellers + entitlement seat sync). Optional polish (server-side
-> paged lists, *as-of* labels, Refresh-now, DashboardSnapshots history) still open. Feature-flagged
-> `GoogleChannel:UseReadModel`. See [architecture.md](architecture.md) (dashboard two-phase + background
-> refresh) and the §5 channel-partner-links narrative for the design this evolves from.
+> **Status:** ✅ Complete. Phases 1–4 implemented (durable read-model + incremental sync worker + SQL-backed
+> indirect estate / seat-ranked top resellers + entitlement seat sync) plus the read-path polish
+> (server-side paged/sorted lists, *as-of* labels, Refresh-now). Only `DashboardSnapshots` trend
+> history is left as optional future work. Feature-flagged `GoogleChannel:UseReadModel`. See
+> [architecture.md](architecture.md) (dashboard two-phase + background refresh) and the §5
+> channel-partner-links narrative for the design this evolves from.
 
 ### Why (the problem at scale)
 
