@@ -181,6 +181,28 @@ public sealed class GChannelApiClient(
     public Task<CustomersResult?> ListChannelPartnerCustomersAsync(string linkId, CancellationToken cancellationToken = default) =>
         GetAsync<CustomersResult>(ApiRoutes.ChannelPartnerCustomers(linkId), cancellationToken);
 
+    // §10 read-model estate views: server-side paged/sorted/filtered queries against SQL.
+
+    /// <summary>Pages/sorts/filters customers from the read-model.</summary>
+    public Task<PagedEstateResult<EstateCustomer>?> ListEstateCustomersAsync(int page, int pageSize, string? sort, bool desc, string? search, string? linkId, CancellationToken cancellationToken = default) =>
+        GetAsync<PagedEstateResult<EstateCustomer>>(
+            $"{ApiRoutes.EstateCustomers}?page={page}&pageSize={pageSize}&sort={Uri.EscapeDataString(sort ?? "")}&desc={desc}&search={Uri.EscapeDataString(search ?? "")}&linkId={Uri.EscapeDataString(linkId ?? "")}",
+            cancellationToken);
+
+    /// <summary>Pages/sorts/filters resellers (channel-partner-links) from the read-model.</summary>
+    public Task<PagedEstateResult<EstateReseller>?> ListEstateResellersAsync(int page, int pageSize, string? sort, bool desc, string? search, string? state, CancellationToken cancellationToken = default) =>
+        GetAsync<PagedEstateResult<EstateReseller>>(
+            $"{ApiRoutes.EstateResellers}?page={page}&pageSize={pageSize}&sort={Uri.EscapeDataString(sort ?? "")}&desc={desc}&search={Uri.EscapeDataString(search ?? "")}&state={Uri.EscapeDataString(state ?? "")}",
+            cancellationToken);
+
+    /// <summary>Prioritises a reseller link to the front of the sync queue.</summary>
+    public Task ResyncLinkAsync(string linkId, CancellationToken cancellationToken = default) =>
+        SendAsync<object>(HttpMethod.Post, ApiRoutes.EstateResyncLink(linkId), EmptyBody, cancellationToken);
+
+    /// <summary>Prioritises a customer to the front of the sync queue.</summary>
+    public Task ResyncCustomerAsync(string customerId, CancellationToken cancellationToken = default) =>
+        SendAsync<object>(HttpMethod.Post, ApiRoutes.EstateResyncCustomer(customerId), EmptyBody, cancellationToken);
+
     /// <summary>Invites a downstream reseller by creating a channel partner link.</summary>
     public Task<ChannelPartnerLink?> CreateChannelPartnerLinkAsync(CreateChannelPartnerLinkRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<ChannelPartnerLink>(HttpMethod.Post, ApiRoutes.ChannelPartnerLinks, request, cancellationToken);

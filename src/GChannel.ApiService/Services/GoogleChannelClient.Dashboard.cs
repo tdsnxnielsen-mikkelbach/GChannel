@@ -102,7 +102,9 @@ public sealed partial class GoogleChannelClient
             // ACTIVE link — 40+ calls that cannot fit the on-demand time budget under the tight shared
             // ListCustomers quota. So only the (unbudgeted) background refresher computes it; the
             // on-demand path leaves it empty and the UI shows the last value warmed into the cache.
-            (indirectCustomers, topResellers) = applyTimeBudget
+            // When the §10 read-model is enabled the indirect estate comes from SQL (overlaid on the
+            // dashboard endpoint), so the live fan-out is skipped entirely to save the shared quota.
+            (indirectCustomers, topResellers) = applyTimeBudget || _options.UseReadModel
                 ? (0, [])
                 : await GetIndirectEstateAsync(service, customerListPacer, pacer, budgetToken);
         }

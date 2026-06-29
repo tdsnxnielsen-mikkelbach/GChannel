@@ -41,6 +41,44 @@ public sealed partial class GoogleChannelClient
         return new EntitlementsResult { Entitlements = entitlements };
     }
 
+    /// <summary>
+    /// §10 read-model sync helper: lists a customer's entitlements WITHOUT resolving catalog display
+    /// names (saves the products/offers/skus list calls — the read-model stores raw ids and the UI
+    /// resolves names from the cached catalog). Paced through the ListEntitlements bucket.
+    /// </summary>
+    public async Task<EntitlementsResult> ListEntitlementsForSyncAsync(
+        string customerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var pacer = _options.DashboardRequestsPerMinute > 0
+            ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _options.DashboardRequestsPerMinute))
+            : null;
+        var entitlements = new List<Entitlement>();
+        string? pageToken = null;
+        do
+        {
+            if (pacer is not null)
+            {
+                await pacer.WaitAsync(cancellationToken);
+            }
+
+            var request = service.Accounts.Customers.Entitlements.List(CustomerName(customerId));
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+            foreach (var entitlement in response.Entitlements ?? [])
+            {
+                entitlements.Add(MapEntitlement(entitlement));
+            }
+            pageToken = response.NextPageToken;
+        }
+        while (!string.IsNullOrEmpty(pageToken));
+
+        return new EntitlementsResult { Entitlements = entitlements };
+    }
+
     public async Task<Entitlement> GetEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(customerId);

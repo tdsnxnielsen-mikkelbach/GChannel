@@ -293,11 +293,11 @@ breaking-change risk:
   page (§7) polls `operations.get` and reflects pending/done/failed state, and entitlement actions
   surface the returned operation name for tracking.
 
-## 9. User onboarding (suggestions — not yet implemented)
+## 9. User onboarding (implemented)
 
-> **Not implemented.** Captured here as a design backlog item to make the console friendlier for
-> first-time users. See [UI.md](UI.md) for the current manual walkthrough this would automate. No code
-> exists for any of the below yet — these are proposed approaches to evaluate.
+> **Implemented.** All four phases are live (see the **Implementation phases** + status note below).
+> See [UI.md](UI.md) for the manual walkthrough the in-app tour automates. This section is kept as the
+> design rationale for the shipped onboarding experience.
 
 Goal: guide a brand-new reseller user from first sign-in to their first successful action (verify a
 domain → create a customer → purchase an entitlement) without reading docs.
@@ -354,25 +354,25 @@ domain → create a customer → purchase an entitlement) without reading docs.
 
 ### Implementation phases
 
-- [ ] **Phase 1 — Onboarding checklist + welcome (no JS, highest value)**
+- [x] **Phase 1 — Onboarding checklist + welcome (no JS, highest value)**
   - [x] `OnboardingState` model + per-user storage (browser `ProtectedLocalStorage` — chosen over a new
     EF table because the app uses `EnsureCreated` with no migrations; Redis/cross-device is a later
     upgrade).
   - [x] First-run **welcome** card (MudBlazor) with *Get started* / *Skip onboarding*.
   - [x] Dashboard **checklist** that ticks steps off from real signals (customer count, entitlements)
     plus manual steps (verify a domain, explore eventing), dismissable.
-- [ ] **Phase 2 — App-wide product tour (Driver.js via JS interop)**
+- [x] **Phase 2 — App-wide product tour (Driver.js via JS interop)**
   - [x] `wwwroot/js/onboarding.js` + `OnboardingTourService` C# wrapper.
   - [x] Ordered tour over the always-present nav drawer + app bar (spotlight coach marks + popover step
     cards), skippable/resumable, completion persisted; **Take the product tour** action in the app bar.
   - [x] Stable `data-onboarding` target hooks on nav groups + app-bar buttons.
-- [ ] **Phase 3 — Per-workflow guided walkthroughs / interactive tutorials**
+- [x] **Phase 3 — Per-workflow guided walkthroughs / interactive tutorials**
   - [x] Scoped popover step sequences on `/accounts/cloud-identity`, `/customers/new`, and the purchase
     flow, via a reusable `GuidedWalkthrough` component (auto-runs once per user + a **Show me how**
     relaunch button), reusing the phase 2 Driver.js interop.
   - [x] "Interactive" variant that gates **Next** on the real step completing (the new-customer
     walkthrough blocks until the organization name + domain are filled, via `WalkthroughStep.RequireValueOf`).
-- [ ] **Phase 4 — Ambient tooltips + feature beacons**
+- [x] **Phase 4 — Ambient tooltips + feature beacons**
   - [x] `MudTooltip` field/icon help (rebilling-basis info icon on the customer + partner repricing pages).
   - [x] Pulsing **beacons** (`FeatureBeacon`) on the new **Operations**/**Notifications** nav links that
     auto-dismiss per user once the feature is visited (or on click).
@@ -384,11 +384,11 @@ domain → create a customer → purchase an entitlement) without reading docs.
 
 ## 10. Persistent read-model (scale-out for a large distributor)
 
-> **Status:** proposed — not implemented. This is the plan for moving the dashboard/estate views off
-> *live-fan-out-per-request* onto a durable, incrementally-synced **read-model** so the app stays fast
-> and within Channel API quota as the estate grows from ~100s to 10,000s of customers and 100s of
-> resellers. See [architecture.md](architecture.md) (dashboard two-phase + background refresh) and
-> the §5 channel-partner-links narrative for the current design this evolves from.
+> **Status:** Phases 1–4 implemented (durable read-model + incremental sync worker + SQL-backed
+> indirect estate / seat-ranked top resellers + entitlement seat sync). Optional polish (server-side
+> paged lists, *as-of* labels, Refresh-now, DashboardSnapshots history) still open. Feature-flagged
+> `GoogleChannel:UseReadModel`. See [architecture.md](architecture.md) (dashboard two-phase + background
+> refresh) and the §5 channel-partner-links narrative for the design this evolves from.
 
 ### Why (the problem at scale)
 
@@ -467,26 +467,30 @@ product mix) become simple `GROUP BY` queries.
 
 ### Read-path changes
 
-- [ ] Dashboard `summary`/`overview` + the indirect estate + **Top indirect resellers** chart read from
-  SQL aggregates instead of the live fan-out; the fan-out moves entirely into the sync worker.
-- [ ] Customers and Channel-partner-links **list** pages can page/sort/filter server-side against SQL
+- [x] Dashboard `summary` + the indirect estate + **Top indirect resellers** chart read from SQL
+  aggregates instead of the live fan-out; the fan-out is skipped when `UseReadModel` is on.
+- [x] Customers and Channel-partner-links **list** pages can page/sort/filter server-side against SQL
   (removes the in-memory full-list load at scale).
-- [ ] Every estate view shows an *as-of* timestamp; a **Refresh now** action can prioritise a specific
+- [x] Every estate view shows an *as-of* timestamp; a **Refresh now** action can prioritise a specific
   link/customer into the front of the sync queue.
 
 ### Phases
 
-- [ ] **Phase 1 — Foundations.** Adopt EF Core **migrations**; add `ResellerLinks` + `CustomerRecords`
-  + `SyncCursors`; keep the current live/Redis path as the fallback (feature-flagged
-  `GoogleChannel:UseReadModel`).
-- [ ] **Phase 2 — Incremental sync worker.** Evolve `DashboardRefreshService` into a staleness-driven,
-  budgeted, round-robin syncer (reusing the Redis lock + `RequestPacer`); upsert links + customers;
-  reconcile deletions; record per-entity `LastSyncedUtc` + `SyncError`.
-- [ ] **Phase 3 — Read-model-backed dashboard + lists.** Point dashboard aggregates and the indirect
-  estate/graph at SQL; add server-side paging/sorting to the customers + links lists; surface *as-of*
-  timestamps and a **Refresh now** prioritisation action; write-through on mutations.
-- [ ] **Phase 4 — Entitlements + history (optional).** Add `EntitlementRecords` to the sync (product
-  mix / active-SKU totals from SQL) and `DashboardSnapshots` for growth/churn trend charts.
+- [x] **Phase 1 — Foundations.** Added `ResellerLinks` + `CustomerRecords` + `SyncCursors` (entities in
+  `GChannelDbContext`, created idempotently via raw SQL `IF OBJECT_ID(...) IS NULL CREATE TABLE` in
+  `Program.cs` since the app uses `EnsureCreated` not migrations); feature-flagged
+  `GoogleChannel:UseReadModel` (+ `ReadModelLinksPerCycle`).
+- [x] **Phase 2 — Incremental sync worker.** `ReadModelSyncService` (staleness-driven, budgeted,
+  round-robin; reuses the Redis single-flight lock + service-account client); upserts links + direct
+  + indirect customers; soft-deletes vanished rows; records per-entity `LastSyncedUtc` + `SyncError`.
+  No-op unless `ReadModelSyncEnabled`.
+- [x] **Phase 3 — Read-model-backed dashboard.** Dashboard `/summary` overlays the indirect estate
+  (`IndirectCustomerCount` + **Top indirect resellers** ranked by active seats) from SQL aggregates
+  (`OverlayReadModelAsync` over `CustomerRecords`+`ResellerLinks`) when `UseReadModel` is on; the live
+  per-reseller fan-out is then skipped to save quota. No-op (keeps live values) until rows are synced.
+- [x] **Phase 4 — Entitlements + seats.** `EntitlementRecords` (id/customer/owningLink/product/sku/offer/
+  state/seats/trial) synced per customer in the worker; active seats denormalised onto
+  `CustomerRecords.SeatCount` for fast reseller seat ranking. (`DashboardSnapshots` history still optional.)
 
 ### Risks &amp; caveats
 
@@ -505,4 +509,79 @@ product mix) become simple `GROUP BY` queries.
 Feature-flagged (`UseReadModel`): if disabled, the app falls back to today's live-fan-out + Redis path
 unchanged. The read-model tables are additive and can be dropped without affecting existing
 functionality.
+
+## 11. Pricing &amp; billing information (offer pricing, computed cost &amp; margin)
+
+> **Status:** proposed — not implemented. This captures what pricing the Cloud Channel `v1` API
+> actually exposes, what it does **not**, and a phased plan to surface per-offer / per-entitlement
+> pricing and a computed end-customer price + reseller margin. The console
+> (`console.cloud.google.com`) shows the same data the API returns plus Google's own invoice exports
+> (the latter are **not** part of the Channel API — see caveats). Builds on §1 Catalog (offers),
+> §3 Entitlements, and §6 Repricing.
+
+### What the API can and cannot give us
+
+**Available via the Channel API (`v1`):**
+
+- **Offer wholesale pricing.** Each [`Offer`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/Offer)
+  carries `priceByResources[]` (`PriceByResource`): a `resourceType` (`SEAT`, `MAU`, `GB`,
+  `LICENSED_USER`, `MINUTES`, `IAAS_USAGE`, `SUBSCRIPTION`), a `price` (`Price`) and/or time-ranged
+  `pricePhases[]`. `Price` = `basePrice` + `discount` (decimal, 0.2 = 20%) + `effectivePrice` (both
+  `Money` = `currencyCode`/`units`/`nanos`) + optional `priceTiers[]` (per-seat tier banding) and
+  `discountComponents[]` (incl. `RESELLER_MARGIN`). The `Plan` adds `paymentPlan`/`paymentType`
+  (PREPAY/POSTPAY) + `paymentCycle`. This is the **reseller's cost from Google**.
+- **Purchasable pricing in context.** `accounts.customers.listPurchasableOffers` /
+  `listPurchasableSkus` return offers with the same price structure plus a `priceReferenceId`, which a
+  purchase request can echo to lock the quoted price.
+- **The markup we apply.** §6 `RepricingConfig` (already implemented) is the percentage adjustment +
+  rebilling basis that turns wholesale cost into the end-customer/reseller price — the second half of a
+  "cost → price → margin" view.
+- **Seats.** `num_units` per active entitlement (already aggregated for the dashboard).
+
+**NOT available via the Channel API:**
+
+- **Actual invoiced amounts.** There is no invoice/billing-actuals endpoint. The deprecated
+  `accounts.reports.*` are gone in `v1`; `queryEligibleBillingAccounts` returns *which* billing account
+  is eligible, not money. Real monthly invoice/usage totals live in **Cloud Billing / partner billing
+  exports (BigQuery)** — a separate API/dataset, out of scope here.
+- So this feature surfaces **list/wholesale price + computed price + estimated margin**, clearly
+  labelled as estimates, *not* billed figures.
+
+### Goal
+
+Surface, per offer and per entitlement: the **wholesale cost** (offer `effectivePrice` × seats), the
+**computed end-customer price** (wholesale + repricing % adjustment), and the **estimated margin**, with
+correct currency, payment cycle and tiered pricing — plus an optional estate-wide MRR/cost rollup on the
+dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
+
+### Proposed contract additions (`GChannel.Shared/Contracts`)
+
+- `MoneyAmount { CurrencyCode, Units (long), Nanos (int), Display }` — map of `GoogleTypeMoney`.
+- `OfferPrice { ResourceType, BasePrice, EffectivePrice, DiscountPercent, PricePeriod, Tiers[] }` and
+  `OfferPriceTier { FirstResource, LastResource, EffectivePrice }`.
+- Extend `CatalogOffer` (§1) with `IReadOnlyList<OfferPrice> Pricing` + `PaymentPlan`/`PaymentCycle`.
+- `EntitlementPricing { OfferEffectivePrice, Seats, WholesaleTotal, RepricingPercent, ComputedPrice, EstimatedMargin, Currency }`.
+
+### Phases
+
+- [ ] **Phase 1 — Map offer pricing (read-only).** Extend offer mapping to read `priceByResources` /
+  `pricePhases` / `priceTiers` into `OfferPrice`; show price on the **Offers** page (§1) and the
+  **Purchase entitlement** flow (price-per-seat, currency, cycle). One `Money` → decimal helper
+  (`units + nanos/1e9`).
+- [ ] **Phase 2 — Per-entitlement cost.** On entitlement detail/list, resolve the entitlement's offer
+  price × `num_units` = wholesale total; overlay §6 `RepricingConfig` to compute end-customer price +
+  margin. Cache offer pricing (a single `offers.list`, reuse the catalog lookup).
+- [ ] **Phase 3 — Estate rollups (optional).** Estimated monthly wholesale cost + repriced revenue +
+  margin on the dashboard (background-computed alongside seats), with an *estimated, not invoiced*
+  disclaimer; per-reseller cost/margin extends the §10 read-model.
+- [ ] **Phase 4 — Billing export (optional, out of Channel API).** Document/integrate BigQuery partner
+  billing export for *actual* invoiced figures; clearly separated from API list pricing.
+
+### Risks &amp; caveats
+
+- **Estimates, not invoices** — must be labelled everywhere; promo/tier/contract terms can diverge from
+  list price. **Currency** comes from each `Money`; never assume one currency. **Tiered/phased** pricing
+  needs the right tier/phase picked by seat count and elapsed months. **Repricing** is %-only here (the
+  conditional-override breakdown is deferred). Pricing adds catalog quota but reuses existing cached
+  `offers.list` — no per-entitlement price calls.
 

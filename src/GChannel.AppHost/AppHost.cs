@@ -71,6 +71,12 @@ var googleChannelServiceAccountKeyParam = builder.AddParameter("GoogleChannelSer
 var googleChannelDashboardRequestsPerMinute = builder.AddParameter("GoogleChannelDashboardRequestsPerMinute");
 var googleChannelDashboardCustomerListRequestsPerMinute = builder.AddParameter("GoogleChannelDashboardCustomerListRequestsPerMinute");
 
+// Optional §10 persistent read-model: when enabled (and the background service-account credential is
+// set), a worker incrementally materialises the estate into SQL so the dashboard reads durable, indexed
+// aggregates instead of a live per-reseller fan-out. LinksPerCycle is the per-cycle quota budget.
+var googleChannelUseReadModel = builder.AddParameter("GoogleChannelUseReadModel");
+var googleChannelReadModelLinksPerCycle = builder.AddParameter("GoogleChannelReadModelLinksPerCycle");
+
 // Optional Pub/Sub notification subscriber (§7). Point these at the subscription you created in your
 // own Google Cloud project against the Channel topic; leave blank to keep the subscriber disabled.
 // Authentication prefers Workload Identity Federation (key-less, recommended) and falls back to the
@@ -90,6 +96,8 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithEnvironment("GoogleChannel__BackgroundRefreshSeconds", googleChannelBackgroundRefreshSeconds)
     .WithEnvironment("GoogleChannel__DashboardRequestsPerMinute", googleChannelDashboardRequestsPerMinute)
     .WithEnvironment("GoogleChannel__DashboardCustomerListRequestsPerMinute", googleChannelDashboardCustomerListRequestsPerMinute)
+    .WithEnvironment("GoogleChannel__UseReadModel", googleChannelUseReadModel)
+    .WithEnvironment("GoogleChannel__ReadModelLinksPerCycle", googleChannelReadModelLinksPerCycle)
     .WithEnvironment("GoogleChannel__PubSubProjectId", googleChannelPubSubProjectId)
     .WithEnvironment("GoogleChannel__PubSubSubscriptionId", googleChannelPubSubSubscriptionId)
     .WithEnvironment("GoogleChannel__WorkloadIdentityCredentialJson", googleChannelWorkloadIdentityCredentialJson)

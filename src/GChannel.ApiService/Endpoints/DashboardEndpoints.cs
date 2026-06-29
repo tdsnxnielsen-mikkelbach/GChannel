@@ -1,7 +1,9 @@
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
+using GChannel.ApiService.Data;
 using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 
@@ -40,12 +42,14 @@ public static class DashboardEndpoints
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
                 IOptions<GoogleChannelOptions> options,
+                GChannelDbContext db,
                 CancellationToken cancellationToken) =>
             {
                 try
                 {
                     return await CachedAsync(cache, CacheKey, options.Value.CacheSeconds,
-                        () => channel.GetDashboardSummaryAsync(cancellationToken), cancellationToken);
+                        () => channel.GetDashboardSummaryAsync(cancellationToken), cancellationToken,
+                        options.Value.UseReadModel ? s => OverlayReadModelAsync(s, db, cancellationToken) : null);
                 }
                 catch (OperationCanceledException)
                 {
@@ -109,14 +113,17 @@ public static class DashboardEndpoints
         string cacheKey,
         int cacheSeconds,
         Func<Task<T>> factory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<T, Task<T>>? overlay = null)
     {
         var staleKey = StaleKey(cacheKey);
 
         var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
         if (cached is not null)
         {
-            return Results.Ok(JsonSerializer.Deserialize<T>(cached));
+            var hit = JsonSerializer.Deserialize<T>(cached);
+            if (hit is not null && overlay is not null) { hit = await overlay(hit); }
+            return Results.Ok(hit);
         }
 
         T result;
@@ -131,7 +138,9 @@ public static class DashboardEndpoints
             var stale = await cache.GetStringAsync(staleKey, cancellationToken);
             if (stale is not null)
             {
-                return Results.Ok(JsonSerializer.Deserialize<T>(stale));
+                var staleHit = JsonSerializer.Deserialize<T>(stale);
+                if (staleHit is not null && overlay is not null) { staleHit = await overlay(staleHit); }
+                return Results.Ok(staleHit);
             }
 
             throw;
@@ -154,6 +163,47 @@ public static class DashboardEndpoints
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = StaleTtl },
             cancellationToken);
 
+        if (overlay is not null) { result = await overlay(result); }
         return Results.Ok(result);
+    }
+
+    /// <summary>
+    /// §10 read path: replaces the indirect estate (count + top resellers ranked by active seats) on a
+    /// summary with values aggregated from the SQL read-model, so the dashboard reflects the durably
+    /// synced estate instead of waiting for the live per-reseller fan-out. No-op if no rows synced yet.
+    /// </summary>
+    private static async Task<DashboardSummary> OverlayReadModelAsync(
+        DashboardSummary summary, GChannelDbContext db, CancellationToken cancellationToken)
+    {
+        var indirectCount = await db.CustomerRecords
+            .CountAsync(c => !c.IsDeleted && c.OwningLinkId != null, cancellationToken);
+        if (indirectCount == 0)
+        {
+            return summary; // Nothing synced yet — keep the live values.
+        }
+
+        var resellers = await db.CustomerRecords
+            .Where(c => !c.IsDeleted && c.OwningLinkId != null)
+            .GroupBy(c => c.OwningLinkId!)
+            .Select(g => new { LinkId = g.Key, Customers = g.Count(), Seats = g.Sum(c => c.SeatCount) })
+            .Join(db.ResellerLinks, g => g.LinkId, l => l.LinkId,
+                (g, l) => new { l.PrimaryDomain, l.ResellerCloudId, g.LinkId, g.Customers, g.Seats })
+            .OrderByDescending(x => x.Seats)
+            .ThenByDescending(x => x.Customers)
+            .Take(15)
+            .ToListAsync(cancellationToken);
+
+        return summary with
+        {
+            IndirectCustomerCount = indirectCount,
+            TopIndirectResellers = resellers
+                .Select(r => new DashboardResellerCustomers
+                {
+                    Reseller = r.PrimaryDomain ?? r.ResellerCloudId ?? r.LinkId,
+                    CustomerCount = r.Customers,
+                    SeatCount = r.Seats
+                })
+                .ToList()
+        };
     }
 }

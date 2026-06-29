@@ -1,0 +1,22 @@
+@namespace GChannel.Web.Components
+@* Shows how fresh synced read-model data is. Bound to the page's "as-of" timestamp. *@
+<MudTooltip Text="@(AsOf is null ? "No synced data yet" : $"Synced {AsOf:yyyy-MM-dd HH:mm:ss} UTC")">
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+             Icon="@Icons.Material.Filled.Schedule">
+        As of @(AsOf is null ? "—" : $"{Relative(AsOf.Value)} ago")
+    </MudChip>
+</MudTooltip>
+
+@code {
+    [Parameter] public DateTimeOffset? AsOf { get; set; }
+
+    private static string Relative(DateTimeOffset utc)
+    {
+        var span = DateTimeOffset.UtcNow - utc;
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
+        if (span.TotalMinutes < 1) return $"{(int)span.TotalSeconds}s";
+        if (span.TotalHours < 1) return $"{(int)span.TotalMinutes}m";
+        if (span.TotalDays < 1) return $"{(int)span.TotalHours}h";
+        return $"{(int)span.TotalDays}d";
+    }
+}

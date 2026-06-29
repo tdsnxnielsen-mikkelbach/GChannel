@@ -124,6 +124,21 @@ public static class ApiRoutes
     /// <summary>Lists the customers owned by a channel partner link.</summary>
     public static string ChannelPartnerCustomers(string linkId) => $"/api/channel-partner-links/{linkId}/customers";
 
+    // §10 read-model estate views: server-side paged/sorted/filtered queries against SQL, plus a
+    // "refresh now" action that prioritises a link/customer to the front of the sync queue.
+
+    /// <summary>Paged/sorted/filtered customers from the read-model.</summary>
+    public const string EstateCustomers = "/api/estate/customers";
+
+    /// <summary>Paged/sorted/filtered resellers (channel-partner-links) from the read-model.</summary>
+    public const string EstateResellers = "/api/estate/resellers";
+
+    /// <summary>Prioritise a reseller link to the front of the sync queue.</summary>
+    public static string EstateResyncLink(string linkId) => $"/api/estate/resellers/{linkId}/resync";
+
+    /// <summary>Prioritise a customer to the front of the sync queue.</summary>
+    public static string EstateResyncCustomer(string customerId) => $"/api/estate/customers/{customerId}/resync";
+
     // Repricing / rebilling margin (§6). Configs hang off a customer (the reseller's margin on that
     // customer's bill) or a channel partner link (a distributor's margin on a downstream reseller's
     // bill). They return the config resource directly (not long-running operations).

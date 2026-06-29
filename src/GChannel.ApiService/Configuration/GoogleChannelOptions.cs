@@ -112,6 +112,20 @@ public sealed class GoogleChannelOptions
     public int BackgroundRefreshSeconds { get; set; }
 
     /// <summary>
+    /// §10 read-model. When true, the background worker incrementally syncs the estate into SQL
+    /// (resellers + customers) and the dashboard reads from those durable tables instead of the live
+    /// fan-out. When false (default), the app uses the existing live/Redis path unchanged. Requires
+    /// a service-account credential + impersonation user (same as the background refresh).
+    /// </summary>
+    public bool UseReadModel { get; set; }
+
+    /// <summary>
+    /// §10 read-model. Maximum number of channel partner links to refresh per sync cycle, sized to
+    /// the ListCustomers quota budget so each cycle stays within quota regardless of estate size.
+    /// </summary>
+    public int ReadModelLinksPerCycle { get; set; } = 18;
+
+    /// <summary>
     /// The Google Cloud project id that hosts the Pub/Sub subscription for Channel notifications.
     /// This is your own project, where you create a subscription against the Google-owned topic
     /// returned by <c>accounts.register</c>. Required to run the notification subscriber.
@@ -138,6 +152,10 @@ public sealed class GoogleChannelOptions
     /// <summary>True when the periodic background dashboard refresh should run.</summary>
     public bool BackgroundRefreshEnabled =>
         BackgroundRefreshSeconds > 0 && HasServiceAccountCredential && !string.IsNullOrWhiteSpace(ImpersonateUser);
+
+    /// <summary>True when the §10 read-model sync should run (needs the service-account + impersonation path).</summary>
+    public bool ReadModelSyncEnabled =>
+        UseReadModel && BackgroundRefreshSeconds > 0 && HasServiceAccountCredential && !string.IsNullOrWhiteSpace(ImpersonateUser);
 
     /// <summary>
     /// True when the background Pub/Sub notification subscriber should run: a project + subscription

@@ -14,90 +14,97 @@
     </MudButton>
 </div>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
-    Downstream resellers (channel partners) linked to your distributor account. Open a link to view
-    its details and the customers it owns.
+<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+    Downstream resellers (channel partners) linked to your distributor account. Paging, sorting and
+    search run server-side against the synced read-model. Open a link to view its details and customers.
 </MudText>
 
-@if (_loading)
-{
-    <LoadingPanel Title="Loading channel partner links…"
-                  Hint="Fetching the resellers linked to your account." />
-}
-else if (_links is { Count: > 0 })
-{
-    <MudTable Items="_links" Hover="true" Elevation="2" Dense="false">
-        <HeaderContent>
-            <MudTh>Reseller Cloud Identity</MudTh>
-            <MudTh>Public id</MudTh>
-            <MudTh>
-                <MudTableSortLabel SortBy="new Func<ChannelPartnerLink, object>(x => x.LinkState ?? string.Empty)">
-                    State
-                </MudTableSortLabel>
-            </MudTh>
-            <MudTh>
-                <MudTableSortLabel SortBy="new Func<ChannelPartnerLink, object>(x => x.CreateTime ?? DateTimeOffset.MinValue)">
-                    Created
-                </MudTableSortLabel>
-            </MudTh>
-            <MudTh Style="text-align:right">Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Reseller Cloud Identity">@(context.ChannelPartner?.PrimaryDomain ?? context.ResellerCloudIdentityId ?? context.Id)</MudTd>
-            <MudTd DataLabel="Public id">@(context.PublicId ?? "—")</MudTd>
-            <MudTd DataLabel="State">
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.LinkState)">
-                    @(context.LinkState ?? "—")
-                </MudChip>
-            </MudTd>
-            <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-            <MudTd DataLabel="Actions" Style="text-align:right">
-                <MudTooltip Text="View">
-                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                                   Href="@($"/channel-partner-links/{context.Id}")" />
+<div class="d-flex justify-space-between align-center mb-2">
+    <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
+                  OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search domain, cloud id, link id…"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:360px" />
+    <AsOfBadge AsOf="_asOf" />
+</div>
+
+<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="false" RowsPerPage="25">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="domain" T="EstateReseller">Reseller Cloud Identity</MudTableSortLabel></MudTh>
+        <MudTh>Customers</MudTh>
+        <MudTh><MudTableSortLabel SortLabel="state" T="EstateReseller">State</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="created" T="EstateReseller">Created</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right">Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Reseller Cloud Identity">@(context.PrimaryDomain ?? context.ResellerCloudId ?? context.LinkId)</MudTd>
+        <MudTd DataLabel="Customers">@context.CustomerCount</MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.LinkState)">
+                @(string.IsNullOrEmpty(context.LinkState) ? "—" : context.LinkState)
+            </MudChip>
+            @if (!string.IsNullOrEmpty(context.SyncError))
+            {
+                <MudTooltip Text="@context.SyncError">
+                    <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
                 </MudTooltip>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
-}
-else
-{
-    <MudAlert Severity="Severity.Info">
-        No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.
-    </MudAlert>
-}
+            }
+        </MudTd>
+        <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+        <MudTd DataLabel="Actions" Style="text-align:right">
+            <MudTooltip Text="Refresh now">
+                <MudIconButton Icon="@Icons.Material.Filled.Sync" Size="Size.Small"
+                               OnClick="@(() => ResyncAsync(context))" />
+            </MudTooltip>
+            <MudTooltip Text="View">
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                               Href="@($"/channel-partner-links/{context.LinkId}")" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudAlert Severity="Severity.Info">No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.</MudAlert>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" />
+    </PagerContent>
+</MudTable>
 
 @code {
-    private IReadOnlyList<ChannelPartnerLink>? _links;
-    private bool _loading = true;
+    private MudTable<EstateReseller>? _table;
+    private string? _search;
+    private DateTimeOffset? _asOf;
 
-    // Load after the first interactive render rather than in OnInitializedAsync, so the API call
-    // runs once on the live circuit instead of being issued (and canceled) during prerendering.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private async Task<TableData<EstateReseller>> LoadServerData(TableState state, CancellationToken token)
     {
-        if (firstRender)
-        {
-            await LoadAsync();
-            StateHasChanged();
-        }
-    }
-
-    private async Task LoadAsync()
-    {
-        _loading = true;
         try
         {
-            var result = await Api.ListChannelPartnerLinksAsync();
-            _links = result?.Links ?? [];
+            var result = await Api.ListEstateResellersAsync(
+                state.Page, state.PageSize, state.SortLabel,
+                state.SortDirection == SortDirection.Descending,
+                _search, state: null, token);
+
+            _asOf = result?.AsOf;
+            return new TableData<EstateReseller> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to load channel partner links: {ex.Message}", Severity.Error);
-            _links = [];
+            return new TableData<EstateReseller> { Items = [], TotalItems = 0 };
         }
-        finally
+    }
+
+    private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
+
+    private async Task ResyncAsync(EstateReseller link)
+    {
+        try
         {
-            _loading = false;
+            await Api.ResyncLinkAsync(link.LinkId);
+            Snackbar.Add("Queued for refresh — data updates on the next sync cycle.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to queue refresh: {ex.Message}", Severity.Error);
         }
     }
 

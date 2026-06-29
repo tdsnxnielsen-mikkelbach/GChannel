@@ -3,6 +3,7 @@ using GChannel.ApiService.Data;
 using GChannel.ApiService.Endpoints;
 using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
@@ -43,6 +44,10 @@ builder.Services.AddHostedService<DashboardRefreshService>();
 // GoogleChannel PubSubProjectId + PubSubSubscriptionId + a service-account key are configured).
 builder.Services.AddHostedService<ChannelNotificationsService>();
 
+// Incrementally materialises the estate (links + customers) into SQL for scale-out dashboards
+// (no-op unless GoogleChannel UseReadModel + service-account + impersonation user are configured).
+builder.Services.AddHostedService<ReadModelSyncService>();
+
 var app = builder.Build();
 
 app.UseExceptionHandler();
@@ -70,6 +75,7 @@ app.MapRepricingEndpoints();
 app.MapOperationsEndpoints();
 app.MapNotificationsEndpoints();
 app.MapDashboardEndpoints();
+app.MapEstateEndpoints();
 
 app.Run();
 
@@ -80,11 +86,80 @@ static async Task EnsureDatabaseAsync(WebApplication app)
     try
     {
         await db.Database.EnsureCreatedAsync();
+        // EnsureCreated only builds the whole schema on a fresh database, so additively create the
+        // §10 read-model tables if they're missing on a database that already existed (which holds
+        // only the IdentityCheckLogs audit table). Idempotent: each statement guards on OBJECT_ID.
+        await EnsureReadModelTablesAsync(db);
     }
     catch (Exception ex)
     {
         app.Logger.LogWarning(ex, "Database initialization was skipped (the server may be paused or unreachable).");
     }
+}
+
+// Additive, idempotent creation of the §10 read-model tables for databases created before they
+// existed. Avoids EF migrations (the app uses EnsureCreated): each CREATE is guarded by OBJECT_ID.
+static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
+{
+    const string sql = """
+        IF OBJECT_ID('ResellerLinks', 'U') IS NULL
+        CREATE TABLE ResellerLinks (
+            LinkId nvarchar(128) NOT NULL PRIMARY KEY,
+            ResellerCloudId nvarchar(128) NULL,
+            PrimaryDomain nvarchar(255) NULL,
+            LinkState nvarchar(32) NOT NULL,
+            CustomerCount int NOT NULL,
+            CreateTime datetimeoffset NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            SyncError nvarchar(512) NULL
+        );
+        IF OBJECT_ID('CustomerRecords', 'U') IS NULL
+        CREATE TABLE CustomerRecords (
+            CustomerId nvarchar(128) NOT NULL PRIMARY KEY,
+            OrgName nvarchar(512) NULL,
+            Domain nvarchar(255) NULL,
+            CloudIdentityId nvarchar(128) NULL,
+            OwningLinkId nvarchar(128) NULL,
+            CreateTime datetimeoffset NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            SeatCount bigint NOT NULL CONSTRAINT DF_CustomerRecords_SeatCount DEFAULT 0,
+            IsDeleted bit NOT NULL
+        );
+        IF OBJECT_ID('SyncCursors', 'U') IS NULL
+        CREATE TABLE SyncCursors (
+            Scope nvarchar(64) NOT NULL PRIMARY KEY,
+            LastFullPassUtc datetimeoffset NULL,
+            LastCycleUtc datetimeoffset NULL,
+            Notes nvarchar(512) NULL
+        );
+        IF OBJECT_ID('EntitlementRecords', 'U') IS NULL
+        CREATE TABLE EntitlementRecords (
+            EntitlementId nvarchar(128) NOT NULL PRIMARY KEY,
+            CustomerId nvarchar(128) NOT NULL,
+            OwningLinkId nvarchar(128) NULL,
+            ProductId nvarchar(128) NULL,
+            SkuId nvarchar(128) NULL,
+            OfferId nvarchar(128) NULL,
+            State nvarchar(32) NOT NULL,
+            Seats bigint NOT NULL,
+            IsTrial bit NOT NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            IsDeleted bit NOT NULL
+        );
+        IF COL_LENGTH('CustomerRecords','SeatCount') IS NULL
+        ALTER TABLE CustomerRecords ADD SeatCount bigint NOT NULL CONSTRAINT DF_CustomerRecords_SeatCount DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_OwningLinkId')
+        CREATE INDEX IX_CustomerRecords_OwningLinkId ON CustomerRecords(OwningLinkId);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_IsDeleted')
+        CREATE INDEX IX_CustomerRecords_IsDeleted ON CustomerRecords(IsDeleted);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_ResellerLinks_LastSyncedUtc')
+        CREATE INDEX IX_ResellerLinks_LastSyncedUtc ON ResellerLinks(LastSyncedUtc);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_EntitlementRecords_OwningLinkId')
+        CREATE INDEX IX_EntitlementRecords_OwningLinkId ON EntitlementRecords(OwningLinkId);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_EntitlementRecords_ProductId')
+        CREATE INDEX IX_EntitlementRecords_ProductId ON EntitlementRecords(ProductId);
+        """;
+    await db.Database.ExecuteSqlRawAsync(sql);
 }
 
 // Development-only convenience: seed the notification feed with a couple of sample Channel events when

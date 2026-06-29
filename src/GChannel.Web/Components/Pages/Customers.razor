@@ -16,122 +16,125 @@
     </MudButton>
 </div>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
-    Customers linked to your reseller account. Open a customer to view details and the catalog they
-    are eligible to purchase.
+<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+    Customers linked to your reseller account. Paging, sorting and search run server-side against the
+    synced read-model. Open a customer to view details and the catalog they are eligible to purchase.
 </MudText>
 
-@if (_loading)
-{
-    <LoadingPanel Title="Loading customers…"
-                  Hint="Fetching the customers linked to your reseller account." />
-}
-else if (_customers is { Count: > 0 })
-{
-    <MudTable Items="_customers" Hover="true" Elevation="2" Dense="false">
-        <HeaderContent>
-            <MudTh>Organization</MudTh>
-            <MudTh>Domain</MudTh>
-            <MudTh>
-                <MudTableSortLabel SortBy="new Func<Customer, object>(x => string.IsNullOrEmpty(x.CloudIdentityId) ? 1 : 0)">
-                    Cloud Identity
-                </MudTableSortLabel>
-            </MudTh>
-            <MudTh>
-                <MudTableSortLabel SortBy="new Func<Customer, object>(x => x.CreateTime ?? DateTimeOffset.MinValue)">
-                    Created
-                </MudTableSortLabel>
-            </MudTh>
-            <MudTh Style="text-align:right">Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Organization">@(context.OrgDisplayName ?? context.Id)</MudTd>
-            <MudTd DataLabel="Domain">@context.Domain</MudTd>
-            <MudTd DataLabel="Cloud Identity">
-                @if (!string.IsNullOrEmpty(context.CloudIdentityId))
-                {
-                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Linked</MudChip>
-                }
-                else
-                {
-                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">Not linked</MudChip>
-                }
-                @if (!string.IsNullOrEmpty(context.Domain))
-                {
-                    <MudTooltip Text="Check Cloud Identity for this domain">
-                        <MudIconButton Icon="@Icons.Material.Filled.VerifiedUser" Size="Size.Small" Color="Color.Primary"
-                                       Href="@($"/accounts/cloud-identity?domain={Uri.EscapeDataString(context.Domain)}")" />
-                    </MudTooltip>
-                }
-            </MudTd>
-            <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-            <MudTd DataLabel="Actions" Style="text-align:right">
-                <MudTooltip Text="View">
-                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                                   Href="@($"/customers/{context.Id}")" />
+<div class="d-flex justify-space-between align-center mb-2">
+    <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
+                  OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search org, domain, id…"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                  Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:360px" />
+    <AsOfBadge AsOf="_asOf" />
+</div>
+
+<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="false" RowsPerPage="25">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="org" T="EstateCustomer">Organization</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="domain" T="EstateCustomer">Domain</MudTableSortLabel></MudTh>
+        <MudTh>Cloud Identity</MudTh>
+        <MudTh><MudTableSortLabel SortLabel="seats" T="EstateCustomer">Seats</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="created" T="EstateCustomer">Created</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right">Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Organization">@(context.OrgName ?? context.CustomerId)</MudTd>
+        <MudTd DataLabel="Domain">@context.Domain</MudTd>
+        <MudTd DataLabel="Cloud Identity">
+            @if (!string.IsNullOrEmpty(context.CloudIdentityId))
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Linked</MudChip>
+            }
+            else
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">Not linked</MudChip>
+            }
+            @if (!string.IsNullOrEmpty(context.Domain))
+            {
+                <MudTooltip Text="Check Cloud Identity for this domain">
+                    <MudIconButton Icon="@Icons.Material.Filled.VerifiedUser" Size="Size.Small" Color="Color.Primary"
+                                   Href="@($"/accounts/cloud-identity?domain={Uri.EscapeDataString(context.Domain)}")" />
                 </MudTooltip>
-                <MudTooltip Text="Entitlements">
-                    <MudIconButton Icon="@Icons.Material.Filled.Subscriptions" Size="Size.Small"
-                                   Href="@($"/customers/{context.Id}/entitlements")" />
-                </MudTooltip>
-                <MudTooltip Text="Edit">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                   Href="@($"/customers/edit/{context.Id}")" />
-                </MudTooltip>
-                <MudTooltip Text="Delete">
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
-                                   OnClick="@(() => DeleteAsync(context))" />
-                </MudTooltip>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
-}
-else
-{
-    <MudAlert Severity="Severity.Info">
-        No customers yet. Use <strong>New customer</strong> to create one.
-    </MudAlert>
-}
+            }
+        </MudTd>
+        <MudTd DataLabel="Seats">@context.SeatCount</MudTd>
+        <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+        <MudTd DataLabel="Actions" Style="text-align:right">
+            <MudTooltip Text="Refresh now">
+                <MudIconButton Icon="@Icons.Material.Filled.Sync" Size="Size.Small"
+                               OnClick="@(() => ResyncAsync(context))" />
+            </MudTooltip>
+            <MudTooltip Text="View">
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                               Href="@($"/customers/{context.CustomerId}")" />
+            </MudTooltip>
+            <MudTooltip Text="Entitlements">
+                <MudIconButton Icon="@Icons.Material.Filled.Subscriptions" Size="Size.Small"
+                               Href="@($"/customers/{context.CustomerId}/entitlements")" />
+            </MudTooltip>
+            <MudTooltip Text="Edit">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               Href="@($"/customers/edit/{context.CustomerId}")" />
+            </MudTooltip>
+            <MudTooltip Text="Delete">
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => DeleteAsync(context))" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudAlert Severity="Severity.Info">No customers yet. Use <strong>New customer</strong> to create one.</MudAlert>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" />
+    </PagerContent>
+</MudTable>
 
 @code {
-    private IReadOnlyList<Customer>? _customers;
-    private bool _loading = true;
+    private MudTable<EstateCustomer>? _table;
+    private string? _search;
+    private DateTimeOffset? _asOf;
 
-    // Load after the first interactive render rather than in OnInitializedAsync, so the API call
-    // runs once on the live circuit instead of being issued (and canceled) during prerendering.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private async Task<TableData<EstateCustomer>> LoadServerData(TableState state, CancellationToken token)
     {
-        if (firstRender)
-        {
-            await LoadAsync();
-            StateHasChanged();
-        }
-    }
-
-    private async Task LoadAsync()
-    {
-        _loading = true;
         try
         {
-            var result = await Api.ListCustomersAsync();
-            _customers = result?.Customers ?? [];
+            var result = await Api.ListEstateCustomersAsync(
+                state.Page, state.PageSize, state.SortLabel,
+                state.SortDirection == SortDirection.Descending,
+                _search, linkId: "direct", token);
+
+            _asOf = result?.AsOf;
+            return new TableData<EstateCustomer> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to load customers: {ex.Message}", Severity.Error);
-            _customers = [];
-        }
-        finally
-        {
-            _loading = false;
+            return new TableData<EstateCustomer> { Items = [], TotalItems = 0 };
         }
     }
 
-    private async Task DeleteAsync(Customer customer)
+    private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
+
+    private async Task ResyncAsync(EstateCustomer customer)
+    {
+        try
+        {
+            await Api.ResyncCustomerAsync(customer.CustomerId);
+            Snackbar.Add("Queued for refresh — data updates on the next sync cycle.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to queue refresh: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAsync(EstateCustomer customer)
     {
         var confirmed = await DialogService.ShowMessageBoxAsync(
             "Delete customer",
-            $"Delete '{customer.OrgDisplayName ?? customer.Id}'? This cannot be undone.",
+            $"Delete '{customer.OrgName ?? customer.CustomerId}'? This cannot be undone.",
             yesText: "Delete",
             cancelText: "Cancel");
 
@@ -142,9 +145,9 @@ else
 
         try
         {
-            await Api.DeleteCustomerAsync(customer.Id);
+            await Api.DeleteCustomerAsync(customer.CustomerId);
             Snackbar.Add("Customer deleted.", Severity.Success);
-            await LoadAsync();
+            if (_table is not null) await _table.ReloadServerData();
         }
         catch (Exception ex)
         {
