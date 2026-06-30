@@ -185,7 +185,8 @@ public sealed class ReadModelSyncService(
                         if (link is not null)
                         {
                             link.LastSyncedUtc = DateTimeOffset.UtcNow;
-                            link.SyncError = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
+                            var detail = Flatten(ex);
+                            link.SyncError = detail.Length > 500 ? detail[..500] : detail;
                             await db.SaveChangesAsync(ct);
                         }
                     });
@@ -283,6 +284,21 @@ public sealed class ReadModelSyncService(
         return await work(db);
     }
 
+    // Flattens an exception chain into a single string so a recorded SyncError shows the actual cause
+    // (e.g. the SQL duplicate-key detail) instead of EF's opaque outer "See the inner exception" wrapper.
+    private static string Flatten(Exception ex)
+    {
+        var parts = new List<string>();
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            if (!parts.Contains(e.Message))
+            {
+                parts.Add(e.Message);
+            }
+        }
+        return string.Join(" -> ", parts);
+    }
+
     private static async Task UpsertLinksAsync(
         GChannelDbContext db, IReadOnlyList<ChannelPartnerLink> links, DateTimeOffset now, CancellationToken ct)
     {
@@ -317,6 +333,21 @@ public sealed class ReadModelSyncService(
             .Where(r => r.OwningLinkId == owningLinkId)
             .ToListAsync(ct);
         var byId = stored.ToDictionary(r => r.CustomerId, StringComparer.OrdinalIgnoreCase);
+
+        // CustomerId is the primary key, but a customer can move between owners — a reseller transfer,
+        // or a customer that turns up under a different link than before (or direct ↔ indirect). Such a
+        // row already exists under a DIFFERENT OwningLinkId and is NOT in the owner-scoped query above,
+        // so a naive Add() would insert a duplicate PK and throw a DbUpdateException that fails the whole
+        // link fan-out (0 customers, no indirect resellers). Fetch any colliding rows and re-home them
+        // in place instead of inserting.
+        var incomingIds = customers.Select(c => c.Id).ToList();
+        var reHomed = await db.CustomerRecords
+            .Where(r => r.OwningLinkId != owningLinkId && incomingIds.Contains(r.CustomerId))
+            .ToListAsync(ct);
+        foreach (var r in reHomed)
+        {
+            byId[r.CustomerId] = r;
+        }
 
         foreach (var c in customers)
         {
