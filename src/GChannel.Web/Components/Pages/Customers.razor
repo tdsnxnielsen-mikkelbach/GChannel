@@ -31,6 +31,7 @@
 
 <MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="false" RowsPerPage="25">
     <HeaderContent>
+        <MudTh Style="width:1px"></MudTh>
         <MudTh><MudTableSortLabel SortLabel="org" T="EstateCustomer">Organization</MudTableSortLabel></MudTh>
         <MudTh><MudTableSortLabel SortLabel="domain" T="EstateCustomer">Domain</MudTableSortLabel></MudTh>
         <MudTh>Cloud Identity</MudTh>
@@ -42,6 +43,13 @@
         <MudTh Style="text-align:right">Actions</MudTh>
     </HeaderContent>
     <RowTemplate>
+        <MudTd Style="width:1px">
+            <MudTooltip Text="@(IsExpanded(context) ? "Hide subscriptions" : "Show subscriptions")">
+                <MudIconButton Size="Size.Small"
+                               Icon="@(IsExpanded(context) ? Icons.Material.Filled.KeyboardArrowUp : Icons.Material.Filled.KeyboardArrowDown)"
+                               OnClick="@(() => ToggleExpandAsync(context))" />
+            </MudTooltip>
+        </MudTd>
         <MudTd DataLabel="Organization">@(context.OrgName ?? context.CustomerId)</MudTd>
         <MudTd DataLabel="Domain">@context.Domain</MudTd>
         <MudTd DataLabel="Cloud Identity">
@@ -123,6 +131,66 @@
             </MudTooltip>
         </MudTd>
     </RowTemplate>
+    <ChildRowContent>
+        @if (IsExpanded(context))
+        {
+            <MudTr>
+                <td colspan="10" class="pa-4" style="background-color:var(--mud-palette-background-grey)">
+                    @if (!_subscriptions.TryGetValue(context.CustomerId, out var subs))
+                    {
+                        <div class="d-flex align-center my-2">
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Loading subscriptions…</MudText>
+                        </div>
+                    }
+                    else if (subs is null)
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true">Couldn't load this customer's subscriptions.</MudAlert>
+                    }
+                    else if (subs.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true">No subscriptions for this customer yet.</MudAlert>
+                    }
+                    else
+                    {
+                        <MudGrid Spacing="3">
+                            @foreach (var e in subs)
+                            {
+                                <MudItem xs="12" sm="6" md="4">
+                                    <MudCard Elevation="1" Class="h-100">
+                                        <MudCardContent>
+                                            <div class="d-flex justify-space-between align-start mb-1">
+                                                <MudText Typo="Typo.subtitle2">@OfferTitle(e)</MudText>
+                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                                         Color="@StateColor(e.ProvisioningState)">@StateLabel(e.ProvisioningState)</MudChip>
+                                            </div>
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                                                @(e.PlanDescription ?? e.Commitment?.PaymentPlan ?? "Plan not available")
+                                            </MudText>
+                                            <div class="d-flex align-center mb-1">
+                                                <MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Small" Class="mr-2" Color="Color.Secondary" />
+                                                <MudText Typo="Typo.body2">Renewal @RenewalText(e)</MudText>
+                                            </div>
+                                            <div class="d-flex align-center">
+                                                <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" Class="mr-2" Color="Color.Secondary" />
+                                                <MudTooltip Text="Assigned-seat counts aren't available from the Channel API; total licenses shown.">
+                                                    <MudText Typo="Typo.body2">— / @SeatCount(e) licenses</MudText>
+                                                </MudTooltip>
+                                            </div>
+                                        </MudCardContent>
+                                        <MudCardActions>
+                                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                                       Href="@($"/customers/{context.CustomerId}/entitlements/{e.Id}")">Details</MudButton>
+                                        </MudCardActions>
+                                    </MudCard>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+                </td>
+            </MudTr>
+        }
+    </ChildRowContent>
     <NoRecordsContent>
         <MudAlert Severity="Severity.Info">No customers yet. Use <strong>New customer</strong> to create one.</MudAlert>
     </NoRecordsContent>
@@ -135,6 +203,63 @@
     private MudTable<EstateCustomer>? _table;
     private string? _search;
     private DateTimeOffset? _asOf;
+
+    // Per-customer expansion state + lazily-loaded subscription cards (null value = load failed).
+    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<Entitlement>?> _subscriptions = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool IsExpanded(EstateCustomer c) => _expanded.Contains(c.CustomerId);
+
+    private async Task ToggleExpandAsync(EstateCustomer customer)
+    {
+        if (!_expanded.Add(customer.CustomerId))
+        {
+            _expanded.Remove(customer.CustomerId);
+            return;
+        }
+
+        if (_subscriptions.ContainsKey(customer.CustomerId))
+        {
+            return; // already loaded (or loading) — keep the cached cards
+        }
+
+        try
+        {
+            var result = await Api.ListEntitlementsAsync(customer.CustomerId);
+            _subscriptions[customer.CustomerId] = result?.Entitlements?.ToList() ?? [];
+        }
+        catch
+        {
+            _subscriptions[customer.CustomerId] = null;
+        }
+    }
+
+    private static string OfferTitle(Entitlement e) =>
+        e.OfferDisplayName ?? e.SkuDisplayName ?? e.ProductDisplayName ?? e.OfferId ?? e.Id;
+
+    private static string StateLabel(string? state) =>
+        string.IsNullOrEmpty(state) ? "Unknown" : char.ToUpperInvariant(state[0]) + state[1..].ToLowerInvariant();
+
+    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    {
+        "ACTIVE" => Color.Success,
+        "SUSPENDED" => Color.Warning,
+        "CANCELLED" or "CANCELED" => Color.Error,
+        "PENDING" => Color.Info,
+        _ => Color.Default,
+    };
+
+    private static string RenewalText(Entitlement e) =>
+        e.Commitment?.EndTime is { } end
+            ? end.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)
+            : "—";
+
+    private static long SeatCount(Entitlement e)
+    {
+        var raw = e.Parameters.FirstOrDefault(p =>
+            string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value;
+        return long.TryParse(raw, out var n) ? n : 0;
+    }
 
     private static string FormatMoney(decimal value, string? currency) =>
         string.IsNullOrEmpty(currency)

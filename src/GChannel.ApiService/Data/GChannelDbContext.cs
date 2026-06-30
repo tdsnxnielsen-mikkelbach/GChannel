@@ -66,6 +66,7 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
             entity.Property(e => e.OfferName).HasMaxLength(255);
             entity.Property(e => e.State).HasMaxLength(32);
             entity.Property(e => e.Currency).HasMaxLength(8);
+            entity.Property(e => e.PlanDescription).HasMaxLength(128);
             entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,6)");
             entity.Property(e => e.RepricingPercent).HasColumnType("decimal(9,4)");
             entity.HasIndex(e => e.CustomerId);
@@ -150,6 +151,8 @@ public sealed class EntitlementRecord
     public DateTimeOffset? CreateTime { get; set; }
     /// <summary>Commitment/renewal end time (<c>CommitmentSettings.EndTime</c>), denormalised so the customer list can show the next renewal date without a live call.</summary>
     public DateTimeOffset? CommitmentEndTime { get; set; }
+    /// <summary>Human-friendly plan summary (e.g. "Annual Plan (Monthly Payment)"), denormalised at sync time so subscription cards render without a live offer-plan call.</summary>
+    public string? PlanDescription { get; set; }
     /// <summary>Wholesale effective per-seat price from the entitlement's offer (the reseller's cost from Google). 0 if unknown.</summary>
     public decimal UnitPrice { get; set; }
     /// <summary>ISO currency code for <see cref="UnitPrice"/> (e.g. "USD"), or null when no price was resolved.</summary>

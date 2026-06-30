@@ -656,11 +656,36 @@ above on top, so a user sees the same shape they know from the console plus comp
   gained **Subscriptions** (`N Active · M Suspended`) and **Renewal** (`MMM d, yyyy` + offer name, or
   `—`) columns. The server-side debounced search box (org/domain/id) was already present, satisfying
   the search requirement directly against the cached read-model.*
-- [ ] **Phase 6 — Expandable customer → subscription cards.** Expanding a customer shows one card per
+- [x] **Phase 6 — Expandable customer → subscription cards.** Expanding a customer shows one card per
   entitlement: offer name, plan summary (`Annual Plan (Monthly Payment)`), `Renewal <date>`,
   `assigned / total licenses` (`2 / 3`) and state badge (`Active`). Renewal/plan/licenses from
   entitlement+offer; **assigned-seat count is _not_ in the Channel API** (it's Admin SDK / Directory
   usage) — show total seats only or a clearly-flagged estimate until that source is added.
+  *Implemented. `EntitlementRecord` gained `PlanDescription` (denormalised at sync from the offer's
+  payment plan/cycle + the commitment term — `BuildPlanDescription` derives `Annual`/`Monthly`/`N-Year`
+  from the commitment start→end span, else the offer payment plan, joined with the offer payment cycle;
+  additive idempotent SQL column, built from the same single `offers.list` the catalog/pricing pass
+  already does). `Entitlement` contract gained `PlanDescription`; the read-model `MapEntitlement` exposes
+  it and maps `CommitmentEndTime`→`Commitment.EndTime`. `Customers.razor` rows now expand (chevron
+  toggle) to a `MudGrid` of subscription `MudCard`s — offer title, state chip, plan summary, `Renewal
+  <MMM d, yyyy>`, and `— / N licenses` (assigned flagged unavailable via tooltip) + a **Details** link to
+  the entitlement (§3). Cards lazy-load the customer's entitlements from the read-model on first expand
+  (cached per row). Assigned-seat counts remain out (Admin SDK, deferred).*
+  *Assigned-seat counts — why deferred: total seats (`num_units`) come from the entitlement, but how many
+  seats are **assigned** to users lives in the **customer's own Workspace tenant** (Enterprise License
+  Manager API `licensing.googleapis.com` / `Google.Apis.Licensing.v1` — `LicenseAssignments.ListForProduct
+  AndSku(productId, skuId, customerId)`, count the paginated assignments), a different trust boundary than
+  the Channel API. The reseller's domain-wide-delegation credential (scoped `apps.order`, impersonating
+  **our** reseller admin) does NOT grant access to a customer's directory. Reading it needs a **per-customer
+  authorization** — each customer's super-admin authorizing our service-account client id for
+  `apps.licensing` in **their** Admin console (or impersonating an admin in that customer's domain) — i.e.
+  N tenant-specific consents, not one reseller credential, which most reseller setups don't have and can't
+  self-grant. If that existed, the work is additive: new `Google.Apis.Licensing.v1` client + a third
+  credential surface (scoped `apps.licensing`, impersonation target resolved per customer/domain), a
+  per-entitlement `ListForProductAndSku` count (its own quota bucket; ~1 paged call per entitlement so it'd
+  need its own pacer/budget or an opt-in flag), a nullable `EntitlementRecord.AssignedSeats` (idempotent
+  SQL ALTER, best-effort so "—" stays distinct from 0) surfaced on the `Entitlement` contract, and swapping
+  the card's `—` for the count. Self-contained → no rework cost to add later.*
 - [ ] **Phase 7 — Subscription detail (licenses + payment + billing).** Clicking a card shows
   **Licenses** (total `num_units`, assigned where available, manage link → §3), **Payment** (cycle +
   computed `/month` estimate from §11 pricing, marked *estimated*, renewal datetime), `Renewal` term

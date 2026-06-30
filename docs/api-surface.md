@@ -179,6 +179,13 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > columns and are aggregated per page from the read-model's denormalised `EntitlementRecord.CommitmentEndTime`
 > (synced from `CommitmentSettings.EndTime`) — no live Channel API calls.
 
+> **Subscription-card fields (§11 Phase 6).** The per-customer entitlement list (`GET
+> /api/customers/{customerId}/entitlements`, served from the read-model) carries `PlanDescription`
+> (e.g. `Annual Plan (Monthly Payment)`, denormalised at sync from the offer's payment plan/cycle and the
+> commitment term) and `Commitment.EndTime` (the renewal date). The customer-list expandable cards render
+> these plus offer name, state and total licenses. Assigned-seat counts are intentionally absent (that's
+> Admin SDK / Directory usage, not the Channel API).
+
 ## Available possibilities
 
 The following are the full set of `v1` resources/methods the dashboard could grow into,

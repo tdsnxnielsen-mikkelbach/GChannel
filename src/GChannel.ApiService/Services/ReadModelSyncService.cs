@@ -352,6 +352,9 @@ public sealed class ReadModelSyncService(
             row.IsTrial = e.IsTrial;
             row.CreateTime = e.CreateTime;
             row.CommitmentEndTime = e.Commitment?.EndTime;
+            row.PlanDescription = BuildPlanDescription(
+                e.Commitment,
+                e.OfferId is not null && offerCatalog.Plans.TryGetValue(e.OfferId, out var plan) ? plan : default);
             if (e.OfferId is not null && offerCatalog.Pricing.TryGetValue(e.OfferId, out var price))
             {
                 row.UnitPrice = price.Unit;
@@ -402,6 +405,7 @@ public sealed class ReadModelSyncService(
         var pricing = new Dictionary<string, (decimal, string)>(StringComparer.OrdinalIgnoreCase);
         var offerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var skuNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var plans = new Dictionary<string, (string?, string?)>(StringComparer.OrdinalIgnoreCase);
         try
         {
             var offers = await client.ListOffersAsync(ct);
@@ -412,6 +416,10 @@ public sealed class ReadModelSyncService(
                     if (!string.IsNullOrWhiteSpace(offer.DisplayName))
                     {
                         offerNames[offer.OfferId] = offer.DisplayName!;
+                    }
+                    if (!string.IsNullOrWhiteSpace(offer.PaymentPlan) || !string.IsNullOrWhiteSpace(offer.PaymentCycle))
+                    {
+                        plans[offer.OfferId] = (offer.PaymentPlan, offer.PaymentCycle);
                     }
                     if (offer.Pricing.Count > 0)
                     {
@@ -434,14 +442,57 @@ public sealed class ReadModelSyncService(
         {
             logger.LogWarning(ex, "Read-model offer catalog lookup failed this cycle; entitlements will be reported as unpriced/unnamed.");
         }
-        return new OfferCatalog(pricing, offerNames, skuNames);
+        return new OfferCatalog(pricing, offerNames, skuNames, plans);
     }
 
     /// <summary>Per-cycle offer catalog: wholesale pricing plus offer/SKU display names, all keyed by id.</summary>
     private readonly record struct OfferCatalog(
         IReadOnlyDictionary<string, (decimal Unit, string Currency)> Pricing,
         IReadOnlyDictionary<string, string> OfferNames,
-        IReadOnlyDictionary<string, string> SkuNames);
+        IReadOnlyDictionary<string, string> SkuNames,
+        IReadOnlyDictionary<string, (string? PaymentPlan, string? PaymentCycle)> Plans);
+
+    /// <summary>
+    /// Builds a human-friendly plan summary (e.g. "Annual Plan (Monthly Payment)") from the entitlement's
+    /// commitment term and the offer's payment plan/cycle. The commitment term (Annual/Monthly/N-Year)
+    /// is derived from the commitment start→end span when present; otherwise the offer's payment plan
+    /// (Commitment/Flexible/…) is used. Returns null when nothing is known.
+    /// </summary>
+    private static string? BuildPlanDescription(EntitlementCommitment? commitment, (string? PaymentPlan, string? PaymentCycle) plan)
+    {
+        string? term = null;
+        if (commitment?.StartTime is { } start && commitment.EndTime is { } end && end > start)
+        {
+            var months = (int)Math.Round((end - start).TotalDays / 30.44, MidpointRounding.AwayFromZero);
+            term = months switch
+            {
+                <= 0 => null,
+                1 => "Monthly",
+                12 => "Annual",
+                _ when months % 12 == 0 => $"{months / 12}-Year",
+                _ => $"{months}-Month",
+            };
+        }
+
+        term ??= plan.PaymentPlan?.ToUpperInvariant() switch
+        {
+            "COMMITMENT" => "Commitment",
+            "FLEXIBLE" => "Flexible",
+            "TRIAL" => "Trial",
+            "FREE" => "Free",
+            "OFFLINE" => "Offline",
+            _ => null,
+        };
+
+        var payment = string.IsNullOrWhiteSpace(plan.PaymentCycle) ? null : plan.PaymentCycle;
+        return (term, payment) switch
+        {
+            (not null, not null) => $"{term} Plan ({payment} Payment)",
+            (not null, null) => $"{term} Plan",
+            (null, not null) => $"{payment} Payment",
+            _ => null,
+        };
+    }
 
     // Friendly product display names keyed by product id (one quota-light products.list pass). Best-effort.
     private async Task<IReadOnlyDictionary<string, string>> BuildProductNamesAsync(

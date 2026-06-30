@@ -79,7 +79,11 @@ state, e.g. `6 Active · 2 Suspended`) and **Renewal** (the earliest upcoming co
 that offer's name, or “—” when none commit) columns, plus an **Est. monthly** column — the estimated
 monthly value of each customer's active subscriptions (from list pricing with your repricing applied,
 *not* invoiced amounts; “—” until their entitlements have been priced by the background read-model). A
-server-side **search box** filters by organization, domain or customer id. From the detail page you can:
+server-side **search box** filters by organization, domain or customer id. Each row can be **expanded**
+(chevron) to reveal one **subscription card** per entitlement — offer name, state badge, plan summary
+(e.g. *Annual Plan (Monthly Payment)*), renewal date, and `— / N licenses` (assigned-seat counts aren't
+available from the Channel API, so only the total is shown) with a **Details** link to the entitlement.
+From the detail page you can:
 
 - **Edit** the customer (`/customers/edit/{id}`).
 - See and open the customer's **entitlements** (`/customers/{id}/entitlements`).

@@ -53,6 +53,9 @@ public sealed record Entitlement
     public EntitlementCommitment? Commitment { get; init; }
     public IReadOnlyList<EntitlementParameter> Parameters { get; init; } = [];
 
+    /// <summary>Human-friendly plan summary (e.g. "Annual Plan (Monthly Payment)"), from the offer plan + commitment term. Null when unknown.</summary>
+    public string? PlanDescription { get; init; }
+
     /// <summary>
     /// Estimated wholesale price per seat (per month) from the offer's list pricing. Null when the
     /// offer could not be priced. Populated from the §10 read-model; not an invoiced figure.

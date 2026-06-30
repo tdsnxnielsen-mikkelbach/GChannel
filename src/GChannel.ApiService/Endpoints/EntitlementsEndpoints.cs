@@ -207,6 +207,10 @@ public static class EntitlementsEndpoints
         ProvisioningState = r.State,
         IsTrial = r.IsTrial,
         CreateTime = r.CreateTime,
+        PlanDescription = r.PlanDescription,
+        Commitment = r.CommitmentEndTime is not null
+            ? new EntitlementCommitment { EndTime = r.CommitmentEndTime }
+            : null,
         UnitPrice = r.UnitPrice > 0 ? r.UnitPrice : null,
         PriceCurrency = r.Currency,
         RepricingPercent = r.RepricingPercent,
