@@ -42,7 +42,6 @@ public sealed class ReadModelSyncService(
 
         var interval = TimeSpan.FromSeconds(opts.BackgroundRefreshSeconds);
         var db = redis.GetDatabase();
-        using var timer = new PeriodicTimer(interval);
 
         logger.LogInformation(
             "Read-model sync enabled; cycle every {Interval}s, up to {Links} links/cycle.",
@@ -82,7 +81,43 @@ public sealed class ReadModelSyncService(
                 logger.LogWarning(ex, "Read-model sync cycle failed; will retry next interval.");
             }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
+        while (await WaitForNextDueAsync(db, interval, stoppingToken));
+    }
+
+    /// <summary>
+    /// Sleeps until the next sync cycle is actually due, then returns <c>true</c> (or <c>false</c> on
+    /// shutdown). The wait is the <em>remaining TTL of the shared Redis lock</em> rather than a fixed
+    /// interval measured from this process — so the cadence stays aligned to the cluster-wide schedule
+    /// across worker restarts and redeploys. A worker that starts (or skips because a pre-redeploy run
+    /// still holds the lock) waits only until the lock expires and then syncs, instead of resetting the
+    /// clock and delaying the next cycle by up to a full interval. Falls back to a full interval when the
+    /// lock is absent (e.g. the very first cycle).
+    /// </summary>
+    private static async Task<bool> WaitForNextDueAsync(IDatabase db, TimeSpan interval, CancellationToken stoppingToken)
+    {
+        TimeSpan wait;
+        try
+        {
+            wait = await db.KeyTimeToLiveAsync(SyncLockKey) ?? interval;
+        }
+        catch
+        {
+            wait = interval;
+        }
+
+        // Clamp: never busy-loop on a near-expired lock, never overshoot one interval.
+        if (wait < TimeSpan.FromSeconds(1)) wait = TimeSpan.FromSeconds(1);
+        else if (wait > interval) wait = interval;
+
+        try
+        {
+            await Task.Delay(wait, stoppingToken);
+            return true;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     private async Task RunCycleAsync(GoogleChannelClient client, GoogleChannelOptions opts, CancellationToken ct)
