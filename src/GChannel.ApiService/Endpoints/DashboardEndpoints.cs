@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
@@ -47,9 +48,15 @@ public static class DashboardEndpoints
             {
                 try
                 {
+                    // §10 read-model: when enabled, the dashboard is built entirely from the durably
+                    // synced SQL tables (zero live Channel API fan-out), so the heavy entitlement work
+                    // only happens once in the read-model sync rather than competing for quota here.
+                    Func<Task<DashboardSummary>> factory = options.Value.UseReadModel
+                        ? () => BuildReadModelSummaryAsync(db, cancellationToken)
+                        : () => channel.GetDashboardSummaryAsync(cancellationToken);
+
                     return await CachedAsync(cache, CacheKey, options.Value.CacheSeconds,
-                        () => channel.GetDashboardSummaryAsync(cancellationToken), cancellationToken,
-                        options.Value.UseReadModel ? s => OverlayReadModelAsync(s, db, cancellationToken) : null);
+                        factory, cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -65,12 +72,17 @@ public static class DashboardEndpoints
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
                 IOptions<GoogleChannelOptions> options,
+                GChannelDbContext db,
                 CancellationToken cancellationToken) =>
             {
                 try
                 {
+                    Func<Task<DashboardOverview>> factory = options.Value.UseReadModel
+                        ? () => BuildReadModelOverviewAsync(db, cancellationToken)
+                        : () => channel.GetDashboardOverviewAsync(cancellationToken);
+
                     return await CachedAsync(cache, OverviewCacheKey, options.Value.CacheSeconds,
-                        () => channel.GetDashboardOverviewAsync(cancellationToken), cancellationToken);
+                        factory, cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -165,6 +177,112 @@ public static class DashboardEndpoints
 
         if (overlay is not null) { result = await overlay(result); }
         return Results.Ok(result);
+    }
+
+    /// <summary>
+    /// §10 read path: builds the entire dashboard summary from the durably synced SQL read-model
+    /// (direct customer/entitlement aggregates + product mix + onboarding), then overlays the indirect
+    /// estate and §11 estate value. Used when <see cref="GoogleChannelOptions.UseReadModel"/> is on so
+    /// the dashboard never fans out live Channel API entitlement/customer calls — the read-model sync is
+    /// the single quota consumer. Also called by the background refresher to warm the cache.
+    /// </summary>
+    public static async Task<DashboardSummary> BuildReadModelSummaryAsync(
+        GChannelDbContext db, CancellationToken cancellationToken)
+    {
+        var direct = db.EntitlementRecords.Where(e => !e.IsDeleted && e.OwningLinkId == null);
+
+        var customerCount = await db.CustomerRecords
+            .CountAsync(c => !c.IsDeleted && c.OwningLinkId == null, cancellationToken);
+        var active = await direct.CountAsync(e => e.State == "ACTIVE" && !e.IsTrial, cancellationToken);
+        var trials = await direct.CountAsync(e => e.IsTrial, cancellationToken);
+        var suspended = await direct.CountAsync(e => e.State == "SUSPENDED", cancellationToken);
+        var seats = await direct.Where(e => e.State == "ACTIVE").SumAsync(e => e.Seats, cancellationToken);
+
+        var mix = await direct.Where(e => e.State == "ACTIVE")
+            .GroupBy(e => e.ProductName ?? e.ProductId ?? "Other")
+            .Select(g => new { Product = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .Take(8)
+            .ToListAsync(cancellationToken);
+
+        var onboardDates = await db.CustomerRecords
+            .Where(c => !c.IsDeleted && c.OwningLinkId == null)
+            .Select(c => c.CreateTime)
+            .ToListAsync(cancellationToken);
+
+        var summary = new DashboardSummary
+        {
+            CustomerCount = customerCount,
+            ActiveEntitlementCount = active,
+            TrialEntitlementCount = trials,
+            SuspendedEntitlementCount = suspended,
+            ActiveSeats = seats,
+            SkippedCustomerCount = 0,
+            IncompleteReason = null,
+            CustomersOnboarded = BuildMonthlyOnboardedFromDates(onboardDates),
+            ProductMix = mix.Select(m => new DashboardProductSlice { Product = m.Product, Count = m.Count }).ToList(),
+            // Set here so a direct-only estate (no indirect rows yet) still shows the value panel; the
+            // overlay recomputes the identical figure when indirect rows exist.
+            EstateValue = await ComputeEstateValueAsync(db, cancellationToken)
+        };
+
+        return await OverlayReadModelAsync(summary, db, cancellationToken);
+    }
+
+    /// <summary>
+    /// §10 read path: builds the cheap dashboard overview (direct customer count, channel-link states
+    /// and onboarding) from the SQL read-model instead of a live customers.list + links.list.
+    /// </summary>
+    public static async Task<DashboardOverview> BuildReadModelOverviewAsync(
+        GChannelDbContext db, CancellationToken cancellationToken)
+    {
+        var customerCount = await db.CustomerRecords
+            .CountAsync(c => !c.IsDeleted && c.OwningLinkId == null, cancellationToken);
+
+        var linkStates = await db.ResellerLinks
+            .GroupBy(l => l.LinkState)
+            .Select(g => new { State = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var onboardDates = await db.CustomerRecords
+            .Where(c => !c.IsDeleted && c.OwningLinkId == null)
+            .Select(c => c.CreateTime)
+            .ToListAsync(cancellationToken);
+
+        return new DashboardOverview
+        {
+            CustomerCount = customerCount,
+            ChannelLinkCount = linkStates.Sum(s => s.Count),
+            ChannelLinkStates = linkStates
+                .OrderByDescending(s => s.Count)
+                .Select(s => new DashboardChannelLinkState { State = s.State, Count = s.Count })
+                .ToList(),
+            CustomersOnboarded = BuildMonthlyOnboardedFromDates(onboardDates)
+        };
+    }
+
+    // Buckets customer create-times into the trailing 6 months (oldest first), matching the live path's
+    // BuildMonthlyOnboarded so the chart looks identical regardless of which path produced it.
+    private static List<DashboardMonthlyPoint> BuildMonthlyOnboardedFromDates(IReadOnlyList<DateTimeOffset?> createTimes)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var firstOfThisMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var points = new List<DashboardMonthlyPoint>(6);
+        for (var i = 5; i >= 0; i--)
+        {
+            var monthStart = firstOfThisMonth.AddMonths(-i);
+            var monthEnd = monthStart.AddMonths(1);
+            var count = createTimes.Count(t => t is { } v && v >= monthStart && v < monthEnd);
+
+            points.Add(new DashboardMonthlyPoint
+            {
+                Month = monthStart.ToString("MMM", CultureInfo.InvariantCulture),
+                Customers = count
+            });
+        }
+
+        return points;
     }
 
     /// <summary>
@@ -294,7 +412,7 @@ public static class DashboardEndpoints
         var seats = await rows.Where(e => e.State == "ACTIVE").SumAsync(e => e.Seats, cancellationToken);
 
         var mix = await rows.Where(e => e.State == "ACTIVE")
-            .GroupBy(e => e.ProductId ?? "Other")
+            .GroupBy(e => e.ProductName ?? e.ProductId ?? "Other")
             .Select(g => new { Product = g.Key, Count = g.Count() })
             .OrderByDescending(g => g.Count)
             .Take(8)

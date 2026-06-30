@@ -400,6 +400,33 @@ and adds per-reseller wholesale/margin to the top-resellers list. The home page 
 from offer **list** pricing, not actual invoices). Entitlements whose offer price couldn't be resolved are
 excluded and counted separately. See §11 in [todo.md](todo.md) for the phased plan.
 
+**Read-model-backed detail pages.** Beyond the dashboard rollup, two interactive list pages whose live
+calls draw on the **contended** per-minute quotas are served from the read-model when `UseReadModel` is
+on, so they no longer compete with the sync worker for the same `ListEntitlements` / `ListCustomers`
+buckets:
+
+- **A customer's entitlement list** (`GET /api/customers/{id}/entitlements`) reads `EntitlementRecords`
+  for the customer instead of calling `entitlements.list`, but only when that customer has already been
+  synced (it is present in `CustomerRecords`); a not-yet-synced customer falls back to the live, cached
+  call so a cold start still works. The stored row carries the friendly offer/SKU/product display names
+  and create time, so the list renders identically to the live path; the active seat count is re-exposed
+  as a `num_units` parameter so the UI's existing seat logic is unchanged. Full-fidelity *detail*
+  (`GET .../entitlements/{id}`) stays live — the read-model row is a thin projection and lacks
+  parameters, commitment and suspension reasons, and `entitlements.get` is on a lighter quota.
+- **The customers owned by a channel partner** (`GET /api/channel-partner-links/{linkId}/customers`)
+  reads `CustomerRecords` filtered to that owning link instead of calling
+  `channelPartnerLinks.customers.list`. If the link has no synced customers yet it falls back to the live
+  call, so links that are freshly rostered (or genuinely own zero customers) still resolve correctly.
+
+To keep the entitlement list fully named offline, the worker denormalises the offer and SKU display
+names (`OfferName`, `SkuName`) and the entitlement `CreateTime` onto `EntitlementRecord`. These come
+**for free** from the same single `offers.list` the pricing pass already makes each cycle — a
+`CatalogOffer` carries both the offer and SKU display names — so there is no extra Channel API cost.
+Catalog (products/SKUs/offers), repricing configuration and **transfers** are intentionally **not**
+backed by the read-model: catalog and repricing sit on separate, uncontended quotas (and catalog is
+already Redis-cached), while transfer eligibility is computed in real time against a customer's current
+external subscriptions, so a stored copy would be wrong the moment it went stale.
+
 ## Eventing &amp; operations
 
 Two concerns close the loop on asynchronous work: **long-running operations** (the async result of

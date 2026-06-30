@@ -59,8 +59,11 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
             entity.Property(e => e.CustomerId).HasMaxLength(128);
             entity.Property(e => e.OwningLinkId).HasMaxLength(128);
             entity.Property(e => e.ProductId).HasMaxLength(128);
+            entity.Property(e => e.ProductName).HasMaxLength(255);
             entity.Property(e => e.SkuId).HasMaxLength(128);
+            entity.Property(e => e.SkuName).HasMaxLength(255);
             entity.Property(e => e.OfferId).HasMaxLength(128);
+            entity.Property(e => e.OfferName).HasMaxLength(255);
             entity.Property(e => e.State).HasMaxLength(32);
             entity.Property(e => e.Currency).HasMaxLength(8);
             entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,6)");
@@ -132,11 +135,19 @@ public sealed class EntitlementRecord
     /// <summary>Owning channel partner link id, or null for the account's direct customers (denormalised from the customer).</summary>
     public string? OwningLinkId { get; set; }
     public string? ProductId { get; set; }
+    /// <summary>Friendly product display name denormalised at sync time so the dashboard product-mix can render without a live catalog call.</summary>
+    public string? ProductName { get; set; }
     public string? SkuId { get; set; }
+    /// <summary>Friendly SKU display name denormalised at sync time so the entitlement list renders without a live catalog call.</summary>
+    public string? SkuName { get; set; }
     public string? OfferId { get; set; }
+    /// <summary>Friendly offer display name denormalised at sync time so the entitlement list renders without a live catalog call.</summary>
+    public string? OfferName { get; set; }
     public string State { get; set; } = string.Empty;
     public long Seats { get; set; }
     public bool IsTrial { get; set; }
+    /// <summary>Entitlement create time, denormalised so the read-model-backed entitlement list can show the "Created" column.</summary>
+    public DateTimeOffset? CreateTime { get; set; }
     /// <summary>Wholesale effective per-seat price from the entitlement's offer (the reseller's cost from Google). 0 if unknown.</summary>
     public decimal UnitPrice { get; set; }
     /// <summary>ISO currency code for <see cref="UnitPrice"/> (e.g. "USD"), or null when no price was resolved.</summary>

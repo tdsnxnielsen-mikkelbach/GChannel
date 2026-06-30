@@ -131,6 +131,7 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
             CustomerId nvarchar(128) NOT NULL,
             OwningLinkId nvarchar(128) NULL,
             ProductId nvarchar(128) NULL,
+            ProductName nvarchar(255) NULL,
             SkuId nvarchar(128) NULL,
             OfferId nvarchar(128) NULL,
             State nvarchar(32) NOT NULL,
@@ -150,6 +151,14 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         ALTER TABLE EntitlementRecords ADD Currency nvarchar(8) NULL;
         IF COL_LENGTH('EntitlementRecords','RepricingPercent') IS NULL
         ALTER TABLE EntitlementRecords ADD RepricingPercent decimal(9,4) NOT NULL CONSTRAINT DF_EntitlementRecords_RepricingPercent DEFAULT 0;
+        IF COL_LENGTH('EntitlementRecords','ProductName') IS NULL
+        ALTER TABLE EntitlementRecords ADD ProductName nvarchar(255) NULL;
+        IF COL_LENGTH('EntitlementRecords','SkuName') IS NULL
+        ALTER TABLE EntitlementRecords ADD SkuName nvarchar(255) NULL;
+        IF COL_LENGTH('EntitlementRecords','OfferName') IS NULL
+        ALTER TABLE EntitlementRecords ADD OfferName nvarchar(255) NULL;
+        IF COL_LENGTH('EntitlementRecords','CreateTime') IS NULL
+        ALTER TABLE EntitlementRecords ADD CreateTime datetimeoffset NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_OwningLinkId')
         CREATE INDEX IX_CustomerRecords_OwningLinkId ON CustomerRecords(OwningLinkId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_IsDeleted')

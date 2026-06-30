@@ -384,12 +384,12 @@ domain → create a customer → purchase an entitlement) without reading docs.
 
 ## 10. Persistent read-model (scale-out for a large distributor)
 
-> **Status:** ✅ Complete. Phases 1–4 implemented (durable read-model + incremental sync worker + SQL-backed
-> indirect estate / seat-ranked top resellers + entitlement seat sync) plus the read-path polish
-> (server-side paged/sorted lists, *as-of* labels, Refresh-now). Only `DashboardSnapshots` trend
-> history is left as optional future work. Feature-flagged `GoogleChannel:UseReadModel`. See
-> [architecture.md](architecture.md) (dashboard two-phase + background refresh) and the §5
-> channel-partner-links narrative for the design this evolves from.
+> **Status:** ✅ Complete. Phases 1–5 implemented (durable read-model + incremental sync worker + SQL-backed
+> indirect estate / seat-ranked top resellers + entitlement seat sync + read-model-backed entitlement-list /
+> partner-customers pages) plus the read-path polish (server-side paged/sorted lists, *as-of* labels,
+> Refresh-now). Only `DashboardSnapshots` trend history is left as optional future work. Feature-flagged
+> `GoogleChannel:UseReadModel`. See [architecture.md](architecture.md) (dashboard two-phase + background
+> refresh) and the §5 channel-partner-links narrative for the design this evolves from.
 
 ### Why (the problem at scale)
 
@@ -443,7 +443,7 @@ read-model with clear *as-of* timestamps.
 | --- | --- | --- |
 | `ResellerLinks` | one row per channel partner link | `LinkId` (PK), `ResellerCloudId`, `PrimaryDomain`, `LinkState`, `CustomerCount`, `CreateTime`, `LastSyncedUtc`, `SyncError?` |
 | `CustomerRecords` | one row per customer (direct **and** indirect) | `CustomerId` (PK), `OrgName`, `Domain`, `CloudIdentityId?`, `OwningLinkId?` (null = direct), `CreateTime`, `LastSyncedUtc` |
-| `EntitlementRecords` *(optional, phase 4)* | one row per entitlement | `EntitlementId` (PK), `CustomerId` (FK), `ProductId`, `SkuId`, `OfferId`, `State`, `Seats`, `IsTrial`, `LastSyncedUtc` |
+| `EntitlementRecords` *(phase 4)* | one row per entitlement | `EntitlementId` (PK), `CustomerId` (FK), `OwningLinkId?`, `ProductId`, `ProductName?`, `SkuId`, `SkuName?`, `OfferId`, `OfferName?`, `State`, `Seats`, `IsTrial`, `CreateTime?`, `UnitPrice`, `Currency?`, `RepricingPercent`, `LastSyncedUtc`, `IsDeleted` |
 | `SyncCursors` | per-entity-type sync bookkeeping | `Scope` (PK, e.g. `links`/`customers`/`entitlements`), `LastFullPassUtc`, `NextPageToken?`, `Notes` |
 | `DashboardSnapshots` *(optional, history)* | periodic point-in-time totals | `Id` (PK), `TakenUtc`, `DirectCount`, `IndirectCount`, `ActiveSkus`, `TrialCount`, `SuspendedCount` |
 
@@ -474,6 +474,9 @@ product mix) become simple `GROUP BY` queries.
   (removes the in-memory full-list load at scale).
 - [x] Every estate view shows an *as-of* timestamp; a **Refresh now** action can prioritise a specific
   link/customer into the front of the sync queue.
+- [x] The per-customer **entitlement list** and a partner's **customers** list (both on the contended
+  `ListEntitlements`/`ListCustomers` quotas) read from the read-model when `UseReadModel` is on, with a
+  live fallback before the first sync.
 
 ### Phases
 
@@ -492,6 +495,17 @@ product mix) become simple `GROUP BY` queries.
 - [x] **Phase 4 — Entitlements + seats.** `EntitlementRecords` (id/customer/owningLink/product/sku/offer/
   state/seats/trial) synced per customer in the worker; active seats denormalised onto
   `CustomerRecords.SeatCount` for fast reseller seat ranking. (`DashboardSnapshots` history still optional.)
+- [x] **Phase 5 — Read-model-backed detail/list pages.** The two interactive reads on the **contended**
+  per-minute quotas now serve from SQL when `UseReadModel` is on, so they no longer compete with the sync
+  worker for the same buckets: a customer's **entitlement list** (`GET /api/customers/{id}/entitlements`)
+  reads `EntitlementRecords`, and a partner's **customers** (`GET /api/channel-partner-links/{id}/customers`)
+  reads `CustomerRecords` for the owning link. Both fall back to the live, cached call when the read-model
+  has no rows yet (cold start / freshly rostered link). Offer/SKU display names + create time are
+  denormalised onto `EntitlementRecord` (`OfferName`/`SkuName`/`CreateTime`) for free from the pricing
+  pass's `offers.list`, so the list renders identical names offline. Entitlement **detail** (`.get`),
+  customer **detail**, the **catalog**, **repricing** and **transfers** stay live — they're on
+  lighter/uncontended quotas or, for transfers, must be computed in real time against current external
+  subscriptions (a stored copy would be wrong once stale).
 
 ### Risks &amp; caveats
 

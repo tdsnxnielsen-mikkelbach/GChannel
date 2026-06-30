@@ -58,7 +58,19 @@ public sealed class ReadModelSyncService(
                     continue;
                 }
 
+                var cycleStart = Stopwatch.GetTimestamp();
                 await RunCycleAsync(client, opts, stoppingToken);
+
+                // Cooldown re-arm: a heavy cycle can outlast the lock's interval TTL, which would let
+                // the next tick (or another replica) start back-to-back and saturate the shared
+                // Channel API quota — starving interactive calls. If the cycle ran at least a full
+                // interval, hold the lock for one more interval so there is a real gap before the
+                // next sync.
+                if (!stoppingToken.IsCancellationRequested
+                    && Stopwatch.GetElapsedTime(cycleStart) >= interval)
+                {
+                    await db.StringSetAsync(SyncLockKey, Environment.MachineName, interval);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -79,9 +91,16 @@ public sealed class ReadModelSyncService(
         var dbContext = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
         var now = DateTimeOffset.UtcNow;
 
-        // §11 pricing: resolve the account's offer list pricing once per cycle (one quota-light
-        // offers.list pass) so each entitlement can be costed without a per-entitlement lookup.
-        var offerPricing = await BuildOfferPricingAsync(client, ct);
+        // §11 pricing + display names: resolve the account's offer list once per cycle (one quota-light
+        // offers.list pass, a different quota bucket from customers/entitlements). Yields per-offer
+        // wholesale price plus offer/SKU display names, all denormalised onto each entitlement so the
+        // entitlement list and dashboard cost roll-up render from SQL with no live catalog fan-out.
+        var offerCatalog = await BuildOfferCatalogAsync(client, ct);
+
+        // Friendly product display names, resolved once per cycle (one quota-light products.list pass,
+        // a different quota bucket from customers/entitlements) and denormalised onto each entitlement
+        // so the dashboard product-mix renders from SQL without any live catalog call.
+        var productNames = await BuildProductNamesAsync(client, ct);
 
         // Direct customers — refreshed every cycle (one cheap ListCustomers pass). Isolated so a failure
         // here (e.g. a ListCustomers 429 or a transient SaveChanges fault) does NOT abort the indirect
@@ -94,7 +113,7 @@ public sealed class ReadModelSyncService(
             await UpsertCustomersAsync(dbContext, direct.Customers, owningLinkId: null, now, ct);
             foreach (var c in direct.Customers)
             {
-                await SyncCustomerEntitlementsAsync(dbContext, client, c.Id, owningLinkId: null, offerPricing, linkFallbackPercent: 0m, now, ct);
+                await SyncCustomerEntitlementsAsync(dbContext, client, c.Id, owningLinkId: null, offerCatalog, productNames, linkFallbackPercent: 0m, now, ct);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -136,7 +155,7 @@ public sealed class ReadModelSyncService(
                 await UpsertCustomersAsync(dbContext, customers.Customers, owningLinkId: linkId, now, ct);
                 foreach (var c in customers.Customers)
                 {
-                    await SyncCustomerEntitlementsAsync(dbContext, client, c.Id, owningLinkId: linkId, offerPricing, linkFallbackPercent, now, ct);
+                    await SyncCustomerEntitlementsAsync(dbContext, client, c.Id, owningLinkId: linkId, offerCatalog, productNames, linkFallbackPercent, now, ct);
                 }
                 var link = await dbContext.ResellerLinks.FindAsync([linkId], ct);
                 if (link is not null)
@@ -239,7 +258,8 @@ public sealed class ReadModelSyncService(
     // dashboard can roll up estimated cost/revenue/margin from SQL without any live API fan-out.
     private async Task SyncCustomerEntitlementsAsync(
         GChannelDbContext db, GoogleChannelClient client, string customerId, string? owningLinkId,
-        IReadOnlyDictionary<string, (decimal Unit, string Currency)> offerPricing, decimal linkFallbackPercent,
+        OfferCatalog offerCatalog,
+        IReadOnlyDictionary<string, string> productNames, decimal linkFallbackPercent,
         DateTimeOffset now, CancellationToken ct)
     {
         IReadOnlyList<Entitlement> entitlements;
@@ -280,12 +300,16 @@ public sealed class ReadModelSyncService(
             row.CustomerId = customerId;
             row.OwningLinkId = owningLinkId;
             row.ProductId = e.ProductId;
+            row.ProductName = e.ProductId is not null && productNames.TryGetValue(e.ProductId, out var pn) ? pn : null;
             row.SkuId = e.SkuId;
+            row.SkuName = e.SkuId is not null && offerCatalog.SkuNames.TryGetValue(e.SkuId, out var sn) ? sn : null;
             row.OfferId = e.OfferId;
+            row.OfferName = e.OfferId is not null && offerCatalog.OfferNames.TryGetValue(e.OfferId, out var on) ? on : null;
             row.State = e.ProvisioningState ?? "UNSPECIFIED";
             row.Seats = seats;
             row.IsTrial = e.IsTrial;
-            if (e.OfferId is not null && offerPricing.TryGetValue(e.OfferId, out var price))
+            row.CreateTime = e.CreateTime;
+            if (e.OfferId is not null && offerCatalog.Pricing.TryGetValue(e.OfferId, out var price))
             {
                 row.UnitPrice = price.Unit;
                 row.Currency = price.Currency;
@@ -325,32 +349,74 @@ public sealed class ReadModelSyncService(
     // §11: build an offerId → (effective unit price, currency) lookup from the account's sellable
     // offers. SEAT pricing is preferred (the seat count we store multiplies against it); otherwise the
     // first priced resource is used. Best-effort: any failure yields an empty lookup (entitlements then
-    // cost as 0 and are reported as "unpriced").
-    private async Task<IReadOnlyDictionary<string, (decimal Unit, string Currency)>> BuildOfferPricingAsync(
+    // cost as 0 and are reported as "unpriced"). The same offers.list pass also yields offer/SKU display
+    // names (a CatalogOffer carries both), so the entitlement list renders friendly names from SQL.
+    private async Task<OfferCatalog> BuildOfferCatalogAsync(
         GoogleChannelClient client, CancellationToken ct)
     {
-        var map = new Dictionary<string, (decimal, string)>(StringComparer.OrdinalIgnoreCase);
+        var pricing = new Dictionary<string, (decimal, string)>(StringComparer.OrdinalIgnoreCase);
+        var offerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var skuNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             var offers = await client.ListOffersAsync(ct);
             foreach (var offer in offers.Offers)
             {
-                if (string.IsNullOrEmpty(offer.OfferId) || offer.Pricing.Count == 0)
+                if (!string.IsNullOrEmpty(offer.OfferId))
                 {
-                    continue;
+                    if (!string.IsNullOrWhiteSpace(offer.DisplayName))
+                    {
+                        offerNames[offer.OfferId] = offer.DisplayName!;
+                    }
+                    if (offer.Pricing.Count > 0)
+                    {
+                        var seat = offer.Pricing.FirstOrDefault(p =>
+                            string.Equals(p.ResourceType, "SEAT", StringComparison.OrdinalIgnoreCase)) ?? offer.Pricing[0];
+                        var money = seat.EffectivePrice ?? seat.BasePrice;
+                        if (money is not null)
+                        {
+                            pricing[offer.OfferId] = (money.Value, money.CurrencyCode);
+                        }
+                    }
                 }
-                var seat = offer.Pricing.FirstOrDefault(p =>
-                    string.Equals(p.ResourceType, "SEAT", StringComparison.OrdinalIgnoreCase)) ?? offer.Pricing[0];
-                var money = seat.EffectivePrice ?? seat.BasePrice;
-                if (money is not null)
+                if (!string.IsNullOrEmpty(offer.SkuId) && !string.IsNullOrWhiteSpace(offer.SkuDisplayName))
                 {
-                    map[offer.OfferId] = (money.Value, money.CurrencyCode);
+                    skuNames[offer.SkuId] = offer.SkuDisplayName!;
                 }
             }
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Read-model offer pricing lookup failed this cycle; entitlements will be reported as unpriced.");
+            logger.LogWarning(ex, "Read-model offer catalog lookup failed this cycle; entitlements will be reported as unpriced/unnamed.");
+        }
+        return new OfferCatalog(pricing, offerNames, skuNames);
+    }
+
+    /// <summary>Per-cycle offer catalog: wholesale pricing plus offer/SKU display names, all keyed by id.</summary>
+    private readonly record struct OfferCatalog(
+        IReadOnlyDictionary<string, (decimal Unit, string Currency)> Pricing,
+        IReadOnlyDictionary<string, string> OfferNames,
+        IReadOnlyDictionary<string, string> SkuNames);
+
+    // Friendly product display names keyed by product id (one quota-light products.list pass). Best-effort.
+    private async Task<IReadOnlyDictionary<string, string>> BuildProductNamesAsync(
+        GoogleChannelClient client, CancellationToken ct)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var products = await client.ListProductsAsync(ct);
+            foreach (var p in products.Products)
+            {
+                if (!string.IsNullOrEmpty(p.Id) && !string.IsNullOrWhiteSpace(p.DisplayName))
+                {
+                    map[p.Id] = p.DisplayName!;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Read-model product-name lookup failed this cycle; product mix will fall back to product ids.");
         }
         return map;
     }

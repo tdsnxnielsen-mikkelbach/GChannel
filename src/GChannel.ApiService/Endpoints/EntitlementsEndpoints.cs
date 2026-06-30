@@ -1,7 +1,10 @@
+using System.Globalization;
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
+using GChannel.ApiService.Data;
 using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 
@@ -20,14 +23,31 @@ public static class EntitlementsEndpoints
 
         // Entitlements are mutable (state changes), so list/get are cached only briefly and the
         // cache is invalidated on every mutation for the affected customer.
-        group.MapGet("/", (
+        group.MapGet("/", async (
                 string customerId,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
                 IOptions<GoogleChannelOptions> options,
                 CancellationToken cancellationToken) =>
-                CachedAsync(cache, ListCacheKey(customerId), options.Value.CacheSeconds,
-                    () => channel.ListEntitlementsAsync(customerId, cancellationToken), cancellationToken))
+            {
+                // §10 read-model: when enabled and this customer has been synced, serve the list from
+                // SQL so the contended ListEntitlements quota stays reserved for the background sync.
+                // Falls back to a live (cached) call for customers not yet in the read-model (cold start).
+                if (options.Value.UseReadModel
+                    && await db.CustomerRecords.AsNoTracking()
+                        .AnyAsync(c => c.CustomerId == customerId && !c.IsDeleted, cancellationToken))
+                {
+                    var rows = await db.EntitlementRecords.AsNoTracking()
+                        .Where(r => r.CustomerId == customerId && !r.IsDeleted)
+                        .OrderByDescending(r => r.CreateTime)
+                        .ToListAsync(cancellationToken);
+                    return Results.Ok(new EntitlementsResult { Entitlements = rows.Select(MapEntitlement).ToList() });
+                }
+
+                return await CachedAsync(cache, ListCacheKey(customerId), options.Value.CacheSeconds,
+                    () => channel.ListEntitlementsAsync(customerId, cancellationToken), cancellationToken);
+            })
             .WithName("ListEntitlements")
             .WithSummary("Lists a customer's entitlements.");
 
@@ -167,6 +187,30 @@ public static class EntitlementsEndpoints
     }
 
     private static string ListCacheKey(string customerId) => $"entitlements:{customerId}:list";
+
+    /// <summary>
+    /// Projects a §10 read-model entitlement row onto the shared <see cref="Entitlement"/> contract.
+    /// Display names, create time and seat count are denormalised at sync time, so the list renders
+    /// identically to the live path. The seat total is re-exposed as a <c>num_units</c> parameter so
+    /// the UI's existing seat-resolution logic works unchanged.
+    /// </summary>
+    private static Entitlement MapEntitlement(EntitlementRecord r) => new()
+    {
+        Name = $"customers/{r.CustomerId}/entitlements/{r.EntitlementId}",
+        Id = r.EntitlementId,
+        OfferId = r.OfferId,
+        OfferDisplayName = r.OfferName,
+        ProductId = r.ProductId,
+        ProductDisplayName = r.ProductName,
+        SkuId = r.SkuId,
+        SkuDisplayName = r.SkuName,
+        ProvisioningState = r.State,
+        IsTrial = r.IsTrial,
+        CreateTime = r.CreateTime,
+        Parameters = r.Seats > 0
+            ? [new EntitlementParameter { Name = "num_units", Value = r.Seats.ToString(CultureInfo.InvariantCulture), Editable = true }]
+            : [],
+    };
 
     private static string GetCacheKey(string customerId, string entitlementId) =>
         $"entitlements:{customerId}:get:{entitlementId}";

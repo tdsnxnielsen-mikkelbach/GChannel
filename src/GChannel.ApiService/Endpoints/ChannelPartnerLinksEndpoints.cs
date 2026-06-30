@@ -1,7 +1,9 @@
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
+using GChannel.ApiService.Data;
 using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 
@@ -41,14 +43,33 @@ public static class ChannelPartnerLinksEndpoints
             .WithName("GetChannelPartnerLink")
             .WithSummary("Gets a single channel partner link.");
 
-        group.MapGet("/{linkId}/customers", (
+        group.MapGet("/{linkId}/customers", async (
                 string linkId,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
                 IOptions<GoogleChannelOptions> options,
                 CancellationToken cancellationToken) =>
-                CachedAsync(cache, CustomersCacheKey(linkId), options.Value.CacheSeconds,
-                    () => channel.ListChannelPartnerCustomersAsync(linkId, cancellationToken), cancellationToken))
+            {
+                // §10 read-model: when enabled and this link has synced customers, serve them from SQL so
+                // the contended ListCustomers quota stays reserved for the background sync. Falls back to
+                // a live (cached) call when the link has no synced customers yet (cold start), which also
+                // preserves correct behaviour for links that genuinely own zero customers.
+                if (options.Value.UseReadModel)
+                {
+                    var rows = await db.CustomerRecords.AsNoTracking()
+                        .Where(c => c.OwningLinkId == linkId && !c.IsDeleted)
+                        .OrderBy(c => c.OrgName)
+                        .ToListAsync(cancellationToken);
+                    if (rows.Count > 0)
+                    {
+                        return Results.Ok(new CustomersResult { Customers = rows.Select(c => MapCustomer(c, linkId)).ToList() });
+                    }
+                }
+
+                return await CachedAsync(cache, CustomersCacheKey(linkId), options.Value.CacheSeconds,
+                    () => channel.ListChannelPartnerCustomersAsync(linkId, cancellationToken), cancellationToken);
+            })
             .WithName("ListChannelPartnerCustomers")
             .WithSummary("Lists the customers owned by a channel partner link.");
 
@@ -100,6 +121,23 @@ public static class ChannelPartnerLinksEndpoints
     private static string GetCacheKey(string linkId) => $"channel-partner-links:get:{linkId}";
 
     private static string CustomersCacheKey(string linkId) => $"channel-partner-links:{linkId}:customers";
+
+    /// <summary>
+    /// Projects a §10 read-model customer row owned by a partner link onto the shared
+    /// <see cref="Customer"/> contract. Only the columns the partner-detail customers table needs
+    /// (org / domain / cloud identity / created) are stored; full-fidelity fields (contact, address,
+    /// language) come from the live customer-detail call.
+    /// </summary>
+    private static Customer MapCustomer(CustomerRecord r, string linkId) => new()
+    {
+        Name = $"customers/{r.CustomerId}",
+        Id = r.CustomerId,
+        OrgDisplayName = r.OrgName,
+        Domain = r.Domain,
+        CloudIdentityId = r.CloudIdentityId,
+        ChannelPartnerId = linkId,
+        CreateTime = r.CreateTime,
+    };
 
     /// <summary>
     /// Cache key for the domain we recorded when inviting a reseller, keyed by their Cloud Identity

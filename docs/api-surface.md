@@ -152,6 +152,18 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > (`customerRepricingConfigs` / `channelPartnerRepricingConfigs`), denormalised onto the read-model by the
 > worker and surfaced as a *not-invoiced estimate*.
 
+> **Read-model-backed list endpoints (§10).** When `GoogleChannel:UseReadModel` is on, two interactive
+> reads whose live calls sit on the **contended** per-minute quotas are served from SQL instead, so they
+> stop competing with the sync worker: `GET /api/customers/{id}/entitlements` reads `EntitlementRecords`
+> (rather than `entitlements.list`) once the customer has been synced, and
+> `GET /api/channel-partner-links/{id}/customers` reads `CustomerRecords` for the owning link (rather than
+> `channelPartnerLinks.customers.list`). Both fall back to the original live, cached call when the
+> read-model has no rows yet (cold start / freshly rostered link), so behaviour is unchanged before the
+> first sync. The stored entitlement rows carry friendly offer/SKU/product names + create time (denormalised
+> for free from the pricing pass's `offers.list`), so the list looks identical to the live path. Entitlement
+> **detail** (`.get`), customer **detail**, the **catalog**, **repricing** and **transfers** stay live —
+> those are on lighter/uncontended quotas or, for transfers, must be computed in real time.
+
 ## Available possibilities
 
 The following are the full set of `v1` resources/methods the dashboard could grow into,

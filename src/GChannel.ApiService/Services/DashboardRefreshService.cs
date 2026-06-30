@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
+using GChannel.ApiService.Data;
 using GChannel.ApiService.Endpoints;
 using GChannel.Shared.Contracts;
 using Microsoft.Extensions.Caching.Distributed;
@@ -17,6 +18,7 @@ namespace GChannel.ApiService.Services;
 /// </summary>
 public sealed class DashboardRefreshService(
     IOptions<GoogleChannelOptions> options,
+    IServiceScopeFactory scopeFactory,
     IDistributedCache cache,
     IConnectionMultiplexer redis,
     ILoggerFactory loggerFactory,
@@ -96,20 +98,33 @@ public sealed class DashboardRefreshService(
 
                 // Run unbounded (no request-path time budget) so the cached result is complete even
                 // for large estates; this path is off the HTTP request and has no attempt timeout.
-                // Publish a partial snapshot to the live cache every few customers so the polling UI
-                // can watch the figures fill in during a long recompute (no extra Channel API cost).
-                var summary = await client.GetDashboardSummaryAsync(
-                    stoppingToken,
-                    applyTimeBudget: false,
-                    onPartial: partial => PublishPartialAsync(partial, ttl, stoppingToken),
-                    partialEvery: PartialPublishEvery);
+                // When the §10 read-model is enabled the figures come entirely from SQL (no live
+                // Channel API fan-out at all — the read-model sync is the sole quota consumer);
+                // otherwise we run the live aggregation and publish partial snapshots as it fills in.
+                DashboardSummary summary;
+                DashboardOverview overview;
+                if (opts.UseReadModel)
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
+                    summary = await DashboardEndpoints.BuildReadModelSummaryAsync(dbContext, stoppingToken);
+                    overview = await DashboardEndpoints.BuildReadModelOverviewAsync(dbContext, stoppingToken);
+                }
+                else
+                {
+                    // Publish a partial snapshot to the live cache every few customers so the polling
+                    // UI can watch the figures fill in during a long recompute (no extra API cost).
+                    summary = await client.GetDashboardSummaryAsync(
+                        stoppingToken,
+                        applyTimeBudget: false,
+                        onPartial: partial => PublishPartialAsync(partial, ttl, stoppingToken),
+                        partialEvery: PartialPublishEvery);
 
-                // Recompute the full overview so the cached copy the UI reads at phase 1 carries every
-                // headline + breakdown figure (direct customer count, channel-link count and the
-                // per-state breakdown). It re-lists customers and links — cheap and quota-light — and
-                // runs off the request path, so there's no budget pressure here. The indirect customer
-                // estate is part of the summary above (it's the expensive per-reseller fan-out).
-                var overview = await client.GetDashboardOverviewAsync(stoppingToken);
+                    // Recompute the full overview so the cached copy the UI reads at phase 1 carries
+                    // every headline + breakdown figure. It re-lists customers and links — cheap and
+                    // quota-light — and runs off the request path, so there's no budget pressure.
+                    overview = await client.GetDashboardOverviewAsync(stoppingToken);
+                }
 
                 // Write both the live key (short TTL) and the long-lived "last known good" fallback so
                 // the endpoint can serve a result even when the live recompute later hits the quota.
