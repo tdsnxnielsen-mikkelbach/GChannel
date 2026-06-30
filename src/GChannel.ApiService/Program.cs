@@ -186,7 +186,7 @@ static async Task SeedNotificationsForDevAsync(WebApplication app)
     {
         var redis = app.Services.GetRequiredService<IConnectionMultiplexer>();
         var db = redis.GetDatabase();
-        if (await db.KeyExistsAsync(ChannelNotificationsService.FeedKey))
+        if (await db.KeyExistsAsync(ChannelNotificationFeed.RedisKey))
         {
             return; // Don't clobber a feed that already has (real or previously seeded) events.
         }
@@ -213,7 +213,7 @@ static async Task SeedNotificationsForDevAsync(WebApplication app)
                 ReceivedAt = DateTimeOffset.UtcNow
             };
 
-            await db.ListLeftPushAsync(ChannelNotificationsService.FeedKey, JsonSerializer.Serialize(notification));
+            await db.ListLeftPushAsync(ChannelNotificationFeed.RedisKey, JsonSerializer.Serialize(notification));
         }
 
         app.Logger.LogInformation("Seeded {Count} sample notifications into the development feed.", samples.Length);

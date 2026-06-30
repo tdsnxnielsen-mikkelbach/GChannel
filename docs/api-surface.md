@@ -62,10 +62,10 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > service account subscriber access to it (`listSubscribers`/`unregister` manage the set). There is no
 > Azure messaging in the path: on Azure the app's **managed identity** only reads the Google
 > service-account key from **Key Vault**, and that key authenticates to Pub/Sub. The subscriber runs
-> as a `BackgroundService` (`ChannelNotificationsService`) **inside the existing API container app** —
-> **no extra container** — and writes events to a capped Redis list (`channel:notifications`) that
+> as a `BackgroundService` (`ChannelNotificationsService`) **in the GChannel.Worker container app** —
+> **no extra container beyond the worker** — and writes events to a capped Redis list (`channel:notifications`) that
 > `GET /api/notifications` serves; SQL isn't used because the app runs `EnsureCreated` (no migrations).
-> Pub/Sub load-balances across subscribers, so multiple API replicas share the subscription with **no
+> Pub/Sub load-balances across subscribers, so multiple worker replicas share the subscription with **no
 > distributed lock** (only `min-replicas ≥ 1` is required). Local F5 behaves identically using the
 > key from user-secrets. The **Notifications** page shows the live feed (each row deep-linking to its
 > customer/entitlement) plus subscriber registration; the subscriber is a no-op unless

@@ -1,12 +1,13 @@
 using System.Diagnostics;
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
+using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Worker.Services;
 
 /// <summary>
 /// §10 read-model sync. Incrementally materialises the estate (channel partner links + direct and

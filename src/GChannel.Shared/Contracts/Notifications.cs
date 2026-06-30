@@ -1,6 +1,17 @@
 namespace GChannel.Shared.Contracts;
 
 /// <summary>
+/// Well-known Redis keys for the Channel notification feed, shared between the worker (the background
+/// <c>ChannelNotificationsService</c> that produces events) and the API (which reads the feed and, in
+/// development, seeds it). Lives in the shared contracts so neither side depends on the other.
+/// </summary>
+public static class ChannelNotificationFeed
+{
+    /// <summary>Redis key of the capped list holding the most recent notifications (newest first).</summary>
+    public const string RedisKey = "channel:notifications";
+}
+
+/// <summary>
 /// The reseller account's current Pub/Sub subscriber registration: the Google-owned topic that
 /// Channel change notifications are published to, plus the service-account emails granted subscriber
 /// access (via <c>accounts.register</c> / <c>accounts.listSubscribers</c>).

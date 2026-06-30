@@ -3,12 +3,13 @@ using System.Text.Json;
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
 using GChannel.ApiService.Endpoints;
+using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Worker.Services;
 
 /// <summary>
 /// Periodically recomputes the dashboard summary using a service-account credential and warms the

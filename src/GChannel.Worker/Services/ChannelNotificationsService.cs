@@ -6,7 +6,7 @@ using Google.Cloud.PubSub.V1;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Worker.Services;
 
 /// <summary>
 /// Background subscriber for Google Cloud Channel change notifications (§7). The Channel API publishes
@@ -15,9 +15,9 @@ namespace GChannel.ApiService.Services;
 /// Cloud project. This service streams-pulls that subscription and records each event into a capped
 /// Redis list the UI reads as a live feed — so the app reacts to changes instead of polling.
 ///
-/// <para>Hosting: this runs inside the existing (internal) API container app, like the dashboard
-/// refresher — no separate worker container is needed. Pub/Sub load-balances messages across all
-/// subscribers, so when the API scales to multiple replicas they share the subscription automatically
+/// <para>Hosting: this runs in the dedicated worker container app (alongside the dashboard refresher
+/// and read-model sync). Pub/Sub load-balances messages across all
+/// subscribers, so when the worker scales to multiple replicas they share the subscription automatically
 /// and <em>no</em> distributed lock is required (unlike the dashboard compute, which must be
 /// single-flight). Authentication prefers Workload Identity Federation (the Azure managed identity
 /// mints short-lived federated Google tokens, no downloaded key) and falls back to a Google
@@ -30,9 +30,6 @@ public sealed class ChannelNotificationsService(
     IConnectionMultiplexer redis,
     ILogger<ChannelNotificationsService> logger) : BackgroundService
 {
-    /// <summary>Redis key of the capped list holding the most recent notifications (newest first).</summary>
-    public const string FeedKey = "channel:notifications";
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var opts = options.Value;
@@ -76,8 +73,8 @@ public sealed class ChannelNotificationsService(
             try
             {
                 var notification = ParseNotification(message);
-                await db.ListLeftPushAsync(FeedKey, JsonSerializer.Serialize(notification));
-                await db.ListTrimAsync(FeedKey, 0, maxItems - 1);
+                await db.ListLeftPushAsync(ChannelNotificationFeed.RedisKey, JsonSerializer.Serialize(notification));
+                await db.ListTrimAsync(ChannelNotificationFeed.RedisKey, 0, maxItems - 1);
                 logger.LogInformation(
                     "Channel notification received: {Kind} {EventType} {Resource}",
                     notification.Kind, notification.EventType, notification.ResourceName);

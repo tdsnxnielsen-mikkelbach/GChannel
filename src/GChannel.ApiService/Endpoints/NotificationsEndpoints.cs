@@ -9,7 +9,7 @@ namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
 /// Maps the eventing endpoints (§7): the live feed of Channel change notifications received from
-/// Pub/Sub (read from the capped Redis list written by <see cref="ChannelNotificationsService"/>),
+/// Pub/Sub (read from the capped Redis list written by the worker's <c>ChannelNotificationsService</c>),
 /// plus management of the Pub/Sub subscriber registration
 /// (<c>accounts.register</c> / <c>unregister</c> / <c>listSubscribers</c>).
 /// </summary>
@@ -25,7 +25,7 @@ public static class NotificationsEndpoints
                 CancellationToken cancellationToken) =>
             {
                 var db = redis.GetDatabase();
-                var entries = await db.ListRangeAsync(ChannelNotificationsService.FeedKey, 0, -1);
+                var entries = await db.ListRangeAsync(ChannelNotificationFeed.RedisKey, 0, -1);
                 var notifications = entries
                     .Where(entry => entry.HasValue)
                     .Select(entry => JsonSerializer.Deserialize<ChannelNotification>((string)entry!))

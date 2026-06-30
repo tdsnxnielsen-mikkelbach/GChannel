@@ -1,6 +1,6 @@
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
-using GChannel.ApiService.Services;
+using GChannel.Worker.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
 
