@@ -105,6 +105,13 @@ active priced subscriptions (same estimated, not-invoiced basis).
 5. Open the **entitlement detail** (`/customers/{id}/entitlements/{id}`) to see status, seats, and
    lifecycle actions (suspend/activate/change).
 
+The **entitlement (subscription) detail** page groups the subscription into **Licenses** (total
+`num_units`; *Assigned* shows “— (not available)” — assigned-seat counts aren't exposed by the Channel
+API; a **Manage licenses** link jumps to the seats/offer controls), **Payment & pricing (estimated)**
+(billing cycle, an **estimated /month** figure that normalises the per-cycle list price, repricing %, and
+the **Renewal** term — “Renews/Ends {date} · auto-renew on/off”), and a **Billing account** showing its
+**ID** with the full resource path. All monetary figures are *estimates from list pricing, not invoices*.
+
 The entitlement list (`/customers/{id}/entitlements`) includes an **Est. monthly** column — unit list
 price × seats × (1 + your repricing %), with a breakdown tooltip; it shows “—” for trials or offers
 that couldn't be priced. As with the dashboard, these are *estimates from list pricing, not invoices*.

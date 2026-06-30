@@ -73,7 +73,17 @@ else
                             </tr>
                             <tr><td><strong>Seats</strong></td><td>@(Seats(_entitlement) ?? "—")</td></tr>
                             <tr><td><strong>Purchase order</strong></td><td>@(_entitlement.PurchaseOrderId ?? "—")</td></tr>
-                            <tr><td><strong>Billing account</strong></td><td>@(_entitlement.BillingAccount ?? "—")</td></tr>
+                            <tr>
+                                <td><strong>Billing account</strong></td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(_entitlement.BillingAccount))
+                                    {
+                                        <span>@(BillingAccountId ?? _entitlement.BillingAccount)</span>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@_entitlement.BillingAccount</MudText>
+                                    }
+                                    else { <span>—</span> }
+                                </td>
+                            </tr>
                             <tr><td><strong>Created</strong></td><td>@(_entitlement.CreateTime?.ToString("u") ?? "—")</td></tr>
                             <tr><td><strong>Updated</strong></td><td>@(_entitlement.UpdateTime?.ToString("u") ?? "—")</td></tr>
                             @if (_entitlement.IsTrial && _entitlement.TrialEndTime is not null)
@@ -109,7 +119,28 @@ else
             </MudCard>
 
             <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Pricing (estimated)</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Licenses</MudText></CardHeaderContent></MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            <tr><td><strong>Total licenses</strong></td><td>@SeatCount</td></tr>
+                            <tr>
+                                <td><strong>Assigned</strong></td>
+                                <td>
+                                    <MudTooltip Text="Assigned-seat counts aren't exposed by the Channel API — they live in each customer's own Workspace tenant (Enterprise License Manager / Admin SDK), which needs per-customer authorization.">
+                                        <span>— <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-inline">(not available)</MudText></span>
+                                    </MudTooltip>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </MudSimpleTable>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Href="#modify"
+                               StartIcon="@Icons.Material.Filled.Tune">Manage licenses</MudButton>
+                </MudCardContent>
+            </MudCard>
+
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Payment &amp; pricing (estimated)</MudText></CardHeaderContent></MudCardHeader>
                 <MudCardContent>
                     @if (_pricingLoading)
                     {
@@ -119,6 +150,7 @@ else
                     {
                         <MudSimpleTable Dense="true" Elevation="0">
                             <tbody>
+                                <tr><td><strong>Billing cycle</strong></td><td>@(string.IsNullOrEmpty(_offerCycle) ? "—" : _offerCycle)</td></tr>
                                 <tr><td><strong>Wholesale / seat</strong></td><td>@seat.Display@(string.IsNullOrEmpty(_offerCycle) ? "" : $" · {_offerCycle.ToLowerInvariant()}")</td></tr>
                                 <tr><td><strong>Seats</strong></td><td>@SeatCount</td></tr>
                                 <tr><td><strong>Wholesale total</strong></td><td>@($"{seat.CurrencyCode} {WholesaleTotal:0.00}")</td></tr>
@@ -128,10 +160,12 @@ else
                                     <tr><td><strong>Computed price</strong></td><td>@($"{seat.CurrencyCode} {ComputedTotal:0.00}")</td></tr>
                                     <tr><td><strong>Est. margin</strong></td><td>@($"{seat.CurrencyCode} {(ComputedTotal - WholesaleTotal):0.00}")</td></tr>
                                 }
+                                <tr><td><strong>Estimated / month</strong></td><td>@($"{seat.CurrencyCode} {ComputedMonthly:0.00}")@(MonthsInCycle() > 1 ? $" (≈ {seat.CurrencyCode} {ComputedTotal:0.00} ÷ {MonthsInCycle()} mo)" : "")</td></tr>
+                                <tr><td><strong>Renewal</strong></td><td>@RenewalTermText()</td></tr>
                             </tbody>
                         </MudSimpleTable>
                         <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            Estimated wholesale list pricing × seats@(_repricingPercent is null ? " (no repricing config; computed price = wholesale)" : "") — not an invoiced amount.
+                            Estimated wholesale list pricing × seats, normalised to a monthly figure@(_repricingPercent is null ? " (no repricing config; computed price = wholesale)" : "") — not an invoiced amount.
                         </MudText>
                     }
                     else
@@ -143,7 +177,7 @@ else
         </MudItem>
 
         <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4">
+            <MudCard Elevation="2" Class="mb-4" id="modify">
                 <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Modify</MudText></CardHeaderContent></MudCardHeader>
                 <MudCardContent>
                     <MudText Typo="Typo.subtitle2" Class="mb-1">Seats</MudText>
@@ -281,6 +315,38 @@ else
     private int SeatCount => int.TryParse(Seats(_entitlement!), out var s) ? s : 1;
     private decimal WholesaleTotal => (SeatPrice?.Value ?? 0) * SeatCount;
     private decimal ComputedTotal => WholesaleTotal * (1 + (decimal)(_repricingPercent ?? 0) / 100);
+    private decimal ComputedMonthly => MonthsInCycle() is var m && m > 0 ? ComputedTotal / m : ComputedTotal;
+
+    private string? BillingAccountId =>
+        string.IsNullOrEmpty(_entitlement?.BillingAccount)
+            ? null
+            : _entitlement.BillingAccount.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+
+    private int MonthsInCycle()
+    {
+        var c = _offerCycle?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(c)) return 1;
+        if (c is "monthly") return 1;
+        if (c is "annual" or "yearly") return 12;
+        if (c is "daily") return 1;
+        var dash = c.IndexOf('-');
+        if (dash > 0 && int.TryParse(c[..dash], out var n) && n > 0)
+        {
+            if (c.Contains("year")) return n * 12;
+            if (c.Contains("month")) return n;
+        }
+        return 1;
+    }
+
+    private string RenewalTermText()
+    {
+        if (_entitlement?.Commitment?.EndTime is not { } end)
+        {
+            return "No commitment end date";
+        }
+        var verb = _renewalEnabled ? "Renews" : "Ends";
+        return $"{verb} {end:MMM d, yyyy} · auto-renew {(_renewalEnabled ? "on" : "off")}";
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

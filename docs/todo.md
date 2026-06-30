@@ -686,11 +686,25 @@ above on top, so a user sees the same shape they know from the console plus comp
   need its own pacer/budget or an opt-in flag), a nullable `EntitlementRecord.AssignedSeats` (idempotent
   SQL ALTER, best-effort so "—" stays distinct from 0) surfaced on the `Entitlement` contract, and swapping
   the card's `—` for the count. Self-contained → no rework cost to add later.*
-- [ ] **Phase 7 — Subscription detail (licenses + payment + billing).** Clicking a card shows
+- [x] **Phase 7 — Subscription detail (licenses + payment + billing).** Clicking a card shows
   **Licenses** (total `num_units`, assigned where available, manage link → §3), **Payment** (cycle +
   computed `/month` estimate from §11 pricing, marked *estimated*, renewal datetime), `Renewal` term
   text, and **Billing account name + ID** from the entitlement's `billingAccount`. Pricing reuses
   Phases 1–2; billing actuals stay out (Phase 4 caveat).
+  *Implemented on `EntitlementDetail.razor` (`/customers/{id}/entitlements/{id}`), the card's "Details"
+  target, served from the **live** `GetEntitlement` (full fidelity — `billingAccount`, `commitment`,
+  `parameters`). New **Licenses** card: total = `num_units`, **Assigned** shows "— (not available)" with
+  a tooltip pointing at the Admin SDK / per-tenant authorization gap (see Phase 6 note), plus a "Manage
+  licenses" button that anchors to the `id="modify"` seats/offer card (§3). The pricing card became
+  **Payment &amp; pricing (estimated)**: added a **Billing cycle** row, an **Estimated / month** row that
+  normalises the per-cycle computed total by `MonthsInCycle()` (Monthly→1, Annual/Yearly→12, `N-monthly`/
+  `N-yearly` parsed; shows the `÷ N mo` working when >1 month), and a **Renewal** row from
+  `RenewalTermText()` ("Renews|Ends {date} · auto-renew on|off" from `Commitment.EndTime` + the renewal
+  toggle). The **Billing account** Details row now surfaces the **ID** (last path segment of
+  `billingAccount`) with the full resource string as a caption — the entitlement carries only the resource
+  name, so no separate friendly name is available. Pricing reuses the cached `offers.list` lookup
+  (`LookupEntitlementOfferAsync`) + read-model repricing %; every figure stays labelled estimated /
+  not-invoiced (Phase 4 caveat). No schema change, no new live price calls.*
 
 ### Risks &amp; caveats
 
