@@ -76,11 +76,44 @@ public static class EstateEndpoints
                     })
                     .ToListAsync(ct);
 
+                // Estimated monthly value per customer: Σ over active priced entitlements of
+                // unit price × seats × (1 + markup%), in the customer's dominant currency. Computed
+                // for just the page's customers so the list stays fast at distributor scale.
+                if (items.Count > 0)
+                {
+                    var ids = items.Select(i => i.CustomerId).ToList();
+                    var priced = await db.EntitlementRecords.AsNoTracking()
+                        .Where(e => ids.Contains(e.CustomerId) && !e.IsDeleted
+                                    && e.State == "ACTIVE" && e.UnitPrice > 0 && e.Seats > 0)
+                        .Select(e => new { e.CustomerId, e.Currency, e.UnitPrice, e.Seats, e.RepricingPercent })
+                        .ToListAsync(ct);
+
+                    var byCustomer = priced
+                        .GroupBy(e => e.CustomerId)
+                        .ToDictionary(g => g.Key, g =>
+                        {
+                            // Dominant currency = the one with the largest wholesale base for this customer.
+                            var dominant = g.GroupBy(e => e.Currency ?? "")
+                                .OrderByDescending(cg => cg.Sum(e => e.UnitPrice * e.Seats))
+                                .First();
+                            var monthly = dominant.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m)));
+                            return (Total: monthly, Currency: string.IsNullOrEmpty(dominant.Key) ? null : dominant.Key);
+                        });
+
+                    items = items.Select(i =>
+                        byCustomer.TryGetValue(i.CustomerId, out var v)
+                            ? i with { EstimatedMonthlyTotal = v.Total, Currency = v.Currency }
+                            : i).ToList();
+                }
+
                 return Results.Ok(new PagedEstateResult<EstateCustomer>
                 {
                     Items = items,
                     Total = total,
-                    AsOf = items.Count == 0 ? null : items.Min(i => i.LastSyncedUtc),
+                    AsOf = items.Where(i => i.LastSyncedUtc > DateTimeOffset.MinValue)
+                                .Select(i => (DateTimeOffset?)i.LastSyncedUtc)
+                                .DefaultIfEmpty(null)
+                                .Min(),
                 });
             });
 

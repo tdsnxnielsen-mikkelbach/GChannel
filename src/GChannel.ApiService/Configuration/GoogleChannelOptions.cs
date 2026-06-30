@@ -126,6 +126,16 @@ public sealed class GoogleChannelOptions
     public int ReadModelLinksPerCycle { get; set; } = 18;
 
     /// <summary>
+    /// §10 read-model. Maximum number of customers whose entitlements are refreshed per sync cycle.
+    /// Entitlement syncing is staleness-rotated across the whole estate (direct + indirect) so a
+    /// single cycle can never spend the entire contended <c>ListEntitlements</c> quota on the direct
+    /// customers and starve the reseller (indirect) fan-out — the bug that left indirect customers,
+    /// partner-link counts and reseller margins empty. The estate is covered over several cycles.
+    /// Sized to the ListEntitlements quota budget; minimum 1.
+    /// </summary>
+    public int ReadModelCustomersPerCycle { get; set; } = 60;
+
+    /// <summary>
     /// The Google Cloud project id that hosts the Pub/Sub subscription for Channel notifications.
     /// This is your own project, where you create a subscription against the Google-owned topic
     /// returned by <c>accounts.register</c>. Required to run the notification subscriber.

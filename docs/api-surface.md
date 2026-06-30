@@ -164,6 +164,14 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > **detail** (`.get`), customer **detail**, the **catalog**, **repricing** and **transfers** stay live —
 > those are on lighter/uncontended quotas or, for transfers, must be computed in real time.
 
+> **Read-model pricing fields.** The same denormalised pricing the dashboard rollup uses is also exposed
+> per row for UI estimates (no extra Channel API calls): read-model `Entitlement` results carry
+> `UnitPrice` / `PriceCurrency` / `RepricingPercent`, and `GET /api/estate/customers` rows carry an
+> `EstimatedMonthlyTotal` + `Currency` (the customer's active priced entitlements summed as
+> `Σ price × seats × (1 + percent/100)` in their dominant currency). All are *estimated list pricing,
+> not invoiced amounts*. The estate-customers *as-of* timestamp ignores never-synced rows
+> (`LastSyncedUtc == MinValue`).
+
 ## Available possibilities
 
 The following are the full set of `v1` resources/methods the dashboard could grow into,

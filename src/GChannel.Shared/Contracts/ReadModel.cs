@@ -26,6 +26,16 @@ public sealed record EstateCustomer
     public long SeatCount { get; init; }
     public DateTimeOffset? CreateTime { get; init; }
     public DateTimeOffset LastSyncedUtc { get; init; }
+
+    /// <summary>
+    /// Estimated monthly value of the customer's active entitlements, repricing mark-up applied
+    /// (Σ unit price × seats × (1 + markup%)). Null when the customer has no priced active
+    /// entitlements synced yet. Estimated from offer list pricing — not an invoiced figure.
+    /// </summary>
+    public decimal? EstimatedMonthlyTotal { get; init; }
+
+    /// <summary>Currency of <see cref="EstimatedMonthlyTotal"/> (the customer's dominant currency).</summary>
+    public string? Currency { get; init; }
 }
 
 /// <summary>A reseller (channel partner link) row from the read-model.</summary>

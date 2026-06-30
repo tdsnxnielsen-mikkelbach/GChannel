@@ -207,6 +207,9 @@ public static class EntitlementsEndpoints
         ProvisioningState = r.State,
         IsTrial = r.IsTrial,
         CreateTime = r.CreateTime,
+        UnitPrice = r.UnitPrice > 0 ? r.UnitPrice : null,
+        PriceCurrency = r.Currency,
+        RepricingPercent = r.RepricingPercent,
         Parameters = r.Seats > 0
             ? [new EntitlementParameter { Name = "num_units", Value = r.Seats.ToString(CultureInfo.InvariantCulture), Editable = true }]
             : [],

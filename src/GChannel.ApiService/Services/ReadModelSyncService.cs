@@ -105,16 +105,16 @@ public sealed class ReadModelSyncService(
         // Direct customers — refreshed every cycle (one cheap ListCustomers pass). Isolated so a failure
         // here (e.g. a ListCustomers 429 or a transient SaveChanges fault) does NOT abort the indirect
         // fan-out below: the reseller-owned estate must keep syncing even if the direct pass hiccups.
+        // NOTE: only customer *metadata* is upserted here — entitlement syncing happens once, in a
+        // single staleness-rotated pass at the end of the cycle (see below), so the contended
+        // ListEntitlements quota is shared fairly across the whole estate instead of being drained by
+        // the direct customers before the indirect fan-out ever runs.
         var directCount = 0;
         try
         {
             var direct = await client.ListCustomersAsync(ct);
             directCount = direct.Customers.Count;
             await UpsertCustomersAsync(dbContext, direct.Customers, owningLinkId: null, now, ct);
-            foreach (var c in direct.Customers)
-            {
-                await SyncCustomerEntitlementsAsync(dbContext, client, c.Id, owningLinkId: null, offerCatalog, productNames, linkFallbackPercent: 0m, now, ct);
-            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -130,7 +130,11 @@ public sealed class ReadModelSyncService(
         await UpsertLinksAsync(dbContext, links.Links, now, ct);
 
         // Pick the stalest ACTIVE links and refresh their downstream customers, capped per cycle so we
-        // stay within the ListCustomers quota; the whole estate is covered over several cycles.
+        // stay within the ListCustomers quota; the whole estate is covered over several cycles. Only
+        // customer *metadata* and the link's customer count are written here — entitlements follow in
+        // the unified pass below. This means partner-link customer counts and the indirect estate
+        // populate as soon as a link is fanned out, independent of the (slower, contended) entitlement
+        // quota.
         var activeIds = links.Links
             .Where(l => string.Equals(l.LinkState, "ACTIVE", StringComparison.OrdinalIgnoreCase))
             .Select(l => l.Id)
@@ -147,16 +151,8 @@ public sealed class ReadModelSyncService(
         {
             try
             {
-                // §6 reseller-wide mark-up: a channel-partner-granularity repricing config applies to
-                // every downstream entitlement under this link that has no per-entitlement override.
-                var linkFallbackPercent = await ResolveChannelPartnerPercentAsync(client, linkId, now, ct);
-
                 var customers = await client.ListChannelPartnerCustomersAsync(linkId, ct);
                 await UpsertCustomersAsync(dbContext, customers.Customers, owningLinkId: linkId, now, ct);
-                foreach (var c in customers.Customers)
-                {
-                    await SyncCustomerEntitlementsAsync(dbContext, client, c.Id, owningLinkId: linkId, offerCatalog, productNames, linkFallbackPercent, now, ct);
-                }
                 var link = await dbContext.ResellerLinks.FindAsync([linkId], ct);
                 if (link is not null)
                 {
@@ -179,6 +175,40 @@ public sealed class ReadModelSyncService(
             }
         }
 
+        // Unified entitlement sync pass — the single consumer of the contended ListEntitlements quota.
+        // Refresh the stalest customers across the WHOLE estate (direct + indirect), capped per cycle,
+        // so quota is shared fairly and every part of the estate progresses each cycle. Each customer's
+        // LastSyncedUtc is stamped after its entitlements are synced (or skipped), so the rotation
+        // advances and a single throttled customer can't block the queue.
+        var due = await dbContext.CustomerRecords
+            .Where(c => !c.IsDeleted)
+            .OrderBy(c => c.LastSyncedUtc)
+            .Take(Math.Max(1, opts.ReadModelCustomersPerCycle))
+            .Select(c => new { c.CustomerId, c.OwningLinkId })
+            .ToListAsync(ct);
+
+        // §6 reseller-wide mark-up is resolved once per link (a channel-partner-granularity repricing
+        // config applies to every downstream entitlement under the link with no per-entitlement
+        // override). Cache per cycle so a link shared by many customers in this slice is fetched once.
+        var linkPercentCache = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var syncedCount = 0;
+        foreach (var c in due)
+        {
+            var linkFallbackPercent = 0m;
+            if (!string.IsNullOrEmpty(c.OwningLinkId))
+            {
+                if (!linkPercentCache.TryGetValue(c.OwningLinkId, out linkFallbackPercent))
+                {
+                    linkFallbackPercent = await ResolveChannelPartnerPercentAsync(client, c.OwningLinkId, now, ct);
+                    linkPercentCache[c.OwningLinkId] = linkFallbackPercent;
+                }
+            }
+
+            await SyncCustomerEntitlementsAsync(
+                dbContext, client, c.CustomerId, c.OwningLinkId, offerCatalog, productNames, linkFallbackPercent, now, ct);
+            syncedCount++;
+        }
+
         var cursor = await dbContext.SyncCursors.FindAsync(["links"], ct) ?? new SyncCursor { Scope = "links" };
         if (dbContext.Entry(cursor).State == EntityState.Detached)
         {
@@ -190,8 +220,8 @@ public sealed class ReadModelSyncService(
         await dbContext.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "Read-model cycle: {Direct} direct customers, {Links} links, refreshed {Stale} reseller(s) in {Secs}s.",
-            directCount, links.Links.Count, stalest.Count,
+            "Read-model cycle: {Direct} direct customers, {Links} links, refreshed {Stale} reseller(s), synced {Synced} customer entitlement set(s) in {Secs}s.",
+            directCount, links.Links.Count, stalest.Count, syncedCount,
             (int)Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
     }
 
@@ -217,6 +247,10 @@ public sealed class ReadModelSyncService(
     }
 
     // Upserts a scope's customers and soft-deletes any previously-stored ones that vanished from the list.
+    // Only customer *metadata* is written here; LastSyncedUtc tracks when the customer's ENTITLEMENTS
+    // were last synced (stamped by the unified entitlement pass), so it is left untouched for existing
+    // rows and seeded to MinValue for new rows — putting never-synced customers at the head of the
+    // entitlement rotation queue.
     private static async Task UpsertCustomersAsync(
         GChannelDbContext db, IReadOnlyList<Customer> customers, string? owningLinkId, DateTimeOffset now, CancellationToken ct)
     {
@@ -230,7 +264,7 @@ public sealed class ReadModelSyncService(
         {
             if (!byId.TryGetValue(c.Id, out var row))
             {
-                row = new CustomerRecord { CustomerId = c.Id };
+                row = new CustomerRecord { CustomerId = c.Id, LastSyncedUtc = DateTimeOffset.MinValue };
                 db.CustomerRecords.Add(row);
                 byId[c.Id] = row; // guard against duplicate ids in the same list (would double-add the PK)
             }
@@ -239,8 +273,8 @@ public sealed class ReadModelSyncService(
             row.CloudIdentityId = c.CloudIdentityId;
             row.OwningLinkId = owningLinkId;
             row.CreateTime = c.CreateTime;
-            row.LastSyncedUtc = now;
             row.IsDeleted = false;
+            // LastSyncedUtc intentionally NOT reset here — it reflects entitlement-sync freshness.
         }
 
         foreach (var row in stored.Where(r => !seen.Contains(r.CustomerId) && !r.IsDeleted))
@@ -271,6 +305,14 @@ public sealed class ReadModelSyncService(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Read-model entitlement sync skipped for customer {Customer}.", customerId);
+            // Stamp the customer as visited so the staleness rotation advances past a throttled customer
+            // instead of retrying it ahead of everyone else next cycle (keeps the queue moving).
+            var skipped = await db.CustomerRecords.FindAsync([customerId], ct);
+            if (skipped is not null)
+            {
+                skipped.LastSyncedUtc = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
             return;
         }
 
@@ -334,6 +376,8 @@ public sealed class ReadModelSyncService(
         if (customer is not null)
         {
             customer.SeatCount = activeSeats;
+            // Stamp entitlement-sync freshness so the staleness rotation advances to the next customer.
+            customer.LastSyncedUtc = DateTimeOffset.UtcNow;
         }
 
         await db.SaveChangesAsync(ct);

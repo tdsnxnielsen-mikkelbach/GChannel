@@ -41,6 +41,7 @@ else if (_entitlements is { Count: > 0 })
             <MudTh>Product</MudTh>
             <MudTh>State</MudTh>
             <MudTh>Seats</MudTh>
+            <MudTh>Est. monthly</MudTh>
             <MudTh>Created</MudTh>
             <MudTh Style="text-align:right">Actions</MudTh>
         </HeaderContent>
@@ -81,6 +82,18 @@ else if (_entitlements is { Count: > 0 })
                 }
             </MudTd>
             <MudTd DataLabel="Seats">@(Seats(context) ?? "—")</MudTd>
+            <MudTd DataLabel="Est. monthly">
+                @if (MonthlyEstimate(context) is { } v)
+                {
+                    <MudTooltip Text="@EstimateBreakdown(context)">
+                        <span>@FormatMoney(v, context.PriceCurrency)</span>
+                    </MudTooltip>
+                }
+                else
+                {
+                    <span>—</span>
+                }
+            </MudTd>
             <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
             <MudTd DataLabel="Actions" Style="text-align:right">
                 <MudTooltip Text="View">
@@ -169,6 +182,33 @@ else
     private static string? Seats(Entitlement e) =>
         e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
         ?? e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
+
+    private static long SeatCount(Entitlement e) =>
+        long.TryParse(Seats(e), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0;
+
+    // Estimated monthly amount = unit price × seats × (1 + repricing markup). Null when unpriced.
+    private static decimal? MonthlyEstimate(Entitlement e)
+    {
+        if (e.UnitPrice is not { } unit || unit <= 0) return null;
+        var seats = SeatCount(e);
+        if (seats <= 0) return null;
+        var markup = 1 + ((e.RepricingPercent ?? 0m) / 100m);
+        return unit * seats * markup;
+    }
+
+    private static string EstimateBreakdown(Entitlement e)
+    {
+        var seats = SeatCount(e);
+        var pct = e.RepricingPercent ?? 0m;
+        var baseLine = $"{FormatMoney(e.UnitPrice ?? 0m, e.PriceCurrency)} × {seats} seat(s)";
+        var markupLine = pct != 0m ? $" + {pct:0.##}% markup" : string.Empty;
+        return $"Estimated from offer list pricing: {baseLine}{markupLine}. Not an invoiced figure.";
+    }
+
+    private static string FormatMoney(decimal value, string? currency) =>
+        string.IsNullOrEmpty(currency)
+            ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
+            : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
 
     private Task ActivateAsync(Entitlement e) =>
         RunAsync(e, "Activate", $"Activate entitlement '{e.OfferId ?? e.Id}'?",

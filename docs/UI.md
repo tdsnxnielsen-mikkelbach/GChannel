@@ -74,12 +74,18 @@ but it's useful for understanding what's available.
 ## 5. View and manage a customer
 
 From **Customers → All customers** (`/customers`) open any row to reach **customer detail**
-(`/customers/{id}`). From there you can:
+(`/customers/{id}`). The list shows an **Est. monthly** column — the estimated monthly value of each
+customer's active subscriptions (from list pricing with your repricing applied, *not* invoiced
+amounts; “—” until their entitlements have been priced by the background read-model). From the detail
+page you can:
 
 - **Edit** the customer (`/customers/edit/{id}`).
 - See and open the customer's **entitlements** (`/customers/{id}/entitlements`).
 - Start a **purchase**, a **transfer**, or **repricing**.
 - Jump to the owning **channel partner** (if the customer has one).
+
+The customer detail page also shows an **Estimated monthly value** panel summing that customer's
+active priced subscriptions (same estimated, not-invoiced basis).
 
 ## 6. Buy an entitlement (subscription)
 
@@ -92,6 +98,10 @@ From **Customers → All customers** (`/customers`) open any row to reach **cust
    processing, you'll get an **operation name** you can track on the **Operations** page (step 9).
 5. Open the **entitlement detail** (`/customers/{id}/entitlements/{id}`) to see status, seats, and
    lifecycle actions (suspend/activate/change).
+
+The entitlement list (`/customers/{id}/entitlements`) includes an **Est. monthly** column — unit list
+price × seats × (1 + your repricing %), with a breakdown tooltip; it shows “—” for trials or offers
+that couldn't be priced. As with the dashboard, these are *estimates from list pricing, not invoices*.
 
 ## 7. Transfer entitlements
 

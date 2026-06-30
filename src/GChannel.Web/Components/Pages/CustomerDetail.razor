@@ -40,6 +40,22 @@ else
         </div>
     </div>
 
+    @if (_estimatedMonthly is { } est)
+    {
+        <MudPaper Elevation="2" Class="pa-4 mb-4">
+            <div class="d-flex justify-space-between align-center flex-wrap gap-2">
+                <div>
+                    <MudText Typo="Typo.overline" Color="Color.Secondary">Estimated monthly value</MudText>
+                    <MudText Typo="Typo.h5">@FormatMoney(est, _estimatedCurrency)</MudText>
+                </div>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="max-width:420px">
+                    Across @_pricedEntitlementCount active entitlement(s), estimated from offer list
+                    pricing with repricing applied. Not an invoiced figure.
+                </MudText>
+            </div>
+        </MudPaper>
+    }
+
     <MudGrid>
         <MudItem xs="12" md="6">
             <MudCard Elevation="2" Class="mb-4">
@@ -259,6 +275,10 @@ else
     private readonly Dictionary<string, IReadOnlyList<PurchasableOffer>?> _offersBySku = [];
     private readonly HashSet<string> _expandedSkus = [];
 
+    private decimal? _estimatedMonthly;
+    private string? _estimatedCurrency;
+    private int _pricedEntitlementCount;
+
     protected override async Task OnParametersSetAsync()
     {
         _loading = true;
@@ -267,6 +287,9 @@ else
         _purchasableSkus = null;
         _offersBySku.Clear();
         _expandedSkus.Clear();
+        _estimatedMonthly = null;
+        _estimatedCurrency = null;
+        _pricedEntitlementCount = 0;
 
         try
         {
@@ -294,8 +317,54 @@ else
                 Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
                 _products = [];
             }
+
+            try
+            {
+                var entitlements = await Api.ListEntitlementsAsync(Id);
+                ComputeEstimatedValue(entitlements?.Entitlements);
+            }
+            catch
+            {
+                // Estimated value is best-effort; ignore failures so the page still renders.
+            }
         }
     }
+
+    // Sums the estimated monthly value of active, priced entitlements in their dominant currency.
+    private void ComputeEstimatedValue(IReadOnlyList<Entitlement>? entitlements)
+    {
+        if (entitlements is null || entitlements.Count == 0) return;
+
+        var priced = entitlements
+            .Where(e => string.Equals(e.ProvisioningState, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            .Select(e => new { e.PriceCurrency, Amount = MonthlyEstimate(e) })
+            .Where(x => x.Amount is > 0)
+            .ToList();
+        if (priced.Count == 0) return;
+
+        var dominant = priced
+            .GroupBy(x => x.PriceCurrency ?? "")
+            .OrderByDescending(g => g.Sum(x => x.Amount!.Value))
+            .First();
+        _estimatedMonthly = dominant.Sum(x => x.Amount!.Value);
+        _estimatedCurrency = string.IsNullOrEmpty(dominant.Key) ? null : dominant.Key;
+        _pricedEntitlementCount = priced.Count;
+    }
+
+    private static decimal? MonthlyEstimate(Entitlement e)
+    {
+        if (e.UnitPrice is not { } unit || unit <= 0) return null;
+        var seatStr = e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
+        if (!long.TryParse(seatStr, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var seats) || seats <= 0)
+            return null;
+        return unit * seats * (1 + ((e.RepricingPercent ?? 0m) / 100m));
+    }
+
+    private static string FormatMoney(decimal value, string? currency) =>
+        string.IsNullOrEmpty(currency)
+            ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
+            : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
 
     private async Task OnProductSelected(string productId)
     {

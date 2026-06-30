@@ -383,6 +383,25 @@ cache-served `/summary` and redraws the cards + product-mix donut, and renders a
 hint is shown only while the refresher is enabled and idle). Polling is best-effort: transient failures
 keep the last good render and never raise a toast.
 
+**Read-model sync cadence (metadata vs entitlements).** A cycle does cheap **metadata** work first and
+rations the **contended** entitlement quota separately, so the two never starve each other. Each cycle
+`ReadModelSyncService`: (1) lists direct customers and upserts their `CustomerRecords` *metadata only*;
+(2) lists the channel-partner-link roster and upserts `ResellerLinks`; (3) fans out the **stalest**
+`ReadModelLinksPerCycle` ACTIVE links (`channelPartnerLinks.customers.list`), upserting each link's
+indirect `CustomerRecords` and stamping the link's `CustomerCount`. None of those steps touch the
+`ListEntitlements` quota, so the **indirect estate and per-link customer counts populate as soon as a
+link is fanned out** — the dashboard's "Via indirect resellers" count and "Top indirect resellers" list
+fill in independent of (and without waiting on) entitlement syncing. Then (4) a **single, unified
+entitlement pass** refreshes the stalest `ReadModelCustomersPerCycle` customers across the *whole* estate
+(direct **and** indirect), ordered by `CustomerRecords.LastSyncedUtc` (which now tracks *entitlement*
+freshness — new rows start at `MinValue`, the head of the queue). Each customer's `LastSyncedUtc` is
+stamped after its entitlements are synced **or** skipped (a 429 rotates it to the back rather than
+blocking the queue), so the pass round-robins fairly and a throttled customer can't stall the cycle.
+This replaced an earlier ordering where the direct-customer entitlement fan-out ran inline before the
+indirect fan-out and, under the ~24/min `ListEntitlements` quota, could consume the whole cycle so the
+indirect estate never synced. The unified-pass size is the `GoogleChannel:ReadModelCustomersPerCycle`
+knob (default 60).
+
 **Estimated estate value (pricing).** When the §10 read-model is enabled, the worker also denormalises
 pricing onto each synced entitlement so the dashboard can show an estimated monetary rollup without any
 per-request Channel API calls. Once per sync cycle `ReadModelSyncService` builds an
@@ -399,6 +418,16 @@ and adds per-reseller wholesale/margin to the top-resellers list. The home page 
 "Estimated estate value (monthly)" panel with a clear *estimated, not invoiced* disclaimer (it is derived
 from offer **list** pricing, not actual invoices). Entitlements whose offer price couldn't be resolved are
 excluded and counted separately. See §11 in [todo.md](todo.md) for the phased plan.
+
+The same denormalised `UnitPrice`/`Currency`/`RepricingPercent` also drive **per-entitlement and
+per-customer** estimates beyond the dashboard rollup, all from the read-model with no per-request
+Channel API calls: the **customers list** (`GET /api/estate/customers`) carries an `EstimatedMonthlyTotal`
++ `Currency` per row (the customer's active priced entitlements summed as `Σ price × seats × (1 +
+percent/100)` in their dominant currency), the **entitlement list** (`GET /api/customers/{id}/entitlements`)
+exposes each row's `UnitPrice`/`PriceCurrency`/`RepricingPercent`, and the **customer detail** page sums
+its active priced entitlements into an "Estimated monthly value" panel. All carry the same
+*estimated, not invoiced* disclaimer. The customers-list *as-of* badge ignores never-synced rows
+(`LastSyncedUtc == MinValue`) so a freshly rostered estate doesn't report an age of year 0001.
 
 **Read-model-backed detail pages.** Beyond the dashboard rollup, two interactive list pages whose live
 calls draw on the **contended** per-minute quotas are served from the read-model when `UseReadModel` is

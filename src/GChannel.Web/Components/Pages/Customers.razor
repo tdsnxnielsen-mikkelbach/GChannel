@@ -35,6 +35,7 @@
         <MudTh><MudTableSortLabel SortLabel="domain" T="EstateCustomer">Domain</MudTableSortLabel></MudTh>
         <MudTh>Cloud Identity</MudTh>
         <MudTh><MudTableSortLabel SortLabel="seats" T="EstateCustomer">Seats</MudTableSortLabel></MudTh>
+        <MudTh>Est. monthly</MudTh>
         <MudTh><MudTableSortLabel SortLabel="created" T="EstateCustomer">Created</MudTableSortLabel></MudTh>
         <MudTh Style="text-align:right">Actions</MudTh>
     </HeaderContent>
@@ -59,6 +60,18 @@
             }
         </MudTd>
         <MudTd DataLabel="Seats">@context.SeatCount</MudTd>
+        <MudTd DataLabel="Est. monthly">
+            @if (context.EstimatedMonthlyTotal is { } v)
+            {
+                <MudTooltip Text="Estimated from offer list pricing with repricing applied — not invoiced.">
+                    <span>@FormatMoney(v, context.Currency)</span>
+                </MudTooltip>
+            }
+            else
+            {
+                <span>—</span>
+            }
+        </MudTd>
         <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
         <MudTd DataLabel="Actions" Style="text-align:right">
             <MudTooltip Text="Refresh now">
@@ -95,6 +108,11 @@
     private MudTable<EstateCustomer>? _table;
     private string? _search;
     private DateTimeOffset? _asOf;
+
+    private static string FormatMoney(decimal value, string? currency) =>
+        string.IsNullOrEmpty(currency)
+            ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
+            : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
 
     private async Task<TableData<EstateCustomer>> LoadServerData(TableState state, CancellationToken token)
     {

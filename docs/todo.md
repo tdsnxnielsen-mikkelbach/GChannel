@@ -458,6 +458,16 @@ product mix) become simple `GROUP BY` queries.
   link's `CustomerCount` + `LastSyncedUtc`. N is sized to the **per-cycle quota budget** (e.g. at
   20/min and a 60s cycle, N≈18 links/cycle) so **every cycle stays within quota** no matter how many
   links exist — the whole estate is covered over several cycles (a "rolling refresh").
+- **Metadata vs entitlements are separated.** The link/customer **metadata** upsert above touches only
+  the `ListCustomers` quota, while **entitlement** syncing (the contended `ListEntitlements` quota) is a
+  single **unified staleness-rotated pass** at the end of each cycle over the stalest
+  `ReadModelCustomersPerCycle` customers across the *whole* estate (direct **and** indirect), ordered by
+  `CustomerRecords.LastSyncedUtc` (now meaning *entitlement* freshness; new rows = `MinValue` = head of
+  queue, stamped after each customer is synced or skipped). This guarantees the indirect estate +
+  per-link customer counts populate from the cheap fan-out **independent of** the slower entitlement
+  quota, and stops the direct-customer entitlement fan-out from draining a whole cycle before the
+  indirect fan-out runs (the earlier ordering could leave the indirect estate at 0 under quota
+  pressure). Tunable via `GoogleChannel:ReadModelCustomersPerCycle` (default 60).
 - **Tunable freshness.** Full-estate refresh interval ≈ `(#links / N) × cycleSeconds`; expose it via the
   existing `GoogleChannel:DashboardCustomerListRequestsPerMinute` + a new `links-per-cycle`/budget knob.
 - **Deletion reconciliation.** Customers/links absent from a fresh list pass are soft-deleted (or
@@ -588,7 +598,14 @@ dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
   per-seat × seats estimate, labelled not-invoiced.*
 - [x] **Phase 2 — Per-entitlement cost.** On entitlement detail/list, resolve the entitlement's offer
   price × `num_units` = wholesale total; overlay §6 `RepricingConfig` to compute end-customer price +
-  margin. Cache offer pricing (a single `offers.list`, reuse the catalog lookup).
+  margin. Cache offer pricing (a single `offers.list`, reuse the catalog lookup). *Implemented: the
+  read-model `EntitlementRecord` carries `UnitPrice`/`Currency`/`RepricingPercent`, surfaced on the
+  `Entitlement` contract (`UnitPrice`/`PriceCurrency`/`RepricingPercent`) and the `EstateCustomer`
+  contract (`EstimatedMonthlyTotal`/`Currency`). The **entitlement list** shows an "Est. monthly"
+  column (`price × seats × (1 + percent/100)`) with a breakdown tooltip, the **customers list** shows
+  an "Est. monthly" column per customer, and the **customer detail** page sums active priced
+  entitlements into an "Estimated monthly value" panel — all labelled estimated/not-invoiced and all
+  served from the read-model with no per-request Channel API calls.*
 - [x] **Phase 3 — Estate rollups (optional).** Estimated monthly wholesale cost + repriced revenue +
   margin on the dashboard (background-computed alongside seats), with an *estimated, not invoiced*
   disclaimer; per-reseller cost/margin extends the §10 read-model. *Implemented: `EntitlementRecord`

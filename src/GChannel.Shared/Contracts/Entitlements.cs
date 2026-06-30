@@ -52,6 +52,18 @@ public sealed record Entitlement
 
     public EntitlementCommitment? Commitment { get; init; }
     public IReadOnlyList<EntitlementParameter> Parameters { get; init; } = [];
+
+    /// <summary>
+    /// Estimated wholesale price per seat (per month) from the offer's list pricing. Null when the
+    /// offer could not be priced. Populated from the §10 read-model; not an invoiced figure.
+    /// </summary>
+    public decimal? UnitPrice { get; init; }
+
+    /// <summary>Currency of <see cref="UnitPrice"/>.</summary>
+    public string? PriceCurrency { get; init; }
+
+    /// <summary>Repricing (rebilling) mark-up percentage applied to this entitlement, when known.</summary>
+    public decimal? RepricingPercent { get; init; }
 }
 
 /// <summary>Commitment / renewal summary for an entitlement. Maps to <c>CommitmentSettings</c>.</summary>
