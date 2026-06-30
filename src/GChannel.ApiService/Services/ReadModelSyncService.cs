@@ -214,6 +214,7 @@ public sealed class ReadModelSyncService(
         // config applies to every downstream entitlement under the link with no per-entitlement
         // override). Cache per cycle so a link shared by many customers in this slice is fetched once.
         var linkPercentCache = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var pricingDiag = new PricingDiagnostics();
         var syncedCount = 0;
         foreach (var c in due)
         {
@@ -228,8 +229,23 @@ public sealed class ReadModelSyncService(
             }
 
             await WithDbAsync(db => SyncCustomerEntitlementsAsync(
-                db, client, c.CustomerId, c.OwningLinkId, offerCatalog, productNames, linkFallbackPercent, now, ct));
+                db, client, c.CustomerId, c.OwningLinkId, offerCatalog, productNames, linkFallbackPercent, pricingDiag, now, ct));
             syncedCount++;
+        }
+
+        // Surface WHY active entitlements went unpriced this cycle so unmatched offers can be chased down.
+        if (pricingDiag.ActiveUnpriced > 0)
+        {
+            static string Sample(Dictionary<string, int> d) => d.Count == 0
+                ? "none"
+                : string.Join(", ", d.OrderByDescending(kv => kv.Value).Take(15).Select(kv => $"{kv.Key}\u00d7{kv.Value}"));
+            logger.LogWarning(
+                "Read-model pricing this cycle: {Priced} active priced, {Unpriced} active unpriced — " +
+                "{Missing} distinct offer(s) not in offers.list, {NoPrice} listed offer(s) without a SEAT/base price, " +
+                "{NoId} active entitlement(s) with no offer id. Not-in-catalog: [{MissingSample}]. Listed-without-price: [{NoPriceSample}].",
+                pricingDiag.ActivePriced, pricingDiag.ActiveUnpriced,
+                pricingDiag.MissingFromCatalog.Count, pricingDiag.ListedWithoutPrice.Count, pricingDiag.ActiveWithoutOfferId,
+                Sample(pricingDiag.MissingFromCatalog), Sample(pricingDiag.ListedWithoutPrice));
         }
 
         await WithDbAsync(async db =>
@@ -336,6 +352,7 @@ public sealed class ReadModelSyncService(
         GChannelDbContext db, GoogleChannelClient client, string customerId, string? owningLinkId,
         OfferCatalog offerCatalog,
         IReadOnlyDictionary<string, string> productNames, decimal linkFallbackPercent,
+        PricingDiagnostics diag,
         DateTimeOffset now, CancellationToken ct)
     {
         IReadOnlyList<Entitlement> entitlements;
@@ -401,11 +418,30 @@ public sealed class ReadModelSyncService(
             {
                 row.UnitPrice = price.Unit;
                 row.Currency = price.Currency;
+                if (isActive) { diag.ActivePriced++; }
             }
             else
             {
                 row.UnitPrice = 0m;
                 row.Currency = null;
+                if (isActive)
+                {
+                    diag.ActiveUnpriced++;
+                    if (e.OfferId is null)
+                    {
+                        diag.ActiveWithoutOfferId++;
+                    }
+                    else if (offerCatalog.OfferNames.ContainsKey(e.OfferId))
+                    {
+                        // Offer IS in the account's offers.list but exposes no SEAT/base price.
+                        diag.ListedWithoutPrice[e.OfferId] = diag.ListedWithoutPrice.GetValueOrDefault(e.OfferId) + 1;
+                    }
+                    else
+                    {
+                        // Offer the entitlement references is absent from the account's offers.list (churn/legacy/sub-reseller).
+                        diag.MissingFromCatalog[e.OfferId] = diag.MissingFromCatalog.GetValueOrDefault(e.OfferId) + 1;
+                    }
+                }
             }
             // Per-entitlement override wins; otherwise the link-wide channel-partner mark-up (0 for direct).
             row.RepricingPercent = entitlementPercents.TryGetValue(e.Id, out var pct) ? pct : linkFallbackPercent;
@@ -479,6 +515,12 @@ public sealed class ReadModelSyncService(
                     skuNames[offer.SkuId] = offer.SkuDisplayName!;
                 }
             }
+
+            // Catalog-size telemetry: if {Priced} is far below {Offers} (or {Offers} is small), the
+            // account's offers.list itself lacks priced offers — the root cause of "unpriced" estate rows.
+            logger.LogInformation(
+                "Read-model offer catalog: {Offers} offer(s) listed, {Priced} with wholesale pricing, {Named} with display names.",
+                offers.Offers.Count, pricing.Count, offerNames.Count);
         }
         catch (Exception ex)
         {
@@ -493,6 +535,20 @@ public sealed class ReadModelSyncService(
         IReadOnlyDictionary<string, string> OfferNames,
         IReadOnlyDictionary<string, string> SkuNames,
         IReadOnlyDictionary<string, (string? PaymentPlan, string? PaymentCycle)> Plans);
+
+    /// <summary>
+    /// Accumulates, across one sync cycle's entitlement pass, why ACTIVE entitlements end up unpriced so
+    /// the cause can be diagnosed from logs: offers absent from the account's offers.list vs offers that
+    /// are listed but carry no SEAT/base price vs entitlements with no offer id at all.
+    /// </summary>
+    private sealed class PricingDiagnostics
+    {
+        public int ActivePriced;
+        public int ActiveUnpriced;
+        public int ActiveWithoutOfferId;
+        public readonly Dictionary<string, int> MissingFromCatalog = new(StringComparer.OrdinalIgnoreCase);
+        public readonly Dictionary<string, int> ListedWithoutPrice = new(StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Builds a human-friendly plan summary (e.g. "Annual Plan (Monthly Payment)") from the entitlement's
