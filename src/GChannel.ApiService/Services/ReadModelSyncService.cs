@@ -87,9 +87,13 @@ public sealed class ReadModelSyncService(
     private async Task RunCycleAsync(GoogleChannelClient client, GoogleChannelOptions opts, CancellationToken ct)
     {
         var startedAt = Stopwatch.GetTimestamp();
-        using var scope = scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
         var now = DateTimeOffset.UtcNow;
+        // Each save-unit below runs on its OWN short-lived DbContext (via WithDbAsync). A single
+        // context shared across the whole multi-minute cycle accumulated thousands of tracked entities
+        // (every direct customer + link + fanned-out customer + entitlement); a cancelled or failed
+        // SaveChanges left a Detached entry that poisoned every subsequent save with
+        // "Unexpected entry.EntityState: Detached", aborting the cycle and bloating memory. Fresh
+        // per-unit contexts keep the tracker tiny and isolate failures.
 
         // §11 pricing + display names: resolve the account's offer list once per cycle (one quota-light
         // offers.list pass, a different quota bucket from customers/entitlements). Yields per-offer
@@ -114,7 +118,7 @@ public sealed class ReadModelSyncService(
         {
             var direct = await client.ListCustomersAsync(ct);
             directCount = direct.Customers.Count;
-            await UpsertCustomersAsync(dbContext, direct.Customers, owningLinkId: null, now, ct);
+            await WithDbAsync(db => UpsertCustomersAsync(db, direct.Customers, owningLinkId: null, now, ct));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -127,7 +131,7 @@ public sealed class ReadModelSyncService(
 
         // Link roster — refreshed every cycle (account-level, quota-light).
         var links = await client.ListChannelPartnerLinksAsync(ct);
-        await UpsertLinksAsync(dbContext, links.Links, now, ct);
+        await WithDbAsync(db => UpsertLinksAsync(db, links.Links, now, ct));
 
         // Pick the stalest ACTIVE links and refresh their downstream customers, capped per cycle so we
         // stay within the ListCustomers quota; the whole estate is covered over several cycles. Only
@@ -140,36 +144,55 @@ public sealed class ReadModelSyncService(
             .Select(l => l.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var stalest = await dbContext.ResellerLinks
+        var stalest = await WithDbAsync(db => db.ResellerLinks
             .Where(r => activeIds.Contains(r.LinkId))
             .OrderBy(r => r.LastSyncedUtc)
             .Take(Math.Max(1, opts.ReadModelLinksPerCycle))
             .Select(r => r.LinkId)
-            .ToListAsync(ct);
+            .ToListAsync(ct));
 
         foreach (var linkId in stalest)
         {
             try
             {
                 var customers = await client.ListChannelPartnerCustomersAsync(linkId, ct);
-                await UpsertCustomersAsync(dbContext, customers.Customers, owningLinkId: linkId, now, ct);
-                var link = await dbContext.ResellerLinks.FindAsync([linkId], ct);
-                if (link is not null)
+                await WithDbAsync(async db =>
                 {
-                    link.CustomerCount = customers.Customers.Count;
-                    link.LastSyncedUtc = DateTimeOffset.UtcNow;
-                    link.SyncError = null;
-                }
-                await dbContext.SaveChangesAsync(ct);
+                    await UpsertCustomersAsync(db, customers.Customers, owningLinkId: linkId, now, ct);
+                    var link = await db.ResellerLinks.FindAsync([linkId], ct);
+                    if (link is not null)
+                    {
+                        link.CustomerCount = customers.Customers.Count;
+                        link.LastSyncedUtc = DateTimeOffset.UtcNow;
+                        link.SyncError = null;
+                        await db.SaveChangesAsync(ct);
+                    }
+                });
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                var link = await dbContext.ResellerLinks.FindAsync([linkId], ct);
-                if (link is not null)
+                // Record the failure on a FRESH context — the one that threw may have a poisoned
+                // change tracker, so reusing it would re-throw and abort the entire cycle.
+                try
                 {
-                    link.LastSyncedUtc = DateTimeOffset.UtcNow;
-                    link.SyncError = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
-                    await dbContext.SaveChangesAsync(ct);
+                    await WithDbAsync(async db =>
+                    {
+                        var link = await db.ResellerLinks.FindAsync([linkId], ct);
+                        if (link is not null)
+                        {
+                            link.LastSyncedUtc = DateTimeOffset.UtcNow;
+                            link.SyncError = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
+                            await db.SaveChangesAsync(ct);
+                        }
+                    });
+                }
+                catch (Exception saveEx)
+                {
+                    logger.LogWarning(saveEx, "Failed to record sync error for link {Link}.", linkId);
                 }
                 logger.LogWarning(ex, "Read-model sync failed for link {Link}.", linkId);
             }
@@ -180,12 +203,12 @@ public sealed class ReadModelSyncService(
         // so quota is shared fairly and every part of the estate progresses each cycle. Each customer's
         // LastSyncedUtc is stamped after its entitlements are synced (or skipped), so the rotation
         // advances and a single throttled customer can't block the queue.
-        var due = await dbContext.CustomerRecords
+        var due = await WithDbAsync(db => db.CustomerRecords
             .Where(c => !c.IsDeleted)
             .OrderBy(c => c.LastSyncedUtc)
             .Take(Math.Max(1, opts.ReadModelCustomersPerCycle))
             .Select(c => new { c.CustomerId, c.OwningLinkId })
-            .ToListAsync(ct);
+            .ToListAsync(ct));
 
         // §6 reseller-wide mark-up is resolved once per link (a channel-partner-granularity repricing
         // config applies to every downstream entitlement under the link with no per-entitlement
@@ -204,25 +227,44 @@ public sealed class ReadModelSyncService(
                 }
             }
 
-            await SyncCustomerEntitlementsAsync(
-                dbContext, client, c.CustomerId, c.OwningLinkId, offerCatalog, productNames, linkFallbackPercent, now, ct);
+            await WithDbAsync(db => SyncCustomerEntitlementsAsync(
+                db, client, c.CustomerId, c.OwningLinkId, offerCatalog, productNames, linkFallbackPercent, now, ct));
             syncedCount++;
         }
 
-        var cursor = await dbContext.SyncCursors.FindAsync(["links"], ct) ?? new SyncCursor { Scope = "links" };
-        if (dbContext.Entry(cursor).State == EntityState.Detached)
+        await WithDbAsync(async db =>
         {
-            dbContext.SyncCursors.Add(cursor);
-        }
-        cursor.LastCycleUtc = DateTimeOffset.UtcNow;
-        if (stalest.Count < activeIds.Count) { /* still mid-rotation */ }
-        else { cursor.LastFullPassUtc = DateTimeOffset.UtcNow; }
-        await dbContext.SaveChangesAsync(ct);
+            var cursor = await db.SyncCursors.FindAsync(["links"], ct) ?? new SyncCursor { Scope = "links" };
+            if (db.Entry(cursor).State == EntityState.Detached)
+            {
+                db.SyncCursors.Add(cursor);
+            }
+            cursor.LastCycleUtc = DateTimeOffset.UtcNow;
+            if (stalest.Count >= activeIds.Count) { cursor.LastFullPassUtc = DateTimeOffset.UtcNow; }
+            await db.SaveChangesAsync(ct);
+        });
 
         logger.LogInformation(
             "Read-model cycle: {Direct} direct customers, {Links} links, refreshed {Stale} reseller(s), synced {Synced} customer entitlement set(s) in {Secs}s.",
             directCount, links.Links.Count, stalest.Count, syncedCount,
             (int)Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
+    }
+
+    // Runs a unit of read-model work on a fresh, short-lived DbContext scope so each save batch has
+    // its own small change tracker — a failure (or cancellation) in one unit can't corrupt or abort
+    // the rest of the cycle, and memory stays bounded over a long sync pass.
+    private async Task WithDbAsync(Func<GChannelDbContext, Task> work)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
+        await work(db);
+    }
+
+    private async Task<T> WithDbAsync<T>(Func<GChannelDbContext, Task<T>> work)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
+        return await work(db);
     }
 
     private static async Task UpsertLinksAsync(

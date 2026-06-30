@@ -402,6 +402,16 @@ indirect fan-out and, under the ~24/min `ListEntitlements` quota, could consume 
 indirect estate never synced. The unified-pass size is the `GoogleChannel:ReadModelCustomersPerCycle`
 knob (default 60).
 
+**Per-unit `DbContext` scoping.** Each save-unit in a sync cycle (direct upsert, link-roster upsert, each
+link's customer fan-out, each customer's entitlement sync, the cursor write) runs on its **own
+short-lived `GChannelDbContext`** created from a fresh DI scope (a small `WithDbAsync` helper), rather than
+one long-lived context shared across the whole multi-minute cycle. A single shared context accumulated
+thousands of tracked entities and, if any `SaveChanges` failed or was cancelled mid-batch, left a
+*Detached* entry that poisoned every subsequent save with `Unexpected entry.EntityState: Detached` —
+aborting the entire cycle (so links never persisted their customer counts and the entitlement pass never
+ran) and bloating worker memory. Fresh per-unit contexts keep each change tracker tiny, isolate a bad
+save to its own unit, and bound memory across a long pass.
+
 **Estimated estate value (pricing).** When the §10 read-model is enabled, the worker also denormalises
 pricing onto each synced entitlement so the dashboard can show an estimated monetary rollup without any
 per-request Channel API calls. Once per sync cycle `ReadModelSyncService` builds an
