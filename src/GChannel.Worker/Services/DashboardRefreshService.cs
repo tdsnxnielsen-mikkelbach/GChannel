@@ -51,7 +51,6 @@ public sealed class DashboardRefreshService(
         var interval = TimeSpan.FromSeconds(opts.BackgroundRefreshSeconds);
         var ttl = TimeSpan.FromSeconds(opts.BackgroundRefreshSeconds * 2);
         var db = redis.GetDatabase();
-        using var timer = new PeriodicTimer(interval);
 
         logger.LogInformation(
             "Dashboard background refresh enabled; recomputing every {Interval}s as {User}.",
@@ -198,7 +197,43 @@ public sealed class DashboardRefreshService(
                 }
             }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
+        while (await WaitForNextDueAsync(db, interval, stoppingToken));
+    }
+
+    /// <summary>
+    /// Sleeps until the next refresh is actually due, then returns <c>true</c> (or <c>false</c> on
+    /// shutdown). The wait is the <em>remaining TTL of the shared Redis lock</em> rather than a fixed
+    /// interval measured from this process — so the cadence stays aligned to the cluster-wide schedule
+    /// across worker restarts and redeploys. A worker that starts (or skips because a pre-redeploy run
+    /// still holds the lock) waits only until the lock expires and then refreshes, instead of resetting
+    /// the clock and delaying the next refresh by up to a full interval. Falls back to a full interval
+    /// when the lock is absent (e.g. the very first cycle).
+    /// </summary>
+    private static async Task<bool> WaitForNextDueAsync(IDatabase db, TimeSpan interval, CancellationToken stoppingToken)
+    {
+        TimeSpan wait;
+        try
+        {
+            wait = await db.KeyTimeToLiveAsync(RefreshLockKey) ?? interval;
+        }
+        catch
+        {
+            wait = interval;
+        }
+
+        // Clamp: never busy-loop on a near-expired lock, never overshoot one interval.
+        if (wait < TimeSpan.FromSeconds(1)) wait = TimeSpan.FromSeconds(1);
+        else if (wait > interval) wait = interval;
+
+        try
+        {
+            await Task.Delay(wait, stoppingToken);
+            return true;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     /// <summary>
