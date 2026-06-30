@@ -35,6 +35,8 @@
         <MudTh><MudTableSortLabel SortLabel="domain" T="EstateCustomer">Domain</MudTableSortLabel></MudTh>
         <MudTh>Cloud Identity</MudTh>
         <MudTh><MudTableSortLabel SortLabel="seats" T="EstateCustomer">Seats</MudTableSortLabel></MudTh>
+        <MudTh>Subscriptions</MudTh>
+        <MudTh>Renewal</MudTh>
         <MudTh>Est. monthly</MudTh>
         <MudTh><MudTableSortLabel SortLabel="created" T="EstateCustomer">Created</MudTableSortLabel></MudTh>
         <MudTh Style="text-align:right">Actions</MudTh>
@@ -60,6 +62,31 @@
             }
         </MudTd>
         <MudTd DataLabel="Seats">@context.SeatCount</MudTd>
+        <MudTd DataLabel="Subscriptions">
+            <span>@context.ActiveSubscriptions Active</span>
+            @if (context.SuspendedSubscriptions > 0)
+            {
+                <span class="mud-text-secondary"> · @context.SuspendedSubscriptions Suspended</span>
+            }
+        </MudTd>
+        <MudTd DataLabel="Renewal">
+            @if (context.NextRenewalUtc is { } r)
+            {
+                <MudTooltip Text="@(context.NextRenewalOfferName ?? "Next commitment renewal")">
+                    <div>
+                        <div>@r.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)</div>
+                        @if (!string.IsNullOrEmpty(context.NextRenewalOfferName))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.NextRenewalOfferName</MudText>
+                        }
+                    </div>
+                </MudTooltip>
+            }
+            else
+            {
+                <span>—</span>
+            }
+        </MudTd>
         <MudTd DataLabel="Est. monthly">
             @if (context.EstimatedMonthlyTotal is { } v)
             {

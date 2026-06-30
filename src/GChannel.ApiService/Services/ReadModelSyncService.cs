@@ -351,6 +351,7 @@ public sealed class ReadModelSyncService(
             row.Seats = seats;
             row.IsTrial = e.IsTrial;
             row.CreateTime = e.CreateTime;
+            row.CommitmentEndTime = e.Commitment?.EndTime;
             if (e.OfferId is not null && offerCatalog.Pricing.TryGetValue(e.OfferId, out var price))
             {
                 row.UnitPrice = price.Unit;

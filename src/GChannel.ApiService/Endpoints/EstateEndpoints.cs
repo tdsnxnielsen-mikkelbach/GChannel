@@ -76,33 +76,64 @@ public static class EstateEndpoints
                     })
                     .ToListAsync(ct);
 
-                // Estimated monthly value per customer: Σ over active priced entitlements of
-                // unit price × seats × (1 + markup%), in the customer's dominant currency. Computed
-                // for just the page's customers so the list stays fast at distributor scale.
+                // Per-customer rollups for the page's customers (kept to the page so the list stays fast
+                // at distributor scale): estimated monthly value, entitlement state counts and the next
+                // renewal date — all from the synced read-model, no live Channel API calls.
                 if (items.Count > 0)
                 {
                     var ids = items.Select(i => i.CustomerId).ToList();
-                    var priced = await db.EntitlementRecords.AsNoTracking()
-                        .Where(e => ids.Contains(e.CustomerId) && !e.IsDeleted
-                                    && e.State == "ACTIVE" && e.UnitPrice > 0 && e.Seats > 0)
-                        .Select(e => new { e.CustomerId, e.Currency, e.UnitPrice, e.Seats, e.RepricingPercent })
+                    var now = DateTimeOffset.UtcNow;
+                    var rows = await db.EntitlementRecords.AsNoTracking()
+                        .Where(e => ids.Contains(e.CustomerId) && !e.IsDeleted)
+                        .Select(e => new
+                        {
+                            e.CustomerId, e.State, e.Currency, e.UnitPrice, e.Seats,
+                            e.RepricingPercent, e.CommitmentEndTime, e.OfferName,
+                        })
                         .ToListAsync(ct);
 
-                    var byCustomer = priced
+                    var byCustomer = rows
                         .GroupBy(e => e.CustomerId)
                         .ToDictionary(g => g.Key, g =>
                         {
-                            // Dominant currency = the one with the largest wholesale base for this customer.
-                            var dominant = g.GroupBy(e => e.Currency ?? "")
-                                .OrderByDescending(cg => cg.Sum(e => e.UnitPrice * e.Seats))
-                                .First();
-                            var monthly = dominant.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m)));
-                            return (Total: monthly, Currency: string.IsNullOrEmpty(dominant.Key) ? null : dominant.Key);
+                            var active = g.Count(e => e.State == "ACTIVE");
+                            var suspended = g.Count(e => e.State == "SUSPENDED");
+
+                            // Estimated monthly value: Σ over active priced entitlements of
+                            // unit price × seats × (1 + markup%), in the customer's dominant currency.
+                            var priced = g.Where(e => e.State == "ACTIVE" && e.UnitPrice > 0 && e.Seats > 0).ToList();
+                            decimal? monthly = null;
+                            string? currency = null;
+                            if (priced.Count > 0)
+                            {
+                                var dominant = priced.GroupBy(e => e.Currency ?? "")
+                                    .OrderByDescending(cg => cg.Sum(e => e.UnitPrice * e.Seats))
+                                    .First();
+                                monthly = dominant.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m)));
+                                currency = string.IsNullOrEmpty(dominant.Key) ? null : dominant.Key;
+                            }
+
+                            // Next renewal: earliest upcoming commitment end across active entitlements.
+                            var nextRenewal = g
+                                .Where(e => e.State == "ACTIVE" && e.CommitmentEndTime != null && e.CommitmentEndTime > now)
+                                .OrderBy(e => e.CommitmentEndTime)
+                                .FirstOrDefault();
+
+                            return (active, suspended, Total: monthly, Currency: currency,
+                                    Renewal: nextRenewal?.CommitmentEndTime, RenewalOffer: nextRenewal?.OfferName);
                         });
 
                     items = items.Select(i =>
                         byCustomer.TryGetValue(i.CustomerId, out var v)
-                            ? i with { EstimatedMonthlyTotal = v.Total, Currency = v.Currency }
+                            ? i with
+                            {
+                                EstimatedMonthlyTotal = v.Total,
+                                Currency = v.Currency,
+                                ActiveSubscriptions = v.active,
+                                SuspendedSubscriptions = v.suspended,
+                                NextRenewalUtc = v.Renewal,
+                                NextRenewalOfferName = v.RenewalOffer,
+                            }
                             : i).ToList();
                 }
 

@@ -172,6 +172,13 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > not invoiced amounts*. The estate-customers *as-of* timestamp ignores never-synced rows
 > (`LastSyncedUtc == MinValue`).
 
+> **Customer list parity fields (§11 Phase 5).** `GET /api/estate/customers` rows also carry
+> `ActiveSubscriptions` / `SuspendedSubscriptions` (entitlement counts by state) and `NextRenewalUtc` +
+> `NextRenewalOfferName` (the earliest upcoming `commitmentEndTime` among the customer's active
+> entitlements and that offer's name). These power the console-style **Subscriptions** and **Renewal**
+> columns and are aggregated per page from the read-model's denormalised `EntitlementRecord.CommitmentEndTime`
+> (synced from `CommitmentSettings.EndTime`) — no live Channel API calls.
+
 ## Available possibilities
 
 The following are the full set of `v1` resources/methods the dashboard could grow into,

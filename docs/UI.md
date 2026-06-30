@@ -74,10 +74,12 @@ but it's useful for understanding what's available.
 ## 5. View and manage a customer
 
 From **Customers → All customers** (`/customers`) open any row to reach **customer detail**
-(`/customers/{id}`). The list shows an **Est. monthly** column — the estimated monthly value of each
-customer's active subscriptions (from list pricing with your repricing applied, *not* invoiced
-amounts; “—” until their entitlements have been priced by the background read-model). From the detail
-page you can:
+(`/customers/{id}`). The list mirrors the Google console with **Subscriptions** (entitlement counts by
+state, e.g. `6 Active · 2 Suspended`) and **Renewal** (the earliest upcoming commitment end date plus
+that offer's name, or “—” when none commit) columns, plus an **Est. monthly** column — the estimated
+monthly value of each customer's active subscriptions (from list pricing with your repricing applied,
+*not* invoiced amounts; “—” until their entitlements have been priced by the background read-model). A
+server-side **search box** filters by organization, domain or customer id. From the detail page you can:
 
 - **Edit** the customer (`/customers/edit/{id}`).
 - See and open the customer's **entitlements** (`/customers/{id}/entitlements`).

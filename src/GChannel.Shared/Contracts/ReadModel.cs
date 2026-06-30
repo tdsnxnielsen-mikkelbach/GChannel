@@ -36,6 +36,18 @@ public sealed record EstateCustomer
 
     /// <summary>Currency of <see cref="EstimatedMonthlyTotal"/> (the customer's dominant currency).</summary>
     public string? Currency { get; init; }
+
+    /// <summary>Number of the customer's entitlements in the ACTIVE state.</summary>
+    public int ActiveSubscriptions { get; init; }
+
+    /// <summary>Number of the customer's entitlements in the SUSPENDED state.</summary>
+    public int SuspendedSubscriptions { get; init; }
+
+    /// <summary>Earliest upcoming commitment end (renewal) date across the customer's active entitlements, or null when none commit.</summary>
+    public DateTimeOffset? NextRenewalUtc { get; init; }
+
+    /// <summary>Friendly offer name of the entitlement renewing at <see cref="NextRenewalUtc"/>.</summary>
+    public string? NextRenewalOfferName { get; init; }
 }
 
 /// <summary>A reseller (channel partner link) row from the read-model.</summary>

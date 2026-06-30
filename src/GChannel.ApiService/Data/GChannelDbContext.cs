@@ -148,6 +148,8 @@ public sealed class EntitlementRecord
     public bool IsTrial { get; set; }
     /// <summary>Entitlement create time, denormalised so the read-model-backed entitlement list can show the "Created" column.</summary>
     public DateTimeOffset? CreateTime { get; set; }
+    /// <summary>Commitment/renewal end time (<c>CommitmentSettings.EndTime</c>), denormalised so the customer list can show the next renewal date without a live call.</summary>
+    public DateTimeOffset? CommitmentEndTime { get; set; }
     /// <summary>Wholesale effective per-seat price from the entitlement's offer (the reseller's cost from Google). 0 if unknown.</summary>
     public decimal UnitPrice { get; set; }
     /// <summary>ISO currency code for <see cref="UnitPrice"/> (e.g. "USD"), or null when no price was resolved.</summary>

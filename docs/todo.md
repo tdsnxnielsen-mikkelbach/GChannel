@@ -620,20 +620,42 @@ dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
   per-reseller `WholesaleMonthly`/`MarginMonthly` to `TopIndirectResellers`. Home page shows an
   "Estimated estate value (monthly)" panel with the not-invoiced disclaimer.*
 - [ ] **Phase 4 — Billing export (optional, out of Channel API).** Document/integrate BigQuery partner
-  billing export for *actual* invoiced figures; clearly separated from API list pricing.
+  billing export for *actual* invoiced figures; clearly separated from API list pricing. *Deferred (not
+  blocking). The Channel API exposes **no** billing actuals (the `accounts.reports.*` reporting API was
+  removed in `v1`; `queryEligibleBillingAccounts` returns eligibility, not money), so real invoiced
+  totals only exist in the **Cloud Billing partner billing export → BigQuery** — a separate data source
+  the distributor must first enable in GCP. Implementing it is a second integration unlike anything the
+  app does today: a new `Google.Cloud.BigQuery.V2` client + credential path (a third auth surface beyond
+  the user OAuth token and the DWD service account; WIF could work since BigQuery needs no domain-wide
+  delegation), parameterised SQL against Google's schema-versioned, date-partitioned export tables,
+  bytes-scanned cost control (partition filters + cached/scheduled rollups), and a hard UI boundary so
+  invoiced figures are never conflated with the estimated list pricing from Phases 1–3. It serves a
+  narrow finance/reconciliation audience and the data lags a day or more. It is self-contained and
+  additive, so deferring it costs no rework — revisit only when there's a concrete need to reconcile
+  GChannel's estimates against real Google invoices. Until then Phases 1–3 cover the estimated
+  cost → price → margin story end to end. Proceeding to Phase 5 (in-API console parity) instead.*
 
 ### Console parity — customer list, expandable subscriptions & entitlement detail
 
 Goal: bring our customer area in line with `channelservices.cloud.google.com` and add the pricing
 above on top, so a user sees the same shape they know from the console plus computed cost/margin.
 
-- [ ] **Phase 5 — Customer list parity + search.** Render the list as **Name · Domain · Subscriptions
+- [x] **Phase 5 — Customer list parity + search.** Render the list as **Name · Domain · Subscriptions
   · Renewal date** like the console: `Subscriptions` = count of entitlements by state (e.g. `6 Active
   2 Suspended`, `0 Active`), `Renewal date` = earliest upcoming `commitmentEndTime` + that offer name
   (`Sep 27, 2027 - Google Workspace for Education Plus`) or `—` when none. All sourced from
   entitlement state + offer name (§3) aggregated per customer (reuse the §10 read-model so it's cheap).
   Add a **search box** (by customer name or domain) over the cached customer list, client-side filter
   first, server-side `accounts.customers.list` pagination later.
+  *Implemented. Denormalised `CommitmentEndTime` onto `EntitlementRecord` at sync time
+  (`ReadModelSyncService` reads `Commitment.EndTime` from the mapped entitlement; additive idempotent
+  SQL column). `EstateCustomer` now carries `ActiveSubscriptions`/`SuspendedSubscriptions` and
+  `NextRenewalUtc`/`NextRenewalOfferName`; `GET /api/estate/customers` computes them per page from the
+  read-model in the same single entitlement query that already produced the estimated monthly total
+  (state counts + earliest active future `CommitmentEndTime` and its offer name). `Customers.razor`
+  gained **Subscriptions** (`N Active · M Suspended`) and **Renewal** (`MMM d, yyyy` + offer name, or
+  `—`) columns. The server-side debounced search box (org/domain/id) was already present, satisfying
+  the search requirement directly against the cached read-model.*
 - [ ] **Phase 6 — Expandable customer → subscription cards.** Expanding a customer shows one card per
   entitlement: offer name, plan summary (`Annual Plan (Monthly Payment)`), `Renewal <date>`,
   `assigned / total licenses` (`2 / 3`) and state badge (`Active`). Renewal/plan/licenses from

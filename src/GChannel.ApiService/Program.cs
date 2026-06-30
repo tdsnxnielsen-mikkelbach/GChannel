@@ -159,6 +159,8 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         ALTER TABLE EntitlementRecords ADD OfferName nvarchar(255) NULL;
         IF COL_LENGTH('EntitlementRecords','CreateTime') IS NULL
         ALTER TABLE EntitlementRecords ADD CreateTime datetimeoffset NULL;
+        IF COL_LENGTH('EntitlementRecords','CommitmentEndTime') IS NULL
+        ALTER TABLE EntitlementRecords ADD CommitmentEndTime datetimeoffset NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_OwningLinkId')
         CREATE INDEX IX_CustomerRecords_OwningLinkId ON CustomerRecords(OwningLinkId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_IsDeleted')
