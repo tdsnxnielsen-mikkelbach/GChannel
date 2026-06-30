@@ -211,9 +211,36 @@
                         <MudText Typo="Typo.caption" Color="Color.Secondary">Revenue − wholesale</MudText>
                     </MudItem>
                 </MudGrid>
+                @if (estate.Currencies.Count > 1)
+                {
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">By currency</MudText>
+                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
+                        <thead>
+                            <tr>
+                                <th>Currency</th>
+                                <th style="text-align:right">Wholesale cost</th>
+                                <th style="text-align:right">Repriced revenue</th>
+                                <th style="text-align:right">Margin</th>
+                                <th style="text-align:right">Subscriptions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var cur in estate.Currencies)
+                            {
+                                <tr>
+                                    <td>@cur.Currency</td>
+                                    <td style="text-align:right">@cur.WholesaleMonthly.ToString("N2")</td>
+                                    <td style="text-align:right">@cur.RevenueMonthly.ToString("N2")</td>
+                                    <td style="text-align:right" class="@(cur.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.MarginMonthly.ToString("N2")</td>
+                                    <td style="text-align:right">@cur.PricedEntitlementCount</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
                     Estimates from offer <b>list</b> pricing × seats and configured repricing mark-ups — not invoiced amounts.
-                    Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} could not be priced and are excluded" : "").@(estate.MixedCurrencies ? " Multiple currencies present — only the dominant currency is summed." : "")
+                    Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} have no resolved offer price and are excluded" : "").@(estate.MixedCurrencies ? $" The headline figures show the dominant currency ({estate.Currency}); every currency is broken out above." : "")
                 </MudText>
             </MudPaper>
         </MudItem>

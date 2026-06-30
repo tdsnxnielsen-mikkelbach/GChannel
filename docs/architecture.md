@@ -422,12 +422,16 @@ both are stored on `EntitlementRecord` (`UnitPrice`, `Currency`, `RepricingPerce
 best-effort, so a pricing/repricing failure never blocks the estate sync. The `/summary` read-model
 overlay then rolls active, priced entitlements up into `DashboardEstateValue` — estimated monthly
 **wholesale cost** (`Σ price × seats`, what the reseller pays Google), **repriced revenue**
-(`Σ price × seats × (1 + percent/100)`, what end customers are billed) and **margin** (revenue − cost),
-reported in the estate's dominant currency (mixed-currency estates sum only that currency and flag it) —
-and adds per-reseller wholesale/margin to the top-resellers list. The home page renders these as an
-"Estimated estate value (monthly)" panel with a clear *estimated, not invoiced* disclaimer (it is derived
-from offer **list** pricing, not actual invoices). Entitlements whose offer price couldn't be resolved are
-excluded and counted separately. See §11 in [todo.md](todo.md) for the phased plan.
+(`Σ price × seats × (1 + percent/100)`, what end customers are billed) and **margin** (revenue − cost).
+The headline figures are reported in the estate's **dominant currency** (the currency with the largest
+wholesale total), and `DashboardEstateValue.Currencies` carries a **per-currency breakdown** so estates
+spanning more than one currency report each currency on its own line rather than dropping the
+non-dominant ones — plus per-reseller wholesale/margin on the top-resellers list. The home page renders
+these as an "Estimated estate value (monthly)" panel (dominant-currency headline cards + a *By currency*
+table when more than one currency is present) with a clear *estimated, not invoiced* disclaimer (it is
+derived from offer **list** pricing, not actual invoices). Entitlements whose offer price couldn't be
+resolved (`UnitPrice ≤ 0` — no matching offer in the cycle's `offers.list`) are excluded from the totals
+and counted separately. See §11 in [todo.md](todo.md) for the phased plan.
 
 The same denormalised `UnitPrice`/`Currency`/`RepricingPercent` also drive **per-entitlement and
 per-customer** estimates beyond the dashboard rollup, all from the read-model with no per-request

@@ -379,18 +379,31 @@ public static class DashboardEndpoints
             return null; // No entitlement has a resolved offer price yet.
         }
 
-        var dominant = byCurrency.OrderByDescending(x => x.Wholesale).First();
+        var currencies = byCurrency
+            .OrderByDescending(x => x.Wholesale)
+            .Select(x => new DashboardEstateValueCurrency
+            {
+                Currency = x.Currency,
+                WholesaleMonthly = decimal.Round(x.Wholesale, 2),
+                RevenueMonthly = decimal.Round(x.Revenue, 2),
+                MarginMonthly = decimal.Round(x.Revenue - x.Wholesale, 2),
+                PricedEntitlementCount = x.Count
+            })
+            .ToList();
+
+        var dominant = currencies[0];
         var unpriced = await active.CountAsync(e => e.UnitPrice <= 0, cancellationToken);
 
         return new DashboardEstateValue
         {
             Currency = dominant.Currency,
-            WholesaleMonthly = decimal.Round(dominant.Wholesale, 2),
-            RevenueMonthly = decimal.Round(dominant.Revenue, 2),
-            MarginMonthly = decimal.Round(dominant.Revenue - dominant.Wholesale, 2),
-            MixedCurrencies = byCurrency.Count > 1,
-            PricedEntitlementCount = dominant.Count,
-            UnpricedEntitlementCount = unpriced
+            WholesaleMonthly = dominant.WholesaleMonthly,
+            RevenueMonthly = dominant.RevenueMonthly,
+            MarginMonthly = dominant.MarginMonthly,
+            MixedCurrencies = currencies.Count > 1,
+            PricedEntitlementCount = currencies.Sum(c => c.PricedEntitlementCount),
+            UnpricedEntitlementCount = unpriced,
+            Currencies = currencies
         };
     }
 

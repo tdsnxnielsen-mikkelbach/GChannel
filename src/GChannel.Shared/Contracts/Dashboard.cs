@@ -129,14 +129,39 @@ public sealed record DashboardEstateValue
     /// <summary>Estimated monthly margin (<see cref="RevenueMonthly"/> − <see cref="WholesaleMonthly"/>).</summary>
     public decimal MarginMonthly { get; init; }
 
-    /// <summary>True when active entitlements span more than one currency; only the dominant currency is summed.</summary>
+    /// <summary>True when active entitlements span more than one currency (see <see cref="Currencies"/>).</summary>
     public bool MixedCurrencies { get; init; }
 
-    /// <summary>Active entitlements with a resolved price that are included in the totals.</summary>
+    /// <summary>Total active entitlements with a resolved price that are included in the totals (across all currencies).</summary>
     public int PricedEntitlementCount { get; init; }
 
     /// <summary>Active entitlements whose offer price couldn't be resolved (excluded from the totals).</summary>
     public int UnpricedEntitlementCount { get; init; }
+
+    /// <summary>
+    /// Per-currency breakdown (dominant currency first). Every priced currency is reported on its own
+    /// line so non-dominant currencies aren't dropped; the headline fields above mirror the first entry.
+    /// </summary>
+    public IReadOnlyList<DashboardEstateValueCurrency> Currencies { get; init; } = [];
+}
+
+/// <summary>One currency's slice of the estimated monthly estate value rollup (§11).</summary>
+public sealed record DashboardEstateValueCurrency
+{
+    /// <summary>ISO currency code these figures are reported in.</summary>
+    public required string Currency { get; init; }
+
+    /// <summary>Estimated monthly wholesale cost in this currency (offer effective price × seats).</summary>
+    public decimal WholesaleMonthly { get; init; }
+
+    /// <summary>Estimated monthly repriced revenue in this currency.</summary>
+    public decimal RevenueMonthly { get; init; }
+
+    /// <summary>Estimated monthly margin in this currency (<see cref="RevenueMonthly"/> − <see cref="WholesaleMonthly"/>).</summary>
+    public decimal MarginMonthly { get; init; }
+
+    /// <summary>Active priced entitlements counted in this currency.</summary>
+    public int PricedEntitlementCount { get; init; }
 }
 
 /// <summary>A count of channel partner links in a given link state, for the dashboard breakdown.</summary>
