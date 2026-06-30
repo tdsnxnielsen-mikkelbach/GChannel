@@ -192,6 +192,19 @@ public static class DashboardEndpoints
             return summary; // Nothing synced yet — keep the live values.
         }
 
+        // §11 per-reseller cost/margin: aggregate active, priced entitlements by owning link.
+        var resellerPricing = await db.EntitlementRecords
+            .Where(e => !e.IsDeleted && e.State == "ACTIVE" && e.OwningLinkId != null && e.UnitPrice > 0)
+            .GroupBy(e => e.OwningLinkId!)
+            .Select(g => new
+            {
+                LinkId = g.Key,
+                Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
+                Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m)))
+            })
+            .ToListAsync(cancellationToken);
+        var pricingByLink = resellerPricing.ToDictionary(x => x.LinkId, StringComparer.OrdinalIgnoreCase);
+
         var resellers = await db.CustomerRecords
             .Where(c => !c.IsDeleted && c.OwningLinkId != null)
             .GroupBy(c => c.OwningLinkId!)
@@ -206,14 +219,60 @@ public static class DashboardEndpoints
         return summary with
         {
             IndirectCustomerCount = indirectCount,
+            EstateValue = await ComputeEstateValueAsync(db, cancellationToken),
             TopIndirectResellers = resellers
-                .Select(r => new DashboardResellerCustomers
+                .Select(r =>
                 {
-                    Reseller = r.PrimaryDomain ?? r.ResellerCloudId ?? r.LinkId,
-                    CustomerCount = r.Customers,
-                    SeatCount = r.Seats
+                    pricingByLink.TryGetValue(r.LinkId, out var p);
+                    return new DashboardResellerCustomers
+                    {
+                        Reseller = r.PrimaryDomain ?? r.ResellerCloudId ?? r.LinkId,
+                        CustomerCount = r.Customers,
+                        SeatCount = r.Seats,
+                        WholesaleMonthly = p is null ? 0m : decimal.Round(p.Wholesale, 2),
+                        MarginMonthly = p is null ? 0m : decimal.Round(p.Revenue - p.Wholesale, 2)
+                    };
                 })
                 .ToList()
+        };
+    }
+
+    // §11: estimated monthly estate value across all active, priced entitlements (direct + indirect),
+    // reported in the estate's dominant currency. Returns null when nothing has a resolved price yet.
+    private static async Task<DashboardEstateValue?> ComputeEstateValueAsync(
+        GChannelDbContext db, CancellationToken cancellationToken)
+    {
+        var active = db.EntitlementRecords.Where(e => !e.IsDeleted && e.State == "ACTIVE");
+
+        var byCurrency = await active
+            .Where(e => e.UnitPrice > 0 && e.Currency != null)
+            .GroupBy(e => e.Currency!)
+            .Select(g => new
+            {
+                Currency = g.Key,
+                Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
+                Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m))),
+                Count = g.Count()
+            })
+            .ToListAsync(cancellationToken);
+
+        if (byCurrency.Count == 0)
+        {
+            return null; // No entitlement has a resolved offer price yet.
+        }
+
+        var dominant = byCurrency.OrderByDescending(x => x.Wholesale).First();
+        var unpriced = await active.CountAsync(e => e.UnitPrice <= 0, cancellationToken);
+
+        return new DashboardEstateValue
+        {
+            Currency = dominant.Currency,
+            WholesaleMonthly = decimal.Round(dominant.Wholesale, 2),
+            RevenueMonthly = decimal.Round(dominant.Revenue, 2),
+            MarginMonthly = decimal.Round(dominant.Revenue - dominant.Wholesale, 2),
+            MixedCurrencies = byCurrency.Count > 1,
+            PricedEntitlementCount = dominant.Count,
+            UnpricedEntitlementCount = unpriced
         };
     }
 

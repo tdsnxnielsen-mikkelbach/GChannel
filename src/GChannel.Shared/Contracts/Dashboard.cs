@@ -55,6 +55,13 @@ public sealed record DashboardSummary
 
     /// <summary>Active entitlements grouped by product (for the product-mix donut).</summary>
     public IReadOnlyList<DashboardProductSlice> ProductMix { get; init; } = [];
+
+    /// <summary>
+    /// Estimated monthly estate value (wholesale cost, repriced revenue and margin) derived from
+    /// offer list pricing (§11) and repricing configs (§6), or <c>null</c> when pricing wasn't
+    /// resolved (e.g. the read-model overlay is off). These are non-invoiced estimates.
+    /// </summary>
+    public DashboardEstateValue? EstateValue { get; init; }
 }
 
 /// <summary>
@@ -96,6 +103,40 @@ public sealed record DashboardResellerCustomers
     /// doesn't outrank one with fewer but much larger customers.
     /// </summary>
     public long SeatCount { get; init; }
+
+    /// <summary>Estimated monthly wholesale cost (the reseller's Google cost) across this reseller's active entitlements.</summary>
+    public decimal WholesaleMonthly { get; init; }
+
+    /// <summary>Estimated monthly margin (repriced revenue minus wholesale cost) for this reseller.</summary>
+    public decimal MarginMonthly { get; init; }
+}
+
+/// <summary>
+/// Estimated monthly estate value rollup (§11). All figures are non-invoiced estimates derived from
+/// offer <em>list</em> pricing and configured repricing mark-ups, summed over active entitlements.
+/// </summary>
+public sealed record DashboardEstateValue
+{
+    /// <summary>ISO currency code the figures are reported in (the estate's dominant currency).</summary>
+    public required string Currency { get; init; }
+
+    /// <summary>Estimated monthly wholesale cost (sum of offer effective price × seats) — what the reseller pays Google.</summary>
+    public decimal WholesaleMonthly { get; init; }
+
+    /// <summary>Estimated monthly revenue after applying repricing mark-ups (§6) — what end customers are billed.</summary>
+    public decimal RevenueMonthly { get; init; }
+
+    /// <summary>Estimated monthly margin (<see cref="RevenueMonthly"/> − <see cref="WholesaleMonthly"/>).</summary>
+    public decimal MarginMonthly { get; init; }
+
+    /// <summary>True when active entitlements span more than one currency; only the dominant currency is summed.</summary>
+    public bool MixedCurrencies { get; init; }
+
+    /// <summary>Active entitlements with a resolved price that are included in the totals.</summary>
+    public int PricedEntitlementCount { get; init; }
+
+    /// <summary>Active entitlements whose offer price couldn't be resolved (excluded from the totals).</summary>
+    public int UnpricedEntitlementCount { get; init; }
 }
 
 /// <summary>A count of channel partner links in a given link state, for the dashboard breakdown.</summary>
@@ -148,4 +189,10 @@ public sealed record DashboardRefreshStatus
 
     /// <summary>How many customers the last completed recompute skipped (genuine per-customer errors).</summary>
     public int? LastSkippedCount { get; init; }
+
+    /// <summary>
+    /// Estimated time the next background recompute will begin, or <c>null</c> when the refresher is
+    /// disabled / hasn't run yet. An estimate based on the configured interval and the last run.
+    /// </summary>
+    public DateTimeOffset? NextRefreshUtc { get; init; }
 }

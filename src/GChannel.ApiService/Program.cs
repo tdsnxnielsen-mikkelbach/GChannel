@@ -136,11 +136,20 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
             State nvarchar(32) NOT NULL,
             Seats bigint NOT NULL,
             IsTrial bit NOT NULL,
+            UnitPrice decimal(18,6) NOT NULL CONSTRAINT DF_EntitlementRecords_UnitPrice DEFAULT 0,
+            Currency nvarchar(8) NULL,
+            RepricingPercent decimal(9,4) NOT NULL CONSTRAINT DF_EntitlementRecords_RepricingPercent DEFAULT 0,
             LastSyncedUtc datetimeoffset NOT NULL,
             IsDeleted bit NOT NULL
         );
         IF COL_LENGTH('CustomerRecords','SeatCount') IS NULL
         ALTER TABLE CustomerRecords ADD SeatCount bigint NOT NULL CONSTRAINT DF_CustomerRecords_SeatCount DEFAULT 0;
+        IF COL_LENGTH('EntitlementRecords','UnitPrice') IS NULL
+        ALTER TABLE EntitlementRecords ADD UnitPrice decimal(18,6) NOT NULL CONSTRAINT DF_EntitlementRecords_UnitPrice DEFAULT 0;
+        IF COL_LENGTH('EntitlementRecords','Currency') IS NULL
+        ALTER TABLE EntitlementRecords ADD Currency nvarchar(8) NULL;
+        IF COL_LENGTH('EntitlementRecords','RepricingPercent') IS NULL
+        ALTER TABLE EntitlementRecords ADD RepricingPercent decimal(9,4) NOT NULL CONSTRAINT DF_EntitlementRecords_RepricingPercent DEFAULT 0;
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_OwningLinkId')
         CREATE INDEX IX_CustomerRecords_OwningLinkId ON CustomerRecords(OwningLinkId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_IsDeleted')

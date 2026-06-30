@@ -575,9 +575,19 @@ dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
 - [x] **Phase 2 — Per-entitlement cost.** On entitlement detail/list, resolve the entitlement's offer
   price × `num_units` = wholesale total; overlay §6 `RepricingConfig` to compute end-customer price +
   margin. Cache offer pricing (a single `offers.list`, reuse the catalog lookup).
-- [ ] **Phase 3 — Estate rollups (optional).** Estimated monthly wholesale cost + repriced revenue +
+- [x] **Phase 3 — Estate rollups (optional).** Estimated monthly wholesale cost + repriced revenue +
   margin on the dashboard (background-computed alongside seats), with an *estimated, not invoiced*
-  disclaimer; per-reseller cost/margin extends the §10 read-model.
+  disclaimer; per-reseller cost/margin extends the §10 read-model. *Implemented: `EntitlementRecord`
+  gained `UnitPrice`/`Currency`/`RepricingPercent` (additive idempotent SQL ALTERs in
+  `EnsureReadModelTablesAsync`). `ReadModelSyncService` resolves them per cycle — one quota-light
+  `offers.list` builds an `offerId → (effective seat price, currency)` lookup; §6 repricing is
+  denormalised per entitlement (per-customer `customerRepricingConfigs` override, else the owning
+  link's CHANNEL_PARTNER-granularity `channelPartnerRepricingConfigs` mark-up, else 0), all
+  best-effort so a pricing/repricing failure never blocks the estate sync. Dashboard `/summary`
+  overlay (`ComputeEstateValueAsync`) rolls up active priced entitlements into `DashboardEstateValue`
+  (wholesale/revenue/margin in the dominant currency, mixed-currency + unpriced counts) and adds
+  per-reseller `WholesaleMonthly`/`MarginMonthly` to `TopIndirectResellers`. Home page shows an
+  "Estimated estate value (monthly)" panel with the not-invoiced disclaimer.*
 - [ ] **Phase 4 — Billing export (optional, out of Channel API).** Document/integrate BigQuery partner
   billing export for *actual* invoiced figures; clearly separated from API list pricing.
 

@@ -62,6 +62,9 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
             entity.Property(e => e.SkuId).HasMaxLength(128);
             entity.Property(e => e.OfferId).HasMaxLength(128);
             entity.Property(e => e.State).HasMaxLength(32);
+            entity.Property(e => e.Currency).HasMaxLength(8);
+            entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,6)");
+            entity.Property(e => e.RepricingPercent).HasColumnType("decimal(9,4)");
             entity.HasIndex(e => e.CustomerId);
             entity.HasIndex(e => e.OwningLinkId);
             entity.HasIndex(e => e.ProductId);
@@ -134,6 +137,12 @@ public sealed class EntitlementRecord
     public string State { get; set; } = string.Empty;
     public long Seats { get; set; }
     public bool IsTrial { get; set; }
+    /// <summary>Wholesale effective per-seat price from the entitlement's offer (the reseller's cost from Google). 0 if unknown.</summary>
+    public decimal UnitPrice { get; set; }
+    /// <summary>ISO currency code for <see cref="UnitPrice"/> (e.g. "USD"), or null when no price was resolved.</summary>
+    public string? Currency { get; set; }
+    /// <summary>Repricing mark-up percent applied to this entitlement (§6): per-entitlement config, else owning-link channel-partner config, else 0.</summary>
+    public decimal RepricingPercent { get; set; }
     public DateTimeOffset LastSyncedUtc { get; set; }
     /// <summary>Soft-delete flag set when an entitlement disappears from a fresh list pass.</summary>
     public bool IsDeleted { get; set; }

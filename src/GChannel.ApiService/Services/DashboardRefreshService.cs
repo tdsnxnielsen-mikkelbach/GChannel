@@ -59,6 +59,7 @@ public sealed class DashboardRefreshService(
         DateTimeOffset? lastCompletedUtc = null;
         int? lastDurationSeconds = null;
         int? lastSkippedCount = null;
+        DateTimeOffset? nextRefreshUtc = null;
 
         do
         {
@@ -80,6 +81,8 @@ public sealed class DashboardRefreshService(
                 }
 
                 // Mark the run as in progress so the home page can show a "Refreshing…" indicator.
+                // The soonest a subsequent run could begin is one interval after this one started.
+                nextRefreshUtc = startedUtc + interval;
                 await WriteStatusAsync(new DashboardRefreshStatus
                 {
                     Enabled = true,
@@ -88,6 +91,7 @@ public sealed class DashboardRefreshService(
                     LastCompletedUtc = lastCompletedUtc,
                     LastDurationSeconds = lastDurationSeconds,
                     LastSkippedCount = lastSkippedCount,
+                    NextRefreshUtc = nextRefreshUtc,
                 }, stoppingToken);
 
                 // Run unbounded (no request-path time budget) so the cached result is complete even
@@ -114,8 +118,13 @@ public sealed class DashboardRefreshService(
 
                 // Record completion so the home page can show "Updated X ago".
                 lastCompletedUtc = DateTimeOffset.UtcNow;
-                lastDurationSeconds = (int)Math.Round(Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
+                var duration = Stopwatch.GetElapsedTime(startedAt);
+                lastDurationSeconds = (int)Math.Round(duration.TotalSeconds);
                 lastSkippedCount = summary.SkippedCustomerCount;
+                // Estimate when the next run begins: normally one interval after this run STARTED, but
+                // if the run outran the interval the cooldown lock pushes the next start to one
+                // interval after COMPLETION (matching the re-arm logic in the finally block below).
+                nextRefreshUtc = (duration >= interval ? lastCompletedUtc.Value : startedUtc) + interval;
                 await WriteStatusAsync(new DashboardRefreshStatus
                 {
                     Enabled = true,
@@ -124,6 +133,7 @@ public sealed class DashboardRefreshService(
                     LastCompletedUtc = lastCompletedUtc,
                     LastDurationSeconds = lastDurationSeconds,
                     LastSkippedCount = lastSkippedCount,
+                    NextRefreshUtc = nextRefreshUtc,
                 }, stoppingToken);
 
                 logger.LogInformation("Dashboard summary refreshed in background ({Skipped} customer(s) skipped).",
@@ -148,6 +158,7 @@ public sealed class DashboardRefreshService(
                         LastCompletedUtc = lastCompletedUtc,
                         LastDurationSeconds = lastDurationSeconds,
                         LastSkippedCount = lastSkippedCount,
+                        NextRefreshUtc = nextRefreshUtc,
                     }, stoppingToken);
                 }
             }
