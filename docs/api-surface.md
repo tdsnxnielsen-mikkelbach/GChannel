@@ -144,8 +144,13 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > per-minute quota (`DashboardRequestsPerMinute`) and 429s are retried honouring `Retry-After`. Both
 > results are cached in Redis for `CacheSeconds`. A third cheap endpoint `GET /api/dashboard/status`
 > returns the background refresher's `DashboardRefreshStatus` (enabled / in-progress / last-completed /
-> duration / skipped), which the home page polls every 30 s to show an "Updated X ago" / "Refreshing…"
-> indicator and to redraw the figures live while a background run publishes partial snapshots.
+> duration / skipped / next-refresh estimate), which the home page polls every 30 s to show an
+> "Updated X ago · next refresh in X" / "Refreshing…" indicator and to redraw the figures live while a
+> background run publishes partial snapshots. When the §10 read-model is enabled the summary also carries
+> `DashboardEstateValue` — an estimated monthly **wholesale cost / repriced revenue / margin** rollup
+> derived from offer **list** pricing (`accounts.offers.list`) × seats and §6 repricing mark-ups
+> (`customerRepricingConfigs` / `channelPartnerRepricingConfigs`), denormalised onto the read-model by the
+> worker and surfaced as a *not-invoiced estimate*.
 
 ## Available possibilities
 

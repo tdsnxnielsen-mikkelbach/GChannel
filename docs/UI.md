@@ -23,8 +23,16 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
 
 ### What the Dashboard shows
 - **Summary cards**: Customers, Active SKUs, Suspended, Channel links.
+- **Estimated estate value (monthly)** — wholesale cost, repriced revenue and margin across your active
+  entitlements, in your estate's main currency. These are *estimates from list pricing, not invoiced
+  amounts*, and appear once the background read-model has priced your entitlements.
 - **Customers onboarded** — an area chart bucketing new customers into the trailing six months.
 - **Product mix** — a donut of active entitlements grouped by product.
+- **Top indirect resellers** — your linked resellers ranked by downstream seats.
+
+A status line under the title shows when the figures were last refreshed (e.g. "Updated 22 min ago ·
+took 433s · next refresh in 8 min"), a "Refreshing…" chip while a background run is in progress, or
+"On demand" when the background refresher isn't configured.
 
 If a banner says "N customers couldn't be loaded", the live aggregation hit its time budget; refresh
 or wait for the background refresh to warm the cache. Nothing is broken — it's a partial result.

@@ -372,13 +372,33 @@ worker also writes a small `DashboardRefreshStatus` object to `dashboard:refresh
 each run (`IsRunning = true`, `LastStartedUtc`) and on completion (`IsRunning = false`, `LastCompletedUtc`,
 `LastDurationSeconds`, `LastSkippedCount`), carrying the previous run's outcome forward so "last
 completed" stays meaningful while a new run is in flight; the failure path also clears `IsRunning` so the
-UI never shows "Refreshing…" forever. A cheap `GET /api/dashboard/status` reads that object (returning
-`Enabled = BackgroundRefreshEnabled` when no run has happened yet). The home page polls `/status` every
-30 s; while a run is in progress (or just after one completes) it re-pulls the cache-served `/summary`
-and redraws the cards + product-mix donut, and renders a status line — a "Refreshing…" chip while
-running, an "On demand" chip when the background path is disabled, and "Updated X ago · took Ns" from
-`LastCompletedUtc`. Polling is best-effort: transient failures keep the last good render and never raise
-a toast.
+UI never shows "Refreshing…" forever. Each status write also carries `NextRefreshUtc`, an estimate of when
+the next run will begin — one interval after the run *started*, or one interval after it *completed* when a
+run outran its interval (matching the cooldown-lock re-arm above). A cheap `GET /api/dashboard/status`
+reads that object (returning `Enabled = BackgroundRefreshEnabled` when no run has happened yet). The home
+page polls `/status` every 30 s; while a run is in progress (or just after one completes) it re-pulls the
+cache-served `/summary` and redraws the cards + product-mix donut, and renders a status line — a
+"Refreshing…" chip while running, an "On demand" chip when the background path is disabled, and
+"Updated X ago · took Ns · next refresh in X" from `LastCompletedUtc` / `NextRefreshUtc` (the next-refresh
+hint is shown only while the refresher is enabled and idle). Polling is best-effort: transient failures
+keep the last good render and never raise a toast.
+
+**Estimated estate value (pricing).** When the §10 read-model is enabled, the worker also denormalises
+pricing onto each synced entitlement so the dashboard can show an estimated monetary rollup without any
+per-request Channel API calls. Once per sync cycle `ReadModelSyncService` builds an
+offer-id→(effective seat price, currency) lookup from a single `offers.list`, and resolves the §6
+repricing mark-up per entitlement (a per-customer `customerRepricingConfigs` override wins, else the
+owning link's `CHANNEL_PARTNER`-granularity `channelPartnerRepricingConfigs` mark-up, else 0 / pass-through);
+both are stored on `EntitlementRecord` (`UnitPrice`, `Currency`, `RepricingPercent`). All of this is
+best-effort, so a pricing/repricing failure never blocks the estate sync. The `/summary` read-model
+overlay then rolls active, priced entitlements up into `DashboardEstateValue` — estimated monthly
+**wholesale cost** (`Σ price × seats`, what the reseller pays Google), **repriced revenue**
+(`Σ price × seats × (1 + percent/100)`, what end customers are billed) and **margin** (revenue − cost),
+reported in the estate's dominant currency (mixed-currency estates sum only that currency and flag it) —
+and adds per-reseller wholesale/margin to the top-resellers list. The home page renders these as an
+"Estimated estate value (monthly)" panel with a clear *estimated, not invoiced* disclaimer (it is derived
+from offer **list** pricing, not actual invoices). Entitlements whose offer price couldn't be resolved are
+excluded and counted separately. See §11 in [todo.md](todo.md) for the phased plan.
 
 ## Eventing &amp; operations
 
