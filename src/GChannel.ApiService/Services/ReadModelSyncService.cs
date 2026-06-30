@@ -79,12 +79,27 @@ public sealed class ReadModelSyncService(
         var dbContext = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
         var now = DateTimeOffset.UtcNow;
 
-        // Direct customers — refreshed every cycle (one cheap ListCustomers pass).
-        var direct = await client.ListCustomersAsync(ct);
-        await UpsertCustomersAsync(dbContext, direct.Customers, owningLinkId: null, now, ct);
-        foreach (var c in direct.Customers)
+        // Direct customers — refreshed every cycle (one cheap ListCustomers pass). Isolated so a failure
+        // here (e.g. a ListCustomers 429 or a transient SaveChanges fault) does NOT abort the indirect
+        // fan-out below: the reseller-owned estate must keep syncing even if the direct pass hiccups.
+        var directCount = 0;
+        try
         {
-            await SyncCustomerEntitlementsAsync(dbContext, client, c.Id, owningLinkId: null, now, ct);
+            var direct = await client.ListCustomersAsync(ct);
+            directCount = direct.Customers.Count;
+            await UpsertCustomersAsync(dbContext, direct.Customers, owningLinkId: null, now, ct);
+            foreach (var c in direct.Customers)
+            {
+                await SyncCustomerEntitlementsAsync(dbContext, client, c.Id, owningLinkId: null, now, ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Read-model direct-customer sync failed this cycle; continuing with the indirect fan-out.");
         }
 
         // Link roster — refreshed every cycle (account-level, quota-light).
@@ -149,7 +164,7 @@ public sealed class ReadModelSyncService(
 
         logger.LogInformation(
             "Read-model cycle: {Direct} direct customers, {Links} links, refreshed {Stale} reseller(s) in {Secs}s.",
-            direct.Customers.Count, links.Links.Count, stalest.Count,
+            directCount, links.Links.Count, stalest.Count,
             (int)Stopwatch.GetElapsedTime(startedAt).TotalSeconds);
     }
 

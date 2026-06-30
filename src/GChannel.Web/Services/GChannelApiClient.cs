@@ -197,11 +197,11 @@ public sealed class GChannelApiClient(
 
     /// <summary>Prioritises a reseller link to the front of the sync queue.</summary>
     public Task ResyncLinkAsync(string linkId, CancellationToken cancellationToken = default) =>
-        SendAsync<object>(HttpMethod.Post, ApiRoutes.EstateResyncLink(linkId), EmptyBody, cancellationToken);
+        PostNoResponseAsync(ApiRoutes.EstateResyncLink(linkId), cancellationToken);
 
     /// <summary>Prioritises a customer to the front of the sync queue.</summary>
     public Task ResyncCustomerAsync(string customerId, CancellationToken cancellationToken = default) =>
-        SendAsync<object>(HttpMethod.Post, ApiRoutes.EstateResyncCustomer(customerId), EmptyBody, cancellationToken);
+        PostNoResponseAsync(ApiRoutes.EstateResyncCustomer(customerId), cancellationToken);
 
     /// <summary>Invites a downstream reseller by creating a channel partner link.</summary>
     public Task<ChannelPartnerLink?> CreateChannelPartnerLinkAsync(CreateChannelPartnerLinkRequest request, CancellationToken cancellationToken = default) =>
@@ -306,6 +306,16 @@ public sealed class GChannelApiClient(
         using var response = await http.SendAsync(message, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<T>(cancellationToken);
+    }
+
+    /// <summary>POSTs a state-change request that returns no response body (e.g. 202 Accepted) — does not deserialize.</summary>
+    private async Task PostNoResponseAsync(string route, CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, route);
+        await AttachGoogleTokenAsync(message);
+
+        using var response = await http.SendAsync(message, cancellationToken);
+        response.EnsureSuccessStatusCode();
     }
 
     private async Task AttachGoogleTokenAsync(HttpRequestMessage message)
