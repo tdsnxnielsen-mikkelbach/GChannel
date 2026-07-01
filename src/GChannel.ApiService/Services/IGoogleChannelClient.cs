@@ -49,6 +49,14 @@ public interface IGoogleChannelClient
     /// <summary>Deletes a customer (<c>accounts.customers.delete</c>).</summary>
     Task DeleteCustomerAsync(string customerId, CancellationToken cancellationToken);
 
+    /// <summary>Imports a pre-existing Cloud Identity customer at the account level, before transfer
+    /// (<c>accounts.customers.import</c>). Returns the customer directly (synchronous, not an LRO).</summary>
+    Task<Customer> ImportCustomerAsync(ImportCustomerRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Provisions a new Cloud Identity for a customer (<c>accounts.customers.provisionCloudIdentity</c>).
+    /// Returns a long-running operation to poll on the Operations page (§7).</summary>
+    Task<ChannelOperation> ProvisionCloudIdentityAsync(string customerId, ProvisionCloudIdentityRequest request, CancellationToken cancellationToken);
+
     /// <summary>Lists a customer's purchasable SKUs for a product (<c>customers.listPurchasableSkus</c>).</summary>
     Task<PurchasableSkusResult> ListPurchasableSkusAsync(string customerId, string productId, CancellationToken cancellationToken);
 

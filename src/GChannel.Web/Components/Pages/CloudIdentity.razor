@@ -88,9 +88,14 @@
                     @if (_result.Exists)
                     {
                         <span>A Cloud Identity account already exists for <b>@_result.Domain</b>.</span>
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                                   StartIcon="@Icons.Material.Filled.People"
-                                   OnClick="ViewCustomers">View customers</MudButton>
+                        <div class="d-flex align-center" style="gap:8px">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.MoveToInbox"
+                                       OnClick="OpenImportDialog">Import existing customer</MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.People"
+                                       OnClick="ViewCustomers">View customers</MudButton>
+                        </div>
                     }
                     else
                     {
@@ -173,6 +178,28 @@
     </MudItem>
 </MudGrid>
 
+<MudDialog @bind-Visible="_importOpen" Options="_importDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Import existing customer</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+            Bring a customer that already has a Cloud Identity into this reseller account (a pre-transfer
+            step). Provide one identifier — the checked domain is prefilled.
+        </MudText>
+        <MudTextField @bind-Value="_import.Domain" Label="Primary domain" HelperText="e.g. contoso.com" Class="mb-3" />
+        <MudTextField @bind-Value="_import.CloudIdentityId" Label="Cloud Identity id" Class="mb-3" />
+        <MudTextField @bind-Value="_import.PrimaryAdminEmail" Label="Primary admin email" InputType="InputType.Email" Class="mb-3" />
+        <MudCheckBox @bind-Value="_import.OverwriteIfExists" Label="Overwrite if the customer is already imported" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _importOpen = false)" Disabled="@_importing">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ImportExistingAsync" Disabled="@_importing">
+            @(_importing ? "Importing…" : "Import")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
 @code {
     [SupplyParameterFromQuery(Name = "domain")]
     public string? Domain { get; set; }
@@ -182,6 +209,11 @@
     private IReadOnlyList<IdentityCheckHistoryItem> _history = [];
     private bool _busy;
     private bool _autoChecked;
+
+    private bool _importOpen;
+    private bool _importing;
+    private readonly ImportModel _import = new();
+    private static readonly DialogOptions _importDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
 
     private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
     [
@@ -215,6 +247,52 @@
     }
 
     private void ViewCustomers() => Nav.NavigateTo("/customers");
+
+    private void OpenImportDialog()
+    {
+        _import.Reset();
+        _import.Domain = _result?.Domain ?? _model.Domain;
+        _import.PrimaryAdminEmail = string.IsNullOrWhiteSpace(_model.PrimaryAdminEmail) ? null : _model.PrimaryAdminEmail;
+        _importOpen = true;
+    }
+
+    private async Task ImportExistingAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_import.Domain)
+            && string.IsNullOrWhiteSpace(_import.CloudIdentityId)
+            && string.IsNullOrWhiteSpace(_import.PrimaryAdminEmail))
+        {
+            Snackbar.Add("Provide a domain, Cloud Identity id, or primary admin email to import.", Severity.Warning);
+            return;
+        }
+
+        _importing = true;
+        try
+        {
+            var imported = await Api.ImportCustomerAsync(new ImportCustomerRequest
+            {
+                Domain = _import.Domain,
+                CloudIdentityId = _import.CloudIdentityId,
+                PrimaryAdminEmail = _import.PrimaryAdminEmail,
+                OverwriteIfExists = _import.OverwriteIfExists
+            });
+
+            _importOpen = false;
+            Snackbar.Add($"Imported {imported?.OrgDisplayName ?? imported?.Domain ?? "customer"}.", Severity.Success);
+            if (imported is not null)
+            {
+                Nav.NavigateTo($"/customers/{imported.Id}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to import customer: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
 
     private void ViewPartnerLink(string id) => Nav.NavigateTo($"/channel-partner-links/{id}");
 
@@ -269,5 +347,21 @@
         [System.ComponentModel.DataAnnotations.Required]
         public string Domain { get; set; } = string.Empty;
         public string? PrimaryAdminEmail { get; set; }
+    }
+
+    private sealed class ImportModel
+    {
+        public string? Domain { get; set; }
+        public string? CloudIdentityId { get; set; }
+        public string? PrimaryAdminEmail { get; set; }
+        public bool OverwriteIfExists { get; set; }
+
+        public void Reset()
+        {
+            Domain = null;
+            CloudIdentityId = null;
+            PrimaryAdminEmail = null;
+            OverwriteIfExists = false;
+        }
     }
 }

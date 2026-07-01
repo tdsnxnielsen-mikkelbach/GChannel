@@ -80,6 +80,37 @@ public static class CustomersEndpoints
             .WithName("DeleteCustomer")
             .WithSummary("Deletes a customer.");
 
+        // Import a pre-existing Cloud Identity customer (pre-transfer). Synchronous — returns the
+        // Customer directly — so it's a plain Created, not routed through the Operations (LRO) UX.
+        group.MapPost("/import", async (
+                ImportCustomerRequest request,
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                CancellationToken cancellationToken) =>
+            {
+                var imported = await channel.ImportCustomerAsync(request, cancellationToken);
+                await InvalidateAsync(cache, imported.Id, cancellationToken);
+                return Results.Created($"/api/customers/{imported.Id}", imported);
+            })
+            .WithName("ImportCustomer")
+            .WithSummary("Imports a pre-existing Cloud Identity customer before transfer.");
+
+        // Provision a new Cloud Identity — a long-running operation. Return 202 Accepted with the
+        // operation so the UI can track it on the Operations page (§7), mirroring the entitlement LROs.
+        group.MapPost("/{customerId}/provision-cloud-identity", async (
+                string customerId,
+                ProvisionCloudIdentityRequest request,
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                CancellationToken cancellationToken) =>
+            {
+                var operation = await channel.ProvisionCloudIdentityAsync(customerId, request, cancellationToken);
+                await InvalidateAsync(cache, customerId, cancellationToken);
+                return Results.Accepted($"/api/operations/{operation.Id}", operation);
+            })
+            .WithName("ProvisionCloudIdentity")
+            .WithSummary("Provisions a new Cloud Identity for a customer (long-running operation).");
+
         // Purchasable catalog reads are idempotent and safe to cache briefly.
         group.MapGet("/{customerId}/purchasable-skus", (
                 string customerId,

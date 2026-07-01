@@ -37,6 +37,13 @@ public static class ApiRoutes
     /// <summary>A single customer by id.</summary>
     public static string Customer(string customerId) => $"/api/customers/{customerId}";
 
+    /// <summary>Imports a pre-existing Cloud Identity customer at the account level (pre-transfer).</summary>
+    public const string CustomerImport = "/api/customers/import";
+
+    /// <summary>Provisions a new Cloud Identity for a customer (long-running operation).</summary>
+    public static string CustomerProvisionCloudIdentity(string customerId) =>
+        $"/api/customers/{customerId}/provision-cloud-identity";
+
     /// <summary>Purchasable SKUs for a customer within a product.</summary>
     public static string CustomerPurchasableSkus(string customerId, string productId) =>
         $"/api/customers/{customerId}/purchasable-skus?productId={productId}";

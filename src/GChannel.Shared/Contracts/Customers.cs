@@ -109,6 +109,47 @@ public sealed record ImportCustomerRequest
     public string? ChannelPartnerId { get; init; }
 }
 
+/// <summary>
+/// Payload for provisioning a brand-new Cloud Identity for a customer that has none
+/// (<c>customers.provisionCloudIdentity</c>). Unlike <see cref="ImportCustomerRequest"/> this is a
+/// <b>long-running operation</b>: the API returns a <see cref="ChannelOperation"/> to poll on the
+/// Operations page (§7) until it reaches <c>done</c>.
+/// </summary>
+public sealed record ProvisionCloudIdentityRequest
+{
+    /// <summary>Cloud Identity account details for the new organisation.</summary>
+    public CloudIdentityDetails? CloudIdentity { get; init; }
+
+    /// <summary>The initial admin user to create for the new Cloud Identity.</summary>
+    public AdminUser? AdminUser { get; init; }
+
+    /// <summary>When true, validate the request (and surface errors) without actually provisioning.</summary>
+    public bool ValidateOnly { get; init; }
+}
+
+/// <summary>Cloud Identity account details supplied when provisioning. Maps to <c>CloudIdentityInfo</c>.</summary>
+public sealed record CloudIdentityDetails
+{
+    /// <summary>A recovery / notification email outside the new domain.</summary>
+    public string? AlternateEmail { get; init; }
+
+    /// <summary>Contact phone number in international format.</summary>
+    public string? PhoneNumber { get; init; }
+
+    /// <summary>Preferred language (e.g. "en-US").</summary>
+    public string? LanguageCode { get; init; }
+}
+
+/// <summary>The initial admin user created with a new Cloud Identity. Maps to <c>AdminUser</c>.</summary>
+public sealed record AdminUser
+{
+    public string? GivenName { get; init; }
+    public string? FamilyName { get; init; }
+
+    /// <summary>The admin's email within the customer's primary domain.</summary>
+    public string? Email { get; init; }
+}
+
 /// <summary>A SKU a customer is eligible to purchase. Maps to <c>customers.listPurchasableSkus</c>.</summary>
 public sealed record PurchasableSku
 {

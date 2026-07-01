@@ -2,7 +2,8 @@
 
 ## 12. Remaining stable `v1` surface (customer provisioning &amp; n-tier customer management)
 
-> **Status:** §12.1 (n-tier customer CRUD) is **implemented**; §12.2–§12.4 remain proposed. This
+> **Status:** §12.1 (n-tier customer CRUD) and §12.2 (customer provisioning / pre-transfer import) are
+> **implemented**; §12.3–§12.4 remain proposed. This
 > section closes the last gaps between the app and the **stable `v1`** Cloud Channel API (excluding the
 > deprecated `accounts.reports.*`/`reportJobs.*` and the alpha-only items in §8). See
 > [api-surface.md](api-surface.md) for the full cross-check that produced this list. Ordered by value:
@@ -90,11 +91,31 @@ return the `Customer` resource directly (except `delete`, which returns empty).
 Both hang off pages that already exist (the Cloud Identity check page and the Transfers flow), and one
 of them exercises the §7 LRO machinery. Completes the §2 "Cloud Identity" checkbox.
 
-- [ ] **Provision a Cloud Identity** — `accounts.customers.provisionCloudIdentity`. **Returns an LRO**
+- [x] **Provision a Cloud Identity** — `accounts.customers.provisionCloudIdentity`. **Returns an LRO**
   → reuse the §7 `ChannelOperation` contract + the **Operations** page for tracking.
-- [ ] **Import a customer before transfer** — `accounts.customers.import`. **Returns the `Customer`
+- [x] **Import a customer before transfer** — `accounts.customers.import`. **Returns the `Customer`
   resource directly** (synchronous, *not* an LRO — this corrects the earlier "both are LROs"
   assumption).
+
+> **Implemented.** Both flows are live end-to-end. New `ProvisionCloudIdentityRequest`
+> (+ `CloudIdentityDetails` / `AdminUser`) contract in `GChannel.Shared/Contracts/Customers.cs`; the
+> §12.1 `ImportCustomerRequest` is reused for the account-level import. Routes `CustomerImport`
+> (`/api/customers/import`) and `CustomerProvisionCloudIdentity(customerId)`
+> (`/api/customers/{customerId}/provision-cloud-identity`) on `ApiRoutes`. Two new client methods on
+> `IGoogleChannelClient` / `GoogleChannelClient.Customers.cs`: `ImportCustomerAsync`
+> (`Accounts.Customers.Import` → `MapCustomer`, reusing the `ToGoogleImportCustomerRequest` mapper) and
+> `ProvisionCloudIdentityAsync` (`Accounts.Customers.ProvisionCloudIdentity` → `MapLongrunningOperation`,
+> the §7 LRO mapper), with a new `ToGoogleProvisionCloudIdentityRequest` mapper. Endpoints on
+> `CustomersEndpoints.cs`: `POST /import` (Created + list-cache invalidation, synchronous) and
+> `POST /{customerId}/provision-cloud-identity` (**202 Accepted** with the operation, mirroring the
+> entitlement LRO endpoints). Two typed `GChannelApiClient` methods. UI wiring: an **Import customer**
+> header action + dialog on both the **Customers** list (`Customers.razor`) and the **Cloud Identity
+> check** page (`CloudIdentity.razor`, prefilled with the checked domain, shown in the "exists" branch);
+> a **Provision Cloud Identity** action + dialog on the **customer detail** page (`CustomerDetail.razor`,
+> shown only when the customer has no `CloudIdentityId`) that deep-links to the **Operations** page via a
+> new `?operation={id}` auto-track query param (`Operations.razor`). Import returns the `Customer`
+> directly (synchronous — no LRO UX); only provision routes through Operations. Builds clean; **not
+> deployed** (deployment is manual).
 
 **Implementation plan:**
 

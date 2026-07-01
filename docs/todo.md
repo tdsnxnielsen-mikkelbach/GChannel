@@ -18,7 +18,7 @@ detail, rationale and per-phase breakdown.
 | 9. User onboarding | Complete (Phases 1–4) | [todos/09-user-onboarding.md](todos/09-user-onboarding.md) |
 | 10. Persistent read-model | Complete (Phases 1–5; snapshots optional) | [todos/10-persistent-read-model.md](todos/10-persistent-read-model.md) |
 | 11. Pricing &amp; billing | Complete in-scope; Phase 4 (BigQuery) deferred | [todos/11-pricing-and-billing.md](todos/11-pricing-and-billing.md) |
-| 12. Remaining stable `v1` surface | §12.1 implemented; §12.2–§12.4 proposed | [todos/12-remaining-v1-surface.md](todos/12-remaining-v1-surface.md) |
+| 12. Remaining stable `v1` surface | §12.1–12.2 implemented; §12.3–§12.4 proposed | [todos/12-remaining-v1-surface.md](todos/12-remaining-v1-surface.md) |
 
 ## Roadmap capabilities (§1–§8)
 
@@ -61,6 +61,6 @@ Full detail in [todos/12-remaining-v1-surface.md](todos/12-remaining-v1-surface.
 | Item | Status |
 | --- | --- |
 | 12.1 — N-tier customer CRUD | Implemented |
-| 12.2 — Customer provisioning &amp; pre-transfer onboarding | Proposed |
+| 12.2 — Customer provisioning &amp; pre-transfer onboarding | Implemented |
 | 12.3 — Eligible billing accounts | Proposed (niche) |
 | 12.4 — Minor completeness &amp; doc hygiene | Proposed (doc-only) |

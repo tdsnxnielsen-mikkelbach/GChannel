@@ -97,6 +97,14 @@ public sealed class GChannelApiClient(
         response.EnsureSuccessStatusCode();
     }
 
+    /// <summary>Imports a pre-existing Cloud Identity customer (pre-transfer); returns the customer.</summary>
+    public Task<Customer?> ImportCustomerAsync(ImportCustomerRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<Customer>(HttpMethod.Post, ApiRoutes.CustomerImport, request, cancellationToken);
+
+    /// <summary>Provisions a new Cloud Identity for a customer; returns the tracking operation.</summary>
+    public Task<ChannelOperation?> ProvisionCloudIdentityAsync(string customerId, ProvisionCloudIdentityRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<ChannelOperation>(HttpMethod.Post, ApiRoutes.CustomerProvisionCloudIdentity(customerId), request, cancellationToken);
+
     /// <summary>Lists the SKUs a customer is eligible to purchase within a product.</summary>
     public Task<PurchasableSkusResult?> ListPurchasableSkusAsync(string customerId, string productId, CancellationToken cancellationToken = default) =>
         GetAsync<PurchasableSkusResult>(ApiRoutes.CustomerPurchasableSkus(customerId, productId), cancellationToken);

@@ -141,6 +141,15 @@ Customer CRUD is exposed under `/api/customers` (list, get, create `POST`, updat
   Identity (from the `CloudIdentityId` already in the list response — no extra call) and offers a
   per-row **Check** action that deep-links to `/accounts/cloud-identity?domain={domain}`, which
   prefills and runs the check for that domain.
+- **Import & provision (§12.2).** Two extra account-level flows sit alongside CRUD.
+  `POST /api/customers/import` (`accounts.customers.import`) brings a pre-existing Cloud Identity
+  customer into the account before a transfer — it returns the `Customer` **synchronously** (not an
+  LRO), so it's a `201 Created` that invalidates the list cache, surfaced as an **Import customer**
+  action on the Customers list and the Cloud Identity check page.
+  `POST /api/customers/{customerId}/provision-cloud-identity`
+  (`accounts.customers.provisionCloudIdentity`) creates a new Cloud Identity for a customer that has
+  none — this **is** an LRO, so it returns `202 Accepted` with a `ChannelOperation` (the same §7 mapper)
+  and the detail-page action deep-links to the Operations page (`?operation={id}`) to track it.
 
 ## Entitlement lifecycle
 

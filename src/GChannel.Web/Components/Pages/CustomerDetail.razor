@@ -33,6 +33,11 @@ else
                        Href="@($"/customers/{_customer.Id}/transfer")">Transfer</MudButton>
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Percent"
                        Href="@($"/customers/{_customer.Id}/repricing")">Repricing</MudButton>
+            @if (string.IsNullOrEmpty(_customer.CloudIdentityId))
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddBusiness"
+                           OnClick="OpenProvisionDialog">Provision Cloud Identity</MudButton>
+            }
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
                        Href="@($"/customers/edit/{_customer.Id}")">Edit</MudButton>
             <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete"
@@ -277,6 +282,34 @@ else
     <MudButton Class="mt-4" Variant="Variant.Text" Href="/customers" StartIcon="@Icons.Material.Filled.ArrowBack">
         Back to customers
     </MudButton>
+
+    <MudDialog @bind-Visible="_provisionOpen" Options="_provisionDialogOptions">
+        <TitleContent>
+            <MudText Typo="Typo.h6">Provision Cloud Identity</MudText>
+        </TitleContent>
+        <DialogContent>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                Create a brand-new Cloud Identity for <b>@(_customer.OrgDisplayName ?? _customer.Domain)</b>.
+                This is a long-running operation — you'll be taken to the Operations page to watch it finish.
+            </MudText>
+            <MudTextField @bind-Value="_provision.GivenName" Label="Admin first name" Class="mb-3" />
+            <MudTextField @bind-Value="_provision.FamilyName" Label="Admin last name" Class="mb-3" />
+            <MudTextField @bind-Value="_provision.AdminEmail" Label="Admin email"
+                          HelperText="@($"Within {_customer.Domain}, e.g. admin@{_customer.Domain}")"
+                          InputType="InputType.Email" Class="mb-3" />
+            <MudTextField @bind-Value="_provision.AlternateEmail" Label="Alternate (recovery) email"
+                          HelperText="Outside the customer's domain" InputType="InputType.Email" Class="mb-3" />
+            <MudTextField @bind-Value="_provision.PhoneNumber" Label="Contact phone (optional)" Class="mb-3" />
+            <MudTextField @bind-Value="_provision.LanguageCode" Label="Language code (optional)" HelperText="e.g. en-US" Class="mb-3" />
+            <MudCheckBox @bind-Value="_provision.ValidateOnly" Label="Validate only (don't provision yet)" />
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _provisionOpen = false)" Disabled="@_provisioning">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ProvisionAsync" Disabled="@_provisioning">
+                @(_provisioning ? "Submitting…" : (_provision.ValidateOnly ? "Validate" : "Provision"))
+            </MudButton>
+        </DialogActions>
+    </MudDialog>
 }
 
 @code {
@@ -297,6 +330,11 @@ else
     private decimal? _estimatedWholesale;
     private string? _estimatedCurrency;
     private int _pricedEntitlementCount;
+
+    private bool _provisionOpen;
+    private bool _provisioning;
+    private readonly ProvisionModel _provision = new();
+    private static readonly DialogOptions _provisionDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
 
     protected override async Task OnParametersSetAsync()
     {
@@ -443,6 +481,63 @@ else
         }
     }
 
+    private void OpenProvisionDialog()
+    {
+        _provision.Reset();
+        _provisionOpen = true;
+    }
+
+    private async Task ProvisionAsync()
+    {
+        if (_customer is null)
+        {
+            return;
+        }
+
+        _provisioning = true;
+        try
+        {
+            var operation = await Api.ProvisionCloudIdentityAsync(_customer.Id, new ProvisionCloudIdentityRequest
+            {
+                ValidateOnly = _provision.ValidateOnly,
+                AdminUser = new AdminUser
+                {
+                    GivenName = _provision.GivenName,
+                    FamilyName = _provision.FamilyName,
+                    Email = _provision.AdminEmail
+                },
+                CloudIdentity = new CloudIdentityDetails
+                {
+                    AlternateEmail = _provision.AlternateEmail,
+                    PhoneNumber = _provision.PhoneNumber,
+                    LanguageCode = _provision.LanguageCode
+                }
+            });
+
+            _provisionOpen = false;
+            if (_provision.ValidateOnly)
+            {
+                Snackbar.Add("Validation succeeded — no Cloud Identity was created.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Provisioning started. Tracking the operation…", Severity.Success);
+                if (operation is not null)
+                {
+                    Nav.NavigateTo($"/operations?operation={Uri.EscapeDataString(operation.Id)}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to provision Cloud Identity: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _provisioning = false;
+        }
+    }
+
     private async Task DeleteAsync()
     {
         if (_customer is null)
@@ -470,6 +565,28 @@ else
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to delete customer: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private sealed class ProvisionModel
+    {
+        public string? GivenName { get; set; }
+        public string? FamilyName { get; set; }
+        public string? AdminEmail { get; set; }
+        public string? AlternateEmail { get; set; }
+        public string? PhoneNumber { get; set; }
+        public string? LanguageCode { get; set; }
+        public bool ValidateOnly { get; set; }
+
+        public void Reset()
+        {
+            GivenName = null;
+            FamilyName = null;
+            AdminEmail = null;
+            AlternateEmail = null;
+            PhoneNumber = null;
+            LanguageCode = null;
+            ValidateOnly = false;
         }
     }
 }

@@ -443,6 +443,34 @@ public sealed partial class GoogleChannelClient
         ChannelPartnerId = string.IsNullOrWhiteSpace(request.ChannelPartnerId) ? null : request.ChannelPartnerId
     };
 
+    /// <summary>Builds a Google provision-cloud-identity request body from the shared contract.</summary>
+    private static GoogleCloudChannelV1ProvisionCloudIdentityRequest ToGoogleProvisionCloudIdentityRequest(ProvisionCloudIdentityRequest request) => new()
+    {
+        ValidateOnly = request.ValidateOnly,
+        CloudIdentityInfo = request.CloudIdentity is { } ci
+            && (!string.IsNullOrWhiteSpace(ci.AlternateEmail)
+                || !string.IsNullOrWhiteSpace(ci.PhoneNumber)
+                || !string.IsNullOrWhiteSpace(ci.LanguageCode))
+            ? new GoogleCloudChannelV1CloudIdentityInfo
+            {
+                AlternateEmail = string.IsNullOrWhiteSpace(ci.AlternateEmail) ? null : ci.AlternateEmail,
+                PhoneNumber = string.IsNullOrWhiteSpace(ci.PhoneNumber) ? null : ci.PhoneNumber,
+                LanguageCode = string.IsNullOrWhiteSpace(ci.LanguageCode) ? null : ci.LanguageCode
+            }
+            : null,
+        User = request.AdminUser is { } admin
+            && (!string.IsNullOrWhiteSpace(admin.GivenName)
+                || !string.IsNullOrWhiteSpace(admin.FamilyName)
+                || !string.IsNullOrWhiteSpace(admin.Email))
+            ? new GoogleCloudChannelV1AdminUser
+            {
+                GivenName = string.IsNullOrWhiteSpace(admin.GivenName) ? null : admin.GivenName,
+                FamilyName = string.IsNullOrWhiteSpace(admin.FamilyName) ? null : admin.FamilyName,
+                Email = string.IsNullOrWhiteSpace(admin.Email) ? null : admin.Email
+            }
+            : null
+    };
+
     /// <summary>Builds the full customer repricing config resource name for a short config id.</summary>
     private string CustomerRepricingConfigName(string customerId, string configId) =>
         $"{CustomerName(customerId)}/customerRepricingConfigs/{configId}";

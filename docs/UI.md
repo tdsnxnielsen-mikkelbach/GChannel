@@ -65,6 +65,9 @@ mean a transfer is required instead of a fresh create).
 2. Enter the customer's primary **domain** and run the check.
 3. The result tells you whether the domain is known to Google. From a customer row elsewhere in the
    app you can jump straight here via the domain link.
+4. If the domain **already has** a Cloud Identity, an **Import existing customer** action lets you bring
+   it into your reseller account (a pre-transfer step, prefilled with the checked domain). The same
+   **Import customer** action is also on the **Customers** list header.
 
 ## 3. Browse the catalog (what you can sell)
 
@@ -112,6 +115,9 @@ From the detail page you can:
 - **Edit** the customer (`/customers/edit/{id}`).
 - See and open the customer's **entitlements** (`/customers/{id}/entitlements`).
 - Start a **purchase**, a **transfer**, or **repricing**.
+- **Provision a Cloud Identity** — shown only when the customer has no Cloud Identity id. This is a
+  long-running operation: submitting takes you to the **Operations** page (via `?operation={id}`) to
+  watch it finish. A **Validate only** option checks the request without provisioning.
 - Jump to the owning **channel partner** (if the customer has one).
 
 The customer detail page also shows an **Estimated monthly value** panel for that customer's active

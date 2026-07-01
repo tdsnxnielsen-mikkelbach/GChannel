@@ -109,6 +109,43 @@ public sealed partial class GoogleChannelClient
             .ExecuteAsync(cancellationToken);
     }
 
+    public async Task<Customer> ImportCustomerAsync(ImportCustomerRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = ToGoogleImportCustomerRequest(request);
+
+        logger.LogInformation(
+            "Importing customer ({Identifier}) at the account level",
+            request.Domain ?? request.CloudIdentityId ?? request.PrimaryAdminEmail);
+
+        var response = await service.Accounts.Customers
+            .Import(body, _options.AccountName)
+            .ExecuteAsync(cancellationToken);
+
+        return MapCustomer(response);
+    }
+
+    public async Task<ChannelOperation> ProvisionCloudIdentityAsync(string customerId, ProvisionCloudIdentityRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = ToGoogleProvisionCloudIdentityRequest(request);
+
+        logger.LogInformation("Provisioning a Cloud Identity for customer {Customer}", customerId);
+
+        var operation = await service.Accounts.Customers
+            .ProvisionCloudIdentity(body, CustomerName(customerId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapLongrunningOperation(operation);
+    }
+
     public async Task<PurchasableSkusResult> ListPurchasableSkusAsync(string customerId, string productId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(customerId);

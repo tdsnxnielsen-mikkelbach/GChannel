@@ -73,6 +73,18 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > [configuration.md](configuration.md#pubsub-notifications-7) and
 > [architecture.md](architecture.md#eventing--operations).
 
+> **Customer provisioning & pre-transfer import (§12.2).** Two account-level customer flows fill the last
+> §2 gaps. `POST /api/customers/import` (`accounts.customers.import`) brings a customer that already has a
+> Cloud Identity into the reseller account before a transfer — it returns the `Customer` **directly**
+> (synchronous, *not* an LRO), so it's a plain `201 Created` that invalidates the customer-list cache. It's
+> surfaced as an **Import customer** header action + dialog on both the **Customers** list and the **Cloud
+> Identity check** page (prefilled with the checked domain). `POST
+> /api/customers/{customerId}/provision-cloud-identity` (`accounts.customers.provisionCloudIdentity`)
+> creates a brand-new Cloud Identity for a customer that has none — this **is** an LRO, so it returns
+> **`202 Accepted`** with the `ChannelOperation` (mapped by the same §7 `MapLongrunningOperation`). The
+> **customer detail** page shows a **Provision Cloud Identity** action (only when `CloudIdentityId` is
+> empty) that deep-links to the **Operations** page via a new `?operation={id}` auto-track query param.
+
 > **Transfers.** Moving an existing subscription into the reseller is exposed under
 > `/api/customers/{id}`: `GET /transferable-skus` and `GET /transferable-offers?productId=&skuId=`
 > (cached in Redis for `CacheSeconds`) list what can be transferred, and `POST /transfer-entitlements`
@@ -244,8 +256,6 @@ Most customer methods are now **implemented** (see the table above). The followi
 
 | Resource.method | Purpose |
 | --- | --- |
-| [`accounts.customers.import`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/import) | Import a customer from Cloud Identity before transfer. Returns the `Customer` **directly** (synchronous — *not* an LRO). **Planned in [todo.md §12.2](todos/12-remaining-v1-surface.md).** |
-| [`accounts.customers.provisionCloudIdentity`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/provisionCloudIdentity) | Provision a Cloud Identity for a customer. **LRO** (reuses the §7 Operations page). **Planned in [todo.md §12.2](todos/12-remaining-v1-surface.md).** |
 | [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs (eligibility, not money). N-tier / GCP distributor billing. **Planned (niche) in [todo.md §12.3](todos/12-remaining-v1-surface.md).** |
 
 ### Entitlements (subscriptions / lifecycle)

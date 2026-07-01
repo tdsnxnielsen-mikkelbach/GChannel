@@ -200,6 +200,10 @@ else
 
     private readonly CancellationTokenSource _cts = new();
 
+    /// <summary>Optional operation id to auto-track, e.g. deep-linked after provisioning a Cloud Identity.</summary>
+    [SupplyParameterFromQuery(Name = "operation")]
+    public string? OperationId { get; set; }
+
     private string _lookupId = string.Empty;
     private ChannelOperation? _tracked;
     private bool _tracking;
@@ -215,6 +219,11 @@ else
         if (!firstRender)
         {
             return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(OperationId))
+        {
+            await TrackByIdAsync(OperationId.Trim());
         }
 
         await RefreshListAsync();
