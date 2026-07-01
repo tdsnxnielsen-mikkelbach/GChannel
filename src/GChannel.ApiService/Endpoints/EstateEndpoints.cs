@@ -213,6 +213,108 @@ public static class EstateEndpoints
                 });
             });
 
+        // Estate-wide entitlements list the dashboard lifecycle KPIs (Active/Trial/Suspended) link into.
+        // Paged/sorted server-side against SQL and joined to the customer read-model for the org name.
+        // The scope defaults to "direct" so the counts match the dashboard KPIs (which are direct-only).
+        group.MapGet("/entitlements", async (
+                GChannelDbContext db,
+                CancellationToken ct,
+                int page = 0,
+                int pageSize = 25,
+                string? sort = null,
+                bool desc = false,
+                string? search = null,
+                string? state = null,
+                string? scope = null) =>
+            {
+                pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
+                page = Math.Max(0, page);
+
+                var q = db.EntitlementRecords.AsNoTracking().Where(e => !e.IsDeleted);
+
+                // Scope mirrors the dashboard KPIs (direct-only) by default; allow indirect/all too.
+                q = (scope ?? "").ToLowerInvariant() switch
+                {
+                    "indirect" => q.Where(e => e.OwningLinkId != null),
+                    "all" => q,
+                    _ => q.Where(e => e.OwningLinkId == null),
+                };
+
+                // State filter mirrors the dashboard lifecycle buckets exactly.
+                q = (state ?? "").ToLowerInvariant() switch
+                {
+                    "active" => q.Where(e => e.State == "ACTIVE" && !e.IsTrial),
+                    "trial" => q.Where(e => e.IsTrial),
+                    "suspended" => q.Where(e => e.State == "SUSPENDED"),
+                    _ => q,
+                };
+
+                var joined = q.Join(
+                    db.CustomerRecords.AsNoTracking(),
+                    e => e.CustomerId,
+                    c => c.CustomerId,
+                    (e, c) => new { E = e, c.OrgName });
+
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    var s = search.Trim();
+                    joined = joined.Where(x =>
+                        (x.OrgName != null && x.OrgName.Contains(s)) ||
+                        x.E.CustomerId.Contains(s) ||
+                        (x.E.OfferName != null && x.E.OfferName.Contains(s)) ||
+                        (x.E.SkuName != null && x.E.SkuName.Contains(s)) ||
+                        (x.E.ProductName != null && x.E.ProductName.Contains(s)));
+                }
+
+                joined = (sort, desc) switch
+                {
+                    ("customer", false) => joined.OrderBy(x => x.OrgName),
+                    ("customer", true) => joined.OrderByDescending(x => x.OrgName),
+                    ("product", false) => joined.OrderBy(x => x.E.ProductName),
+                    ("product", true) => joined.OrderByDescending(x => x.E.ProductName),
+                    ("seats", false) => joined.OrderBy(x => x.E.Seats),
+                    ("seats", true) => joined.OrderByDescending(x => x.E.Seats),
+                    ("state", false) => joined.OrderBy(x => x.E.State),
+                    ("state", true) => joined.OrderByDescending(x => x.E.State),
+                    ("renewal", false) => joined.OrderBy(x => x.E.CommitmentEndTime),
+                    ("renewal", true) => joined.OrderByDescending(x => x.E.CommitmentEndTime),
+                    ("created", false) => joined.OrderBy(x => x.E.CreateTime),
+                    ("created", true) => joined.OrderByDescending(x => x.E.CreateTime),
+                    (_, true) => joined.OrderByDescending(x => x.OrgName),
+                    _ => joined.OrderBy(x => x.OrgName),
+                };
+
+                var total = await joined.CountAsync(ct);
+                var items = await joined.Skip(page * pageSize).Take(pageSize)
+                    .Select(x => new EstateEntitlement
+                    {
+                        EntitlementId = x.E.EntitlementId,
+                        CustomerId = x.E.CustomerId,
+                        CustomerName = x.OrgName,
+                        OwningLinkId = x.E.OwningLinkId,
+                        ProductName = x.E.ProductName,
+                        SkuName = x.E.SkuName,
+                        OfferName = x.E.OfferName,
+                        State = x.E.State,
+                        IsTrial = x.E.IsTrial,
+                        Seats = x.E.Seats,
+                        UnitPrice = x.E.UnitPrice,
+                        Currency = x.E.Currency,
+                        RepricingPercent = x.E.RepricingPercent,
+                        CommitmentEndTime = x.E.CommitmentEndTime,
+                        CreateTime = x.E.CreateTime,
+                        LastSyncedUtc = x.E.LastSyncedUtc,
+                    })
+                    .ToListAsync(ct);
+
+                return Results.Ok(new PagedEstateResult<EstateEntitlement>
+                {
+                    Items = items,
+                    Total = total,
+                    AsOf = items.Count == 0 ? null : items.Min(i => i.LastSyncedUtc),
+                });
+            });
+
         // Refresh now: zero the row's LastSyncedUtc so the background sync (which orders by oldest
         // first) picks it at the head of the next cycle.
         group.MapPost("/resellers/{linkId}/resync", async (string linkId, GChannelDbContext db, CancellationToken ct) =>

@@ -215,6 +215,12 @@ public sealed class GChannelApiClient(
             $"{ApiRoutes.EstateResellers}?page={page}&pageSize={pageSize}&sort={Uri.EscapeDataString(sort ?? "")}&desc={desc}&search={Uri.EscapeDataString(search ?? "")}&state={Uri.EscapeDataString(state ?? "")}",
             cancellationToken);
 
+    /// <summary>Pages/sorts/filters estate-wide entitlements (subscriptions) from the read-model.</summary>
+    public Task<PagedEstateResult<EstateEntitlement>?> ListEstateEntitlementsAsync(int page, int pageSize, string? sort, bool desc, string? search, string? state, string? scope, CancellationToken cancellationToken = default) =>
+        GetAsync<PagedEstateResult<EstateEntitlement>>(
+            $"{ApiRoutes.EstateEntitlements}?page={page}&pageSize={pageSize}&sort={Uri.EscapeDataString(sort ?? "")}&desc={desc}&search={Uri.EscapeDataString(search ?? "")}&state={Uri.EscapeDataString(state ?? "")}&scope={Uri.EscapeDataString(scope ?? "")}",
+            cancellationToken);
+
     /// <summary>Prioritises a reseller link to the front of the sync queue.</summary>
     public Task ResyncLinkAsync(string linkId, CancellationToken cancellationToken = default) =>
         PostNoResponseAsync(ApiRoutes.EstateResyncLink(linkId), cancellationToken);

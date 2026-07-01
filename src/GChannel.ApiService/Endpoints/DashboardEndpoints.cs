@@ -189,16 +189,20 @@ public static class DashboardEndpoints
     public static async Task<DashboardSummary> BuildReadModelSummaryAsync(
         GChannelDbContext db, CancellationToken cancellationToken)
     {
-        var direct = db.EntitlementRecords.Where(e => !e.IsDeleted && e.OwningLinkId == null);
+        // §11 Phase 9: the entitlement KPIs (active/trial/suspended/seats/product mix) span the WHOLE
+        // estate — direct customers plus reseller-owned (indirect) ones — so they line up with the
+        // estate-value panel, which is also whole-estate. Customer count and onboarding stay direct-only
+        // (a distinct concept surfaced separately as IndirectCustomerCount).
+        var entitlements = db.EntitlementRecords.Where(e => !e.IsDeleted);
 
         var customerCount = await db.CustomerRecords
             .CountAsync(c => !c.IsDeleted && c.OwningLinkId == null, cancellationToken);
-        var active = await direct.CountAsync(e => e.State == "ACTIVE" && !e.IsTrial, cancellationToken);
-        var trials = await direct.CountAsync(e => e.IsTrial, cancellationToken);
-        var suspended = await direct.CountAsync(e => e.State == "SUSPENDED", cancellationToken);
-        var seats = await direct.Where(e => e.State == "ACTIVE").SumAsync(e => e.Seats, cancellationToken);
+        var active = await entitlements.CountAsync(e => e.State == "ACTIVE" && !e.IsTrial, cancellationToken);
+        var trials = await entitlements.CountAsync(e => e.IsTrial, cancellationToken);
+        var suspended = await entitlements.CountAsync(e => e.State == "SUSPENDED", cancellationToken);
+        var seats = await entitlements.Where(e => e.State == "ACTIVE").SumAsync(e => e.Seats, cancellationToken);
 
-        var mix = await direct.Where(e => e.State == "ACTIVE")
+        var mix = await entitlements.Where(e => e.State == "ACTIVE")
             .GroupBy(e => e.ProductName ?? e.ProductId ?? "Other")
             .Select(g => new { Product = g.Key, Count = g.Count() })
             .OrderByDescending(g => g.Count)
@@ -362,33 +366,59 @@ public static class DashboardEndpoints
     {
         var active = db.EntitlementRecords.Where(e => !e.IsDeleted && e.State == "ACTIVE");
 
-        var byCurrency = await active
+        // Group by currency AND source (direct = no owning channel link, indirect = reseller-owned) so
+        // the estate value can be split into what comes from your own customers vs downstream resellers.
+        var byCurrencyScope = await active
             .Where(e => e.UnitPrice > 0 && e.Currency != null)
-            .GroupBy(e => e.Currency!)
+            .GroupBy(e => new { Currency = e.Currency!, IsDirect = e.OwningLinkId == null })
             .Select(g => new
             {
-                Currency = g.Key,
+                g.Key.Currency,
+                g.Key.IsDirect,
                 Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
                 Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m))),
                 Count = g.Count()
             })
             .ToListAsync(cancellationToken);
 
-        if (byCurrency.Count == 0)
+        if (byCurrencyScope.Count == 0)
         {
             return null; // No entitlement has a resolved offer price yet.
         }
 
-        var currencies = byCurrency
-            .OrderByDescending(x => x.Wholesale)
-            .Select(x => new DashboardEstateValueCurrency
+        static DashboardEstateValueScope Scope(IEnumerable<(decimal Wholesale, decimal Revenue, int Count)> rows)
+        {
+            var wholesale = rows.Sum(r => r.Wholesale);
+            var revenue = rows.Sum(r => r.Revenue);
+            return new DashboardEstateValueScope
             {
-                Currency = x.Currency,
-                WholesaleMonthly = decimal.Round(x.Wholesale, 2),
-                RevenueMonthly = decimal.Round(x.Revenue, 2),
-                MarginMonthly = decimal.Round(x.Revenue - x.Wholesale, 2),
-                PricedEntitlementCount = x.Count
+                WholesaleMonthly = decimal.Round(wholesale, 2),
+                RevenueMonthly = decimal.Round(revenue, 2),
+                MarginMonthly = decimal.Round(revenue - wholesale, 2),
+                PricedEntitlementCount = rows.Sum(r => r.Count)
+            };
+        }
+
+        var currencies = byCurrencyScope
+            .GroupBy(x => x.Currency)
+            .Select(g =>
+            {
+                var direct = g.Where(x => x.IsDirect).Select(x => (x.Wholesale, x.Revenue, x.Count));
+                var indirect = g.Where(x => !x.IsDirect).Select(x => (x.Wholesale, x.Revenue, x.Count));
+                var wholesale = g.Sum(x => x.Wholesale);
+                var revenue = g.Sum(x => x.Revenue);
+                return new DashboardEstateValueCurrency
+                {
+                    Currency = g.Key,
+                    WholesaleMonthly = decimal.Round(wholesale, 2),
+                    RevenueMonthly = decimal.Round(revenue, 2),
+                    MarginMonthly = decimal.Round(revenue - wholesale, 2),
+                    PricedEntitlementCount = g.Sum(x => x.Count),
+                    Direct = Scope(direct),
+                    Indirect = Scope(indirect)
+                };
             })
+            .OrderByDescending(x => x.WholesaleMonthly)
             .ToList();
 
         var dominant = currencies[0];
@@ -403,6 +433,8 @@ public static class DashboardEndpoints
             MixedCurrencies = currencies.Count > 1,
             PricedEntitlementCount = currencies.Sum(c => c.PricedEntitlementCount),
             UnpricedEntitlementCount = unpriced,
+            Direct = dominant.Direct,
+            Indirect = dominant.Indirect,
             Currencies = currencies
         };
     }

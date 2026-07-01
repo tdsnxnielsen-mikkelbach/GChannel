@@ -62,3 +62,33 @@ public sealed record EstateReseller
     public DateTimeOffset LastSyncedUtc { get; init; }
     public string? SyncError { get; init; }
 }
+
+/// <summary>
+/// A single entitlement (subscription) row from the read-model, joined to its customer's org name.
+/// Powers the estate-wide entitlements list the dashboard lifecycle KPIs link into.
+/// </summary>
+public sealed record EstateEntitlement
+{
+    public required string EntitlementId { get; init; }
+    public required string CustomerId { get; init; }
+    /// <summary>Owning customer's organisation display name (joined from the customer read-model).</summary>
+    public string? CustomerName { get; init; }
+    /// <summary>Owning channel partner link id, or null for the account's direct customers.</summary>
+    public string? OwningLinkId { get; init; }
+    public string? ProductName { get; init; }
+    public string? SkuName { get; init; }
+    public string? OfferName { get; init; }
+    public string State { get; init; } = string.Empty;
+    public bool IsTrial { get; init; }
+    public long Seats { get; init; }
+    /// <summary>Wholesale effective per-seat price (the reseller's cost from Google). 0 if unknown.</summary>
+    public decimal UnitPrice { get; init; }
+    /// <summary>ISO currency code for <see cref="UnitPrice"/>, or null when no price was resolved.</summary>
+    public string? Currency { get; init; }
+    /// <summary>Repricing mark-up percent applied to this entitlement (§6).</summary>
+    public decimal RepricingPercent { get; init; }
+    /// <summary>Commitment/renewal end time, or null when the plan doesn't commit.</summary>
+    public DateTimeOffset? CommitmentEndTime { get; init; }
+    public DateTimeOffset? CreateTime { get; init; }
+    public DateTimeOffset LastSyncedUtc { get; init; }
+}

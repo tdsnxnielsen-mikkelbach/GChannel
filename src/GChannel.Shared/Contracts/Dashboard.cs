@@ -139,10 +139,38 @@ public sealed record DashboardEstateValue
     public int UnpricedEntitlementCount { get; init; }
 
     /// <summary>
+    /// Direct slice (your own customers, no owning channel link) of the headline/dominant currency —
+    /// so the estate value can show what comes from direct business vs downstream resellers.
+    /// </summary>
+    public DashboardEstateValueScope Direct { get; init; } = new();
+
+    /// <summary>Indirect (reseller-owned) slice of the headline/dominant currency.</summary>
+    public DashboardEstateValueScope Indirect { get; init; } = new();
+
+    /// <summary>
     /// Per-currency breakdown (dominant currency first). Every priced currency is reported on its own
     /// line so non-dominant currencies aren't dropped; the headline fields above mirror the first entry.
     /// </summary>
     public IReadOnlyList<DashboardEstateValueCurrency> Currencies { get; init; } = [];
+}
+
+/// <summary>
+/// One source slice (direct or reseller-owned) of the estimated monthly estate value, in a single
+/// currency. Lets the dashboard split the estate value into direct vs indirect (reseller) business.
+/// </summary>
+public sealed record DashboardEstateValueScope
+{
+    /// <summary>Estimated monthly wholesale cost for this source (offer effective price × seats).</summary>
+    public decimal WholesaleMonthly { get; init; }
+
+    /// <summary>Estimated monthly repriced revenue for this source.</summary>
+    public decimal RevenueMonthly { get; init; }
+
+    /// <summary>Estimated monthly margin for this source (<see cref="RevenueMonthly"/> − <see cref="WholesaleMonthly"/>).</summary>
+    public decimal MarginMonthly { get; init; }
+
+    /// <summary>Active priced entitlements counted in this source slice.</summary>
+    public int PricedEntitlementCount { get; init; }
 }
 
 /// <summary>One currency's slice of the estimated monthly estate value rollup (§11).</summary>
@@ -162,6 +190,12 @@ public sealed record DashboardEstateValueCurrency
 
     /// <summary>Active priced entitlements counted in this currency.</summary>
     public int PricedEntitlementCount { get; init; }
+
+    /// <summary>Direct (your own customers) slice of this currency's total.</summary>
+    public DashboardEstateValueScope Direct { get; init; } = new();
+
+    /// <summary>Indirect (reseller-owned) slice of this currency's total.</summary>
+    public DashboardEstateValueScope Indirect { get; init; } = new();
 }
 
 /// <summary>A count of channel partner links in a given link state, for the dashboard breakdown.</summary>

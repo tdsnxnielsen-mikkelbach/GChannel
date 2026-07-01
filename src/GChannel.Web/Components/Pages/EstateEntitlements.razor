@@ -1,0 +1,205 @@
+@page "/entitlements"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Entitlements · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h4">Entitlements</MudText>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+    Estate-wide subscriptions from the synced read-model. Filter by lifecycle state to see the
+    entitlements behind the dashboard KPIs. Paging, sorting and search run server-side.
+</MudText>
+
+<div class="d-flex flex-wrap justify-space-between align-center mb-2" style="gap:12px">
+    <div class="d-flex flex-wrap align-center" style="gap:12px">
+        <MudSelect T="string" Value="_state" ValueChanged="OnStateChanged" Label="State"
+                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px">
+            <MudSelectItem T="string" Value="@("")">All states</MudSelectItem>
+            <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
+            <MudSelectItem T="string" Value="@("trial")">Trial</MudSelectItem>
+            <MudSelectItem T="string" Value="@("suspended")">Suspended</MudSelectItem>
+        </MudSelect>
+        <MudSelect T="string" Value="_scope" ValueChanged="OnScopeChanged" Label="Scope"
+                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px">
+            <MudSelectItem T="string" Value="@("direct")">Direct</MudSelectItem>
+            <MudSelectItem T="string" Value="@("indirect")">Indirect (resellers)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("all")">All</MudSelectItem>
+        </MudSelect>
+        <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
+                      OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search customer, offer, id…"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:280px" />
+    </div>
+    <AsOfBadge AsOf="_asOf" />
+</div>
+
+<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="false" RowsPerPage="25">
+    <HeaderContent>
+        <MudTh><MudTableSortLabel SortLabel="customer" T="EstateEntitlement">Customer</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="product" T="EstateEntitlement">Product / offer</MudTableSortLabel></MudTh>
+        <MudTh><MudTableSortLabel SortLabel="state" T="EstateEntitlement">State</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right"><MudTableSortLabel SortLabel="seats" T="EstateEntitlement">Seats</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right">Est. monthly</MudTh>
+        <MudTh><MudTableSortLabel SortLabel="renewal" T="EstateEntitlement">Renewal</MudTableSortLabel></MudTh>
+        <MudTh Style="text-align:right">Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Customer">
+            <MudLink Href="@($"/customers/{context.CustomerId}")">@(context.CustomerName ?? context.CustomerId)</MudLink>
+            @if (!string.IsNullOrEmpty(context.OwningLinkId))
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text" Class="ml-1">Reseller</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Product / offer">
+            <div>@(context.OfferName ?? context.SkuName ?? "—")</div>
+            @if (!string.IsNullOrEmpty(context.ProductName))
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ProductName</MudText>
+            }
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context)">@StateLabel(context)</MudChip>
+        </MudTd>
+        <MudTd DataLabel="Seats" Style="text-align:right">@context.Seats</MudTd>
+        <MudTd DataLabel="Est. monthly" Style="text-align:right">
+            @if (EstimatedMonthly(context) is { } v)
+            {
+                <MudTooltip Text="@($"Wholesale {FormatMoney(context.UnitPrice * context.Seats, context.Currency)} × (1 + {context.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")">
+                    <span>@FormatMoney(v, context.Currency)</span>
+                </MudTooltip>
+            }
+            else
+            {
+                <span>—</span>
+            }
+        </MudTd>
+        <MudTd DataLabel="Renewal">
+            @(context.CommitmentEndTime?.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "—")
+        </MudTd>
+        <MudTd DataLabel="Actions" Style="text-align:right">
+            <MudTooltip Text="View entitlement">
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
+                               Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudAlert Severity="Severity.Info">No entitlements match the current filters.</MudAlert>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    [SupplyParameterFromQuery(Name = "state")]
+    public string? StateQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "scope")]
+    public string? ScopeQuery { get; set; }
+
+    private MudTable<EstateEntitlement>? _table;
+    private string _state = "";
+    private string _scope = "direct";
+    private string? _search;
+    private DateTimeOffset? _asOf;
+
+    protected override void OnParametersSet()
+    {
+        var state = NormalizeState(StateQuery);
+        var scope = NormalizeScope(ScopeQuery);
+        if (state != _state || scope != _scope)
+        {
+            _state = state;
+            _scope = scope;
+            _ = _table?.ReloadServerData();
+        }
+    }
+
+    private static string NormalizeState(string? s) => (s ?? "").ToLowerInvariant() switch
+    {
+        "active" => "active",
+        "trial" => "trial",
+        "suspended" => "suspended",
+        _ => "",
+    };
+
+    private static string NormalizeScope(string? s) => (s ?? "").ToLowerInvariant() switch
+    {
+        "indirect" => "indirect",
+        "all" => "all",
+        _ => "direct",
+    };
+
+    private async Task OnStateChanged(string value)
+    {
+        _state = value ?? "";
+        await (_table?.ReloadServerData() ?? Task.CompletedTask);
+    }
+
+    private async Task OnScopeChanged(string value)
+    {
+        _scope = string.IsNullOrEmpty(value) ? "direct" : value;
+        await (_table?.ReloadServerData() ?? Task.CompletedTask);
+    }
+
+    private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
+
+    private async Task<TableData<EstateEntitlement>> LoadServerData(TableState state, CancellationToken token)
+    {
+        try
+        {
+            var result = await Api.ListEstateEntitlementsAsync(
+                state.Page, state.PageSize, state.SortLabel,
+                state.SortDirection == SortDirection.Descending,
+                _search, string.IsNullOrEmpty(_state) ? null : _state,
+                _scope, token);
+
+            _asOf = result?.AsOf;
+            return new TableData<EstateEntitlement> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
+            return new TableData<EstateEntitlement> { Items = [], TotalItems = 0 };
+        }
+    }
+
+    private static decimal? EstimatedMonthly(EstateEntitlement e)
+    {
+        if (e.UnitPrice <= 0 || e.Seats <= 0) return null;
+        return e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m));
+    }
+
+    private static string StateLabel(EstateEntitlement e)
+    {
+        if (e.IsTrial) return "Trial";
+        return string.IsNullOrEmpty(e.State)
+            ? "Unknown"
+            : char.ToUpperInvariant(e.State[0]) + e.State[1..].ToLowerInvariant();
+    }
+
+    private static Color StateColor(EstateEntitlement e)
+    {
+        if (e.IsTrial) return Color.Info;
+        return e.State?.ToUpperInvariant() switch
+        {
+            "ACTIVE" => Color.Success,
+            "SUSPENDED" => Color.Warning,
+            "CANCELLED" or "CANCELED" => Color.Error,
+            "PENDING" => Color.Info,
+            _ => Color.Default,
+        };
+    }
+
+    private static string FormatMoney(decimal value, string? currency) =>
+        string.IsNullOrEmpty(currency)
+            ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
+            : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
+}

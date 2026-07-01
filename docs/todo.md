@@ -711,6 +711,31 @@ above on top, so a user sees the same shape they know from the console plus comp
   name, so no separate friendly name is available. Pricing reuses the cached `offers.list` lookup
   (`LookupEntitlementOfferAsync`) + read-model repricing %; every figure stays labelled estimated /
   not-invoiced (Phase 4 caveat). No schema change, no new live price calls.*
+- [x] **Phase 8 — Estate entitlements list + dashboard deep-links + customer-detail margin.** An
+  estate-wide **Entitlements** page (`/entitlements`, nav under Customers) lists individual
+  subscriptions from the read-model with **State** (All/Active/Trial/Suspended) and **Scope**
+  (Direct/Indirect/All, default Direct) filters, server-side paging/sort/search, an "Est. monthly"
+  value per row and links to the customer + entitlement detail. The dashboard's Suspended-card
+  Active/Trial/Suspended numbers now deep-link here (`/entitlements?state=…`, matching the direct-only
+  KPI semantics). The **customer detail** "Estimated monthly value" panel was expanded to show
+  **Wholesale cost / Repriced revenue / Margin** (previously revenue only). *Implemented: new
+  `EstateEntitlement` contract + `GET /api/estate/entitlements` (`EstateEndpoints`, joins
+  `EntitlementRecords`→`CustomerRecords` for the org name; `state`/`scope` filters mirror the dashboard
+  buckets), `GChannelApiClient.ListEstateEntitlementsAsync`, `EstateEntitlements.razor`, a Customers-group
+  nav link, `Home.razor` KPI `MudLink`s, and `CustomerDetail.razor`'s panel now computes per-line
+  wholesale + revenue. No schema change, no new live price calls.*
+- [x] **Phase 9 — Whole-estate dashboard KPIs + estate-value source split + per-currency chips.** The
+  read-model dashboard's entitlement KPIs (Active / Trial / Suspended counts, active seats and product
+  mix) now span the **whole estate** (direct + reseller-owned) instead of direct-only, so they line up
+  with the estate-value panel which was already whole-estate; the Suspended-card deep-links carry
+  `scope=all`. The **estate value** is split into a **By source** table (Direct vs Via resellers,
+  wholesale/revenue/margin/subscriptions) and the panel shows a **currency chip per currency**
+  (dominant highlighted) rather than one. *Implemented: `BuildReadModelSummaryAsync` aggregates
+  active/trial/suspended/seats/mix over all non-deleted entitlements (customer count + onboarding stay
+  direct-only); `ComputeEstateValueAsync` groups by currency **and** source and fills new
+  `DashboardEstateValueScope Direct`/`Indirect` on `DashboardEstateValue` + each
+  `DashboardEstateValueCurrency`; `Home.razor` renders the By-source table, per-currency chips and
+  `scope=all` KPI links. No schema change, no new live calls.*
 
 ### Risks &amp; caveats
 

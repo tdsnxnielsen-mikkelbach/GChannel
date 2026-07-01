@@ -164,18 +164,19 @@
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">
                                         Entitlements that are paused (e.g. billing or admin action) and may need attention.
                                         Shown alongside the rest of the entitlement lifecycle for context.
+                                        Numbers link to the matching entitlements across your whole estate.
                                     </MudText>
                                     <div class="d-flex justify-space-between align-center mt-2">
                                         <MudText Typo="Typo.body2">Active</MudText>
-                                        <MudText Typo="Typo.body2"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></MudText>
+                                        <MudLink Href="/entitlements?state=active&amp;scope=all" Typo="Typo.body2"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></MudLink>
                                     </div>
                                     <div class="d-flex justify-space-between align-center">
                                         <MudText Typo="Typo.body2">Trial</MudText>
-                                        <MudText Typo="Typo.body2"><b>@(_data?.TrialEntitlementCount ?? 0)</b></MudText>
+                                        <MudLink Href="/entitlements?state=trial&amp;scope=all" Typo="Typo.body2"><b>@(_data?.TrialEntitlementCount ?? 0)</b></MudLink>
                                     </div>
                                     <div class="d-flex justify-space-between align-center">
                                         <MudText Typo="Typo.body2">Suspended</MudText>
-                                        <MudText Typo="Typo.body2"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></MudText>
+                                        <MudLink Href="/entitlements?state=suspended&amp;scope=all" Typo="Typo.body2"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></MudLink>
                                     </div>
                                     break;
                             }
@@ -192,7 +193,14 @@
             <MudPaper Class="pa-4" Elevation="2">
                 <div class="d-flex justify-space-between align-center">
                     <MudText Typo="Typo.h6">Estimated estate value (monthly)</MudText>
-                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@estate.Currency</MudChip>
+                    <div class="d-flex" style="gap: 4px; flex-wrap: wrap;">
+                        @foreach (var cur in estate.Currencies)
+                        {
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(cur.Currency == estate.Currency ? Color.Primary : Color.Default)"
+                                     Variant="Variant.Outlined">@cur.Currency</MudChip>
+                        }
+                    </div>
                 </div>
                 <MudGrid Class="mt-1">
                     <MudItem xs="12" sm="4">
@@ -211,6 +219,36 @@
                         <MudText Typo="Typo.caption" Color="Color.Secondary">Revenue − wholesale</MudText>
                     </MudItem>
                 </MudGrid>
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">
+                    By source@(estate.MixedCurrencies ? $" (dominant currency {estate.Currency})" : "")
+                </MudText>
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
+                    <thead>
+                        <tr>
+                            <th>Source</th>
+                            <th style="text-align:right">Wholesale cost</th>
+                            <th style="text-align:right">Repriced revenue</th>
+                            <th style="text-align:right">Margin</th>
+                            <th style="text-align:right">Subscriptions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Direct (your customers)</td>
+                            <td style="text-align:right">@estate.Direct.WholesaleMonthly.ToString("N2")</td>
+                            <td style="text-align:right">@estate.Direct.RevenueMonthly.ToString("N2")</td>
+                            <td style="text-align:right" class="@(estate.Direct.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@estate.Direct.MarginMonthly.ToString("N2")</td>
+                            <td style="text-align:right">@estate.Direct.PricedEntitlementCount</td>
+                        </tr>
+                        <tr>
+                            <td>Via resellers (indirect)</td>
+                            <td style="text-align:right">@estate.Indirect.WholesaleMonthly.ToString("N2")</td>
+                            <td style="text-align:right">@estate.Indirect.RevenueMonthly.ToString("N2")</td>
+                            <td style="text-align:right" class="@(estate.Indirect.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@estate.Indirect.MarginMonthly.ToString("N2")</td>
+                            <td style="text-align:right">@estate.Indirect.PricedEntitlementCount</td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
                 @if (estate.Currencies.Count > 1)
                 {
                     <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">By currency</MudText>

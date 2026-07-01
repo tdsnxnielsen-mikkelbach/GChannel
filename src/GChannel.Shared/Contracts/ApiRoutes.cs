@@ -141,6 +141,9 @@ public static class ApiRoutes
     /// <summary>Paged/sorted/filtered resellers (channel-partner-links) from the read-model.</summary>
     public const string EstateResellers = "/api/estate/resellers";
 
+    /// <summary>Paged/sorted/filtered entitlements (subscriptions) from the read-model.</summary>
+    public const string EstateEntitlements = "/api/estate/entitlements";
+
     /// <summary>Prioritise a reseller link to the front of the sync queue.</summary>
     public static string EstateResyncLink(string linkId) => $"/api/estate/resellers/{linkId}/resync";
 

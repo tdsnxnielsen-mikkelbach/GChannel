@@ -43,16 +43,34 @@ else
     @if (_estimatedMonthly is { } est)
     {
         <MudPaper Elevation="2" Class="pa-4 mb-4">
-            <div class="d-flex justify-space-between align-center flex-wrap gap-2">
-                <div>
-                    <MudText Typo="Typo.overline" Color="Color.Secondary">Estimated monthly value</MudText>
-                    <MudText Typo="Typo.h5">@FormatMoney(est, _estimatedCurrency)</MudText>
-                </div>
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="max-width:420px">
-                    Across @_pricedEntitlementCount active entitlement(s), estimated from offer list
-                    pricing with repricing applied. Not an invoiced figure.
-                </MudText>
+            <div class="d-flex justify-space-between align-center mb-1">
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Estimated monthly value</MudText>
+                @if (!string.IsNullOrEmpty(_estimatedCurrency))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@_estimatedCurrency</MudChip>
+                }
             </div>
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Wholesale cost</MudText>
+                    <MudText Typo="Typo.h5">@FormatMoney(_estimatedWholesale ?? 0m, _estimatedCurrency)</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">What you pay Google</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Repriced revenue</MudText>
+                    <MudText Typo="Typo.h5">@FormatMoney(est, _estimatedCurrency)</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">What this customer is billed</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Margin</MudText>
+                    <MudText Typo="Typo.h5" Color="@((est - (_estimatedWholesale ?? 0m)) >= 0 ? Color.Success : Color.Error)">@FormatMoney(est - (_estimatedWholesale ?? 0m), _estimatedCurrency)</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Revenue − wholesale</MudText>
+                </MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
+                Across @_pricedEntitlementCount active entitlement(s), estimated from offer list
+                pricing with repricing applied. Not an invoiced figure.
+            </MudText>
         </MudPaper>
     }
 
@@ -276,6 +294,7 @@ else
     private readonly HashSet<string> _expandedSkus = [];
 
     private decimal? _estimatedMonthly;
+    private decimal? _estimatedWholesale;
     private string? _estimatedCurrency;
     private int _pricedEntitlementCount;
 
@@ -288,6 +307,7 @@ else
         _offersBySku.Clear();
         _expandedSkus.Clear();
         _estimatedMonthly = null;
+        _estimatedWholesale = null;
         _estimatedCurrency = null;
         _pricedEntitlementCount = 0;
 
@@ -337,28 +357,32 @@ else
 
         var priced = entitlements
             .Where(e => string.Equals(e.ProvisioningState, "ACTIVE", StringComparison.OrdinalIgnoreCase))
-            .Select(e => new { e.PriceCurrency, Amount = MonthlyEstimate(e) })
-            .Where(x => x.Amount is > 0)
+            .Select(e => new { e.PriceCurrency, Line = LineEstimate(e) })
+            .Where(x => x.Line is not null)
+            .Select(x => new { x.PriceCurrency, x.Line!.Value.Wholesale, x.Line!.Value.Revenue })
             .ToList();
         if (priced.Count == 0) return;
 
         var dominant = priced
             .GroupBy(x => x.PriceCurrency ?? "")
-            .OrderByDescending(g => g.Sum(x => x.Amount!.Value))
+            .OrderByDescending(g => g.Sum(x => x.Revenue))
             .First();
-        _estimatedMonthly = dominant.Sum(x => x.Amount!.Value);
+        _estimatedWholesale = dominant.Sum(x => x.Wholesale);
+        _estimatedMonthly = dominant.Sum(x => x.Revenue);
         _estimatedCurrency = string.IsNullOrEmpty(dominant.Key) ? null : dominant.Key;
-        _pricedEntitlementCount = priced.Count;
+        _pricedEntitlementCount = dominant.Count();
     }
 
-    private static decimal? MonthlyEstimate(Entitlement e)
+    // Per-entitlement wholesale (unit × seats) and repriced revenue (wholesale × (1 + markup%)).
+    private static (decimal Wholesale, decimal Revenue)? LineEstimate(Entitlement e)
     {
         if (e.UnitPrice is not { } unit || unit <= 0) return null;
         var seatStr = e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
             ?? e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
         if (!long.TryParse(seatStr, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var seats) || seats <= 0)
             return null;
-        return unit * seats * (1 + ((e.RepricingPercent ?? 0m) / 100m));
+        var wholesale = unit * seats;
+        return (wholesale, wholesale * (1 + ((e.RepricingPercent ?? 0m) / 100m)));
     }
 
     private static string FormatMoney(decimal value, string? currency) =>

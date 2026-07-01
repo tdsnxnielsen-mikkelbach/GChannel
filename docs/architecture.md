@@ -438,10 +438,16 @@ overlay then rolls active, priced entitlements up into `DashboardEstateValue` �
 The headline figures are reported in the estate's **dominant currency** (the currency with the largest
 wholesale total), and `DashboardEstateValue.Currencies` carries a **per-currency breakdown** so estates
 spanning more than one currency report each currency on its own line rather than dropping the
-non-dominant ones — plus per-reseller wholesale/margin on the top-resellers list. The home page renders
-these as an "Estimated estate value (monthly)" panel (dominant-currency headline cards + a *By currency*
-table when more than one currency is present) with a clear *estimated, not invoiced* disclaimer (it is
-derived from offer **list** pricing, not actual invoices). Entitlements whose offer price couldn't be
+non-dominant ones — plus per-reseller wholesale/margin on the top-resellers list. Each currency (and the
+rollup headline) is further split into a **direct** vs **indirect** source slice
+(`DashboardEstateValueScope Direct`/`Indirect`, keyed on whether the entitlement has an owning channel
+link) so the dashboard can show what value comes from your own customers vs downstream resellers. The
+home page renders these as an "Estimated estate value (monthly)" panel (dominant-currency headline cards
++ a *By source* table + a *By currency* table when more than one currency is present, and a currency
+chip per currency top-right) with a clear *estimated, not invoiced* disclaimer (it is derived from offer
+**list** pricing, not actual invoices). The entitlement KPIs on the dashboard (Active / Trial /
+Suspended counts, active seats and product mix) likewise span the **whole estate** (direct + indirect)
+in the read-model path, matching the estate value. Entitlements whose offer price couldn't be
 resolved (`UnitPrice ≤ 0` — no matching offer in the cycle's `offers.list`) are excluded from the totals
 and counted separately. See §11 in [todo.md](todo.md) for the phased plan.
 

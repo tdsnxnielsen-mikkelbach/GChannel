@@ -156,7 +156,11 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > `DashboardEstateValue` — an estimated monthly **wholesale cost / repriced revenue / margin** rollup
 > derived from offer **list** pricing (`accounts.offers.list`) × seats and §6 repricing mark-ups
 > (`customerRepricingConfigs` / `channelPartnerRepricingConfigs`), denormalised onto the read-model by the
-> worker and surfaced as a *not-invoiced estimate*.
+> worker and surfaced as a *not-invoiced estimate*. It carries a per-currency breakdown plus a
+> **direct vs indirect source split** (`DashboardEstateValueScope Direct`/`Indirect`) so the panel can
+> show what value comes from your own customers vs downstream resellers. In the read-model path the
+> summary's entitlement KPIs (Active / Trial / Suspended counts, active seats, product mix) span the
+> **whole estate** (direct + reseller-owned); customer count and onboarding stay direct-only.
 
 > **Read-model-backed list endpoints (§10).** When `GoogleChannel:UseReadModel` is on, two interactive
 > reads whose live calls sit on the **contended** per-minute quotas are served from SQL instead, so they
@@ -184,6 +188,16 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > entitlements and that offer's name). These power the console-style **Subscriptions** and **Renewal**
 > columns and are aggregated per page from the read-model's denormalised `EntitlementRecord.CommitmentEndTime`
 > (synced from `CommitmentSettings.EndTime`) — no live Channel API calls.
+
+> **Estate entitlements list (§11 Phase 4).** `GET /api/estate/entitlements` returns a paged/sorted/searched
+> list of individual entitlements (`EstateEntitlement` rows) joined to their customer's org name, all from the
+> read-model. Filters: `state` (`active` = ACTIVE & not trial · `trial` = trial · `suspended` = SUSPENDED,
+> mirroring the dashboard lifecycle KPIs exactly) and `scope` (`direct` = the account's own customers, the
+> default so counts match the direct-only KPIs · `indirect` = reseller-owned · `all`). Each row carries the
+> denormalised offer/SKU/product names, seats, `UnitPrice`/`Currency`/`RepricingPercent` and
+> `CommitmentEndTime`, so the estate-wide **Entitlements** page renders (with an estimated monthly value per
+> row) without any live Channel API calls. The dashboard's Active/Trial/Suspended KPI numbers deep-link here
+> via `/entitlements?state=…`.
 
 > **Subscription-card fields (§11 Phase 6).** The per-customer entitlement list (`GET
 > /api/customers/{customerId}/entitlements`, served from the read-model) carries `PlanDescription`

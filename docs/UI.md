@@ -17,15 +17,22 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
    - **Dashboard** — at-a-glance overview.
    - **Accounts** — Cloud Identity check.
    - **Catalog** — Products, Offers, SKU groups.
-   - **Customers** — All customers, New customer.
+   - **Customers** — All customers, New customer, Entitlements.
    - **Channel partners** — Partner links, Invite partner.
    - **Eventing** — Operations, Notifications.
 
 ### What the Dashboard shows
-- **Summary cards**: Customers, Active SKUs, Suspended, Channel links.
+- **Summary cards**: Customers, Active SKUs, Suspended, Channel links. The **Suspended** card's
+  **Details** expander breaks the entitlement estate down into **Active / Trial / Suspended** counts,
+  and each number deep-links to the **Entitlements** page pre-filtered to that state
+  (`/entitlements?state=…&scope=all`). These counts (and the *Active SKUs* card / product mix) span the
+  **whole estate** — direct customers *plus* reseller-owned (indirect) ones — so they line up with the
+  estate-value panel, which is also whole-estate.
 - **Estimated estate value (monthly)** — wholesale cost, repriced revenue and margin across your active
-  entitlements, in your estate's main currency. These are *estimates from list pricing, not invoiced
-  amounts*, and appear once the background read-model has priced your entitlements.
+  entitlements, in your estate's main currency. A **By source** table splits the value into **Direct**
+  (your own customers) vs **Via resellers** (indirect) so you can see where the value comes from, and a
+  chip per currency is shown top-right (the dominant one highlighted). These are *estimates from list
+  pricing, not invoiced amounts*, and appear once the background read-model has priced your entitlements.
 - **Customers onboarded** — an area chart bucketing new customers into the trailing six months.
 - **Product mix** — a donut of active entitlements grouped by product.
 - **Top indirect resellers** — your linked resellers ranked by downstream seats.
@@ -90,8 +97,21 @@ From the detail page you can:
 - Start a **purchase**, a **transfer**, or **repricing**.
 - Jump to the owning **channel partner** (if the customer has one).
 
-The customer detail page also shows an **Estimated monthly value** panel summing that customer's
-active priced subscriptions (same estimated, not-invoiced basis).
+The customer detail page also shows an **Estimated monthly value** panel for that customer's active
+priced subscriptions, broken into **Wholesale cost** (what you pay Google), **Repriced revenue** (what
+the customer is billed) and **Margin** — all on the same estimated, not-invoiced basis and shown in the
+customer's dominant currency.
+
+### Estate-wide entitlements list
+
+**Customers → Entitlements** (`/entitlements`) is an estate-wide list of individual subscriptions from
+the read-model, joined to each owning customer. Filter by **State** (All / Active / Trial / Suspended —
+the same lifecycle buckets as the dashboard KPIs) and **Scope** (Direct / Indirect resellers / All;
+defaults to **Direct** so counts match the dashboard). Server-side search covers customer, offer, SKU,
+product and id. Each row shows the offer/product, a state badge, seats, an **Est. monthly** value (with
+a wholesale × markup tooltip) and the renewal date, and links to the customer and the entitlement
+detail. The dashboard's Active/Trial/Suspended numbers open this page pre-filtered via
+`/entitlements?state=…`.
 
 ## 6. Buy an entitlement (subscription)
 
