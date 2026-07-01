@@ -197,9 +197,9 @@ Most customer methods are now **implemented** (see the table above). The followi
 
 | Resource.method | Purpose |
 | --- | --- |
-| [`accounts.customers.import`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/import) | Import a customer from Cloud Identity before transfer. *(LRO — deferred to §7.)* |
-| [`accounts.customers.provisionCloudIdentity`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/provisionCloudIdentity) | Provision a Cloud Identity for a customer. *(LRO — deferred to §7.)* |
-| [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs. *(N-tier distributor billing — deferred.)* |
+| [`accounts.customers.import`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/import) | Import a customer from Cloud Identity before transfer. Returns the `Customer` **directly** (synchronous — *not* an LRO). **Planned in [todo.md §12.2](todo.md).** |
+| [`accounts.customers.provisionCloudIdentity`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/provisionCloudIdentity) | Provision a Cloud Identity for a customer. **LRO** (reuses the §7 Operations page). **Planned in [todo.md §12.2](todo.md).** |
+| [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs (eligibility, not money). N-tier / GCP distributor billing. **Planned (niche) in [todo.md §12.3](todo.md).** |
 
 ### Entitlements (subscriptions / lifecycle)
 
@@ -248,7 +248,7 @@ resource directly (not long-running operations).
 | [`accounts.channelPartnerLinks.get`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/get) | Get a channel partner link. **(implemented)** |
 | [`accounts.channelPartnerLinks.create`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/create) | Initiate a distributor↔reseller link. **(implemented)** |
 | [`accounts.channelPartnerLinks.patch`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/patch) | Update a channel partner link. **(implemented)** |
-| `accounts.channelPartnerLinks.customers.*` | Manage customers under a channel partner ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers)). `list` is **(implemented)**; create/import/get/patch/delete remain. |
+| `accounts.channelPartnerLinks.customers.*` | Manage customers under a channel partner ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers)). `list` is **(implemented)**; `create`/`import`/`get`/`patch`/`delete` are the full n-tier customer CRUD — **planned in [todo.md §12.1](todo.md)** (highest-value remaining item; turns partner-owned customers from read-only into fully managed). None are LROs. |
 
 ### Repricing (rebilling margin)
 
@@ -259,8 +259,8 @@ granularity** (each targets one of the customer's entitlements — §3); channel
 
 | Resource.method | Purpose |
 | --- | --- |
-| `accounts.customers.customerRepricingConfigs.*` | How a reseller modifies a customer's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.customerRepricingConfigs)). `list`/`create`/`patch`/`delete` **(implemented)**. |
-| `accounts.channelPartnerLinks.channelPartnerRepricingConfigs.*` | How a distributor modifies a channel partner's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.channelPartnerRepricingConfigs)). `list`/`create`/`patch`/`delete` **(implemented)**. |
+| `accounts.customers.customerRepricingConfigs.*` | How a reseller modifies a customer's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers.customerRepricingConfigs)). `list`/`create`/`patch`/`delete` **(implemented)**; `get` deliberately not surfaced (`list` already returns full config bodies — see [todo.md §12.4](todo.md)). |
+| `accounts.channelPartnerLinks.channelPartnerRepricingConfigs.*` | How a distributor modifies a channel partner's bill ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.channelPartnerRepricingConfigs)). `list`/`create`/`patch`/`delete` **(implemented)**; `get` deliberately not surfaced (same reason as above). |
 
 ### Pub/Sub subscribers & operations
 
@@ -271,7 +271,17 @@ These are now **implemented** (§7 — see the *Implemented* table above and the
 | Resource.method | Purpose |
 | --- | --- |
 | `accounts.register` / `accounts.unregister` / `accounts.listSubscribers` | Manage Pub/Sub subscriber service accounts ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts)). `register`/`unregister`/`listSubscribers` **(implemented)**. |
-| `operations.{get,list,cancel,delete}` | Track long-running operations ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/operations)). `get`/`list`/`cancel` **(implemented)**; `delete` not surfaced. |
+| `operations.{get,list,cancel,delete}` | Track long-running operations ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/operations)). `get`/`list`/`cancel` **(implemented)**; `delete` **deliberately not surfaced** (it only forgets a completed LRO; the Operations page tracks by name — see [todo.md §12.4](todo.md)). |
+
+### Integrators (out of scope)
+
+The `v1` API also exposes an [`integrators`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/integrators)
+resource with `listSubscribers` / `registerSubscriber` / `unregisterSubscriber`. This is the
+**integrator-scoped** twin of the account-scoped Pub/Sub subscriber admin already implemented
+(`accounts.register`/`unregister`/`listSubscribers`, §7). An "integrator" is a distinct Channel
+Services identity type (platform integrators, not resellers/distributors), which this app is not, so
+these are **intentionally not implemented**. Listed here only so the `v1` cross-check is complete
+(see [todo.md §12.4](todo.md)).
 
 ### Reporting (deprecated in v1)
 
