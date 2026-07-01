@@ -84,6 +84,7 @@
                 _search, state: null, token);
 
             _asOf = result?.AsOf;
+            await InvokeAsync(StateHasChanged); // re-render the parent so the As-of badge reflects the loaded data
             return new TableData<EstateReseller> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
         }
         catch (Exception ex)
