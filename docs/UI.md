@@ -29,7 +29,8 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
   **whole estate** — direct customers *plus* reseller-owned (indirect) ones — so they line up with the
   estate-value panel, which is also whole-estate.
 - **Estimated estate value (monthly)** — wholesale cost, repriced revenue and margin across your active
-  entitlements. A **By source** table splits the value into **Direct** (your own customers) vs **Via
+  entitlements. The headline cards list **every currency on its own line** (no single dominant currency).
+  A **By source** table splits the value into **Direct** (your own customers) vs **Via
   resellers** (indirect), with a **Direct** and a **Via resellers** line **per currency** when more than
   one currency is present (a **Currency** column appears and a *By currency (total)* table sums each
   currency); a chip per currency is shown top-right (the dominant one highlighted). Margin is the

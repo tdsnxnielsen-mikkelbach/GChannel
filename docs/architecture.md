@@ -442,7 +442,8 @@ non-dominant ones — plus per-reseller wholesale/margin on the top-resellers li
 rollup headline) is further split into a **direct** vs **indirect** source slice
 (`DashboardEstateValueScope Direct`/`Indirect`, keyed on whether the entitlement has an owning channel
 link) so the dashboard can show what value comes from your own customers vs downstream resellers. The
-home page renders these as an "Estimated estate value (monthly)" panel (dominant-currency headline cards
+home page renders these as an "Estimated estate value (monthly)" panel (headline cards that list **every
+currency on its own line**
 + a *By source* table that shows a **Direct** and a **Via resellers** line **per currency** — a Currency
 column and a *By currency (total)* table appear when more than one currency is present — and a currency
 chip per currency top-right) with a clear *estimated, not invoiced* disclaimer (it is derived from offer
@@ -454,7 +455,7 @@ the Channel API. The entitlement KPIs on the dashboard (Active / Trial /
 Suspended counts, active seats and product mix) likewise span the **whole estate** (direct + indirect)
 in the read-model path, matching the estate value. Entitlements whose offer price couldn't be
 resolved (`UnitPrice ≤ 0` — no matching offer in the cycle's `offers.list`) are excluded from the totals
-and counted separately. See §11 in [todo.md](todo.md) for the phased plan.
+and counted separately. See §11 in [todos/11-pricing-and-billing.md](todos/11-pricing-and-billing.md) for the phased plan.
 
 The same denormalised `UnitPrice`/`Currency`/`RepricingPercent` also drive **per-entitlement and
 per-customer** estimates beyond the dashboard rollup, all from the read-model with no per-request

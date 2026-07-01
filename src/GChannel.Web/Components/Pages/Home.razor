@@ -205,22 +205,52 @@
                 <MudGrid Class="mt-1">
                     <MudItem xs="12" sm="4">
                         <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Wholesale cost</MudText>
-                        <MudText Typo="Typo.h5">@estate.Currency @estate.WholesaleMonthly.ToString("N2")</MudText>
+                        @if (estate.Currencies.Count > 0)
+                        {
+                            @foreach (var cur in estate.Currencies)
+                            {
+                                <MudText Typo="Typo.h5">@cur.Currency @cur.WholesaleMonthly.ToString("N2")</MudText>
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.h5">@estate.Currency @estate.WholesaleMonthly.ToString("N2")</MudText>
+                        }
                         <MudText Typo="Typo.caption" Color="Color.Secondary">What you pay Google</MudText>
                     </MudItem>
                     <MudItem xs="12" sm="4">
                         <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Repriced revenue</MudText>
-                        <MudText Typo="Typo.h5">@estate.Currency @estate.RevenueMonthly.ToString("N2")</MudText>
+                        @if (estate.Currencies.Count > 0)
+                        {
+                            @foreach (var cur in estate.Currencies)
+                            {
+                                <MudText Typo="Typo.h5">@cur.Currency @cur.RevenueMonthly.ToString("N2")</MudText>
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.h5">@estate.Currency @estate.RevenueMonthly.ToString("N2")</MudText>
+                        }
                         <MudText Typo="Typo.caption" Color="Color.Secondary">What end customers are billed</MudText>
                     </MudItem>
                     <MudItem xs="12" sm="4">
                         <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Margin</MudText>
-                        <MudText Typo="Typo.h5" Color="@(estate.MarginMonthly >= 0 ? Color.Success : Color.Error)">@estate.Currency @estate.MarginMonthly.ToString("N2")</MudText>
+                        @if (estate.Currencies.Count > 0)
+                        {
+                            @foreach (var cur in estate.Currencies)
+                            {
+                                <MudText Typo="Typo.h5" Color="@(cur.MarginMonthly >= 0 ? Color.Success : Color.Error)">@cur.Currency @cur.MarginMonthly.ToString("N2")</MudText>
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.h5" Color="@(estate.MarginMonthly >= 0 ? Color.Success : Color.Error)">@estate.Currency @estate.MarginMonthly.ToString("N2")</MudText>
+                        }
                         <MudText Typo="Typo.caption" Color="Color.Secondary">Revenue − wholesale</MudText>
                     </MudItem>
                 </MudGrid>
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">
-                    By source@(estate.MixedCurrencies ? " &amp; currency" : "")
+                    By source@(estate.MixedCurrencies ? " & currency" : "")
                 </MudText>
                 <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
                     <thead>
@@ -293,7 +323,7 @@
                 }
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
                     Estimates from offer <b>list</b> pricing × seats and configured repricing mark-ups — not invoiced amounts.
-                    Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} have no resolved offer price and are excluded" : "").@(estate.MixedCurrencies ? $" The headline figures show the dominant currency ({estate.Currency}); every currency is broken out above." : "")
+                    Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} have no resolved offer price and are excluded" : "").@(estate.MixedCurrencies ? " Each currency is listed separately; the source split is broken out below." : "")
                 </MudText>
             </MudPaper>
         </MudItem>
