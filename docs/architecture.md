@@ -285,7 +285,10 @@ read paths:
   product, top 8). Product names are resolved from a product-id→name map seeded from the full
   `products.list` catalog (authoritative, so it covers products whose specific offer is no longer
   listed) and supplemented from `offers.list`, which also yields the offer-id→display map used by the
-  entitlement pages. The donut therefore shows friendly names instead of opaque product/sku ids.
+  entitlement pages. The donut therefore shows friendly names instead of opaque product/sku ids. On the
+  read-model path the mix is additionally **split into direct vs indirect** (by `OwningLinkId`): the UI
+  shows a *Direct* and a *Via resellers (indirect)* donut. The live path enumerates only direct
+  customers, so it fills the direct mix only.
 
 The aggregation makes N+1 Channel API calls (customers + per-customer entitlements). The per-customer
 entitlement lists run with **bounded parallelism** (`GoogleChannel:DashboardMaxConcurrency`, default 6)
@@ -493,7 +496,11 @@ The product **display name** (`EntitlementRecord.ProductName`, which drives the 
 donut) is resolved from the account's `products.list`, then **supplemented from the offer catalog**
 (`CatalogOffer.ProductDisplayName`, from `offer.Sku.Product.MarketingInfo.DisplayName`) so reseller-owned
 or churned products missing a name in `products.list` still resolve where the offer is listed; a few
-opaque product ids can remain when a product is in neither list.
+opaque product ids can remain when a product is in neither list. At dashboard-aggregation time the
+`/summary` endpoint additionally **back-fills** any remaining null product name from a sibling
+entitlement that resolved a name for the same product id, and **splits** the mix into
+`DirectProductMix` / `IndirectProductMix` (by `EntitlementRecord.OwningLinkId` — null means direct)
+alongside the combined `ProductMix`.
 
 **Customer source &amp; auto-renew (Phase 10).** The worker also denormalises
 `EntitlementRecord.RenewalEnabled` so the customer list can show, per customer,

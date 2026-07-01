@@ -121,7 +121,7 @@
 
                                 case "skus":
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        Active entitlements (purchased SKUs) currently provisioned across all customers.
+                                        Active entitlements (purchased SKUs) currently provisioned across all customers — direct and via resellers (indirect).
                                     </MudText>
                                     <div class="d-flex justify-space-between align-center mt-2">
                                         <MudText Typo="Typo.body2">Active seats</MudText>
@@ -359,11 +359,42 @@
     <MudItem xs="12" md="4">
         <MudPaper Class="pa-4" Elevation="2">
             <MudText Typo="Typo.h6" GutterBottom="true">Product mix</MudText>
-            @if (_products.Count > 0)
+            @if (_indirectProducts.Count > 0)
             {
-                <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_productOptions" @ref="_productChart">
+                @* Both direct and reseller (indirect) business exists — show a donut for each so the
+                   split is clear rather than blending them into one whole-estate chart. *@
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Direct (your customers)</MudText>
+                @if (_directProducts.Count > 0)
+                {
+                    <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
+                        <ApexPointSeries TItem="ProductSlice"
+                                         Items="_directProducts"
+                                         Name="SKUs"
+                                         SeriesType="SeriesType.Donut"
+                                         XValue="@(p => p.Product)"
+                                         YValue="@(p => p.Count)" />
+                    </ApexChart>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">No direct active entitlements.</MudText>
+                }
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">Via resellers (indirect)</MudText>
+                <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_indirectProductOptions" @ref="_indirectProductChart">
                     <ApexPointSeries TItem="ProductSlice"
-                                     Items="_products"
+                                     Items="_indirectProducts"
+                                     Name="SKUs"
+                                     SeriesType="SeriesType.Donut"
+                                     XValue="@(p => p.Product)"
+                                     YValue="@(p => p.Count)" />
+                </ApexChart>
+            }
+            else if (_directProducts.Count > 0)
+            {
+                @* Direct-only distributor (no reseller estate): the direct mix is the whole estate. *@
+                <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
+                    <ApexPointSeries TItem="ProductSlice"
+                                     Items="_directProducts"
                                      Name="SKUs"
                                      SeriesType="SeriesType.Donut"
                                      XValue="@(p => p.Product)"
@@ -428,10 +459,12 @@
 
     private bool? _appliedDarkMode;
     private ApexChart<MonthlyPoint>? _monthlyChart;
-    private ApexChart<ProductSlice>? _productChart;
+    private ApexChart<ProductSlice>? _directProductChart;
+    private ApexChart<ProductSlice>? _indirectProductChart;
     private ApexChart<ResellerSlice>? _resellerChart;
     private readonly ApexChartOptions<MonthlyPoint> _monthlyOptions = new();
-    private readonly ApexChartOptions<ProductSlice> _productOptions = new();
+    private readonly ApexChartOptions<ProductSlice> _directProductOptions = new();
+    private readonly ApexChartOptions<ProductSlice> _indirectProductOptions = new();
     private readonly ApexChartOptions<ResellerSlice> _resellerOptions = new()
     {
         PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } }
@@ -444,6 +477,8 @@
     private bool _entitlementsLoading = true;
     private readonly List<MonthlyPoint> _monthly = [];
     private readonly List<ProductSlice> _products = [];
+    private readonly List<ProductSlice> _directProducts = [];
+    private readonly List<ProductSlice> _indirectProducts = [];
     private readonly List<ResellerSlice> _resellers = [];
     private readonly CancellationTokenSource _cts = new();
 
@@ -510,7 +545,8 @@
         _appliedDarkMode = IsDarkMode;
         var mode = IsDarkMode ? Mode.Dark : Mode.Light;
         _monthlyOptions.Theme = new Theme { Mode = mode };
-        _productOptions.Theme = new Theme { Mode = mode };
+        _directProductOptions.Theme = new Theme { Mode = mode };
+        _indirectProductOptions.Theme = new Theme { Mode = mode };
         _resellerOptions.Theme = new Theme { Mode = mode };
 
         if (_monthlyChart is not null)
@@ -518,9 +554,14 @@
             await _monthlyChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
         }
 
-        if (_productChart is not null)
+        if (_directProductChart is not null)
         {
-            await _productChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
+            await _directProductChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
+        }
+
+        if (_indirectProductChart is not null)
+        {
+            await _indirectProductChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
         }
 
         if (_resellerChart is not null)
@@ -654,6 +695,18 @@
                 _products.Add(new ProductSlice(slice.Product, slice.Count));
             }
 
+            _directProducts.Clear();
+            foreach (var slice in _data?.DirectProductMix ?? [])
+            {
+                _directProducts.Add(new ProductSlice(slice.Product, slice.Count));
+            }
+
+            _indirectProducts.Clear();
+            foreach (var slice in _data?.IndirectProductMix ?? [])
+            {
+                _indirectProducts.Add(new ProductSlice(slice.Product, slice.Count));
+            }
+
             _resellers.Clear();
             foreach (var reseller in _data?.TopIndirectResellers ?? [])
             {
@@ -698,6 +751,18 @@
             foreach (var slice in data.ProductMix)
             {
                 _products.Add(new ProductSlice(slice.Product, slice.Count));
+            }
+
+            _directProducts.Clear();
+            foreach (var slice in data.DirectProductMix)
+            {
+                _directProducts.Add(new ProductSlice(slice.Product, slice.Count));
+            }
+
+            _indirectProducts.Clear();
+            foreach (var slice in data.IndirectProductMix)
+            {
+                _indirectProducts.Add(new ProductSlice(slice.Product, slice.Count));
             }
 
             _resellers.Clear();

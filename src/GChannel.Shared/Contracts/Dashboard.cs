@@ -53,8 +53,14 @@ public sealed record DashboardSummary
     /// <summary>Customers onboarded per month over the trailing 6 months (oldest first).</summary>
     public IReadOnlyList<DashboardMonthlyPoint> CustomersOnboarded { get; init; } = [];
 
-    /// <summary>Active entitlements grouped by product (for the product-mix donut).</summary>
+    /// <summary>Active entitlements grouped by product (for the product-mix donut). Spans the whole estate (direct + indirect).</summary>
     public IReadOnlyList<DashboardProductSlice> ProductMix { get; init; } = [];
+
+    /// <summary>Active entitlements grouped by product for <b>direct</b> customers only (account-owned).</summary>
+    public IReadOnlyList<DashboardProductSlice> DirectProductMix { get; init; } = [];
+
+    /// <summary>Active entitlements grouped by product for <b>indirect</b> customers only (owned by downstream resellers).</summary>
+    public IReadOnlyList<DashboardProductSlice> IndirectProductMix { get; init; } = [];
 
     /// <summary>
     /// Estimated monthly estate value (wholesale cost, repriced revenue and margin) derived from

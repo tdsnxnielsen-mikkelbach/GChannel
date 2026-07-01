@@ -40,9 +40,13 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
   is private and not exposed by the Channel API. These are *estimates from list pricing, not invoiced
   amounts*, and appear once the background read-model has priced your entitlements.
 - **Customers onboarded** — an area chart bucketing new customers into the trailing six months.
-- **Product mix** — a donut of active entitlements (whole estate) grouped by product. Product names are
-  resolved from the account's `products.list`, supplemented from the offer catalog; a few opaque product
-  ids may remain for reseller-owned / churned products that aren't in the account catalog.
+- **Product mix** — active entitlements grouped by product, shown as **two donuts** when the estate has
+  reseller business: **Direct (your customers)** and **Via resellers (indirect)**. A direct-only estate
+  collapses to a single donut. Product names are resolved from the account's `products.list`,
+  supplemented from the offer catalog and back-filled across sibling entitlements of the same product;
+  a few opaque product ids may remain for reseller-owned / churned products that aren't in the account
+  catalog. On the live (non-read-model) path only direct business is enumerated, so the indirect donut
+  is populated by the read-model path.
 - **Top indirect resellers** — your linked resellers ranked by downstream seats.
 
 A status line under the title shows when the figures were last refreshed (e.g. "Updated 22 min ago ·

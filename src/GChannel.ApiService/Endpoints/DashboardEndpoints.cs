@@ -202,12 +202,39 @@ public static class DashboardEndpoints
         var suspended = await entitlements.CountAsync(e => e.State == "SUSPENDED", cancellationToken);
         var seats = await entitlements.Where(e => e.State == "ACTIVE").SumAsync(e => e.Seats, cancellationToken);
 
-        var mix = await entitlements.Where(e => e.State == "ACTIVE")
-            .GroupBy(e => e.ProductName ?? e.ProductId ?? "Other")
-            .Select(g => new { Product = g.Key, Count = g.Count() })
-            .OrderByDescending(g => g.Count)
-            .Take(8)
+        // Product mix: pull the active entitlements' product id/name/source into memory (a small set —
+        // one row per active entitlement) so we can (a) split the mix into direct vs indirect and
+        // (b) back-fill friendly names. A product's name resolves only while one of its offers is
+        // still listed, so a churned-offer entitlement can carry a null name while a sibling on the
+        // same product resolved one; reuse any resolved name across all entitlements of that product.
+        var activeMix = await entitlements.Where(e => e.State == "ACTIVE")
+            .Select(e => new { e.ProductId, e.ProductName, e.OwningLinkId })
             .ToListAsync(cancellationToken);
+
+        var nameByProductId = activeMix
+            .Where(e => e.ProductId != null && !string.IsNullOrWhiteSpace(e.ProductName))
+            .GroupBy(e => e.ProductId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().ProductName!, StringComparer.OrdinalIgnoreCase);
+
+        string Label(string? productId, string? productName) =>
+            !string.IsNullOrWhiteSpace(productName) ? productName!
+            : productId != null && nameByProductId.TryGetValue(productId, out var resolved) ? resolved
+            : productId ?? "Other";
+
+        static List<DashboardProductSlice> BuildMix(IEnumerable<(string Label, int _)> labelled) =>
+            labelled
+                .GroupBy(x => x.Label)
+                .Select(g => new DashboardProductSlice { Product = g.Key, Count = g.Count() })
+                .OrderByDescending(s => s.Count)
+                .Take(8)
+                .ToList();
+
+        var labelledAll = activeMix
+            .Select(e => (Label: Label(e.ProductId, e.ProductName), IsDirect: e.OwningLinkId == null))
+            .ToList();
+        var mix = BuildMix(labelledAll.Select(x => (x.Label, 0)));
+        var directMix = BuildMix(labelledAll.Where(x => x.IsDirect).Select(x => (x.Label, 0)));
+        var indirectMix = BuildMix(labelledAll.Where(x => !x.IsDirect).Select(x => (x.Label, 0)));
 
         var onboardDates = await db.CustomerRecords
             .Where(c => !c.IsDeleted && c.OwningLinkId == null)
@@ -224,7 +251,9 @@ public static class DashboardEndpoints
             SkippedCustomerCount = 0,
             IncompleteReason = null,
             CustomersOnboarded = BuildMonthlyOnboardedFromDates(onboardDates),
-            ProductMix = mix.Select(m => new DashboardProductSlice { Product = m.Product, Count = m.Count }).ToList(),
+            ProductMix = mix,
+            DirectProductMix = directMix,
+            IndirectProductMix = indirectMix,
             // Set here so a direct-only estate (no indirect rows yet) still shows the value panel; the
             // overlay recomputes the identical figure when indirect rows exist.
             EstateValue = await ComputeEstateValueAsync(db, cancellationToken)

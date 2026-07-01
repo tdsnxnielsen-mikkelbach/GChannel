@@ -154,6 +154,14 @@ public sealed partial class GoogleChannelClient
                 .OrderByDescending(kv => kv.Value)
                 .Take(8)
                 .Select(kv => new DashboardProductSlice { Product = kv.Key, Count = kv.Value })
+                .ToList(),
+            // The live path enumerates only direct customers (the indirect estate isn't fanned out
+            // on-demand), so its product mix is direct business; the indirect split stays empty here
+            // and is populated by the read-model path instead.
+            DirectProductMix = productMix
+                .OrderByDescending(kv => kv.Value)
+                .Take(8)
+                .Select(kv => new DashboardProductSlice { Product = kv.Key, Count = kv.Value })
                 .ToList()
         };
 

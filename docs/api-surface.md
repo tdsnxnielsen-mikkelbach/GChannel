@@ -160,7 +160,11 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > **direct vs indirect source split** (`DashboardEstateValueScope Direct`/`Indirect`) so the panel can
 > show what value comes from your own customers vs downstream resellers. In the read-model path the
 > summary's entitlement KPIs (Active / Trial / Suspended counts, active seats, product mix) span the
-> **whole estate** (direct + reseller-owned); customer count and onboarding stay direct-only.
+> **whole estate** (direct + reseller-owned); customer count and onboarding stay direct-only. The product
+> mix is also exposed split by source — `DashboardSummary.DirectProductMix` / `IndirectProductMix` (by
+> `EntitlementRecord.OwningLinkId`) alongside the combined `ProductMix` — so the home page renders a
+> separate *Direct* and *Via resellers (indirect)* donut. The live (non-read-model) path enumerates only
+> direct customers, so it fills the direct mix only.
 
 > **Read-model-backed list endpoints (§10).** When `GoogleChannel:UseReadModel` is on, two interactive
 > reads whose live calls sit on the **contended** per-minute quotas are served from SQL instead, so they
