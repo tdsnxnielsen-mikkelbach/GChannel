@@ -85,6 +85,17 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > **customer detail** page shows a **Provision Cloud Identity** action (only when `CloudIdentityId` is
 > empty) that deep-links to the **Operations** page via a new `?operation={id}` auto-track query param.
 
+> **Eligible billing accounts (§12.3).** `GET /api/customers/{customerId}/eligible-billing-accounts?skus=`
+> (`accounts.customers.queryEligibleBillingAccounts`, cached, keyed on the sorted sku list) returns *which*
+> billing account is eligible for given SKUs (GCP / n-tier distributor billing — eligibility, not money),
+> as per-SKU groups of `{ Name, DisplayName, CurrencyCode, RegionCode, CreateTime }`. It's surfaced only
+> where it matters: the **Purchase entitlement** page queries it (best-effort) when a SKU is selected and
+> renders a **Billing account** picker **only** if accounts come back; ordinary SKUs return none and the
+> picker stays hidden. The chosen account resource name is threaded into the purchase via a new
+> `PurchaseEntitlementRequest.BillingAccount` mapped onto `Entitlement.billingAccount` in
+> `entitlements.create`, and the Purchase button is blocked until an account is picked when the picker is
+> shown.
+
 > **Transfers.** Moving an existing subscription into the reseller is exposed under
 > `/api/customers/{id}`: `GET /transferable-skus` and `GET /transferable-offers?productId=&skuId=`
 > (cached in Redis for `CacheSeconds`) list what can be transferred, and `POST /transfer-entitlements`
@@ -260,11 +271,12 @@ grouped by feature area. See [todo.md](todo.md) for sequencing/priority.
 
 ### Customers
 
-Most customer methods are now **implemented** (see the table above). The following remain available:
+Most customer methods are now **implemented** (see the table above), including
+`queryEligibleBillingAccounts`:
 
 | Resource.method | Purpose |
 | --- | --- |
-| [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs (eligibility, not money). N-tier / GCP distributor billing. **Planned (niche) in [todo.md §12.3](todos/12-remaining-v1-surface.md).** |
+| [`accounts.customers.queryEligibleBillingAccounts`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/queryEligibleBillingAccounts) | Billing accounts eligible for given SKUs (eligibility, not money). N-tier / GCP distributor billing. **(implemented)** — `GET /api/customers/{customerId}/eligible-billing-accounts?skus=` (cached), surfaced as a **Billing account** picker on the **Purchase entitlement** page only when a SKU returns eligible accounts, and threaded into `entitlements.create` via `Entitlement.billingAccount` (see [todo.md §12.3](todos/12-remaining-v1-surface.md)). |
 
 ### Entitlements (subscriptions / lifecycle)
 

@@ -159,6 +159,42 @@ public sealed record PurchasableSku
     public string? DisplayName { get; init; }
 }
 
+/// <summary>
+/// Which billing accounts a customer may use to purchase given SKUs
+/// (<c>customers.queryEligibleBillingAccounts</c>). Only relevant for GCP / n-tier billing-gated SKUs;
+/// results are grouped by the SKUs that share the same eligible billing accounts. Returns no monetary
+/// amount — just which account is eligible.
+/// </summary>
+public sealed record EligibleBillingAccountsResult
+{
+    public IReadOnlyList<SkuBillingAccountGroup> Groups { get; init; } = [];
+}
+
+/// <summary>A set of SKUs that share the same eligible billing accounts. Maps to <c>SkuPurchaseGroup</c>.</summary>
+public sealed record SkuBillingAccountGroup
+{
+    /// <summary>The SKU ids (short segments) that share these billing accounts.</summary>
+    public IReadOnlyList<string> SkuIds { get; init; } = [];
+
+    /// <summary>The billing accounts eligible for these SKUs.</summary>
+    public IReadOnlyList<EligibleBillingAccount> BillingAccounts { get; init; } = [];
+}
+
+/// <summary>A billing account eligible for a purchase. Maps to <c>BillingAccount</c>.</summary>
+public sealed record EligibleBillingAccount
+{
+    /// <summary>Resource name, e.g. "accounts/{account}/billingAccounts/{id}".</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Short id (the last path segment of <see cref="Name"/>).</summary>
+    public string? Id { get; init; }
+
+    public string? DisplayName { get; init; }
+    public string? CurrencyCode { get; init; }
+    public string? RegionCode { get; init; }
+    public DateTimeOffset? CreateTime { get; init; }
+}
+
 /// <summary>Result of listing a customer's purchasable SKUs for a product.</summary>
 public sealed record PurchasableSkusResult
 {

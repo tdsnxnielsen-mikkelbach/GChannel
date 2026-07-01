@@ -217,4 +217,50 @@ public sealed partial class GoogleChannelClient
 
         return new PurchasableOffersResult { Offers = offers };
     }
+
+    public async Task<EligibleBillingAccountsResult> QueryEligibleBillingAccountsAsync(string customerId, IReadOnlyList<string> skus, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var request = service.Accounts.Customers.QueryEligibleBillingAccounts(CustomerName(customerId));
+        if (skus is { Count: > 0 })
+        {
+            request.Skus = new Repeatable<string>(skus);
+        }
+
+        var response = await request.ExecuteAsync(cancellationToken);
+
+        var groups = new List<SkuBillingAccountGroup>();
+        foreach (var group in response.SkuPurchaseGroups ?? [])
+        {
+            var accounts = new List<EligibleBillingAccount>();
+            foreach (var info in group.BillingAccountPurchaseInfos ?? [])
+            {
+                if (info.BillingAccount is not { } billing)
+                {
+                    continue;
+                }
+
+                accounts.Add(new EligibleBillingAccount
+                {
+                    Name = billing.Name ?? string.Empty,
+                    Id = LastSegment(billing.Name),
+                    DisplayName = billing.DisplayName,
+                    CurrencyCode = billing.CurrencyCode,
+                    RegionCode = billing.RegionCode,
+                    CreateTime = billing.CreateTimeDateTimeOffset
+                });
+            }
+
+            groups.Add(new SkuBillingAccountGroup
+            {
+                SkuIds = (group.Skus ?? []).Select(s => LastSegment(s) is { Length: > 0 } id ? id : s).ToList(),
+                BillingAccounts = accounts
+            });
+        }
+
+        return new EligibleBillingAccountsResult { Groups = groups };
+    }
 }

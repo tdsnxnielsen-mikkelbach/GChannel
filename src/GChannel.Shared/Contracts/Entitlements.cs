@@ -152,6 +152,10 @@ public sealed record PurchaseEntitlementRequest
 
     public string? PurchaseOrderId { get; init; }
     public IReadOnlyList<EntitlementParameterInput> Parameters { get; init; } = [];
+
+    /// <summary>Optional billing account resource name to pay for the entitlement (GCP / n-tier
+    /// billing-gated SKUs only), as returned by <c>queryEligibleBillingAccounts</c>.</summary>
+    public string? BillingAccount { get; init; }
 }
 
 /// <summary>Change-offer payload (<c>entitlements.changeOffer</c>).</summary>

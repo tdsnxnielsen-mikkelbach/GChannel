@@ -63,6 +63,10 @@ public interface IGoogleChannelClient
     /// <summary>Lists a customer's purchasable offers for a SKU (<c>customers.listPurchasableOffers</c>).</summary>
     Task<PurchasableOffersResult> ListPurchasableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken);
 
+    /// <summary>Queries which billing accounts a customer may use for the given SKUs
+    /// (<c>customers.queryEligibleBillingAccounts</c>). Only meaningful for GCP / n-tier billing-gated SKUs.</summary>
+    Task<EligibleBillingAccountsResult> QueryEligibleBillingAccountsAsync(string customerId, IReadOnlyList<string> skus, CancellationToken cancellationToken);
+
     /// <summary>Lists a customer's entitlements (<c>entitlements.list</c>).</summary>
     Task<EntitlementsResult> ListEntitlementsAsync(string customerId, CancellationToken cancellationToken);
 

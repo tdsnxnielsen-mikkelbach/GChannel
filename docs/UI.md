@@ -142,6 +142,9 @@ detail. The dashboard's Active/Trial/Suspended numbers open this page pre-filter
    (`/customers/{id}/entitlements/new`).
 2. Pick from the customer's **purchasable SKUs/offers** (these deep-link back to the catalog).
 3. Set quantity/seats and any required terms, then submit.
+   - For **GCP / n-tier billing-gated SKUs**, a **Billing account** picker appears automatically (only
+     when the selected SKU returns eligible accounts via `queryEligibleBillingAccounts`); pick the
+     billing account that pays for the entitlement before submitting. Ordinary SKUs never show it.
 4. Because Google processes this as a **long-running operation**, the page reflects the result inline —
    either *completed* (Google finished synchronously) or *submitted — processing*. If it's still
    processing, you'll get an **operation name** you can track on the **Operations** page (step 9).

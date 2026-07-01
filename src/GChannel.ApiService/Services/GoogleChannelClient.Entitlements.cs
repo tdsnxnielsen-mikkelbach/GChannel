@@ -186,7 +186,8 @@ public sealed partial class GoogleChannelClient
             {
                 Offer = OfferName(request.OfferId),
                 Parameters = ToGoogleParameters(request.Parameters),
-                PurchaseOrderId = string.IsNullOrWhiteSpace(request.PurchaseOrderId) ? null : request.PurchaseOrderId
+                PurchaseOrderId = string.IsNullOrWhiteSpace(request.PurchaseOrderId) ? null : request.PurchaseOrderId,
+                BillingAccount = string.IsNullOrWhiteSpace(request.BillingAccount) ? null : request.BillingAccount
             }
         };
 

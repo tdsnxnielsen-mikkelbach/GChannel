@@ -80,6 +80,20 @@ else
                 }
             }
 
+            @if (_billingAccounts is { Count: > 0 })
+            {
+                <MudSelect T="string" Label="Billing account" @bind-Value="_billingAccount"
+                           Dense="true" Class="mb-4" Required="true"
+                           HelperText="This SKU is billed against a Google Cloud billing account.">
+                    @foreach (var account in _billingAccounts)
+                    {
+                        <MudSelectItem Value="@account.Name">
+                            @(account.DisplayName ?? account.Id)@(string.IsNullOrEmpty(account.CurrencyCode) ? "" : $" · {account.CurrencyCode}")
+                        </MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
             <MudNumericField T="int" @bind-Value="_seats" Label="Seats (num_units)" Min="1"
                              Class="mb-4" HelperText="Number of licensed seats to purchase." data-walkthrough="pe-seats" />
 
@@ -97,7 +111,7 @@ else
         </MudCardContent>
         <MudCardActions>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ShoppingCartCheckout"
-                       Disabled="@(_submitting || string.IsNullOrEmpty(_offerId))" OnClick="SubmitAsync" data-walkthrough="pe-submit">
+                       Disabled="@(_submitting || string.IsNullOrEmpty(_offerId) || (_billingAccounts is { Count: > 0 } && string.IsNullOrEmpty(_billingAccount)))" OnClick="SubmitAsync" data-walkthrough="pe-submit">
                 @(_submitting ? "Submitting…" : "Purchase")
             </MudButton>
         </MudCardActions>
@@ -119,6 +133,11 @@ else
     private IReadOnlyList<PurchasableOffer>? _offers;
     private string? _offerId;
     private bool _offersLoading;
+
+    // Eligible billing accounts are only returned for GCP / n-tier billing-gated SKUs; the picker
+    // renders only when the query yields at least one account. Holds the selected account resource name.
+    private IReadOnlyList<EligibleBillingAccount>? _billingAccounts;
+    private string? _billingAccount;
 
     private int _seats = 1;
     private string? _purchaseOrderId;
@@ -181,6 +200,8 @@ else
         _skus = null;
         _offerId = null;
         _offers = null;
+        _billingAccounts = null;
+        _billingAccount = null;
         _skusLoading = true;
         try
         {
@@ -203,6 +224,8 @@ else
         _skuId = skuId;
         _offerId = null;
         _offers = null;
+        _billingAccounts = null;
+        _billingAccount = null;
         _offersLoading = true;
         try
         {
@@ -217,6 +240,26 @@ else
         finally
         {
             _offersLoading = false;
+        }
+
+        await LoadEligibleBillingAccountsAsync(skuId);
+    }
+
+    // Best-effort: queryEligibleBillingAccounts only applies to GCP / n-tier billing-gated SKUs and
+    // errors or returns nothing for ordinary SKUs, so failures are swallowed and the picker stays hidden.
+    private async Task LoadEligibleBillingAccountsAsync(string skuId)
+    {
+        try
+        {
+            var sku = $"products/{_productId}/skus/{skuId}";
+            var result = await Api.QueryEligibleBillingAccountsAsync(CustomerId, [sku]);
+            _billingAccounts = result?.Groups.SelectMany(g => g.BillingAccounts).ToList() ?? [];
+            _billingAccount = _billingAccounts.Count == 1 ? _billingAccounts[0].Name : null;
+        }
+        catch
+        {
+            _billingAccounts = [];
+            _billingAccount = null;
         }
     }
 
@@ -234,7 +277,8 @@ else
             {
                 OfferId = _offerId,
                 PurchaseOrderId = string.IsNullOrWhiteSpace(_purchaseOrderId) ? null : _purchaseOrderId,
-                Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = _seats }]
+                Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = _seats }],
+                BillingAccount = _billingAccounts is { Count: > 0 } ? _billingAccount : null
             };
 
             var op = await Api.PurchaseEntitlementAsync(CustomerId, request);

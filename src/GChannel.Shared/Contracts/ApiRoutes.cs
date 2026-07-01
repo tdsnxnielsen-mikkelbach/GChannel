@@ -52,6 +52,10 @@ public static class ApiRoutes
     public static string CustomerPurchasableOffers(string customerId, string productId, string skuId) =>
         $"/api/customers/{customerId}/purchasable-offers?productId={productId}&skuId={skuId}";
 
+    /// <summary>Billing accounts a customer is eligible to use for given SKUs (GCP / n-tier billing).</summary>
+    public static string CustomerEligibleBillingAccounts(string customerId) =>
+        $"/api/customers/{customerId}/eligible-billing-accounts";
+
     // Entitlement lifecycle (the core selling flow). All entitlement routes are nested under a customer.
 
     /// <summary>Lists a customer's entitlements.</summary>

@@ -137,6 +137,20 @@ public static class CustomersEndpoints
             .WithName("ListPurchasableOffers")
             .WithSummary("Lists the offers a customer is eligible to purchase for a SKU.");
 
+        // Which billing accounts a customer may use for the given SKUs (GCP / n-tier billing). Idempotent
+        // read; safe to cache briefly keyed on the sorted SKU set.
+        group.MapGet("/{customerId}/eligible-billing-accounts", (
+                string customerId,
+                string[] skus,
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                IOptions<GoogleChannelOptions> options,
+                CancellationToken cancellationToken) =>
+                CachedAsync(cache, $"customer:{customerId}:eligible-billing-accounts:{string.Join(',', skus.OrderBy(s => s, StringComparer.Ordinal))}", options.Value.CacheSeconds,
+                    () => channel.QueryEligibleBillingAccountsAsync(customerId, skus, cancellationToken), cancellationToken))
+            .WithName("QueryEligibleBillingAccounts")
+            .WithSummary("Lists the billing accounts a customer is eligible to use for given SKUs.");
+
         return app;
     }
 

@@ -2,8 +2,8 @@
 
 ## 12. Remaining stable `v1` surface (customer provisioning &amp; n-tier customer management)
 
-> **Status:** §12.1 (n-tier customer CRUD) and §12.2 (customer provisioning / pre-transfer import) are
-> **implemented**; §12.3–§12.4 remain proposed. This
+> **Status:** §12.1 (n-tier customer CRUD), §12.2 (customer provisioning / pre-transfer import) and
+> §12.3 (eligible billing accounts) are **implemented**; §12.4 remains proposed (doc-hygiene). This
 > section closes the last gaps between the app and the **stable `v1`** Cloud Channel API (excluding the
 > deprecated `accounts.reports.*`/`reportJobs.*` and the alpha-only items in §8). See
 > [api-surface.md](api-surface.md) for the full cross-check that produced this list. Ordered by value:
@@ -147,7 +147,28 @@ of them exercises the §7 LRO machinery. Completes the §2 "Cloud Identity" chec
 
 ### 12.3 Eligible billing accounts (GCP / n-tier billing) — **niche**
 
-- [ ] **Query eligible billing accounts** — `accounts.customers.queryEligibleBillingAccounts`.
+- [x] **Query eligible billing accounts** — `accounts.customers.queryEligibleBillingAccounts`.
+
+> **Implemented.** Live end-to-end and wired into the purchase flow. New contracts in
+> `GChannel.Shared/Contracts/Customers.cs`: `EligibleBillingAccountsResult` →
+> `SkuBillingAccountGroup { SkuIds, BillingAccounts }` → `EligibleBillingAccount { Name, Id,
+> DisplayName, CurrencyCode, RegionCode, CreateTime }` (maps
+> `GoogleCloudChannelV1QueryEligibleBillingAccountsResponse` → `SkuPurchaseGroups` →
+> `BillingAccountPurchaseInfos` → `BillingAccount`). Route
+> `CustomerEligibleBillingAccounts(customerId)` → `/api/customers/{customerId}/eligible-billing-accounts`
+> (base path; the `?skus=` query is built in the web client with `Uri.EscapeDataString`). Client method
+> `QueryEligibleBillingAccountsAsync` on `IGoogleChannelClient` /
+> `GoogleChannelClient.Customers.cs` calls
+> `service.Accounts.Customers.QueryEligibleBillingAccounts(CustomerName)` with
+> `request.Skus = new Repeatable<string>(skus)`. Cached `GET` endpoint on `CustomersEndpoints.cs` keyed
+> on the sorted sku list. Typed `GChannelApiClient.QueryEligibleBillingAccountsAsync`. UI: the
+> **Purchase entitlement** page (`PurchaseEntitlement.razor`) queries eligible accounts (best-effort)
+> when a SKU is selected and renders a **Billing account** picker **only** when the query returns
+> accounts (i.e. GCP / n-tier billing-gated SKUs); errors are swallowed for ordinary SKUs. The selected
+> account resource name is threaded into the purchase via a new `BillingAccount` field on
+> `PurchaseEntitlementRequest`, mapped onto `GoogleCloudChannelV1Entitlement.BillingAccount` in
+> `CreateEntitlementAsync`; the Purchase button is disabled until an account is chosen when the picker is
+> shown. Builds clean; **not deployed** (deployment is manual).
 
 Only relevant if a **GCP** purchase flow (or n-tier distributor billing) is added — it returns *which*
 billing account is eligible for given SKUs, not any monetary amount. Plan (kept minimal until there's a

@@ -113,6 +113,14 @@ public sealed class GChannelApiClient(
     public Task<PurchasableOffersResult?> ListPurchasableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken = default) =>
         GetAsync<PurchasableOffersResult>(ApiRoutes.CustomerPurchasableOffers(customerId, productId, skuId), cancellationToken);
 
+    /// <summary>Queries which billing accounts a customer may use for the given SKUs (GCP / n-tier billing).</summary>
+    public Task<EligibleBillingAccountsResult?> QueryEligibleBillingAccountsAsync(string customerId, IReadOnlyList<string> skus, CancellationToken cancellationToken = default)
+    {
+        var query = string.Join("&", skus.Select(s => $"skus={Uri.EscapeDataString(s)}"));
+        var route = ApiRoutes.CustomerEligibleBillingAccounts(customerId) + (query.Length > 0 ? $"?{query}" : string.Empty);
+        return GetAsync<EligibleBillingAccountsResult>(route, cancellationToken);
+    }
+
     /// <summary>Lists a customer's entitlements.</summary>
     public Task<EntitlementsResult?> ListEntitlementsAsync(string customerId, CancellationToken cancellationToken = default) =>
         GetAsync<EntitlementsResult>(ApiRoutes.Entitlements(customerId), cancellationToken);
