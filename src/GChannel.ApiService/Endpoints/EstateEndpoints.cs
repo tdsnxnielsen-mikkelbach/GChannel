@@ -235,7 +235,13 @@ public static class EstateEndpoints
                 {
                     Items = items,
                     Total = total,
-                    AsOf = items.Count == 0 ? null : items.Min(i => i.LastSyncedUtc),
+                    // Estate-wide freshness (the most recent link sync), not just this page's rows, so the
+                    // badge doesn't stick on "—" when the current page happens to hold not-yet-synced links.
+                    // Never-synced rows (LastSyncedUtc == MinValue) are excluded.
+                    AsOf = await db.ResellerLinks.AsNoTracking()
+                        .Where(r => r.LastSyncedUtc > DateTimeOffset.MinValue)
+                        .Select(r => (DateTimeOffset?)r.LastSyncedUtc)
+                        .MaxAsync(ct),
                 });
             });
 
