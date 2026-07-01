@@ -195,8 +195,12 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > `ResellerName` (friendly name of the owning channel partner link — primary domain, else reseller cloud
 > id, else link id — resolved per page from `ResellerLinks`; null for direct customers) and
 > `NextRenewalAutoRenew` (whether the next-renewing entitlement auto-renews, matching the Renewal column;
-> null when nothing commits). `NextRenewalAutoRenew` comes from a new denormalised
-> `EntitlementRecord.RenewalEnabled` column (synced from `CommitmentSettings.RenewalSettings.EnableRenewal`).
+> null when nothing commits). `NextRenewalAutoRenew` comes from a denormalised
+> `EntitlementRecord.RenewalEnabled` column. Because `entitlements.list` returns
+> `commitmentSettings.endTime` but **omits** `renewalSettings` for commitment offers, the read-model sync
+> falls back to a lean `entitlements.get` (`GoogleChannelClient.GetEntitlementRenewalEnabledAsync`) for
+> active commitment entitlements whose renewal flag is still unknown — self-limiting, so it stops firing
+> if `list` ever supplies the flag.
 > The `linkId` query parameter now also accepts `indirect` (all reseller-owned customers) alongside
 > `direct` (account-owned) and a specific link id; the Customers page uses this for its **Source** filter.
 

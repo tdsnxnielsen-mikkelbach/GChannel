@@ -480,7 +480,28 @@ public sealed class ReadModelSyncService(
             row.IsTrial = e.IsTrial;
             row.CreateTime = e.CreateTime;
             row.CommitmentEndTime = e.Commitment?.EndTime;
+            // Prior stored auto-renew flag (may hold a value fetched via the fallback below on an earlier
+            // cycle) — captured before we overwrite it with the list value so a transient fallback failure
+            // doesn't clobber a good value with null.
+            var existingRenewal = row.RenewalEnabled;
             row.RenewalEnabled = e.Commitment?.RenewalEnabled;
+            // entitlements.list omits commitmentSettings.renewalSettings for commitment offers, so the
+            // auto-renew flag comes back null even though the commitment end date is present. Fall back to
+            // a lean entitlements.get for active commitment entitlements whose renewal flag is still unknown
+            // (self-limiting: fires only when list didn't supply it). Best-effort — a failure keeps the
+            // previously stored value rather than clobbering it with null.
+            if (isActive && row.RenewalEnabled is null && e.Commitment is { EndTime: not null })
+            {
+                try
+                {
+                    row.RenewalEnabled = await client.GetEntitlementRenewalEnabledAsync(customerId, e.Id, ct) ?? existingRenewal;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Auto-renew fallback fetch failed for entitlement {Entitlement}; keeping prior value.", e.Id);
+                    row.RenewalEnabled = existingRenewal;
+                }
+            }
             row.PlanDescription = BuildPlanDescription(
                 e.Commitment,
                 e.OfferId is not null && offerCatalog.Plans.TryGetValue(e.OfferId, out var plan) ? plan : default);

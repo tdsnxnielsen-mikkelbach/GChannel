@@ -94,6 +94,30 @@ public sealed partial class GoogleChannelClient
         return MapEntitlement(response, lookups);
     }
 
+    /// <summary>
+    /// §10 read-model helper: fetches ONLY the auto-renew flag for one entitlement via
+    /// <c>entitlements.get</c>. Used as a fallback because <c>entitlements.list</c> returns
+    /// <c>commitmentSettings.endTime</c> but omits <c>renewalSettings</c> for commitment offers, so the
+    /// list-based sync can't otherwise tell whether an entitlement auto-renews. Returns
+    /// <see langword="true"/>/<see langword="false"/> when renewal settings are present, or
+    /// <see langword="null"/> when the entitlement has none (e.g. flexible/free plans).
+    /// </summary>
+    public async Task<bool?> GetEntitlementRenewalEnabledAsync(
+        string customerId, string entitlementId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(entitlementId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var response = await service.Accounts.Customers.Entitlements
+            .Get(EntitlementName(customerId, entitlementId))
+            .ExecuteAsync(cancellationToken);
+
+        var renewal = response.CommitmentSettings?.RenewalSettings;
+        return renewal is null ? null : renewal.EnableRenewal ?? false;
+    }
+
     public async Task<EntitlementChangesResult> ListEntitlementChangesAsync(string customerId, string entitlementId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(customerId);

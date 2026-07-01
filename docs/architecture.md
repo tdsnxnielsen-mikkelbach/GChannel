@@ -496,10 +496,15 @@ or churned products missing a name in `products.list` still resolve where the of
 opaque product ids can remain when a product is in neither list.
 
 **Customer source &amp; auto-renew (Phase 10).** The worker also denormalises
-`EntitlementRecord.RenewalEnabled` (from `CommitmentSettings.RenewalSettings.EnableRenewal`, mapped
-onto the entitlement's `Commitment.RenewalEnabled`) so the customer list can show, per customer,
+`EntitlementRecord.RenewalEnabled` so the customer list can show, per customer,
 whether the **next renewing** subscription auto-renews — exposed as `EstateCustomer.NextRenewalAutoRenew`,
-picked alongside the existing next-renewal roll-up. The **direct vs indirect** distinction reuses
+picked alongside the existing next-renewal roll-up. Note that `entitlements.list` returns the commitment
+**end date** but **omits** `commitmentSettings.renewalSettings`, so the sync can't read the auto-renew
+flag from the list response; for active commitment entitlements whose flag is still unknown it falls back
+to a lean `entitlements.get` (`GetEntitlementRenewalEnabledAsync`, best-effort, keeps the prior value on
+failure). The mapping also distinguishes *renewal settings present but off* (stored `false`) from
+*absent* (stored `null`) so a genuine "auto-renew off" shows as **Off** rather than "—". The **direct vs
+indirect** distinction reuses
 `CustomerRecord.OwningLinkId` (null = direct); the friendly reseller name (`EstateCustomer.ResellerName`)
 is resolved per page by joining the page's owning link ids to `ResellerLinks`
 (`PrimaryDomain → ResellerCloudId → LinkId`). The `/api/estate/customers` `linkId` filter accepts

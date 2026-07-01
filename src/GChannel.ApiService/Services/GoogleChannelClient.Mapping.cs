@@ -76,7 +76,10 @@ public sealed partial class GoogleChannelClient
                 {
                     StartTime = commitment.StartTimeDateTimeOffset,
                     EndTime = commitment.EndTimeDateTimeOffset,
-                    RenewalEnabled = commitment.RenewalSettings?.EnableRenewal,
+                    // Distinguish "renewalSettings present but auto-renew off" (enableRenewal is omitted
+                    // from JSON when false — proto3 default) from "renewalSettings absent entirely"
+                    // (which entitlements.list does for commitment offers): present ⇒ true/false, absent ⇒ null.
+                    RenewalEnabled = commitment.RenewalSettings is { } renewal ? renewal.EnableRenewal ?? false : null,
                     PaymentPlan = commitment.RenewalSettings?.PaymentPlan
                 }
                 : null,
