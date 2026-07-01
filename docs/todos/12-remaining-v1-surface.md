@@ -2,8 +2,9 @@
 
 ## 12. Remaining stable `v1` surface (customer provisioning &amp; n-tier customer management)
 
-> **Status:** §12.1 (n-tier customer CRUD), §12.2 (customer provisioning / pre-transfer import) and
-> §12.3 (eligible billing accounts) are **implemented**; §12.4 remains proposed (doc-hygiene). This
+> **Status:** §12.1 (n-tier customer CRUD), §12.2 (customer provisioning / pre-transfer import),
+> §12.3 (eligible billing accounts) are **implemented**, and §12.4 (doc-hygiene) is **resolved** — the
+> whole of §12 is now closed. This
 > section closes the last gaps between the app and the **stable `v1`** Cloud Channel API (excluding the
 > deprecated `accounts.reports.*`/`reportJobs.*` and the alpha-only items in §8). See
 > [api-surface.md](api-surface.md) for the full cross-check that produced this list. Ordered by value:
@@ -181,20 +182,28 @@ Deferred otherwise.
 
 ### 12.4 Minor completeness &amp; doc hygiene
 
-- [ ] **`operations.delete`** — deliberately **not surfaced**. It only *forgets* a completed LRO; the
+- [x] **`operations.delete`** — deliberately **not surfaced**. It only *forgets* a completed LRO; the
   **Operations** page (§7) tracks operations by name and doesn't need server-side deletion. Documented
   as intentionally omitted in [api-surface.md](api-surface.md); implement only if a future "clear
   tracked operation" UX wants it (`service.Operations.Delete(name)` → 204 endpoint).
-- [ ] **Repricing config `.get`** — `customerRepricingConfigs.get` /
+- [x] **Repricing config `.get`** — `customerRepricingConfigs.get` /
   `channelPartnerRepricingConfigs.get` are deliberately **not surfaced**: `list` already returns full
   config bodies, so the UI never needs a single-config fetch. Note-only in api-surface.md.
-- [ ] **`integrators.*`** (`listSubscribers` / `registerSubscriber` / `unregisterSubscriber`) —
+- [x] **`integrators.*`** (`listSubscribers` / `registerSubscriber` / `unregisterSubscriber`) —
   intentionally **out of scope**. This is the *integrator-scoped* twin of the account-scoped Pub/Sub
   subscriber admin already shipped (`accounts.register`/`unregister`/`listSubscribers`, §7). An
   "integrator" is a distinct Channel Services identity type (platform integrators, not
   resellers/distributors), which this app is not. This todo item is a **doc-hygiene** task: add a line
   to [api-surface.md](api-surface.md) acknowledging the resource exists in `v1` and explaining why it's
   skipped, so the surface cross-check is complete.
+
+> **Resolved (doc-hygiene, no code).** All three are deliberate *non-implementations*, and the
+> decisions are recorded in [api-surface.md](api-surface.md): `operations.{get,list,cancel,delete}` row
+> marks `delete` "deliberately not surfaced" (Operations tracks by name; `list` returns 501 by design);
+> the two repricing-config rows mark `get` "deliberately not surfaced" (`list` already returns full
+> config bodies); and a dedicated **Integrators (out of scope)** section explains the integrator-scoped
+> Pub/Sub twin is a distinct Channel Services identity type this app is not. Nothing to build — the `v1`
+> surface cross-check is now complete.
 
 ### Risks &amp; caveats
 
