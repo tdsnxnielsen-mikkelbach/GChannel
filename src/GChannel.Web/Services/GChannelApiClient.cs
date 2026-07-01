@@ -227,6 +227,10 @@ public sealed class GChannelApiClient(
     public Task<ResellerEstateValue?> GetResellerValueAsync(string linkId, CancellationToken cancellationToken = default) =>
         GetAsync<ResellerEstateValue>(ApiRoutes.EstateResellerValue(linkId), cancellationToken);
 
+    /// <summary>Estimated monthly value (wholesale/revenue/margin) for a single customer from the read-model.</summary>
+    public Task<CustomerEstateValue?> GetCustomerValueAsync(string customerId, CancellationToken cancellationToken = default) =>
+        GetAsync<CustomerEstateValue>(ApiRoutes.EstateCustomerValue(customerId), cancellationToken);
+
     /// <summary>Pages/sorts/filters estate-wide entitlements (subscriptions) from the read-model.</summary>
     public Task<PagedEstateResult<EstateEntitlement>?> ListEstateEntitlementsAsync(int page, int pageSize, string? sort, bool desc, string? search, string? state, string? scope, CancellationToken cancellationToken = default) =>
         GetAsync<PagedEstateResult<EstateEntitlement>>(

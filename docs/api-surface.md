@@ -228,6 +228,14 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > read-model (`EntitlementRecords` where `OwningLinkId == linkId`) — no live Channel API calls. Powers
 > the *Estimated business value* panel on the channel-partner-link detail page.
 
+> **Customer value rollup.** `GET /api/estate/customers/{customerId}/value` returns a `CustomerEstateValue`:
+> the estimated monthly **wholesale cost**, **repriced revenue** and **margin** across a **single** customer's
+> active priced entitlements, plus `ActiveSeats`, priced/unpriced counts and a per-currency `Currencies[]`
+> breakdown (headline is the dominant currency). Same read-model computation as the reseller rollup but
+> filtered by `CustomerId` (covers direct and indirect customers) and without `CustomerCount`. Powers the
+> *Estimated monthly value* panel on the customer detail page — replacing the earlier client-side estimate
+> that failed to render when the live entitlements list carried no pricing.
+
 > **Estate entitlements list (§11 Phase 4).** `GET /api/estate/entitlements` returns a paged/sorted/searched
 > list of individual entitlements (`EstateEntitlement` rows) joined to their customer's org name, all from the
 > read-model. Filters: `state` (`active` = ACTIVE & not trial · `trial` = trial · `suspended` = SUSPENDED,

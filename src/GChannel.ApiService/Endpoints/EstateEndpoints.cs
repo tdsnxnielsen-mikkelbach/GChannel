@@ -292,6 +292,58 @@ public static class EstateEndpoints
                 });
             });
 
+        // Estimated monthly value for a single customer: wholesale cost, repriced revenue and margin
+        // across that customer's active priced entitlements — the read-model equivalent of the reseller
+        // value above, so the customer detail page shows the same figure whether or not the live pricing
+        // path has run. Per-currency; headline is the dominant one. Covers direct and indirect customers.
+        group.MapGet("/customers/{customerId}/value", async (string customerId, GChannelDbContext db, CancellationToken ct) =>
+            {
+                var active = db.EntitlementRecords.AsNoTracking()
+                    .Where(e => !e.IsDeleted && e.State == "ACTIVE" && e.CustomerId == customerId);
+
+                var byCurrency = await active
+                    .Where(e => e.UnitPrice > 0 && e.Currency != null)
+                    .GroupBy(e => e.Currency!)
+                    .Select(g => new
+                    {
+                        Currency = g.Key,
+                        Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
+                        Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m))),
+                        Seats = g.Sum(e => e.Seats),
+                        Count = g.Count(),
+                    })
+                    .ToListAsync(ct);
+
+                var unpriced = await active.CountAsync(e => e.UnitPrice <= 0, ct);
+
+                var currencies = byCurrency
+                    .Select(x => new ResellerEstateValueCurrency
+                    {
+                        Currency = x.Currency,
+                        WholesaleMonthly = decimal.Round(x.Wholesale, 2),
+                        RevenueMonthly = decimal.Round(x.Revenue, 2),
+                        MarginMonthly = decimal.Round(x.Revenue - x.Wholesale, 2),
+                        PricedEntitlementCount = x.Count,
+                        ActiveSeats = x.Seats,
+                    })
+                    .OrderByDescending(x => x.WholesaleMonthly)
+                    .ToList();
+
+                var dominant = currencies.Count > 0 ? currencies[0] : null;
+                return Results.Ok(new CustomerEstateValue
+                {
+                    Currency = dominant?.Currency,
+                    WholesaleMonthly = dominant?.WholesaleMonthly ?? 0m,
+                    RevenueMonthly = dominant?.RevenueMonthly ?? 0m,
+                    MarginMonthly = dominant?.MarginMonthly ?? 0m,
+                    MixedCurrencies = currencies.Count > 1,
+                    PricedEntitlementCount = currencies.Sum(c => c.PricedEntitlementCount),
+                    UnpricedEntitlementCount = unpriced,
+                    ActiveSeats = currencies.Sum(c => c.ActiveSeats),
+                    Currencies = currencies,
+                });
+            });
+
         // Estate-wide entitlements list the dashboard lifecycle KPIs (Active/Trial/Suspended) link into.
         // Paged/sorted server-side against SQL and joined to the customer read-model for the org name.
         // The scope defaults to "direct" so the counts match the dashboard KPIs (which are direct-only).

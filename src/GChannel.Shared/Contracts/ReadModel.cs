@@ -140,3 +140,26 @@ public sealed record ResellerEstateValueCurrency
     public int PricedEntitlementCount { get; init; }
     public long ActiveSeats { get; init; }
 }
+
+/// <summary>
+/// Estimated monthly value for a single customer: the wholesale cost, repriced revenue and margin across
+/// that customer's active priced entitlements, from the read-model. Headline figures are in the customer's
+/// dominant currency; <see cref="Currencies"/> carries the per-currency breakdown for multi-currency
+/// customers. Mirrors <see cref="ResellerEstateValue"/> but scoped to one customer (no customer count).
+/// </summary>
+public sealed record CustomerEstateValue
+{
+    /// <summary>Dominant currency (largest wholesale), or null when nothing is priced yet.</summary>
+    public string? Currency { get; init; }
+    /// <summary>Wholesale cost (what you pay Google) in the dominant currency.</summary>
+    public decimal WholesaleMonthly { get; init; }
+    /// <summary>Repriced revenue (what this customer is billed) in the dominant currency.</summary>
+    public decimal RevenueMonthly { get; init; }
+    /// <summary>Margin (revenue − wholesale) in the dominant currency.</summary>
+    public decimal MarginMonthly { get; init; }
+    public bool MixedCurrencies { get; init; }
+    public int PricedEntitlementCount { get; init; }
+    public int UnpricedEntitlementCount { get; init; }
+    public long ActiveSeats { get; init; }
+    public IReadOnlyList<ResellerEstateValueCurrency> Currencies { get; init; } = [];
+}
