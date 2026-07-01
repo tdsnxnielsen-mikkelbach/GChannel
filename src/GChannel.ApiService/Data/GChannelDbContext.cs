@@ -151,6 +151,8 @@ public sealed class EntitlementRecord
     public DateTimeOffset? CreateTime { get; set; }
     /// <summary>Commitment/renewal end time (<c>CommitmentSettings.EndTime</c>), denormalised so the customer list can show the next renewal date without a live call.</summary>
     public DateTimeOffset? CommitmentEndTime { get; set; }
+    /// <summary>Whether auto-renewal is enabled for this entitlement (<c>CommitmentSettings.RenewalSettings.EnableRenewal</c>), or null when it has no renewal settings. Denormalised so the customer list can show auto-renew without a live call.</summary>
+    public bool? RenewalEnabled { get; set; }
     /// <summary>Human-friendly plan summary (e.g. "Annual Plan (Monthly Payment)"), denormalised at sync time so subscription cards render without a live offer-plan call.</summary>
     public string? PlanDescription { get; set; }
     /// <summary>Wholesale effective per-seat price from the entitlement's offer (the reseller's cost from Google). 0 if unknown.</summary>

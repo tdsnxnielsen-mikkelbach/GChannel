@@ -22,10 +22,18 @@
 </MudText>
 
 <div class="d-flex justify-space-between align-center mb-2">
-    <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
-                  OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search org, domain, id…"
-                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                  Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:360px" />
+    <div class="d-flex align-center gap-2" style="gap:12px">
+        <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
+                      OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search org, domain, id…"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:360px" />
+        <MudSelect T="string" Value="_scope" Label="Source" Dense="true" Margin="Margin.Dense"
+                   Variant="Variant.Outlined" Style="max-width:180px" ValueChanged="OnScopeChanged">
+            <MudSelectItem Value="@("all")">All customers</MudSelectItem>
+            <MudSelectItem Value="@("direct")">Direct only</MudSelectItem>
+            <MudSelectItem Value="@("indirect")">Via resellers</MudSelectItem>
+        </MudSelect>
+    </div>
     <AsOfBadge AsOf="_asOf" />
 </div>
 
@@ -34,10 +42,12 @@
         <MudTh Style="width:1px"></MudTh>
         <MudTh><MudTableSortLabel SortLabel="org" T="EstateCustomer">Organization</MudTableSortLabel></MudTh>
         <MudTh><MudTableSortLabel SortLabel="domain" T="EstateCustomer">Domain</MudTableSortLabel></MudTh>
+        <MudTh>Source</MudTh>
         <MudTh>Cloud Identity</MudTh>
         <MudTh><MudTableSortLabel SortLabel="seats" T="EstateCustomer">Seats</MudTableSortLabel></MudTh>
         <MudTh>Subscriptions</MudTh>
         <MudTh>Renewal</MudTh>
+        <MudTh>Auto-renew</MudTh>
         <MudTh>Est. monthly</MudTh>
         <MudTh><MudTableSortLabel SortLabel="created" T="EstateCustomer">Created</MudTableSortLabel></MudTh>
         <MudTh Style="text-align:right">Actions</MudTh>
@@ -52,6 +62,22 @@
         </MudTd>
         <MudTd DataLabel="Organization">@(context.OrgName ?? context.CustomerId)</MudTd>
         <MudTd DataLabel="Domain">@context.Domain</MudTd>
+        <MudTd DataLabel="Source">
+            @if (context.OwningLinkId is null)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text">Direct</MudChip>
+            }
+            else
+            {
+                <MudTooltip Text="@($"Indirect customer owned by reseller link {context.OwningLinkId}")">
+                    <div class="d-flex align-center">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text"
+                                 Href="@($"/channel-partner-links/{context.OwningLinkId}")">Reseller</MudChip>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@(context.ResellerName ?? context.OwningLinkId)</MudText>
+                    </div>
+                </MudTooltip>
+            }
+        </MudTd>
         <MudTd DataLabel="Cloud Identity">
             @if (!string.IsNullOrEmpty(context.CloudIdentityId))
             {
@@ -88,6 +114,26 @@
                             <MudText Typo="Typo.caption" Color="Color.Secondary">@context.NextRenewalOfferName</MudText>
                         }
                     </div>
+                </MudTooltip>
+            }
+            else
+            {
+                <span>—</span>
+            }
+        </MudTd>
+        <MudTd DataLabel="Auto-renew">
+            @if (context.NextRenewalAutoRenew is true)
+            {
+                <MudTooltip Text="Auto-renewal is on for the next renewing subscription.">
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text"
+                             Icon="@Icons.Material.Filled.Autorenew">On</MudChip>
+                </MudTooltip>
+            }
+            else if (context.NextRenewalAutoRenew is false)
+            {
+                <MudTooltip Text="Auto-renewal is off — the next renewing subscription will not renew automatically.">
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text"
+                             Icon="@Icons.Material.Filled.Block">Off</MudChip>
                 </MudTooltip>
             }
             else
@@ -135,7 +181,7 @@
         @if (IsExpanded(context))
         {
             <MudTr>
-                <td colspan="10" class="pa-4" style="background-color:var(--mud-palette-background-grey)">
+                <td colspan="12" class="pa-4" style="background-color:var(--mud-palette-background-grey)">
                     @if (!_subscriptions.TryGetValue(context.CustomerId, out var subs))
                     {
                         <div class="d-flex align-center my-2">
@@ -202,6 +248,7 @@
 @code {
     private MudTable<EstateCustomer>? _table;
     private string? _search;
+    private string _scope = "all";
     private DateTimeOffset? _asOf;
 
     // Per-customer expansion state + lazily-loaded subscription cards (null value = load failed).
@@ -273,7 +320,7 @@
             var result = await Api.ListEstateCustomersAsync(
                 state.Page, state.PageSize, state.SortLabel,
                 state.SortDirection == SortDirection.Descending,
-                _search, linkId: "direct", token);
+                _search, linkId: _scope == "all" ? null : _scope, token);
 
             _asOf = result?.AsOf;
             return new TableData<EstateCustomer> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
@@ -286,6 +333,12 @@
     }
 
     private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
+
+    private async Task OnScopeChanged(string value)
+    {
+        _scope = value;
+        await (_table?.ReloadServerData() ?? Task.CompletedTask);
+    }
 
     private async Task ResyncAsync(EstateCustomer customer)
     {

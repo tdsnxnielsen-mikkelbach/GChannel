@@ -36,7 +36,12 @@ public static class EstateEndpoints
 
                 if (!string.IsNullOrWhiteSpace(linkId))
                 {
-                    q = linkId == "direct" ? q.Where(c => c.OwningLinkId == null) : q.Where(c => c.OwningLinkId == linkId);
+                    q = linkId switch
+                    {
+                        "direct" => q.Where(c => c.OwningLinkId == null),
+                        "indirect" => q.Where(c => c.OwningLinkId != null),
+                        _ => q.Where(c => c.OwningLinkId == linkId),
+                    };
                 }
 
                 if (!string.IsNullOrWhiteSpace(search))
@@ -88,7 +93,7 @@ public static class EstateEndpoints
                         .Select(e => new
                         {
                             e.CustomerId, e.State, e.Currency, e.UnitPrice, e.Seats,
-                            e.RepricingPercent, e.CommitmentEndTime, e.OfferName,
+                            e.RepricingPercent, e.CommitmentEndTime, e.OfferName, e.RenewalEnabled,
                         })
                         .ToListAsync(ct);
 
@@ -120,8 +125,22 @@ public static class EstateEndpoints
                                 .FirstOrDefault();
 
                             return (active, suspended, Total: monthly, Currency: currency,
-                                    Renewal: nextRenewal?.CommitmentEndTime, RenewalOffer: nextRenewal?.OfferName);
+                                    Renewal: nextRenewal?.CommitmentEndTime, RenewalOffer: nextRenewal?.OfferName,
+                                    RenewalAutoRenew: nextRenewal?.RenewalEnabled);
                         });
+
+                    // Resolve friendly reseller names for the page's indirect customers (primary domain,
+                    // else reseller cloud id, else the raw link id) from the read-model links table.
+                    var linkIds = items.Where(i => i.OwningLinkId != null)
+                        .Select(i => i.OwningLinkId!).Distinct().ToList();
+                    var resellerNames = linkIds.Count == 0
+                        ? new Dictionary<string, string>()
+                        : await db.ResellerLinks.AsNoTracking()
+                            .Where(l => linkIds.Contains(l.LinkId))
+                            .ToDictionaryAsync(
+                                l => l.LinkId,
+                                l => l.PrimaryDomain ?? l.ResellerCloudId ?? l.LinkId,
+                                ct);
 
                     items = items.Select(i =>
                         byCustomer.TryGetValue(i.CustomerId, out var v)
@@ -133,18 +152,25 @@ public static class EstateEndpoints
                                 SuspendedSubscriptions = v.suspended,
                                 NextRenewalUtc = v.Renewal,
                                 NextRenewalOfferName = v.RenewalOffer,
+                                NextRenewalAutoRenew = v.RenewalAutoRenew,
+                                ResellerName = i.OwningLinkId != null && resellerNames.TryGetValue(i.OwningLinkId, out var rn) ? rn : null,
                             }
-                            : i).ToList();
+                            : i.OwningLinkId != null && resellerNames.TryGetValue(i.OwningLinkId, out var rn2)
+                                ? i with { ResellerName = rn2 }
+                                : i).ToList();
                 }
 
                 return Results.Ok(new PagedEstateResult<EstateCustomer>
                 {
                     Items = items,
                     Total = total,
-                    AsOf = items.Where(i => i.LastSyncedUtc > DateTimeOffset.MinValue)
-                                .Select(i => (DateTimeOffset?)i.LastSyncedUtc)
-                                .DefaultIfEmpty(null)
-                                .Min(),
+                    // Estate-wide freshness (the most recent customer sync), not just this page's rows,
+                    // so the badge doesn't read "—" when the current page happens to hold not-yet-synced
+                    // customers. Never-synced rows (LastSyncedUtc == MinValue) are excluded.
+                    AsOf = await db.CustomerRecords.AsNoTracking()
+                        .Where(c => !c.IsDeleted && c.LastSyncedUtc > DateTimeOffset.MinValue)
+                        .Select(c => (DateTimeOffset?)c.LastSyncedUtc)
+                        .MaxAsync(ct),
                 });
             });
 
@@ -210,6 +236,59 @@ public static class EstateEndpoints
                     Items = items,
                     Total = total,
                     AsOf = items.Count == 0 ? null : items.Min(i => i.LastSyncedUtc),
+                });
+            });
+
+        // Estimated estate value for a single reseller (channel partner link): wholesale cost, repriced
+        // revenue and margin across all of that reseller's customers' active priced entitlements — the
+        // read-model view of "what this reseller is doing". Per-currency; headline is the dominant one.
+        group.MapGet("/resellers/{linkId}/value", async (string linkId, GChannelDbContext db, CancellationToken ct) =>
+            {
+                var active = db.EntitlementRecords.AsNoTracking()
+                    .Where(e => !e.IsDeleted && e.State == "ACTIVE" && e.OwningLinkId == linkId);
+
+                var byCurrency = await active
+                    .Where(e => e.UnitPrice > 0 && e.Currency != null)
+                    .GroupBy(e => e.Currency!)
+                    .Select(g => new
+                    {
+                        Currency = g.Key,
+                        Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
+                        Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m))),
+                        Seats = g.Sum(e => e.Seats),
+                        Count = g.Count(),
+                    })
+                    .ToListAsync(ct);
+
+                var customerCount = await active.Select(e => e.CustomerId).Distinct().CountAsync(ct);
+                var unpriced = await active.CountAsync(e => e.UnitPrice <= 0, ct);
+
+                var currencies = byCurrency
+                    .Select(x => new ResellerEstateValueCurrency
+                    {
+                        Currency = x.Currency,
+                        WholesaleMonthly = decimal.Round(x.Wholesale, 2),
+                        RevenueMonthly = decimal.Round(x.Revenue, 2),
+                        MarginMonthly = decimal.Round(x.Revenue - x.Wholesale, 2),
+                        PricedEntitlementCount = x.Count,
+                        ActiveSeats = x.Seats,
+                    })
+                    .OrderByDescending(x => x.WholesaleMonthly)
+                    .ToList();
+
+                var dominant = currencies.Count > 0 ? currencies[0] : null;
+                return Results.Ok(new ResellerEstateValue
+                {
+                    Currency = dominant?.Currency,
+                    WholesaleMonthly = dominant?.WholesaleMonthly ?? 0m,
+                    RevenueMonthly = dominant?.RevenueMonthly ?? 0m,
+                    MarginMonthly = dominant?.MarginMonthly ?? 0m,
+                    MixedCurrencies = currencies.Count > 1,
+                    PricedEntitlementCount = currencies.Sum(c => c.PricedEntitlementCount),
+                    UnpricedEntitlementCount = unpriced,
+                    ActiveSeats = currencies.Sum(c => c.ActiveSeats),
+                    CustomerCount = customerCount,
+                    Currencies = currencies,
                 });
             });
 

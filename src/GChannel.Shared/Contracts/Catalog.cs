@@ -68,6 +68,9 @@ public sealed record CatalogOffer
     /// <summary>Id of the product the related SKU belongs to.</summary>
     public string? ProductId { get; init; }
 
+    /// <summary>Human-friendly product name resolved from the Catalog (falls back to <see cref="ProductId"/> in the UI).</summary>
+    public string? ProductDisplayName { get; init; }
+
     public string? DealCode { get; init; }
 
     /// <summary>Wholesale list pricing for each priced resource (seats, GB, etc.). Empty if not exposed.</summary>

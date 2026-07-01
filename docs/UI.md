@@ -29,12 +29,19 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
   **whole estate** — direct customers *plus* reseller-owned (indirect) ones — so they line up with the
   estate-value panel, which is also whole-estate.
 - **Estimated estate value (monthly)** — wholesale cost, repriced revenue and margin across your active
-  entitlements, in your estate's main currency. A **By source** table splits the value into **Direct**
-  (your own customers) vs **Via resellers** (indirect) so you can see where the value comes from, and a
-  chip per currency is shown top-right (the dominant one highlighted). These are *estimates from list
-  pricing, not invoiced amounts*, and appear once the background read-model has priced your entitlements.
+  entitlements. A **By source** table splits the value into **Direct** (your own customers) vs **Via
+  resellers** (indirect), with a **Direct** and a **Via resellers** line **per currency** when more than
+  one currency is present (a **Currency** column appears and a *By currency (total)* table sums each
+  currency); a chip per currency is shown top-right (the dominant one highlighted). Margin is the
+  *repricing mark-up you configure* (`revenue − wholesale`): for **direct** customers it's your
+  customer-level repricing, for **indirect** it's your channel-partner rebilling mark-up. It shows **0**
+  when no repricing/rebilling is configured; a downstream reseller's own margin to *their* end customers
+  is private and not exposed by the Channel API. These are *estimates from list pricing, not invoiced
+  amounts*, and appear once the background read-model has priced your entitlements.
 - **Customers onboarded** — an area chart bucketing new customers into the trailing six months.
-- **Product mix** — a donut of active entitlements grouped by product.
+- **Product mix** — a donut of active entitlements (whole estate) grouped by product. Product names are
+  resolved from the account's `products.list`, supplemented from the offer catalog; a few opaque product
+  ids may remain for reseller-owned / churned products that aren't in the account catalog.
 - **Top indirect resellers** — your linked resellers ranked by downstream seats.
 
 A status line under the title shows when the figures were last refreshed (e.g. "Updated 22 min ago ·
@@ -86,7 +93,12 @@ state, e.g. `6 Active · 2 Suspended`) and **Renewal** (the earliest upcoming co
 that offer's name, or “—” when none commit) columns, plus an **Est. monthly** column — the estimated
 monthly value of each customer's active subscriptions (from list pricing with your repricing applied,
 *not* invoiced amounts; “—” until their entitlements have been priced by the background read-model). A
-server-side **search box** filters by organization, domain or customer id. Each row can be **expanded**
+**Source** column marks each customer as **Direct** (owned by your account) or **Reseller** (indirect —
+owned by a channel partner link) and, for indirect customers, shows the reseller's friendly name (its
+primary domain, else reseller cloud id, else link id) linking to that channel partner link. An
+**Auto-renew** column shows whether the next renewing subscription auto-renews (green **On** / amber
+**Off**, or “—” when nothing is committed). A **Source** filter (All / Direct only / Via resellers) and a
+server-side **search box** filter the list — search by organization, domain or customer id. Each row can be **expanded**
 (chevron) to reveal one **subscription card** per entitlement — offer name, state badge, plan summary
 (e.g. *Annual Plan (Monthly Payment)*), renewal date, and `— / N licenses` (assigned-seat counts aren't
 available from the Channel API, so only the total is shown) with a **Details** link to the entitlement.
@@ -150,7 +162,12 @@ When a customer already has Google subscriptions (e.g. with another reseller), t
 - **Channel partners → Partner links** (`/channel-partner-links`) — see your channel partner links;
   open one to see (and link back to) the **customers** it owns. From the link detail page you can
   **Add** a new customer, **Import** an existing Cloud Identity customer, or **Edit** / **Delete** the
-  partner's customers directly (n-tier customer management).
+  partner's customers directly (n-tier customer management). The detail page also shows an **Estimated
+  business value (monthly)** panel — the wholesale cost, repriced revenue and your margin across *all*
+  of that reseller's customers' active subscriptions (dominant-currency headline cards + a per-currency
+  table when the reseller spans currencies), so you can see what each reseller is doing. Figures are
+  *estimated from list pricing, not invoiced amounts*, and appear once the background read-model has
+  priced the reseller's entitlements.
 - **Channel partners → Invite partner** (`/channel-partner-links/new`) — invite a new partner / change
   link state.
 - **Repricing** — adjust your rebilling margin:

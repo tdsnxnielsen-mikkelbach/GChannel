@@ -111,6 +111,78 @@ else
         </MudItem>
     </MudGrid>
 
+    <MudCard Elevation="2" Class="mt-2 mb-2">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6">Estimated business value (monthly)</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Wholesale cost, repriced revenue and your margin across all of this reseller's
+                    customers' active subscriptions — estimated from list pricing, not invoiced amounts.
+                </MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (_valueLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_value is { PricedEntitlementCount: > 0 } v)
+            {
+                <MudGrid>
+                    <MudItem xs="12" sm="4">
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">Wholesale cost</MudText>
+                        <MudText Typo="Typo.h5">@FormatMoney(v.WholesaleMonthly, v.Currency)</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">Repriced revenue</MudText>
+                        <MudText Typo="Typo.h5">@FormatMoney(v.RevenueMonthly, v.Currency)</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <MudText Typo="Typo.overline" Color="Color.Secondary">Margin</MudText>
+                        <MudText Typo="Typo.h5" Class="@(v.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@FormatMoney(v.MarginMonthly, v.Currency)</MudText>
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1 d-block">
+                    @v.CustomerCount customer(s) · @v.ActiveSeats active seat(s) · @v.PricedEntitlementCount priced subscription(s)@(v.UnpricedEntitlementCount > 0 ? $"; {v.UnpricedEntitlementCount} unpriced (excluded)" : "").@(v.MixedCurrencies ? $" Headline shows the dominant currency ({v.Currency}); every currency is broken out below." : "")
+                </MudText>
+                @if (v.MixedCurrencies)
+                {
+                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-2">
+                        <thead>
+                            <tr>
+                                <th>Currency</th>
+                                <th style="text-align:right">Wholesale cost</th>
+                                <th style="text-align:right">Repriced revenue</th>
+                                <th style="text-align:right">Margin</th>
+                                <th style="text-align:right">Seats</th>
+                                <th style="text-align:right">Subscriptions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var cur in v.Currencies)
+                            {
+                                <tr>
+                                    <td>@cur.Currency</td>
+                                    <td style="text-align:right">@cur.WholesaleMonthly.ToString("N2")</td>
+                                    <td style="text-align:right">@cur.RevenueMonthly.ToString("N2")</td>
+                                    <td style="text-align:right" class="@(cur.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.MarginMonthly.ToString("N2")</td>
+                                    <td style="text-align:right">@cur.ActiveSeats</td>
+                                    <td style="text-align:right">@cur.PricedEntitlementCount</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No priced subscriptions for this reseller yet@(_value is { UnpricedEntitlementCount: > 0 } u ? $" ({u.UnpricedEntitlementCount} unpriced)" : "") — values appear once the background read-model has priced this reseller's entitlements.
+                </MudText>
+            }
+        </MudCardContent>
+    </MudCard>
+
     <MudCard Elevation="2" Class="mt-2">
         <MudCardHeader>
             <CardHeaderContent>
@@ -198,8 +270,10 @@ else
 
     private ChannelPartnerLink? _link;
     private IReadOnlyList<Customer>? _customers;
+    private ResellerEstateValue? _value;
     private bool _loading = true;
     private bool _customersLoading = true;
+    private bool _valueLoading = true;
     private bool _busy;
 
     private bool _importOpen;
@@ -235,6 +309,25 @@ else
         if (_link is not null)
         {
             await LoadCustomersAsync();
+            await LoadValueAsync();
+        }
+    }
+
+    private async Task LoadValueAsync()
+    {
+        _valueLoading = true;
+        try
+        {
+            _value = await Api.GetResellerValueAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load reseller value: {ex.Message}", Severity.Error);
+            _value = null;
+        }
+        finally
+        {
+            _valueLoading = false;
         }
     }
 
@@ -259,6 +352,11 @@ else
 
     private bool IsState(string state) =>
         string.Equals(_link?.LinkState, state, StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatMoney(decimal value, string? currency) =>
+        string.IsNullOrEmpty(currency)
+            ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
+            : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
 
     private void AddCustomer() =>
         Nav.NavigateTo($"/customers/new?linkId={Id}");

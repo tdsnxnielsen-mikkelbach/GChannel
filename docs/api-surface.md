@@ -179,8 +179,10 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > `UnitPrice` / `PriceCurrency` / `RepricingPercent`, and `GET /api/estate/customers` rows carry an
 > `EstimatedMonthlyTotal` + `Currency` (the customer's active priced entitlements summed as
 > `Σ price × seats × (1 + percent/100)` in their dominant currency). All are *estimated list pricing,
-> not invoiced amounts*. The estate-customers *as-of* timestamp ignores never-synced rows
-> (`LastSyncedUtc == MinValue`).
+> not invoiced amounts*. The estate-customers *as-of* timestamp is **estate-wide** (the most recent
+> `CustomerRecord.LastSyncedUtc` across all non-deleted customers, ignoring never-synced
+> `LastSyncedUtc == MinValue` rows) rather than page-scoped, so the freshness badge doesn't read "—"
+> when the current page happens to hold not-yet-synced customers.
 
 > **Customer list parity fields (§11 Phase 5).** `GET /api/estate/customers` rows also carry
 > `ActiveSubscriptions` / `SuspendedSubscriptions` (entitlement counts by state) and `NextRenewalUtc` +
@@ -188,6 +190,23 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > entitlements and that offer's name). These power the console-style **Subscriptions** and **Renewal**
 > columns and are aggregated per page from the read-model's denormalised `EntitlementRecord.CommitmentEndTime`
 > (synced from `CommitmentSettings.EndTime`) — no live Channel API calls.
+
+> **Customer source & auto-renew columns (§11 Phase 10).** `GET /api/estate/customers` rows also carry
+> `ResellerName` (friendly name of the owning channel partner link — primary domain, else reseller cloud
+> id, else link id — resolved per page from `ResellerLinks`; null for direct customers) and
+> `NextRenewalAutoRenew` (whether the next-renewing entitlement auto-renews, matching the Renewal column;
+> null when nothing commits). `NextRenewalAutoRenew` comes from a new denormalised
+> `EntitlementRecord.RenewalEnabled` column (synced from `CommitmentSettings.RenewalSettings.EnableRenewal`).
+> The `linkId` query parameter now also accepts `indirect` (all reseller-owned customers) alongside
+> `direct` (account-owned) and a specific link id; the Customers page uses this for its **Source** filter.
+
+> **Reseller value rollup (§11 Phase 12).** `GET /api/estate/resellers/{linkId}/value` returns a
+> `ResellerEstateValue`: the estimated monthly **wholesale cost**, **repriced revenue** and **margin**
+> (`revenue − wholesale`, your rebilling mark-up on the reseller) across **all** of that reseller's
+> customers' active priced entitlements, plus `CustomerCount`, `ActiveSeats`, priced/unpriced counts and
+> a per-currency `Currencies[]` breakdown (headline is the dominant currency). Computed from the
+> read-model (`EntitlementRecords` where `OwningLinkId == linkId`) — no live Channel API calls. Powers
+> the *Estimated business value* panel on the channel-partner-link detail page.
 
 > **Estate entitlements list (§11 Phase 4).** `GET /api/estate/entitlements` returns a paged/sorted/searched
 > list of individual entitlements (`EstateEntitlement` rows) joined to their customer's org name, all from the

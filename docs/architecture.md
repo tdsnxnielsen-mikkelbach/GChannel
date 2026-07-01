@@ -443,9 +443,14 @@ rollup headline) is further split into a **direct** vs **indirect** source slice
 (`DashboardEstateValueScope Direct`/`Indirect`, keyed on whether the entitlement has an owning channel
 link) so the dashboard can show what value comes from your own customers vs downstream resellers. The
 home page renders these as an "Estimated estate value (monthly)" panel (dominant-currency headline cards
-+ a *By source* table + a *By currency* table when more than one currency is present, and a currency
++ a *By source* table that shows a **Direct** and a **Via resellers** line **per currency** — a Currency
+column and a *By currency (total)* table appear when more than one currency is present — and a currency
 chip per currency top-right) with a clear *estimated, not invoiced* disclaimer (it is derived from offer
-**list** pricing, not actual invoices). The entitlement KPIs on the dashboard (Active / Trial /
+**list** pricing, not actual invoices). **Margin** is the repricing mark-up the distributor configures
+(`revenue − wholesale`): direct rows use the customer-level `CustomerRepricingConfig`, indirect rows use
+the owning link's `ChannelPartnerRepricingConfig`; it is **0** whenever no repricing/rebilling is
+configured, and a downstream reseller's own margin to *their* end customers is private and not exposed by
+the Channel API. The entitlement KPIs on the dashboard (Active / Trial /
 Suspended counts, active seats and product mix) likewise span the **whole estate** (direct + indirect)
 in the read-model path, matching the estate value. Entitlements whose offer price couldn't be
 resolved (`UnitPrice ≤ 0` — no matching offer in the cycle's `offers.list`) are excluded from the totals
@@ -483,6 +488,22 @@ To keep the entitlement list fully named offline, the worker denormalises the of
 names (`OfferName`, `SkuName`) and the entitlement `CreateTime` onto `EntitlementRecord`. These come
 **for free** from the same single `offers.list` the pricing pass already makes each cycle — a
 `CatalogOffer` carries both the offer and SKU display names — so there is no extra Channel API cost.
+The product **display name** (`EntitlementRecord.ProductName`, which drives the dashboard *Product mix*
+donut) is resolved from the account's `products.list`, then **supplemented from the offer catalog**
+(`CatalogOffer.ProductDisplayName`, from `offer.Sku.Product.MarketingInfo.DisplayName`) so reseller-owned
+or churned products missing a name in `products.list` still resolve where the offer is listed; a few
+opaque product ids can remain when a product is in neither list.
+
+**Customer source &amp; auto-renew (Phase 10).** The worker also denormalises
+`EntitlementRecord.RenewalEnabled` (from `CommitmentSettings.RenewalSettings.EnableRenewal`, mapped
+onto the entitlement's `Commitment.RenewalEnabled`) so the customer list can show, per customer,
+whether the **next renewing** subscription auto-renews — exposed as `EstateCustomer.NextRenewalAutoRenew`,
+picked alongside the existing next-renewal roll-up. The **direct vs indirect** distinction reuses
+`CustomerRecord.OwningLinkId` (null = direct); the friendly reseller name (`EstateCustomer.ResellerName`)
+is resolved per page by joining the page's owning link ids to `ResellerLinks`
+(`PrimaryDomain → ResellerCloudId → LinkId`). The `/api/estate/customers` `linkId` filter accepts
+`direct`, `indirect` or a specific link id, powering the Customers page's **Source** filter. No extra
+live Channel API calls.
 Catalog (products/SKUs/offers), repricing configuration and **transfers** are intentionally **not**
 backed by the read-model: catalog and repricing sit on separate, uncontended quotas (and catalog is
 already Redis-cached), while transfer eligibility is computed in real time against a customer's current

@@ -220,11 +220,15 @@
                     </MudItem>
                 </MudGrid>
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">
-                    By source@(estate.MixedCurrencies ? $" (dominant currency {estate.Currency})" : "")
+                    By source@(estate.MixedCurrencies ? " &amp; currency" : "")
                 </MudText>
                 <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
                     <thead>
                         <tr>
+                            @if (estate.MixedCurrencies)
+                            {
+                                <th>Currency</th>
+                            }
                             <th>Source</th>
                             <th style="text-align:right">Wholesale cost</th>
                             <th style="text-align:right">Repriced revenue</th>
@@ -233,25 +237,36 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td>Direct (your customers)</td>
-                            <td style="text-align:right">@estate.Direct.WholesaleMonthly.ToString("N2")</td>
-                            <td style="text-align:right">@estate.Direct.RevenueMonthly.ToString("N2")</td>
-                            <td style="text-align:right" class="@(estate.Direct.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@estate.Direct.MarginMonthly.ToString("N2")</td>
-                            <td style="text-align:right">@estate.Direct.PricedEntitlementCount</td>
-                        </tr>
-                        <tr>
-                            <td>Via resellers (indirect)</td>
-                            <td style="text-align:right">@estate.Indirect.WholesaleMonthly.ToString("N2")</td>
-                            <td style="text-align:right">@estate.Indirect.RevenueMonthly.ToString("N2")</td>
-                            <td style="text-align:right" class="@(estate.Indirect.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@estate.Indirect.MarginMonthly.ToString("N2")</td>
-                            <td style="text-align:right">@estate.Indirect.PricedEntitlementCount</td>
-                        </tr>
+                        @foreach (var cur in estate.Currencies)
+                        {
+                            <tr>
+                                @if (estate.MixedCurrencies)
+                                {
+                                    <td>@cur.Currency</td>
+                                }
+                                <td>Direct (your customers)</td>
+                                <td style="text-align:right">@cur.Direct.WholesaleMonthly.ToString("N2")</td>
+                                <td style="text-align:right">@cur.Direct.RevenueMonthly.ToString("N2")</td>
+                                <td style="text-align:right" class="@(cur.Direct.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.Direct.MarginMonthly.ToString("N2")</td>
+                                <td style="text-align:right">@cur.Direct.PricedEntitlementCount</td>
+                            </tr>
+                            <tr>
+                                @if (estate.MixedCurrencies)
+                                {
+                                    <td></td>
+                                }
+                                <td>Via resellers (indirect)</td>
+                                <td style="text-align:right">@cur.Indirect.WholesaleMonthly.ToString("N2")</td>
+                                <td style="text-align:right">@cur.Indirect.RevenueMonthly.ToString("N2")</td>
+                                <td style="text-align:right" class="@(cur.Indirect.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.Indirect.MarginMonthly.ToString("N2")</td>
+                                <td style="text-align:right">@cur.Indirect.PricedEntitlementCount</td>
+                            </tr>
+                        }
                     </tbody>
                 </MudSimpleTable>
                 @if (estate.Currencies.Count > 1)
                 {
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">By currency</MudText>
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">By currency (total)</MudText>
                     <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
                         <thead>
                             <tr>

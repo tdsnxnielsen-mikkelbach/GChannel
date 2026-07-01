@@ -468,7 +468,9 @@ public sealed class ReadModelSyncService(
             row.CustomerId = customerId;
             row.OwningLinkId = owningLinkId;
             row.ProductId = e.ProductId;
-            row.ProductName = e.ProductId is not null && productNames.TryGetValue(e.ProductId, out var pn) ? pn : null;
+            row.ProductName = e.ProductId is not null
+                && (productNames.TryGetValue(e.ProductId, out var pn) || offerCatalog.ProductNames.TryGetValue(e.ProductId, out pn))
+                ? pn : null;
             row.SkuId = e.SkuId;
             row.SkuName = e.SkuId is not null && offerCatalog.SkuNames.TryGetValue(e.SkuId, out var sn) ? sn : null;
             row.OfferId = e.OfferId;
@@ -478,6 +480,7 @@ public sealed class ReadModelSyncService(
             row.IsTrial = e.IsTrial;
             row.CreateTime = e.CreateTime;
             row.CommitmentEndTime = e.Commitment?.EndTime;
+            row.RenewalEnabled = e.Commitment?.RenewalEnabled;
             row.PlanDescription = BuildPlanDescription(
                 e.Commitment,
                 e.OfferId is not null && offerCatalog.Plans.TryGetValue(e.OfferId, out var plan) ? plan : default);
@@ -550,6 +553,7 @@ public sealed class ReadModelSyncService(
         var pricing = new Dictionary<string, (decimal, string)>(StringComparer.OrdinalIgnoreCase);
         var offerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var skuNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var productNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var plans = new Dictionary<string, (string?, string?)>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -581,6 +585,12 @@ public sealed class ReadModelSyncService(
                 {
                     skuNames[offer.SkuId] = offer.SkuDisplayName!;
                 }
+                // Supplement the product-name map from the offer catalog so reseller-owned / churned
+                // products that aren't in the account's products.list still resolve to a friendly name.
+                if (!string.IsNullOrEmpty(offer.ProductId) && !string.IsNullOrWhiteSpace(offer.ProductDisplayName))
+                {
+                    productNames.TryAdd(offer.ProductId, offer.ProductDisplayName!);
+                }
             }
 
             // Catalog-size telemetry: if {Priced} is far below {Offers} (or {Offers} is small), the
@@ -593,7 +603,7 @@ public sealed class ReadModelSyncService(
         {
             logger.LogWarning(ex, "Read-model offer catalog lookup failed this cycle; entitlements will be reported as unpriced/unnamed.");
         }
-        return new OfferCatalog(pricing, offerNames, skuNames, plans);
+        return new OfferCatalog(pricing, offerNames, skuNames, plans, productNames);
     }
 
     /// <summary>Per-cycle offer catalog: wholesale pricing plus offer/SKU display names, all keyed by id.</summary>
@@ -601,7 +611,8 @@ public sealed class ReadModelSyncService(
         IReadOnlyDictionary<string, (decimal Unit, string Currency)> Pricing,
         IReadOnlyDictionary<string, string> OfferNames,
         IReadOnlyDictionary<string, string> SkuNames,
-        IReadOnlyDictionary<string, (string? PaymentPlan, string? PaymentCycle)> Plans);
+        IReadOnlyDictionary<string, (string? PaymentPlan, string? PaymentCycle)> Plans,
+        IReadOnlyDictionary<string, string> ProductNames);
 
     /// <summary>
     /// Accumulates, across one sync cycle's entitlement pass, why ACTIVE entitlements end up unpriced so

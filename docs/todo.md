@@ -737,6 +737,42 @@ above on top, so a user sees the same shape they know from the console plus comp
   `DashboardEstateValueCurrency`; `Home.razor` renders the By-source table, per-currency chips and
   `scope=all` KPI links. No schema change, no new live calls.*
 
+- [x] **Phase 10 — Customer Source (direct/reseller) &amp; Auto-renew columns.** The Customers list now
+  has a **Source** column marking each customer **Direct** or **Reseller** (with the indirect
+  reseller's friendly name, linking to its channel partner link), an **Auto-renew** column (On/Off/—
+  for the next renewing subscription) and a **Source** filter (All / Direct / Via resellers). *Implemented:
+  new denormalised `EntitlementRecord.RenewalEnabled` (idempotent SQL ALTER + EF model + synced from
+  `Commitment.RenewalEnabled`); new `EstateCustomer.ResellerName` (per-page `ResellerLinks` join) and
+  `NextRenewalAutoRenew` (from the next-renewal entitlement); `/api/estate/customers` `linkId` now
+  accepts `indirect`; `Customers.razor` adds the two columns + Source select (defaults to All). Auto-renew
+  populates after a worker redeploy + sync cycle.*
+- [x] **Phase 11 — Estate value By-source *per currency* + product-mix name resolution.** The dashboard
+  **By source** table now renders a **Direct** and a **Via resellers (indirect)** line **for every
+  currency** (not just the dominant one) — a **Currency** column and a *By currency (total)* table appear
+  when the estate spans more than one currency — so multi-currency estates see the full source×currency
+  matrix. The **Product mix** donut resolves more friendly names: product display names are now
+  supplemented from the offer catalog, cutting the number of raw product ids shown. *Implemented (UI-only
+  for the source split — `DashboardEstateValueCurrency.Direct`/`Indirect` already existed): `Home.razor`
+  iterates `estate.Currencies` for the By-source rows; new `CatalogOffer.ProductDisplayName` (mapped from
+  `offer.Sku.Product.MarketingInfo.DisplayName` in `ListOffersAsync`) feeds an `OfferCatalog.ProductNames`
+  supplement in `ReadModelSyncService`, used as a fallback after `products.list` when denormalising
+  `EntitlementRecord.ProductName`. Product-name improvements land after a worker redeploy + sync cycle.
+  **Margin is 0 by design** when no repricing/rebilling is configured — direct margin is your
+  customer-level repricing, indirect is your channel-partner rebilling mark-up; a downstream reseller's
+  own margin to their end customers is private and not exposed by the Channel API. No schema change.*
+
+- [x] **Phase 12 — Reseller value rollup + estate-wide freshness badge.** The channel-partner-link
+  detail page now shows an **Estimated business value (monthly)** panel — wholesale cost, repriced
+  revenue and margin across *all* of that reseller's customers' active priced entitlements (dominant
+  headline + per-currency table + customer/seat/subscription counts) — so you can see what each reseller
+  is doing. The Customers page **As of** badge no longer sticks on "—": its freshness timestamp is now
+  computed **estate-wide** (most recent `CustomerRecord.LastSyncedUtc`) instead of from the current page
+  only. *Implemented: new `ResellerEstateValue` contract, `GET /api/estate/resellers/{linkId}/value`
+  (`EstateEndpoints`, groups the link's `EntitlementRecords` by currency), `ApiRoutes.EstateResellerValue`,
+  `GChannelApiClient.GetResellerValueAsync`, an `Estimated business value` card on
+  `ChannelPartnerLinkDetail.razor`, and the estate-wide `AsOf` query on `GET /api/estate/customers`. No
+  schema change, no new live calls.*
+
 ### Risks &amp; caveats
 
 - **Estimates, not invoices** — must be labelled everywhere; promo/tier/contract terms can diverge from

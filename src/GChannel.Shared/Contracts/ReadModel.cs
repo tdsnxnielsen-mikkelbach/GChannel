@@ -28,6 +28,13 @@ public sealed record EstateCustomer
     public DateTimeOffset LastSyncedUtc { get; init; }
 
     /// <summary>
+    /// Friendly name of the indirect reseller (channel partner link) that owns this customer — the
+    /// link's primary domain, else its reseller cloud id, else the link id. Null for direct customers
+    /// (<see cref="OwningLinkId"/> null).
+    /// </summary>
+    public string? ResellerName { get; init; }
+
+    /// <summary>
     /// Estimated monthly value of the customer's active entitlements, repricing mark-up applied
     /// (Σ unit price × seats × (1 + markup%)). Null when the customer has no priced active
     /// entitlements synced yet. Estimated from offer list pricing — not an invoiced figure.
@@ -48,6 +55,12 @@ public sealed record EstateCustomer
 
     /// <summary>Friendly offer name of the entitlement renewing at <see cref="NextRenewalUtc"/>.</summary>
     public string? NextRenewalOfferName { get; init; }
+
+    /// <summary>
+    /// Whether auto-renewal is enabled for the entitlement renewing at <see cref="NextRenewalUtc"/>
+    /// (matches the Renewal column). Null when no upcoming renewal or the entitlement has no renewal setting.
+    /// </summary>
+    public bool? NextRenewalAutoRenew { get; init; }
 }
 
 /// <summary>A reseller (channel partner link) row from the read-model.</summary>
@@ -91,4 +104,39 @@ public sealed record EstateEntitlement
     public DateTimeOffset? CommitmentEndTime { get; init; }
     public DateTimeOffset? CreateTime { get; init; }
     public DateTimeOffset LastSyncedUtc { get; init; }
+}
+
+/// <summary>
+/// Estimated estate value for a single reseller (channel partner link): the wholesale cost, repriced
+/// revenue and margin across all of that reseller's customers' active priced entitlements, from the
+/// read-model. Headline figures are in the reseller's dominant currency; <see cref="Currencies"/> carries
+/// the per-currency breakdown for multi-currency resellers.
+/// </summary>
+public sealed record ResellerEstateValue
+{
+    /// <summary>Dominant currency (largest wholesale), or null when nothing is priced yet.</summary>
+    public string? Currency { get; init; }
+    /// <summary>Wholesale cost (the distributor's cost from Google) in the dominant currency.</summary>
+    public decimal WholesaleMonthly { get; init; }
+    /// <summary>Repriced revenue (what the reseller is billed) in the dominant currency.</summary>
+    public decimal RevenueMonthly { get; init; }
+    /// <summary>Margin (revenue − wholesale) in the dominant currency — your rebilling mark-up on this reseller.</summary>
+    public decimal MarginMonthly { get; init; }
+    public bool MixedCurrencies { get; init; }
+    public int PricedEntitlementCount { get; init; }
+    public int UnpricedEntitlementCount { get; init; }
+    public long ActiveSeats { get; init; }
+    public int CustomerCount { get; init; }
+    public IReadOnlyList<ResellerEstateValueCurrency> Currencies { get; init; } = [];
+}
+
+/// <summary>One currency's slice of a reseller's estimated estate value.</summary>
+public sealed record ResellerEstateValueCurrency
+{
+    public required string Currency { get; init; }
+    public decimal WholesaleMonthly { get; init; }
+    public decimal RevenueMonthly { get; init; }
+    public decimal MarginMonthly { get; init; }
+    public int PricedEntitlementCount { get; init; }
+    public long ActiveSeats { get; init; }
 }

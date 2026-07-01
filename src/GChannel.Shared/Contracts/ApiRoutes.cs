@@ -141,6 +141,9 @@ public static class ApiRoutes
     /// <summary>Paged/sorted/filtered resellers (channel-partner-links) from the read-model.</summary>
     public const string EstateResellers = "/api/estate/resellers";
 
+    /// <summary>Estimated estate value (wholesale/revenue/margin) across a reseller's customers.</summary>
+    public static string EstateResellerValue(string linkId) => $"/api/estate/resellers/{linkId}/value";
+
     /// <summary>Paged/sorted/filtered entitlements (subscriptions) from the read-model.</summary>
     public const string EstateEntitlements = "/api/estate/entitlements";
 

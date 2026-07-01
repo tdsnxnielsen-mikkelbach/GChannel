@@ -215,6 +215,10 @@ public sealed class GChannelApiClient(
             $"{ApiRoutes.EstateResellers}?page={page}&pageSize={pageSize}&sort={Uri.EscapeDataString(sort ?? "")}&desc={desc}&search={Uri.EscapeDataString(search ?? "")}&state={Uri.EscapeDataString(state ?? "")}",
             cancellationToken);
 
+    /// <summary>Estimated estate value (wholesale/revenue/margin) across a reseller's customers.</summary>
+    public Task<ResellerEstateValue?> GetResellerValueAsync(string linkId, CancellationToken cancellationToken = default) =>
+        GetAsync<ResellerEstateValue>(ApiRoutes.EstateResellerValue(linkId), cancellationToken);
+
     /// <summary>Pages/sorts/filters estate-wide entitlements (subscriptions) from the read-model.</summary>
     public Task<PagedEstateResult<EstateEntitlement>?> ListEstateEntitlementsAsync(int page, int pageSize, string? sort, bool desc, string? search, string? state, string? scope, CancellationToken cancellationToken = default) =>
         GetAsync<PagedEstateResult<EstateEntitlement>>(
