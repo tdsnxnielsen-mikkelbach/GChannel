@@ -181,6 +181,26 @@ public sealed class GChannelApiClient(
     public Task<CustomersResult?> ListChannelPartnerCustomersAsync(string linkId, CancellationToken cancellationToken = default) =>
         GetAsync<CustomersResult>(ApiRoutes.ChannelPartnerCustomers(linkId), cancellationToken);
 
+    /// <summary>Gets a single customer owned by a channel partner link.</summary>
+    public Task<Customer?> GetChannelPartnerCustomerAsync(string linkId, string customerId, CancellationToken cancellationToken = default) =>
+        GetAsync<Customer>(ApiRoutes.ChannelPartnerCustomer(linkId, customerId), cancellationToken);
+
+    /// <summary>Creates a customer under a channel partner link and returns the created resource.</summary>
+    public Task<Customer?> CreateChannelPartnerCustomerAsync(string linkId, SaveCustomerRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<Customer>(HttpMethod.Post, ApiRoutes.ChannelPartnerCustomers(linkId), request, cancellationToken);
+
+    /// <summary>Updates a customer owned by a channel partner link and returns the updated resource.</summary>
+    public Task<Customer?> UpdateChannelPartnerCustomerAsync(string linkId, string customerId, SaveCustomerRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<Customer>(HttpMethod.Put, ApiRoutes.ChannelPartnerCustomer(linkId, customerId), request, cancellationToken);
+
+    /// <summary>Deletes a customer owned by a channel partner link.</summary>
+    public Task DeleteChannelPartnerCustomerAsync(string linkId, string customerId, CancellationToken cancellationToken = default) =>
+        DeleteAsync(ApiRoutes.ChannelPartnerCustomer(linkId, customerId), cancellationToken);
+
+    /// <summary>Imports a pre-existing Cloud Identity customer under a channel partner link.</summary>
+    public Task<Customer?> ImportChannelPartnerCustomerAsync(string linkId, ImportCustomerRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<Customer>(HttpMethod.Post, ApiRoutes.ChannelPartnerCustomerImport(linkId), request, cancellationToken);
+
     // §10 read-model estate views: server-side paged/sorted/filtered queries against SQL.
 
     /// <summary>Pages/sorts/filters customers from the read-model.</summary>

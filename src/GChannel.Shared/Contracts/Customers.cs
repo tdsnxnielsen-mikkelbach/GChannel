@@ -79,6 +79,36 @@ public sealed record SaveCustomerRequest
     public required CustomerAddress Address { get; init; }
 }
 
+/// <summary>
+/// Import payload for a pre-existing Cloud Identity customer (<c>customers.import</c> /
+/// <c>channelPartnerLinks.customers.import</c>). Supply exactly one of <see cref="Domain"/>,
+/// <see cref="CloudIdentityId"/> or <see cref="PrimaryAdminEmail"/> to identify the customer. Returns
+/// the <see cref="Customer"/> resource directly (synchronous — not a long-running operation).
+/// </summary>
+public sealed record ImportCustomerRequest
+{
+    /// <summary>The customer's primary domain (one identifier option).</summary>
+    public string? Domain { get; init; }
+
+    /// <summary>The customer's Cloud Identity id (one identifier option).</summary>
+    public string? CloudIdentityId { get; init; }
+
+    /// <summary>The customer's primary admin email (one identifier option).</summary>
+    public string? PrimaryAdminEmail { get; init; }
+
+    /// <summary>Optional transfer auth token when importing a customer owned by another reseller.</summary>
+    public string? AuthToken { get; init; }
+
+    /// <summary>When true, re-import overwrites an already-imported customer instead of failing.</summary>
+    public bool OverwriteIfExists { get; init; }
+
+    /// <summary>
+    /// Optional Cloud Identity id of the channel partner that will own the customer. Ignored for the
+    /// account-level import; the link-scoped import derives the owner from the route.
+    /// </summary>
+    public string? ChannelPartnerId { get; init; }
+}
+
 /// <summary>A SKU a customer is eligible to purchase. Maps to <c>customers.listPurchasableSkus</c>.</summary>
 public sealed record PurchasableSku
 {

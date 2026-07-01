@@ -425,6 +425,21 @@ public sealed partial class GoogleChannelClient
     /// <summary>Builds the full channel partner link resource name for a short link id.</summary>
     private string ChannelPartnerLinkName(string linkId) => $"{_options.AccountName}/channelPartnerLinks/{linkId}";
 
+    /// <summary>Builds the full resource name for a customer owned by a channel partner link.</summary>
+    private string ChannelPartnerCustomerName(string linkId, string customerId) =>
+        $"{ChannelPartnerLinkName(linkId)}/customers/{customerId}";
+
+    /// <summary>Builds a Google import-customer request body from the shared import contract.</summary>
+    private static GoogleCloudChannelV1ImportCustomerRequest ToGoogleImportCustomerRequest(ImportCustomerRequest request) => new()
+    {
+        Domain = string.IsNullOrWhiteSpace(request.Domain) ? null : request.Domain,
+        CloudIdentityId = string.IsNullOrWhiteSpace(request.CloudIdentityId) ? null : request.CloudIdentityId,
+        PrimaryAdminEmail = string.IsNullOrWhiteSpace(request.PrimaryAdminEmail) ? null : request.PrimaryAdminEmail,
+        AuthToken = string.IsNullOrWhiteSpace(request.AuthToken) ? null : request.AuthToken,
+        OverwriteIfExists = request.OverwriteIfExists,
+        ChannelPartnerId = string.IsNullOrWhiteSpace(request.ChannelPartnerId) ? null : request.ChannelPartnerId
+    };
+
     /// <summary>Builds the full customer repricing config resource name for a short config id.</summary>
     private string CustomerRepricingConfigName(string customerId, string configId) =>
         $"{CustomerName(customerId)}/customerRepricingConfigs/{configId}";

@@ -28,7 +28,7 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 | **Customers → transfer in / to Google** | `accounts.customers.transferEntitlements` / `.transferEntitlementsToGoogle` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/transferEntitlements) |
 | **Channel partners → links list / detail** | `accounts.channelPartnerLinks.list` / `.get` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/list) |
 | **Channel partners → invite / change state** | `accounts.channelPartnerLinks.create` / `.patch` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/create) |
-| **Channel partners → customers under a partner** | `accounts.channelPartnerLinks.customers.list` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers/list) |
+| **Channel partners → customers under a partner (list + full CRUD)** | `accounts.channelPartnerLinks.customers.list` / `.get` / `.create` / `.patch` / `.delete` / `.import` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers/list) |
 | **Eventing → Operations (track / cancel)** | `operations.get` / `operations.cancel` (`operations.list` returns 501) | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/operations/get) |
 | **Eventing → Notifications (subscriber admin)** | `accounts.register` / `accounts.unregister` / `accounts.listSubscribers` | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts/listSubscribers) |
 | **Home → dashboard summary** | *derived* (`accounts.customers.list` + `accounts.customers.entitlements.list` + `accounts.offers.list` + `accounts.channelPartnerLinks.list`) | [docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.customers/list) |
@@ -92,12 +92,18 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > Identity comes back) read the links, `POST /` invites a reseller (the link starts in the `INVITED`
 > state), `PUT /{id}/state` changes the link state (`patch` with
 > `update_mask = channel_partner_link.link_state`), and `GET /{id}/customers` lists the customers the
-> partner owns (`channelPartnerLinks.customers.list`). All reads are cached in Redis for `CacheSeconds`
-> with the list + per-link caches invalidated on create/patch. The Blazor **Partner links** list
+> partner owns (`channelPartnerLinks.customers.list`). The partner's customers are also fully managed
+> in place: `GET /{id}/customers/{customerId}` (get), `POST /{id}/customers` (create),
+> `PUT /{id}/customers/{customerId}` (update), `DELETE /{id}/customers/{customerId}` (delete) and
+> `POST /{id}/customers/import` (import a Cloud Identity customer) — the n-tier CRUD mirroring the
+> direct `accounts.customers.*` flow, each returning the `Customer` directly (no LROs). All reads are
+> cached in Redis for `CacheSeconds` with the list + per-link caches invalidated on create/patch and
+> the partner-customer caches invalidated on every customer mutation. The Blazor **Partner links** list
 > (`/channel-partner-links`), **Invite partner** form (`/channel-partner-links/new`) and **link
 > detail** page (`/channel-partner-links/{id}`) live under a new **Channel partners** nav group; the
 > detail page surfaces the invitation URI, partner Cloud Identity, an Activate/Suspend control, and
-> the partner's customers. **Correlation:** a link's short id is exactly a customer's
+> the partner's customers with **Add**/**Import**/**Edit**/**Delete** actions (create/edit reuse the
+> `linkId`-aware customer form; import uses an inline dialog). **Correlation:** a link's short id is exactly a customer's
 > `ChannelPartnerId`, so the customer-detail page links to its owning partner and the link-detail page
 > lists (and links back to) the partner's customers. Unlike entitlements/transfers, `create`/`patch`
 > return the link resource directly (not LROs), so the UI updates immediately.
@@ -248,7 +254,7 @@ resource directly (not long-running operations).
 | [`accounts.channelPartnerLinks.get`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/get) | Get a channel partner link. **(implemented)** |
 | [`accounts.channelPartnerLinks.create`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/create) | Initiate a distributor↔reseller link. **(implemented)** |
 | [`accounts.channelPartnerLinks.patch`](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks/patch) | Update a channel partner link. **(implemented)** |
-| `accounts.channelPartnerLinks.customers.*` | Manage customers under a channel partner ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers)). `list` is **(implemented)**; `create`/`import`/`get`/`patch`/`delete` are the full n-tier customer CRUD — **planned in [todo.md §12.1](todo.md)** (highest-value remaining item; turns partner-owned customers from read-only into fully managed). None are LROs. |
+| `accounts.channelPartnerLinks.customers.*` | Manage customers under a channel partner ([docs](https://docs.cloud.google.com/channel/docs/reference/rest/v1/accounts.channelPartnerLinks.customers)). `list`/`get`/`create`/`patch`/`delete`/`import` are **all now (implemented)** — full n-tier customer CRUD (see [todo.md §12.1](todo.md)); partner-owned customers are fully managed from the link-detail page. None are LROs. |
 
 ### Repricing (rebilling margin)
 

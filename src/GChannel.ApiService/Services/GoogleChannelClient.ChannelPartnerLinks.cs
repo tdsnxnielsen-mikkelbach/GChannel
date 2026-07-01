@@ -366,4 +366,94 @@ public sealed partial class GoogleChannelClient
 
         return new CustomersResult { Customers = customers };
     }
+
+    public async Task<Customer> GetChannelPartnerCustomerAsync(string linkId, string customerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var response = await service.Accounts.ChannelPartnerLinks.Customers
+            .Get(ChannelPartnerCustomerName(linkId, customerId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapCustomer(response);
+    }
+
+    public async Task<Customer> CreateChannelPartnerCustomerAsync(string linkId, SaveCustomerRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.OrgDisplayName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Domain);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = ToGoogleCustomer(request);
+        body.Domain = request.Domain;
+
+        logger.LogInformation(
+            "Creating customer {Org} ({Domain}) under channel partner link {Link}",
+            request.OrgDisplayName, request.Domain, linkId);
+
+        var response = await service.Accounts.ChannelPartnerLinks.Customers
+            .Create(body, ChannelPartnerLinkName(linkId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapCustomer(response);
+    }
+
+    public async Task<Customer> UpdateChannelPartnerCustomerAsync(string linkId, SaveCustomerRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.OrgDisplayName);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = ToGoogleCustomer(request);
+
+        var patch = service.Accounts.ChannelPartnerLinks.Customers
+            .Patch(body, ChannelPartnerCustomerName(linkId, request.Id!));
+        // Restrict the update to editable fields so the immutable domain/cloud-identity are untouched
+        // (mirrors the direct-customer update mask).
+        patch.UpdateMask = "org_display_name,org_postal_address,primary_contact_info,language_code";
+
+        var response = await patch.ExecuteAsync(cancellationToken);
+        return MapCustomer(response);
+    }
+
+    public async Task DeleteChannelPartnerCustomerAsync(string linkId, string customerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        await service.Accounts.ChannelPartnerLinks.Customers
+            .Delete(ChannelPartnerCustomerName(linkId, customerId))
+            .ExecuteAsync(cancellationToken);
+    }
+
+    public async Task<Customer> ImportChannelPartnerCustomerAsync(string linkId, ImportCustomerRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(linkId);
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAccountConfigured();
+        using var service = CreateService();
+
+        var body = ToGoogleImportCustomerRequest(request);
+
+        logger.LogInformation(
+            "Importing customer ({Identifier}) under channel partner link {Link}",
+            request.Domain ?? request.CloudIdentityId ?? request.PrimaryAdminEmail, linkId);
+
+        var response = await service.Accounts.ChannelPartnerLinks.Customers
+            .Import(body, ChannelPartnerLinkName(linkId))
+            .ExecuteAsync(cancellationToken);
+
+        return MapCustomer(response);
+    }
 }

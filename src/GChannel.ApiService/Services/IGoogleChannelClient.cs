@@ -118,6 +118,22 @@ public interface IGoogleChannelClient
     /// <summary>Lists the customers owned by a channel partner link (<c>accounts.channelPartnerLinks.customers.list</c>).</summary>
     Task<CustomersResult> ListChannelPartnerCustomersAsync(string linkId, CancellationToken cancellationToken);
 
+    /// <summary>Gets a single customer owned by a channel partner link (<c>accounts.channelPartnerLinks.customers.get</c>).</summary>
+    Task<Customer> GetChannelPartnerCustomerAsync(string linkId, string customerId, CancellationToken cancellationToken);
+
+    /// <summary>Creates a customer under a channel partner link (<c>accounts.channelPartnerLinks.customers.create</c>).</summary>
+    Task<Customer> CreateChannelPartnerCustomerAsync(string linkId, SaveCustomerRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Updates a customer owned by a channel partner link (<c>accounts.channelPartnerLinks.customers.patch</c>).</summary>
+    Task<Customer> UpdateChannelPartnerCustomerAsync(string linkId, SaveCustomerRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Deletes a customer owned by a channel partner link (<c>accounts.channelPartnerLinks.customers.delete</c>).</summary>
+    Task DeleteChannelPartnerCustomerAsync(string linkId, string customerId, CancellationToken cancellationToken);
+
+    /// <summary>Imports a pre-existing Cloud Identity customer under a channel partner link
+    /// (<c>accounts.channelPartnerLinks.customers.import</c>). Returns the customer directly (not an LRO).</summary>
+    Task<Customer> ImportChannelPartnerCustomerAsync(string linkId, ImportCustomerRequest request, CancellationToken cancellationToken);
+
     /// <summary>Lists a customer's repricing configs (<c>customers.customerRepricingConfigs.list</c>).</summary>
     Task<RepricingConfigsResult> ListCustomerRepricingConfigsAsync(string customerId, CancellationToken cancellationToken);
 

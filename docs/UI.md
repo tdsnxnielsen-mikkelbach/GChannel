@@ -128,7 +128,9 @@ When a customer already has Google subscriptions (e.g. with another reseller), t
 ## 8. Channel partners and repricing
 
 - **Channel partners → Partner links** (`/channel-partner-links`) — see your channel partner links;
-  open one to see (and link back to) the **customers** it owns.
+  open one to see (and link back to) the **customers** it owns. From the link detail page you can
+  **Add** a new customer, **Import** an existing Cloud Identity customer, or **Edit** / **Delete** the
+  partner's customers directly (n-tier customer management).
 - **Channel partners → Invite partner** (`/channel-partner-links/new`) — invite a new partner / change
   link state.
 - **Repricing** — adjust your rebilling margin:

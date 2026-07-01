@@ -73,6 +73,75 @@ public static class ChannelPartnerLinksEndpoints
             .WithName("ListChannelPartnerCustomers")
             .WithSummary("Lists the customers owned by a channel partner link.");
 
+        group.MapGet("/{linkId}/customers/{customerId}", (
+                string linkId,
+                string customerId,
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                IOptions<GoogleChannelOptions> options,
+                CancellationToken cancellationToken) =>
+                CachedAsync(cache, CustomerCacheKey(linkId, customerId), options.Value.CacheSeconds,
+                    () => channel.GetChannelPartnerCustomerAsync(linkId, customerId, cancellationToken), cancellationToken))
+            .WithName("GetChannelPartnerCustomer")
+            .WithSummary("Gets a single customer owned by a channel partner link.");
+
+        group.MapPost("/{linkId}/customers", async (
+                string linkId,
+                SaveCustomerRequest request,
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                CancellationToken cancellationToken) =>
+            {
+                var created = await channel.CreateChannelPartnerCustomerAsync(linkId, request, cancellationToken);
+                await InvalidateCustomersAsync(cache, linkId, created.Id, cancellationToken);
+                return Results.Created($"/api/channel-partner-links/{linkId}/customers/{created.Id}", created);
+            })
+            .WithName("CreateChannelPartnerCustomer")
+            .WithSummary("Creates a customer under a channel partner link.");
+
+        group.MapPut("/{linkId}/customers/{customerId}", async (
+                string linkId,
+                string customerId,
+                SaveCustomerRequest request,
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                CancellationToken cancellationToken) =>
+            {
+                var updated = await channel.UpdateChannelPartnerCustomerAsync(linkId, request with { Id = customerId }, cancellationToken);
+                await InvalidateCustomersAsync(cache, linkId, customerId, cancellationToken);
+                return Results.Ok(updated);
+            })
+            .WithName("UpdateChannelPartnerCustomer")
+            .WithSummary("Updates a customer owned by a channel partner link.");
+
+        group.MapDelete("/{linkId}/customers/{customerId}", async (
+                string linkId,
+                string customerId,
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                CancellationToken cancellationToken) =>
+            {
+                await channel.DeleteChannelPartnerCustomerAsync(linkId, customerId, cancellationToken);
+                await InvalidateCustomersAsync(cache, linkId, customerId, cancellationToken);
+                return Results.NoContent();
+            })
+            .WithName("DeleteChannelPartnerCustomer")
+            .WithSummary("Deletes a customer owned by a channel partner link.");
+
+        group.MapPost("/{linkId}/customers/import", async (
+                string linkId,
+                ImportCustomerRequest request,
+                IGoogleChannelClient channel,
+                IDistributedCache cache,
+                CancellationToken cancellationToken) =>
+            {
+                var imported = await channel.ImportChannelPartnerCustomerAsync(linkId, request, cancellationToken);
+                await InvalidateCustomersAsync(cache, linkId, imported.Id, cancellationToken);
+                return Results.Created($"/api/channel-partner-links/{linkId}/customers/{imported.Id}", imported);
+            })
+            .WithName("ImportChannelPartnerCustomer")
+            .WithSummary("Imports a pre-existing Cloud Identity customer under a channel partner link.");
+
         group.MapPost("/", async (
                 CreateChannelPartnerLinkRequest request,
                 IGoogleChannelClient channel,
@@ -121,6 +190,19 @@ public static class ChannelPartnerLinksEndpoints
     private static string GetCacheKey(string linkId) => $"channel-partner-links:get:{linkId}";
 
     private static string CustomersCacheKey(string linkId) => $"channel-partner-links:{linkId}:customers";
+
+    private static string CustomerCacheKey(string linkId, string customerId) =>
+        $"channel-partner-links:{linkId}:customers:{customerId}";
+
+    /// <summary>Drops the cached partner-customer list and a specific customer after a mutation.</summary>
+    private static async Task InvalidateCustomersAsync(IDistributedCache cache, string linkId, string customerId, CancellationToken cancellationToken)
+    {
+        await cache.RemoveAsync(CustomersCacheKey(linkId), cancellationToken);
+        if (!string.IsNullOrEmpty(customerId))
+        {
+            await cache.RemoveAsync(CustomerCacheKey(linkId, customerId), cancellationToken);
+        }
+    }
 
     /// <summary>
     /// Projects a §10 read-model customer row owned by a partner link onto the shared

@@ -124,6 +124,14 @@ public static class ApiRoutes
     /// <summary>Lists the customers owned by a channel partner link.</summary>
     public static string ChannelPartnerCustomers(string linkId) => $"/api/channel-partner-links/{linkId}/customers";
 
+    /// <summary>A single customer owned by a channel partner link (get/update/delete).</summary>
+    public static string ChannelPartnerCustomer(string linkId, string customerId) =>
+        $"/api/channel-partner-links/{linkId}/customers/{customerId}";
+
+    /// <summary>Imports a pre-existing Cloud Identity customer under a channel partner link.</summary>
+    public static string ChannelPartnerCustomerImport(string linkId) =>
+        $"/api/channel-partner-links/{linkId}/customers/import";
+
     // §10 read-model estate views: server-side paged/sorted/filtered queries against SQL, plus a
     // "refresh now" action that prioritises a link/customer to the front of the sync queue.
 

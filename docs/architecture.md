@@ -208,11 +208,17 @@ A distributor links a downstream reseller (a *channel partner*) to their account
 be owned by that partner. Links live at the **account** level (not under a customer), so they are
 rooted off `/api/channel-partner-links` and managed by `IGoogleChannelClient`'s
 `ListChannelPartnerLinksAsync` / `GetChannelPartnerLinkAsync` / `CreateChannelPartnerLinkAsync` /
-`UpdateChannelPartnerLinkStateAsync` / `ListChannelPartnerCustomersAsync`.
+`UpdateChannelPartnerLinkStateAsync` / `ListChannelPartnerCustomersAsync`, plus the n-tier customer
+CRUD `GetChannelPartnerCustomerAsync` / `CreateChannelPartnerCustomerAsync` /
+`UpdateChannelPartnerCustomerAsync` / `DeleteChannelPartnerCustomerAsync` /
+`ImportChannelPartnerCustomerAsync`.
 
 - **Endpoints.** `GET /api/channel-partner-links` (list), `POST /api/channel-partner-links` (invite),
   `GET /api/channel-partner-links/{id}` (get), `PUT /api/channel-partner-links/{id}/state` (change
-  state) and `GET /api/channel-partner-links/{id}/customers`. Reads are cached in Redis for
+  state) and the partner-customer routes nested under `/{id}/customers`:
+  `GET` (list), `GET /{customerId}` (get), `POST` (create), `PUT /{customerId}` (update),
+  `DELETE /{customerId}` (delete) and `POST /customers/import` (import a Cloud Identity customer).
+  Reads are cached in Redis for
   `CacheSeconds`; the list + per-link caches are invalidated on create/patch. List/get use the **FULL**
   view so the partner's Cloud Identity info comes back for display.
 - **Lifecycle.** `create` always starts the link in the `INVITED` state; the partner accepts via the
@@ -222,7 +228,13 @@ rooted off `/api/channel-partner-links` and managed by `IGoogleChannelClient`'s
 - **Pages.** A **Partner links** list (`/channel-partner-links`), an **Invite partner** form
   (`/channel-partner-links/new`) and a **link detail** page (`/channel-partner-links/{id}`) under a new
   **Channel partners** nav group. The detail page shows the invitation URI, partner Cloud Identity,
-  state control, and the customers the partner owns.
+  state control, and the customers the partner owns — with **Add customer** / **Import customer**
+  actions and per-row **Edit** / **Delete**. Create/edit reuse `CustomerForm.razor` (made `linkId`-aware
+  via a `?linkId=` query param so saves/loads route through the partner endpoints and return to the
+  link); import uses an inline dialog (domain / Cloud Identity id / primary admin email + overwrite).
+  Partner-customer mutations invalidate the `channel-partner-links:{linkId}:customers[:{customerId}]`
+  caches and let the read-model sync converge; all partner-customer calls return the `Customer`
+  directly (no LROs).
 - **Correlation.** A link's short id is exactly a customer's `ChannelPartnerId` (§2): the
   **Customer detail** page shows a *Channel partner* row linking to the owning link (or "Direct (no
   partner)"), and the **link detail** page lists the partner's customers via

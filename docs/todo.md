@@ -722,12 +722,12 @@ above on top, so a user sees the same shape they know from the console plus comp
 
 ## 12. Remaining stable `v1` surface (customer provisioning &amp; n-tier customer management)
 
-> **Status:** proposed — not implemented. This section closes the last gaps between the app and the
-> **stable `v1`** Cloud Channel API (excluding the deprecated `accounts.reports.*`/`reportJobs.*` and
-> the alpha-only items in §8). See [api-surface.md](api-surface.md) for the full cross-check that
-> produced this list. Ordered by value: the n-tier customer CRUD (§12.1) is the biggest coherent
-> addition; provisioning/import (§12.2) hangs off pages that already exist; the rest (§12.3–§12.4) are
-> niche or doc-hygiene only.
+> **Status:** §12.1 (n-tier customer CRUD) is **implemented**; §12.2–§12.4 remain proposed. This
+> section closes the last gaps between the app and the **stable `v1`** Cloud Channel API (excluding the
+> deprecated `accounts.reports.*`/`reportJobs.*` and the alpha-only items in §8). See
+> [api-surface.md](api-surface.md) for the full cross-check that produced this list. Ordered by value:
+> the n-tier customer CRUD (§12.1) is the biggest coherent addition; provisioning/import (§12.2) hangs
+> off pages that already exist; the rest (§12.3–§12.4) are niche or doc-hygiene only.
 >
 > **Convention reminder.** Every phase follows the established layering: shared contracts in
 > `GChannel.Shared/Contracts/*.cs` + `ApiRoutes`, client methods on `IGoogleChannelClient` /
@@ -744,10 +744,31 @@ a customer **directly under a channel partner**. This adds the full CRUD, mirror
 management already shipped under `accounts.customers.*` (§2). None of these calls are long-running — all
 return the `Customer` resource directly (except `delete`, which returns empty).
 
-- [ ] **Get / create / update / delete a partner's customer** —
+- [x] **Get / create / update / delete a partner's customer** —
   `accounts.channelPartnerLinks.customers.{get,create,patch,delete}`.
-- [ ] **Import a partner's customer** — `accounts.channelPartnerLinks.customers.import` (pre-transfer,
+- [x] **Import a partner's customer** — `accounts.channelPartnerLinks.customers.import` (pre-transfer,
   from an existing Cloud Identity id or domain).
+
+> **Implemented.** N-tier customer CRUD is live end-to-end and mirrors the direct-customer flow (§2):
+> new `ImportCustomerRequest` contract (`GChannel.Shared/Contracts/Customers.cs`, reused later by
+> §12.2); nested routes `ChannelPartnerCustomer(linkId, customerId)` +
+> `ChannelPartnerCustomerImport(linkId)` alongside the existing `ChannelPartnerCustomers(linkId)`
+> (`ApiRoutes`); five client methods on `IGoogleChannelClient` /
+> `GoogleChannelClient.ChannelPartnerLinks.cs`
+> (`Get/Create/Update/Delete/ImportChannelPartnerCustomerAsync`) reusing the existing
+> `MapCustomer`/`ToGoogleCustomer` helpers plus a new `ChannelPartnerCustomerName` resolver and a
+> `ToGoogleImportCustomerRequest` mapper (`Mapping.cs`), with the patch scoped to the same editable
+> field mask as the direct update so the immutable domain is untouched; the
+> `GET/POST/PUT/DELETE /{linkId}/customers[/ {customerId}|/import]` endpoints on
+> `ChannelPartnerLinksEndpoints.cs` (reads cached, mutations invalidate the
+> `channel-partner-links:{linkId}:customers[:{customerId}]` caches and let the §10 sync converge); five
+> typed `GChannelApiClient` methods; and the UI wiring on `ChannelPartnerLinkDetail.razor` — header
+> **Add customer** / **Import customer** buttons plus per-row **Edit**/**Delete** actions, with
+> create/edit reusing `CustomerForm.razor` (now `linkId`-aware via a `?linkId=` query param that routes
+> saves/loads through the partner endpoints and returns to the link) and an inline import dialog
+> (domain / Cloud Identity id / primary admin email + overwrite). A created/imported customer's
+> `ChannelPartnerId` still equals the link's short id, so the customer-detail **Channel partner** row
+> keeps working unchanged.
 
 **Implementation plan:**
 

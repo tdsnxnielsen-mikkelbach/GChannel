@@ -112,7 +112,13 @@ else
     [SupplyParameterFromQuery(Name = "domain")]
     public string? Domain { get; set; }
 
+    /// <summary>When set, the form manages a customer owned by this channel partner link (n-tier).</summary>
+    [SupplyParameterFromQuery(Name = "linkId")]
+    public string? LinkId { get; set; }
+
     private bool IsEdit => !string.IsNullOrEmpty(Id);
+
+    private bool IsPartner => !string.IsNullOrEmpty(LinkId);
 
     private MudForm _form = null!;
     private readonly CustomerEditModel _model = new();
@@ -145,7 +151,9 @@ else
         _loading = true;
         try
         {
-            var customer = await Api.GetCustomerAsync(Id!);
+            var customer = IsPartner
+                ? await Api.GetChannelPartnerCustomerAsync(LinkId!, Id!)
+                : await Api.GetCustomerAsync(Id!);
             if (customer is not null)
             {
                 _model.OrgDisplayName = customer.OrgDisplayName ?? string.Empty;
@@ -185,12 +193,16 @@ else
         try
         {
             var request = _model.ToRequest(Id);
-            var saved = IsEdit
-                ? await Api.UpdateCustomerAsync(Id!, request)
-                : await Api.CreateCustomerAsync(request);
+            var saved = IsPartner
+                ? (IsEdit
+                    ? await Api.UpdateChannelPartnerCustomerAsync(LinkId!, Id!, request)
+                    : await Api.CreateChannelPartnerCustomerAsync(LinkId!, request))
+                : (IsEdit
+                    ? await Api.UpdateCustomerAsync(Id!, request)
+                    : await Api.CreateCustomerAsync(request));
 
             Snackbar.Add(IsEdit ? "Customer updated." : "Customer created.", Severity.Success);
-            Nav.NavigateTo(saved is not null ? $"/customers/{saved.Id}" : "/customers");
+            Nav.NavigateTo(IsPartner ? $"/channel-partner-links/{LinkId}" : (saved is not null ? $"/customers/{saved.Id}" : "/customers"));
         }
         catch (Exception ex)
         {
@@ -203,7 +215,9 @@ else
     }
 
     private void Cancel() =>
-        Nav.NavigateTo(IsEdit ? $"/customers/{Id}" : "/customers");
+        Nav.NavigateTo(IsPartner
+            ? $"/channel-partner-links/{LinkId}"
+            : (IsEdit ? $"/customers/{Id}" : "/customers"));
 
     private sealed class CustomerEditModel
     {
