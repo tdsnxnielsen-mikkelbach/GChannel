@@ -83,7 +83,7 @@ else
             @if (_billingAccounts is { Count: > 0 })
             {
                 <MudSelect T="string" Label="Billing account" @bind-Value="_billingAccount"
-                           Dense="true" Class="mb-4" Required="true"
+                           Dense="true" Class="mb-4" Required="true" data-walkthrough="pe-billing"
                            HelperText="This SKU is billed against a Google Cloud billing account.">
                     @foreach (var account in _billingAccounts)
                     {
@@ -149,6 +149,7 @@ else
         new(null, "Purchase an entitlement", "This short tour shows how to assign a SKU to the customer."),
         new("[data-walkthrough=\"pe-product\"]", "1. Choose a product", "Select a product; eligible SKUs then load for it."),
         new("[data-walkthrough=\"pe-seats\"]", "2. Set the seats", "After picking a SKU and Offer, enter how many licensed seats to buy."),
+        new("[data-walkthrough=\"pe-billing\"]", "Billing account (GCP SKUs)", "Some Google Cloud / n-tier SKUs are billed against a billing account. This picker appears only for those SKUs; ordinary SKUs skip it."),
         new("[data-walkthrough=\"pe-submit\"]", "3. Purchase", "Submit the order — Google provisions it asynchronously; track it under Operations."),
     ];
 

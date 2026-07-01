@@ -192,12 +192,13 @@ else
                 </MudText>
             </CardHeaderContent>
             <CardHeaderActions>
+                <GuidedWalkthrough Id="partner-customers" Steps="_walkthrough" Class="mr-2" />
                 <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="mr-2"
                            StartIcon="@Icons.Material.Filled.CloudDownload"
-                           OnClick="OpenImportDialog" Disabled="@_busy">Import customer</MudButton>
+                           OnClick="OpenImportDialog" Disabled="@_busy" data-walkthrough="pc-import">Import customer</MudButton>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
                            StartIcon="@Icons.Material.Filled.PersonAdd"
-                           OnClick="AddCustomer" Disabled="@_busy">Add customer</MudButton>
+                           OnClick="AddCustomer" Disabled="@_busy" data-walkthrough="pc-add">Add customer</MudButton>
             </CardHeaderActions>
         </MudCardHeader>
         <MudCardContent>
@@ -207,7 +208,7 @@ else
             }
             else if (_customers is { Count: > 0 })
             {
-                <MudTable Items="_customers" Hover="true" Elevation="0" Dense="true">
+                <MudTable Items="_customers" Hover="true" Elevation="0" Dense="true" data-walkthrough="pc-table">
                     <HeaderContent>
                         <MudTh>Organization</MudTh>
                         <MudTh>Domain</MudTh>
@@ -275,6 +276,15 @@ else
     private bool _customersLoading = true;
     private bool _valueLoading = true;
     private bool _busy;
+
+    // §9 onboarding: walkthrough for the §12.1 n-tier customer CRUD on this page.
+    private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
+    [
+        new(null, "Manage this partner's customers", "You can create, import, edit and remove customers that sit directly under this channel partner (n-tier)."),
+        new("[data-walkthrough=\"pc-add\"]", "Add a customer", "Create a brand-new customer owned by this partner — same form as a direct customer, but attributed to this link."),
+        new("[data-walkthrough=\"pc-import\"]", "Import a customer", "Bring in a customer that already has a Cloud Identity (by domain, Cloud Identity id, or admin email)."),
+        new("[data-walkthrough=\"pc-table\"]", "Edit or remove", "Each row deep-links to the customer and offers Edit / Delete actions scoped to this partner."),
+    ];
 
     private bool _importOpen;
     private readonly ImportCustomerModel _import = new();

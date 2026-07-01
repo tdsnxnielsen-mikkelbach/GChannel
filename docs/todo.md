@@ -15,7 +15,7 @@ detail, rationale and per-phase breakdown.
 | Roadmap — Channel API capabilities (§1–§8) | §1–§7 implemented; §8 deferred (alpha-only) | [todos/roadmap.md](todos/roadmap.md) |
 | Known placeholders | Implemented (dashboard summary) | [todos/known-placeholders.md](todos/known-placeholders.md) |
 | Notes | Reference | [todos/notes.md](todos/notes.md) |
-| 9. User onboarding | Complete (Phases 1–4) | [todos/09-user-onboarding.md](todos/09-user-onboarding.md) |
+| 9. User onboarding | Complete (Phases 1–4) + per-feature coverage matrix &amp; new-feature convention | [todos/09-user-onboarding.md](todos/09-user-onboarding.md) |
 | 10. Persistent read-model | Complete (Phases 1–5; snapshots optional) | [todos/10-persistent-read-model.md](todos/10-persistent-read-model.md) |
 | 11. Pricing &amp; billing | Complete in-scope; Phase 4 (BigQuery) deferred | [todos/11-pricing-and-billing.md](todos/11-pricing-and-billing.md) |
 | 12. Remaining stable `v1` surface | §12.1–12.4 complete (§12.4 doc-only) | [todos/12-remaining-v1-surface.md](todos/12-remaining-v1-surface.md) |

@@ -89,3 +89,49 @@ domain → create a customer → purchase an entitlement) without reading docs.
 > the nav + app bar. Phase 3: per-workflow walkthroughs (Cloud Identity, new-customer — input-gated,
 > purchase). Phase 4: ambient rebilling-basis tooltips + auto-dismissing nav feature beacons.
 
+### Onboarding coverage by feature
+
+The onboarding toolkit has four surfaces: the **dashboard checklist** (`OnboardingPanel.razor`), the
+app-wide **product tour** (`OnboardingTourService`, nav + app bar), page-scoped **guided walkthroughs**
+(`GuidedWalkthrough` + `data-walkthrough` hooks), and **feature beacons** (`FeatureBeacon`, pulsing
+"new" dots that dismiss on click or first visit). This matrix tracks what each shipped feature uses so
+gaps are visible; **every new feature must add at least one appropriate surface** (see convention
+below).
+
+| Feature (section) | Onboarding surface |
+| --- | --- |
+| First sign-in orientation (§9) | Welcome modal + product tour |
+| Dashboard setup progress (§9) | Checklist (verify-domain, create-customer, buy-entitlement, eventing) |
+| Cloud Identity check (§2) | Guided walkthrough (`cloud-identity`, auto-start) |
+| Create a customer (§2) | Guided walkthrough (`customer-new`, input-gated) |
+| Purchase an entitlement (§3) | Guided walkthrough (`purchase-entitlement`) |
+| Catalog / offers / SKU groups (§1) | Product-tour nav step |
+| Transfers (§4) | Product-tour nav step (Customers) |
+| Repricing / rebilling margin (§6) | Ambient `MudTooltip` (rebilling-basis info icon) |
+| Operations & Notifications (§7) | Nav **feature beacons** (`operations-v1`, `notifications-v1`) |
+| Estimated value / product mix (§11) | Ambient tooltip on the **Product mix** panel (raw-ID fallback explainer) |
+| N-tier customer CRUD (§12.1) | Guided walkthrough (`partner-customers`) on the channel-partner-link detail |
+| Customer import (§12.2) | Feature beacon (`import-customer-v1`) on the Customers list |
+| Provision Cloud Identity (§12.2) | Feature beacon (`provision-cloud-identity-v1`) on the customer detail |
+| Eligible billing accounts (§12.3) | Extra step in the `purchase-entitlement` walkthrough (`pe-billing`) |
+| `v1` doc-hygiene non-implementations (§12.4) | n/a (no UI) |
+
+### Convention: new features ship with onboarding
+
+Every new user-facing feature must include onboarding as part of its definition of done. Pick the
+lightest surface that fits:
+
+- **New top-level page or nav entry** → add a **product-tour** step (a `data-onboarding` hook + a line
+  in `OnboardingTourService.Steps`) and, if the page is a multi-step workflow, a page-scoped
+  **`GuidedWalkthrough`** with `data-walkthrough` hooks.
+- **New action/button/dialog on an existing page** → add a **`FeatureBeacon`** next to it (wrap the
+  control in a `position:relative` inline-flex span) or extend that page's existing walkthrough with a
+  new step (`data-walkthrough` hook + `WalkthroughStep`; steps whose target is absent are skipped, so
+  conditional controls are safe).
+- **New field or an unfamiliar concept** → add an ambient **`MudTooltip`** info icon.
+- **New first-run-relevant milestone** → add a **checklist** step in `OnboardingPanel.Steps`.
+
+Keep step copy short and drive it from [UI.md](UI.md) so docs and the in-app tour stay in sync;
+persist any per-user completion via `OnboardingStateService` (browser `ProtectedLocalStorage`).
+
+

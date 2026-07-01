@@ -35,8 +35,11 @@ else
                        Href="@($"/customers/{_customer.Id}/repricing")">Repricing</MudButton>
             @if (string.IsNullOrEmpty(_customer.CloudIdentityId))
             {
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddBusiness"
-                           OnClick="OpenProvisionDialog">Provision Cloud Identity</MudButton>
+                <div style="position:relative; display:inline-flex">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddBusiness"
+                               OnClick="OpenProvisionDialog">Provision Cloud Identity</MudButton>
+                    <FeatureBeacon Id="provision-cloud-identity-v1" Tooltip="New: create a Cloud Identity for this customer" />
+                </div>
             }
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
                        Href="@($"/customers/edit/{_customer.Id}")">Edit</MudButton>

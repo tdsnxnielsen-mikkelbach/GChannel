@@ -10,11 +10,14 @@
 <div class="d-flex justify-space-between align-center mb-4">
     <MudText Typo="Typo.h4">Customers</MudText>
     <div class="d-flex align-center" style="gap:8px">
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.MoveToInbox"
-                   OnClick="OpenImportDialog">
-            Import customer
-        </MudButton>
+        <div style="position:relative; display:inline-flex">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.MoveToInbox"
+                       OnClick="OpenImportDialog">
+                Import customer
+            </MudButton>
+            <FeatureBeacon Id="import-customer-v1" Tooltip="New: import a customer that already has a Cloud Identity" />
+        </div>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.PersonAdd"
                    Href="/customers/new">
