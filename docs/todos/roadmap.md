@@ -231,6 +231,6 @@ breaking-change risk:
   tracking sales opportunities.
 - [ ] **Provisionable Cloud Identity types** — `accounts.listProvisionableCloudIdentityTypes`
   to drive the customer-creation UX (shows when a transfer is required). Plan +
-  GA-interim note in [14-provisionable-cloud-identity-types.md](14-provisionable-cloud-identity-types.md).
+  GA-interim note in [13-provisionable-cloud-identity-types.md](13-provisionable-cloud-identity-types.md).
 - [ ] **Assign channel partner to entitlement** — `entitlements.assignChannelPartner` for n-tier.
 

@@ -1,6 +1,6 @@
 > Part of the [GChannel TODO index](../todo.md).
 
-## 14. Provisionable Cloud Identity types (sharpen create-vs-transfer)
+## 13. Provisionable Cloud Identity types (sharpen create-vs-transfer)
 
 > **Status:** Deferred — **alpha-only**. The value is small and, crucially, the method is **not in the
 > stable `v1` API**: `accounts:listProvisionableCloudIdentityTypes` exists **only in `v1alpha1`**

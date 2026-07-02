@@ -465,7 +465,16 @@ offer-id→(effective seat price, currency) lookup from a single `offers.list`, 
 repricing mark-up per entitlement (a per-customer `customerRepricingConfigs` override wins, else the
 owning link's `CHANNEL_PARTNER`-granularity `channelPartnerRepricingConfigs` mark-up, else 0 / pass-through);
 both are stored on `EntitlementRecord` (`UnitPrice`, `Currency`, `RepricingPercent`). All of this is
-best-effort, so a pricing/repricing failure never blocks the estate sync. The `/summary` read-model
+best-effort, so a pricing/repricing failure never blocks the estate sync. **`lookupOffer` price fallback:**
+the account-wide `offers.list` sometimes doesn't contain the specific offer a customer's entitlement was
+purchased on (offer churn / legacy / sub-reseller), so those entitlements would otherwise store
+`UnitPrice = 0` and show blank *Est. monthly* everywhere the read-model feeds — even though the
+entitlement **detail** page can price them because it uses `entitlements.lookupOffer` (the exact offer).
+To close that gap the sync falls back to a best-effort per-entitlement `lookupOffer` for **active,
+seat-bearing** entitlements the `offers.list` pass couldn't price, and stores the resolved price on the
+row. It is **self-limiting** (only unpriced actives with `seats > 0`) and **one-time** (a prior resolved
+`UnitPrice > 0` is kept, not re-fetched each cycle), so the list/customer/estate views roll up the same
+figure the detail page shows. The `/summary` read-model
 overlay then rolls active, priced entitlements up into `DashboardEstateValue` — estimated monthly
 **wholesale cost** (`Σ price × seats`, what the reseller pays Google), **repriced revenue**
 (`Σ price × seats × (1 + percent/100)`, what end customers are billed) and **margin** (revenue − cost).

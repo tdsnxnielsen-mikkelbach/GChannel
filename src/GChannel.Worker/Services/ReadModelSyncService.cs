@@ -505,11 +505,23 @@ public sealed class ReadModelSyncService(
             row.PlanDescription = BuildPlanDescription(
                 e.Commitment,
                 e.OfferId is not null && offerCatalog.Plans.TryGetValue(e.OfferId, out var plan) ? plan : default);
+            // Prior stored price — captured before overwrite so a value the lookupOffer fallback resolved
+            // on an earlier cycle isn't lost, and so we only pay that per-entitlement call once.
+            var existingUnitPrice = row.UnitPrice;
+            var existingCurrency = row.Currency;
             if (e.OfferId is not null && offerCatalog.Pricing.TryGetValue(e.OfferId, out var price))
             {
                 row.UnitPrice = price.Unit;
                 row.Currency = price.Currency;
                 if (isActive) { diag.ActivePriced++; }
+            }
+            else if (isActive && existingUnitPrice > 0m)
+            {
+                // Already resolved on a prior cycle via the lookupOffer fallback below; keep it instead of
+                // re-fetching every cycle (offers.list still can't price this offer — churn/legacy).
+                row.UnitPrice = existingUnitPrice;
+                row.Currency = existingCurrency;
+                diag.ActivePriced++;
             }
             else
             {
@@ -517,19 +529,52 @@ public sealed class ReadModelSyncService(
                 row.Currency = null;
                 if (isActive)
                 {
-                    diag.ActiveUnpriced++;
-                    if (e.OfferId is null)
+                    // Fallback: the account's offers.list can't price this active entitlement even though
+                    // entitlements.lookupOffer (the same source the entitlement detail page prices from)
+                    // can — the backing offer isn't in the sellable offers.list (churn/legacy/sub-reseller).
+                    // Do a best-effort per-entitlement lookupOffer so the price rolls up to the read-model
+                    // list/customer/estate views like the detail page. Gated on seats>0 (skips free/0-seat
+                    // entitlements like Cloud Identity Free that never roll up a cost) and on the value being
+                    // unresolved (guarded above), so it's a one-time, bounded cost per priceable entitlement.
+                    if (e.OfferId is not null && seats > 0)
                     {
+                        try
+                        {
+                            var lookedUp = await client.LookupEntitlementOfferAsync(customerId, e.Id, ct);
+                            var seat = lookedUp.Pricing.FirstOrDefault(p =>
+                                string.Equals(p.ResourceType, "SEAT", StringComparison.OrdinalIgnoreCase))
+                                ?? lookedUp.Pricing.FirstOrDefault();
+                            if ((seat?.EffectivePrice ?? seat?.BasePrice) is { } money)
+                            {
+                                row.UnitPrice = money.Value;
+                                row.Currency = money.CurrencyCode;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogDebug(ex, "Offer-price fallback (lookupOffer) failed for entitlement {Entitlement}; leaving unpriced.", e.Id);
+                        }
+                    }
+
+                    if (row.UnitPrice > 0m)
+                    {
+                        diag.ActivePriced++;
+                    }
+                    else if (e.OfferId is null)
+                    {
+                        diag.ActiveUnpriced++;
                         diag.ActiveWithoutOfferId++;
                     }
                     else if (offerCatalog.OfferNames.ContainsKey(e.OfferId))
                     {
-                        // Offer IS in the account's offers.list but exposes no SEAT/base price.
+                        // Offer IS in the account's offers.list but exposes no SEAT/base price (and lookupOffer didn't either).
+                        diag.ActiveUnpriced++;
                         diag.ListedWithoutPrice[e.OfferId] = diag.ListedWithoutPrice.GetValueOrDefault(e.OfferId) + 1;
                     }
                     else
                     {
                         // Offer the entitlement references is absent from the account's offers.list (churn/legacy/sub-reseller).
+                        diag.ActiveUnpriced++;
                         diag.MissingFromCatalog[e.OfferId] = diag.MissingFromCatalog.GetValueOrDefault(e.OfferId) + 1;
                     }
                 }
