@@ -50,6 +50,44 @@ scheduled query per day (or per invoice-close) keeps scan cost bounded and predi
    (preferred, reusing the same WIF pattern as the Pub/Sub path), or with a service-account key.
 3. Data lags ~a day (export latency) and finalises around invoice close — surface it as such.
 
+### Cost &amp; cost-control (BigQuery charges)
+
+Enabling the export is **free**, but the data then lives in BigQuery, so there are two BigQuery charges
+(separate from the Cloud Channel API, which is unaffected):
+
+| Cost | What it is | Rough scale (region-dependent) |
+| --- | --- | --- |
+| Export process | Google writing billing data into your dataset | **Free** |
+| Storage | Export tables sitting in BigQuery | ~$0.02/GB-month active, ~$0.01 long-term; **first 10 GB/month free** |
+| Query (on-demand) | Bytes **scanned** per query (not rows returned) | ~$5–6.25 per **TiB** scanned; **first 1 TiB/month free** |
+| Streaming inserts | N/A — the export is batch | none |
+
+The design below keeps this at or near **$0** for a small–mid reseller (within the free tiers) and
+**modest + predictable** for large estates. The variable cost is query **bytes scanned**, controlled by:
+
+- **Never query on the request path.** One scheduled background job (daily) queries BigQuery and rolls
+  results into SQL; all UI/endpoints read the cheap SQL, so users browsing the dashboard scan **zero**
+  BigQuery bytes.
+- **Partition filters + cursor.** Each run filters on the export's date partition
+  (`_PARTITIONTIME`/`usage_start_time`) and only scans **new** partitions since `BillingSyncCursors`, so
+  a run scans a day's slice, not the whole history.
+- **Column pruning.** `SELECT` only the needed columns (BigQuery is columnar → fewer columns = fewer
+  bytes).
+- **Optional GCP-side rollup.** A BigQuery **scheduled query / materialized view** can pre-aggregate so
+  the app reads a tiny curated table.
+
+Hard caps (belt-and-braces):
+
+- Set **maximum bytes billed** on each query (BigQuery aborts if it would exceed it) — wire it to the
+  `appsettings.json` scanned-bytes ceiling below.
+- Set **custom cost quotas** per project/user on the billing account.
+- (Overkill here, but possible) switch to **capacity/slot reservations** for flat-rate instead of
+  per-TiB.
+
+> BigQuery pricing and free tiers vary by region and change over time — confirm current numbers on the
+> [BigQuery pricing page](https://cloud.google.com/bigquery/pricing). With the levers above this stays a
+> cents-to-a-few-dollars/month reconciliation cost, not a meaningful operating expense.
+
 ### Configuration (new `azd` parameters, disabled by default)
 
 Mirror the existing optional-feature wiring (AppHost `AddParameter` → env var → `GoogleChannel:*`), all
