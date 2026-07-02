@@ -28,6 +28,40 @@ credential surface), which is why it is its own section.
   **customer detail** value panel, and the **channel-partner-link** reseller value panel — each gaining
   an *Actual (invoiced)* column beside *Estimated (list)*.
 
+### Calculated margin (earned vs. commercial)
+
+The export gives **actual cost — what *we* (the direct partner) pay Google** after Google's channel
+discount. It contains **no sell price** (neither ours to our customers nor an indirect reseller's to
+their end customers) — those live in external margin/billing systems, which is exactly why the §6
+repricing configs read **0%** (margin is applied elsewhere). An indirect reseller's *own* margin to
+their end customer lives only in the reseller's system and is not derivable by anyone, so it stays out
+of scope. Two margins are relevant here — one calculable now, one only if we can supply sell prices:
+
+1. **Earned / back-end margin — fully calculable, no config needed.**
+   `list price (§11 catalog) − actual cost (BigQuery)`. This is the margin Google's partner discount
+   gives us versus catalog list, derivable everywhere we pay Google and **independent of any repricing
+   config** — so it shows a meaningful, non-zero margin even when the §6 config is 0% because we apply
+   our margin in a different system. **This is the primary new capability** unlocked by §13 and should be
+   surfaced as an *Earned margin* figure on the dashboard **and** the channel-partner-link detail page
+   (for indirect, only where we own the billing — see caveat).
+2. **Commercial margin (direct) — uncertain at this stage; only if we can supply our sell price.**
+   `our sell price − actual cost`. Google doesn't know our sell price, so this needs the sell price
+   brought into the app: an optional **per-customer markup % / price override** entered in the UI, or an
+   **import from our margin system** (CSV/API). We're not yet sure we can obtain those numbers, so treat
+   this as a **later, optional** add-on (Phase 4e) on top of the earned margin — not part of the initial
+   scope.
+
+> **Billing-ownership caveat.** Whether the export even includes an indirect reseller's consumption
+> depends on who owns the billing account (distributor-owned billing vs. per-reseller billing). Confirm
+> from the export's customer / sub-account identifiers before relying on indirect earned margin.
+
+> **Onboarding (ship with the feature).** Per the §9 convention, when this is implemented add onboarding
+> surfaces for the new concepts: an ambient `MudTooltip` distinguishing **Earned margin** (list − actual
+> cost, from Google's discount) from the **configured (§6) margin**, and a `FeatureBeacon` on the new
+> *Actual* / *Earned margin* columns (plus a short walkthrough/tooltip for sell-price entry if the
+> optional commercial margin lands later). Record it in the coverage matrix in
+> [09-user-onboarding.md](09-user-onboarding.md).
+
 ### Design — mirror the §10 read-model, don't query BigQuery per request
 
 BigQuery bills by **bytes scanned**, so it must **never** be queried on the request path. Instead reuse
@@ -119,6 +153,11 @@ Additive tables created idempotently in `Program.cs EnsureReadModelTablesAsync` 
   see risks).
 - `BillingSyncCursors` — last successful query window + partition high-water mark, so each run only
   scans new partitions.
+- `SellPriceOverrides` *(optional, Phase 4e — for commercial margin)* — `Scope` (customer id or link
+  id), `Markup` (decimal %) **or** `UnitSellPrice` + `Currency`, `Source` (`manual`/`import`),
+  `UpdatedUtc`. Lets a user record the sell price/markup they apply in an external system so a
+  **commercial margin** (`sell − actual cost`) can be computed; absent → only the **earned margin**
+  (list − actual cost) is shown.
 
 ### Layering plan (matches the established convention)
 
@@ -138,8 +177,17 @@ Additive tables created idempotently in `Program.cs EnsureReadModelTablesAsync` 
 - [ ] **Phase 4d — UI overlay with a hard boundary.** Add an **Actual (invoiced)** column/section beside
   the existing **Estimated (list)** on the Home estate-value panel, `CustomerDetail` value panel and
   `ChannelPartnerLinkDetail` reseller-value panel; show the **variance** (actual − estimate) and an
-  *as-of / invoice-month* badge. Never merge the two numbers into one figure; keep the disclaimer that
-  estimates are list-price and actuals are invoiced-with-lag.
+  *as-of / invoice-month* badge. Also surface **Earned margin** = `list price (§11) − actual cost`
+  (Google's channel discount; non-zero even when the §6 repricing config is 0% because margin is applied
+  externally) on the dashboard and the channel-partner-link detail page — labelled distinctly from the
+  configured §6 margin. Never merge estimate and actual into one figure; keep the disclaimer that
+  estimates are list-price and actuals are invoiced-with-lag. **Ship onboarding** with this phase
+  (tooltip/beacon distinguishing earned vs. configured margin — see the onboarding note above).
+- [ ] **Phase 4e — Commercial margin (optional).** Add `SellPriceOverrides` (per-customer / per-link
+  markup % or sell price, entered in the UI or imported), then compute **Commercial margin** =
+  `sell − actual cost` alongside the earned margin. Addresses the "we add reseller margin in a different
+  system" case; the indirect reseller's *own* downstream margin stays out of scope (not in any data we
+  can see). Ship the sell-price entry with an onboarding walkthrough/tooltip.
 
 ### Risks / caveats
 
