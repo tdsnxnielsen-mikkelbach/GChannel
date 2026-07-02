@@ -331,15 +331,45 @@
 
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" GutterBottom="true">Customers onboarded</MudText>
+            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+                <div>
+                    <MudText Typo="Typo.h6">Customers onboarded</MudText>
+                    @if (_monthly.Count > 0 && MonthlyRangeTitle is { Length: > 0 } title)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@title</MudText>
+                    }
+                </div>
+                @if (_allMonthly.Count > 1)
+                {
+                    <div class="d-flex align-center gap-2 flex-wrap">
+                        <MudSelect T="string" Value="_rangeFrom" ValueChanged="OnRangeFromChanged" Label="From"
+                                   Dense="true" Margin="Margin.Dense" Style="min-width:130px">
+                            @foreach (var m in _allMonthly)
+                            {
+                                <MudSelectItem Value="@m.Key">@m.Label</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudSelect T="string" Value="_rangeTo" ValueChanged="OnRangeToChanged" Label="To"
+                                   Dense="true" Margin="Margin.Dense" Style="min-width:130px">
+                            @foreach (var m in _allMonthly)
+                            {
+                                <MudSelectItem Value="@m.Key">@m.Label</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudTooltip Text="Show the whole available period">
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="ResetRangeToAll">All</MudButton>
+                        </MudTooltip>
+                    </div>
+                }
+            </div>
             @if (_monthly.Count > 0)
             {
-                <ApexChart TItem="MonthlyPoint" Title="Last 6 months" Options="_monthlyOptions" @ref="_monthlyChart">
+                <ApexChart TItem="MonthlyPoint" Options="_monthlyOptions" @ref="_monthlyChart">
                     <ApexPointSeries TItem="MonthlyPoint"
                                      Items="_monthly"
                                      Name="Customers"
                                      SeriesType="SeriesType.Area"
-                                     XValue="@(p => p.Month)"
+                                     XValue="@(p => p.Label)"
                                      YValue="@(p => p.Customers)" />
                 </ApexChart>
             }
@@ -453,7 +483,7 @@
 
 @code {
     private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
-    private record MonthlyPoint(string Month, decimal Customers);
+    private record MonthlyPoint(string Key, string Label, decimal Customers);
     private record ProductSlice(string Product, decimal Count);
     private record ResellerSlice(string Reseller, decimal Customers, decimal Seats);
 
@@ -481,7 +511,12 @@
     private DashboardRefreshStatus? _status;
     private bool _overviewLoading = true;
     private bool _entitlementsLoading = true;
+    // The full onboarding history from the backend (oldest first) and the range-filtered subset the
+    // chart renders. The From/To selectors narrow the visible window without another backend call.
+    private readonly List<MonthlyPoint> _allMonthly = [];
     private readonly List<MonthlyPoint> _monthly = [];
+    private string? _rangeFrom;
+    private string? _rangeTo;
     private readonly List<ProductSlice> _products = [];
     private readonly List<ProductSlice> _directProducts = [];
     private readonly List<ProductSlice> _indirectProducts = [];
@@ -655,6 +690,94 @@
         }
     }
 
+    // Loads the full onboarding history into _allMonthly, initialises/repairs the selected From–To
+    // range against the available months (defaulting to the whole period), then applies the filter.
+    private void SetMonthlySeries(IReadOnlyList<DashboardMonthlyPoint> points)
+    {
+        _allMonthly.Clear();
+        foreach (var p in points)
+        {
+            var key = string.IsNullOrEmpty(p.MonthKey) ? p.Month : p.MonthKey;
+            var label = p.Year > 0 ? $"{p.Month} {p.Year}" : p.Month;
+            _allMonthly.Add(new MonthlyPoint(key, label, p.Customers));
+        }
+
+        var keys = _allMonthly.Select(m => m.Key).ToList();
+        if (keys.Count == 0)
+        {
+            _rangeFrom = _rangeTo = null;
+        }
+        else
+        {
+            // Keep any user-chosen range if it's still valid; otherwise default to the whole period.
+            if (_rangeFrom is null || !keys.Contains(_rangeFrom)) _rangeFrom = keys[0];
+            if (_rangeTo is null || !keys.Contains(_rangeTo)) _rangeTo = keys[^1];
+            if (string.CompareOrdinal(_rangeFrom, _rangeTo) > 0) (_rangeFrom, _rangeTo) = (keys[0], keys[^1]);
+        }
+
+        ApplyMonthlyRange();
+    }
+
+    // Filters _allMonthly into _monthly (the chart's series) by the selected From–To month keys.
+    private void ApplyMonthlyRange()
+    {
+        _monthly.Clear();
+        foreach (var m in _allMonthly)
+        {
+            if ((_rangeFrom is null || string.CompareOrdinal(m.Key, _rangeFrom) >= 0)
+                && (_rangeTo is null || string.CompareOrdinal(m.Key, _rangeTo) <= 0))
+            {
+                _monthly.Add(m);
+            }
+        }
+    }
+
+    // Caption under the chart title, e.g. "Feb 2023 – Jul 2026" (or a single month).
+    private string MonthlyRangeTitle =>
+        _monthly.Count == 0 ? ""
+        : _monthly[0].Label == _monthly[^1].Label ? _monthly[0].Label
+        : $"{_monthly[0].Label} – {_monthly[^1].Label}";
+
+    private Task OnRangeFromChanged(string? value)
+    {
+        _rangeFrom = value;
+        if (_rangeFrom is not null && _rangeTo is not null && string.CompareOrdinal(_rangeFrom, _rangeTo) > 0)
+        {
+            _rangeTo = _rangeFrom;
+        }
+        return UpdateMonthlyRangeAsync();
+    }
+
+    private Task OnRangeToChanged(string? value)
+    {
+        _rangeTo = value;
+        if (_rangeFrom is not null && _rangeTo is not null && string.CompareOrdinal(_rangeTo, _rangeFrom) < 0)
+        {
+            _rangeFrom = _rangeTo;
+        }
+        return UpdateMonthlyRangeAsync();
+    }
+
+    private Task ResetRangeToAll()
+    {
+        var keys = _allMonthly.Select(m => m.Key).ToList();
+        if (keys.Count > 0)
+        {
+            _rangeFrom = keys[0];
+            _rangeTo = keys[^1];
+        }
+        return UpdateMonthlyRangeAsync();
+    }
+
+    private async Task UpdateMonthlyRangeAsync()
+    {
+        ApplyMonthlyRange();
+        if (_monthlyChart is not null)
+        {
+            await _monthlyChart.UpdateSeriesAsync();
+        }
+    }
+
     private async Task LoadOverviewAsync(CancellationToken cancellationToken)
     {
         _overviewLoading = true;
@@ -662,11 +785,7 @@
         {
             _overview = await Api.GetDashboardOverviewAsync(cancellationToken);
 
-            _monthly.Clear();
-            foreach (var point in _overview?.CustomersOnboarded ?? [])
-            {
-                _monthly.Add(new MonthlyPoint(point.Month, point.Customers));
-            }
+            SetMonthlySeries(_overview?.CustomersOnboarded ?? []);
         }
         catch (Exception)
         {
@@ -689,11 +808,7 @@
 
             // The summary carries authoritative onboarding data too; refresh the chart from it in
             // case the overview cache lagged behind.
-            _monthly.Clear();
-            foreach (var point in _data?.CustomersOnboarded ?? [])
-            {
-                _monthly.Add(new MonthlyPoint(point.Month, point.Customers));
-            }
+            SetMonthlySeries(_data?.CustomersOnboarded ?? []);
 
             _products.Clear();
             foreach (var slice in _data?.ProductMix ?? [])
@@ -747,11 +862,7 @@
 
             _data = data;
 
-            _monthly.Clear();
-            foreach (var point in data.CustomersOnboarded)
-            {
-                _monthly.Add(new MonthlyPoint(point.Month, point.Customers));
-            }
+            SetMonthlySeries(data.CustomersOnboarded);
 
             _products.Clear();
             foreach (var slice in data.ProductMix)

@@ -50,7 +50,7 @@ public sealed record DashboardSummary
     /// </summary>
     public string? IncompleteReason { get; init; }
 
-    /// <summary>Customers onboarded per month over the trailing 6 months (oldest first).</summary>
+    /// <summary>Customers onboarded per month across the full available history (oldest first).</summary>
     public IReadOnlyList<DashboardMonthlyPoint> CustomersOnboarded { get; init; } = [];
 
     /// <summary>Active entitlements grouped by product (for the product-mix donut). Spans the whole estate (direct + indirect).</summary>
@@ -90,7 +90,7 @@ public sealed record DashboardOverview
     /// <summary>Channel partner links broken down by link state (ACTIVE, INVITED, SUSPENDED, …).</summary>
     public IReadOnlyList<DashboardChannelLinkState> ChannelLinkStates { get; init; } = [];
 
-    /// <summary>Customers onboarded per month over the trailing 6 months (oldest first).</summary>
+    /// <summary>Customers onboarded per month across the full available history (oldest first).</summary>
     public IReadOnlyList<DashboardMonthlyPoint> CustomersOnboarded { get; init; } = [];
 }
 
@@ -216,8 +216,15 @@ public sealed record DashboardChannelLinkState
 /// <summary>A single month bucket of onboarded customers.</summary>
 public sealed record DashboardMonthlyPoint
 {
+    /// <summary>Sortable, year-qualified month key, e.g. "2025-02" (yyyy-MM). Unique across years so the
+    /// UI can filter/select a date range; empty only on legacy cached payloads.</summary>
+    public string MonthKey { get; init; } = "";
+
     /// <summary>Abbreviated month label, e.g. "Jan".</summary>
     public required string Month { get; init; }
+
+    /// <summary>Calendar year of the bucket, e.g. 2025.</summary>
+    public int Year { get; init; }
 
     public int Customers { get; init; }
 }

@@ -39,7 +39,10 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
   when no repricing/rebilling is configured; a downstream reseller's own margin to *their* end customers
   is private and not exposed by the Channel API. These are *estimates from list pricing, not invoiced
   amounts*, and appear once the background read-model has priced your entitlements.
-- **Customers onboarded** — an area chart bucketing new customers into the trailing six months.
+- **Customers onboarded** — an area chart bucketing new customers by their create month across the
+  **full available history** (oldest first). Two **From** / **To** month selectors (defaulting to the
+  whole period) let you narrow to any sub-range of the available data; an **All** button resets to the
+  whole period.
 - **Product mix** — active entitlements grouped by product, shown as **two donuts** when the estate has
   reseller business: **Direct (your customers)** and **Via resellers (indirect)**. A direct-only estate
   collapses to a single donut. Product names are resolved from the account's `products.list`,

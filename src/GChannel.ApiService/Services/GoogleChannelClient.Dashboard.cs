@@ -421,22 +421,44 @@ public sealed partial class GoogleChannelClient
         return customers;
     }
 
-    /// <summary>Buckets customers into the trailing six months by their create time (oldest first).</summary>
+    /// <summary>
+    /// Buckets customers by their create month across the <b>full available history</b> — from the
+    /// earliest customer's month up to the current month (oldest first). The UI can then show the whole
+    /// period or a selectable sub-range. Falls back to the trailing 6 months when there is no data.
+    /// </summary>
     private static List<DashboardMonthlyPoint> BuildMonthlyOnboarded(IReadOnlyList<Customer> customers)
     {
+        // Ignore implausible dates (e.g. a corrupt MinValue) so one bad row can't blow the range out to
+        // thousands of months; Google Cloud customers can't predate ~2015.
+        var dated = customers
+            .Where(c => c.CreateTime is { Year: >= 2000 })
+            .Select(c => c.CreateTime!.Value)
+            .ToList();
+
         var now = DateTimeOffset.UtcNow;
-        var firstOfThisMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var lastMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
 
-        var points = new List<DashboardMonthlyPoint>(6);
-        for (var i = 5; i >= 0; i--)
+        DateTimeOffset firstMonth;
+        if (dated.Count > 0)
         {
-            var monthStart = firstOfThisMonth.AddMonths(-i);
-            var monthEnd = monthStart.AddMonths(1);
-            var count = customers.Count(c => c.CreateTime is { } t && t >= monthStart && t < monthEnd);
+            var earliest = dated.Min();
+            firstMonth = new DateTimeOffset(earliest.Year, earliest.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        }
+        else
+        {
+            firstMonth = lastMonth.AddMonths(-5);
+        }
 
+        var points = new List<DashboardMonthlyPoint>();
+        for (var m = firstMonth; m <= lastMonth; m = m.AddMonths(1))
+        {
+            var monthEnd = m.AddMonths(1);
+            var count = dated.Count(v => v >= m && v < monthEnd);
             points.Add(new DashboardMonthlyPoint
             {
-                Month = monthStart.ToString("MMM", CultureInfo.InvariantCulture),
+                MonthKey = m.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                Month = m.ToString("MMM", CultureInfo.InvariantCulture),
+                Year = m.Year,
                 Customers = count
             });
         }
