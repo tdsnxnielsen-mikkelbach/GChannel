@@ -258,6 +258,10 @@ public static class DashboardEndpoints
             .Where(c => !c.IsDeleted && c.OwningLinkId == null)
             .Select(c => c.CreateTime)
             .ToListAsync(cancellationToken);
+        var indirectOnboardDates = await db.CustomerRecords
+            .Where(c => !c.IsDeleted && c.OwningLinkId != null)
+            .Select(c => c.CreateTime)
+            .ToListAsync(cancellationToken);
 
         var summary = new DashboardSummary
         {
@@ -268,7 +272,7 @@ public static class DashboardEndpoints
             ActiveSeats = seats,
             SkippedCustomerCount = 0,
             IncompleteReason = null,
-            CustomersOnboarded = BuildMonthlyOnboardedFromDates(onboardDates),
+            CustomersOnboarded = BuildMonthlySeries(onboardDates, indirectOnboardDates),
             ProductMix = mix,
             DirectProductMix = directMix,
             IndirectProductMix = indirectMix,
@@ -299,6 +303,10 @@ public static class DashboardEndpoints
             .Where(c => !c.IsDeleted && c.OwningLinkId == null)
             .Select(c => c.CreateTime)
             .ToListAsync(cancellationToken);
+        var indirectOnboardDates = await db.CustomerRecords
+            .Where(c => !c.IsDeleted && c.OwningLinkId != null)
+            .Select(c => c.CreateTime)
+            .ToListAsync(cancellationToken);
 
         return new DashboardOverview
         {
@@ -308,35 +316,34 @@ public static class DashboardEndpoints
                 .OrderByDescending(s => s.Count)
                 .Select(s => new DashboardChannelLinkState { State = s.State, Count = s.Count })
                 .ToList(),
-            CustomersOnboarded = BuildMonthlyOnboardedFromDates(onboardDates)
+            CustomersOnboarded = BuildMonthlySeries(onboardDates, indirectOnboardDates)
         };
     }
 
     // Buckets customer create-times across the FULL available history (earliest customer month -> now,
-    // oldest first), matching the live path's BuildMonthlyOnboarded so the chart looks identical
-    // regardless of which path produced it. The UI can show the whole period or a selectable sub-range.
-    private static List<DashboardMonthlyPoint> BuildMonthlyOnboardedFromDates(IReadOnlyList<DateTimeOffset?> createTimes) =>
-        BuildMonthlySeries(createTimes);
-
-    // Shared month-bucketing for the read-model path. Spans the earliest plausible create month to the
-    // current month inclusive; each bucket carries a sortable yyyy-MM key + short label + year. Falls
-    // back to the trailing 6 months when there is no data.
-    private static List<DashboardMonthlyPoint> BuildMonthlySeries(IEnumerable<DateTimeOffset?> createTimes)
+    // oldest first), split into direct (account-owned) and indirect (reseller-owned) buckets so the
+    // chart can render a line per source. Matches the live path's BuildMonthlyOnboarded shape. The UI
+    // can show the whole period or a selectable sub-range.
+    private static List<DashboardMonthlyPoint> BuildMonthlySeries(
+        IEnumerable<DateTimeOffset?> directDates,
+        IEnumerable<DateTimeOffset?> indirectDates)
     {
         // Ignore implausible dates (e.g. a corrupt DateTimeOffset.MinValue) so one bad row can't blow the
         // range out to thousands of months; Google Cloud customers can't predate ~2015.
-        var dated = createTimes
-            .Where(t => t is { Year: >= 2000 })
-            .Select(t => t!.Value)
-            .ToList();
+        static List<DateTimeOffset> Clean(IEnumerable<DateTimeOffset?> dates) =>
+            dates.Where(t => t is { Year: >= 2000 }).Select(t => t!.Value).ToList();
+
+        var direct = Clean(directDates);
+        var indirect = Clean(indirectDates);
+        var all = direct.Concat(indirect).ToList();
 
         var now = DateTimeOffset.UtcNow;
         var lastMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
 
         DateTimeOffset firstMonth;
-        if (dated.Count > 0)
+        if (all.Count > 0)
         {
-            var earliest = dated.Min();
+            var earliest = all.Min();
             firstMonth = new DateTimeOffset(earliest.Year, earliest.Month, 1, 0, 0, 0, TimeSpan.Zero);
         }
         else
@@ -348,13 +355,16 @@ public static class DashboardEndpoints
         for (var m = firstMonth; m <= lastMonth; m = m.AddMonths(1))
         {
             var monthEnd = m.AddMonths(1);
-            var count = dated.Count(v => v >= m && v < monthEnd);
+            var d = direct.Count(v => v >= m && v < monthEnd);
+            var i = indirect.Count(v => v >= m && v < monthEnd);
             points.Add(new DashboardMonthlyPoint
             {
                 MonthKey = m.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                 Month = m.ToString("MMM", CultureInfo.InvariantCulture),
                 Year = m.Year,
-                Customers = count
+                DirectCustomers = d,
+                IndirectCustomers = i,
+                Customers = d + i
             });
         }
 

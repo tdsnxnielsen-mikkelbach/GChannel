@@ -459,6 +459,10 @@ public sealed partial class GoogleChannelClient
                 MonthKey = m.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                 Month = m.ToString("MMM", CultureInfo.InvariantCulture),
                 Year = m.Year,
+                // The live path enumerates only direct (account-owned) customers, so all onboarding here
+                // is direct; the indirect line is populated by the read-model path.
+                DirectCustomers = count,
+                IndirectCustomers = 0,
                 Customers = count
             });
         }

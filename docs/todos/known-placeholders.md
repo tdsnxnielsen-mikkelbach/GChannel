@@ -12,8 +12,9 @@
   `CacheSeconds`):
 
   - **§2 Customer management** (`accounts.customers.list`) — drives the **Customers** card and the
-    *customers onboarded* area chart (buckets customers by create month across the full available
-    history, with a selectable From/To month range).
+    *customers onboarded* line chart (buckets customers by create month across the full available
+    history, split into **Direct** and **Via resellers (indirect)** lines, with a selectable From/To
+    month range).
   - **§3 Entitlement lifecycle** (`entitlements.list`) — drives **Active SKUs** (active count),
     **Trials**, **Suspended**, active-seat totals, and the **Product mix** donut (active entitlements
     grouped by product, top 8).

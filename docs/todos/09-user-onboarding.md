@@ -110,6 +110,7 @@ below).
 | Repricing / rebilling margin (§6) | Ambient `MudTooltip` (rebilling-basis info icon) |
 | Operations & Notifications (§7) | Nav **feature beacons** (`operations-v1`, `notifications-v1`) |
 | Estimated value / product mix (§11) | Ambient tooltip on the **Product mix** panel (raw-ID fallback explainer) |
+| Dashboard chart controls (onboarding From/To range + Direct/Indirect lines, reseller customer-count label) | Self-describing via inline captions + chart legend (no separate surface; refinements to the tour-covered Dashboard) |
 | N-tier customer CRUD (§12.1) | Guided walkthrough (`partner-customers`) on the channel-partner-link detail |
 | Customer import (§12.2) | Feature beacon (`import-customer-v1`) on the Customers list |
 | Provision Cloud Identity (§12.2) | Feature beacon (`provision-cloud-identity-v1`) on the customer detail |

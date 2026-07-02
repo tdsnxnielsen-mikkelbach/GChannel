@@ -39,10 +39,11 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
   when no repricing/rebilling is configured; a downstream reseller's own margin to *their* end customers
   is private and not exposed by the Channel API. These are *estimates from list pricing, not invoiced
   amounts*, and appear once the background read-model has priced your entitlements.
-- **Customers onboarded** — an area chart bucketing new customers by their create month across the
-  **full available history** (oldest first). Two **From** / **To** month selectors (defaulting to the
-  whole period) let you narrow to any sub-range of the available data; an **All** button resets to the
-  whole period.
+- **Customers onboarded** — a line chart bucketing new customers by their create month across the
+  **full available history** (oldest first), with **two lines** when the estate has reseller business:
+  **Direct** (account-owned) and **Via resellers (indirect)**. A direct-only estate shows a single
+  **Customers** line. Two **From** / **To** month selectors (defaulting to the whole period) let you
+  narrow to any sub-range of the available data; an **All** button resets to the whole period.
 - **Product mix** — active entitlements grouped by product, shown as **two donuts** when the estate has
   reseller business: **Direct (your customers)** and **Via resellers (indirect)**. A direct-only estate
   collapses to a single donut. Product names are resolved from the account's `products.list`,
@@ -50,7 +51,10 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
   a few opaque product ids may remain for reseller-owned / churned products that aren't in the account
   catalog. On the live (non-read-model) path only direct business is enumerated, so the indirect donut
   is populated by the read-model path.
-- **Top indirect resellers** — your linked resellers ranked by downstream seats.
+- **Top indirect resellers** — your linked resellers ranked by total active **seats**; the number in
+  parentheses after each reseller name is that reseller's **customer count**. Seats count each
+  entitlement's licensed units (`num_units`, falling back to `max_units` for flexible/usage plans incl.
+  free/EDU editions), regardless of price — so free licences are included in the footprint.
 
 A status line under the title shows when the figures were last refreshed (e.g. "Updated 22 min ago ·
 took 433s · next refresh in 8 min"), a "Refreshing…" chip while a background run is in progress, or

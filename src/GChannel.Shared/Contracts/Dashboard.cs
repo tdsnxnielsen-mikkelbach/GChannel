@@ -226,7 +226,14 @@ public sealed record DashboardMonthlyPoint
     /// <summary>Calendar year of the bucket, e.g. 2025.</summary>
     public int Year { get; init; }
 
+    /// <summary>Total customers onboarded that month (direct + indirect).</summary>
     public int Customers { get; init; }
+
+    /// <summary>Direct (account-owned) customers onboarded that month.</summary>
+    public int DirectCustomers { get; init; }
+
+    /// <summary>Indirect (reseller-owned) customers onboarded that month.</summary>
+    public int IndirectCustomers { get; init; }
 }
 
 /// <summary>A product slice of the active-entitlement product mix.</summary>

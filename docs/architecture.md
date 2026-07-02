@@ -288,11 +288,14 @@ no Channel API reporting endpoint to call (`accounts.reports.*` / `accounts.repo
 read paths:
 
 - **Customers** (`accounts.customers.list`) drives the customer count and the *customers onboarded*
-  area chart, which buckets customers by their create month across the **full available history**
-  (earliest customer month → now). The chart carries a sortable `MonthKey` (yyyy-MM) + year per bucket
-  so the home page can offer From/To month selectors to view the whole period or any sub-range.
+  line chart, which buckets customers by their create month across the **full available history**
+  (earliest customer month → now). Each bucket carries a sortable `MonthKey` (yyyy-MM) + year plus
+  **direct** and **indirect** counts (split by `OwningLinkId`), so the home page renders a line per
+  source (Direct / Via resellers) and offers From/To month selectors to view the whole period or any
+  sub-range. The live (non-read-model) path only enumerates direct customers, so its indirect line is 0.
 - **Entitlements** (per-customer `entitlements.list`) drives the active / trial / suspended counters,
-  the active-seat total (`num_units`), and the *product mix* donut (active entitlements grouped by
+  the active-seat total (`num_units`, falling back to `max_units` for flexible/usage plans so
+  free/EDU-style seats aren't undercounted), and the *product mix* donut (active entitlements grouped by
   product, top 8). Product names are resolved from a product-id→name map seeded from the full
   `products.list` catalog (authoritative, so it covers products whose specific offer is no longer
   listed) and supplemented from `offers.list`, which also yields the offer-id→display map used by the

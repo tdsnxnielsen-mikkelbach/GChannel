@@ -367,10 +367,19 @@
                 <ApexChart TItem="MonthlyPoint" Options="_monthlyOptions" @ref="_monthlyChart">
                     <ApexPointSeries TItem="MonthlyPoint"
                                      Items="_monthly"
-                                     Name="Customers"
-                                     SeriesType="SeriesType.Area"
+                                     Name="@(HasIndirectOnboarding ? "Direct" : "Customers")"
+                                     SeriesType="SeriesType.Line"
                                      XValue="@(p => p.Label)"
-                                     YValue="@(p => p.Customers)" />
+                                     YValue="@(p => p.Direct)" />
+                    @if (HasIndirectOnboarding)
+                    {
+                        <ApexPointSeries TItem="MonthlyPoint"
+                                         Items="_monthly"
+                                         Name="Via resellers (indirect)"
+                                         SeriesType="SeriesType.Line"
+                                         XValue="@(p => p.Label)"
+                                         YValue="@(p => p.Indirect)" />
+                    }
                 </ApexChart>
             }
             else if (_overviewLoading)
@@ -452,7 +461,10 @@
 
     <MudItem xs="12">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" GutterBottom="true">Top indirect resellers</MudText>
+            <MudText Typo="Typo.h6">Top indirect resellers</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                Ranked by total active seats. The number in parentheses after each reseller is its customer count.
+            </MudText>
             @if (_resellers.Count > 0)
             {
                 <ApexChart TItem="ResellerSlice" Title="Seats per reseller" Options="_resellerOptions" @ref="_resellerChart">
@@ -460,7 +472,7 @@
                                      Items="_resellers"
                                      Name="Seats"
                                      SeriesType="SeriesType.Bar"
-                                     XValue="@(r => r.Reseller)"
+                                     XValue="@(r => $"{r.Reseller} ({r.Customers:0})")"
                                      YValue="@(r => r.Seats)" />
                 </ApexChart>
             }
@@ -483,7 +495,7 @@
 
 @code {
     private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
-    private record MonthlyPoint(string Key, string Label, decimal Customers);
+    private record MonthlyPoint(string Key, string Label, decimal Direct, decimal Indirect);
     private record ProductSlice(string Product, decimal Count);
     private record ResellerSlice(string Reseller, decimal Customers, decimal Seats);
 
@@ -699,7 +711,7 @@
         {
             var key = string.IsNullOrEmpty(p.MonthKey) ? p.Month : p.MonthKey;
             var label = p.Year > 0 ? $"{p.Month} {p.Year}" : p.Month;
-            _allMonthly.Add(new MonthlyPoint(key, label, p.Customers));
+            _allMonthly.Add(new MonthlyPoint(key, label, p.DirectCustomers, p.IndirectCustomers));
         }
 
         var keys = _allMonthly.Select(m => m.Key).ToList();
@@ -737,6 +749,11 @@
         _monthly.Count == 0 ? ""
         : _monthly[0].Label == _monthly[^1].Label ? _monthly[0].Label
         : $"{_monthly[0].Label} – {_monthly[^1].Label}";
+
+    // Show a second (indirect) onboarding line only when there is reseller-owned onboarding history, so a
+    // direct-only distributor keeps a single clean line. Based on the whole dataset, not the filtered
+    // range, so the series set stays stable as the user narrows From/To.
+    private bool HasIndirectOnboarding => _allMonthly.Any(m => m.Indirect > 0);
 
     private Task OnRangeFromChanged(string? value)
     {

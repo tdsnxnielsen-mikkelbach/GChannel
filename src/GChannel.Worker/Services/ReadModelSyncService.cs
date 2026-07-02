@@ -558,8 +558,13 @@ public sealed class ReadModelSyncService(
 
     private static long SeatsOf(Entitlement e)
     {
+        // Prefer num_units (commitment/seat offers); fall back to max_units (flexible/usage plans, incl.
+        // some free/EDU editions, store their seat cap here). Matches the Web UI's seat helper so the
+        // reseller seat ranking and per-customer seat counts aren't undercounted for flexible plans.
         var raw = e.Parameters.FirstOrDefault(p =>
-            string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value;
+            string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? e.Parameters.FirstOrDefault(p =>
+            string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
         return long.TryParse(raw, out var n) ? n : 0;
     }
 
