@@ -120,6 +120,97 @@ else
         }
     </MudPaper>
 
+    <MudCard Elevation="2" Class="mb-4">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <div class="d-flex justify-space-between align-center">
+                    <div>
+                        <MudText Typo="Typo.h6">Entitlements</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            The subscriptions this customer holds, with seats, estimated monthly cost, renewal date and auto-renew status.
+                        </MudText>
+                    </div>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward"
+                               Href="@($"/customers/{_customer.Id}/entitlements")">Manage</MudButton>
+                </div>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (_entitlementsLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_entitlements is { Count: > 0 })
+            {
+                <MudTable Items="_entitlements" Hover="true" Dense="true" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>Offer / SKU</MudTh>
+                        <MudTh>State</MudTh>
+                        <MudTh Style="text-align:right">Seats</MudTh>
+                        <MudTh Style="text-align:right">Est. monthly</MudTh>
+                        <MudTh>Renewal</MudTh>
+                        <MudTh>Auto-renew</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Offer / SKU">
+                            <MudLink Href="@($"/customers/{_customer!.Id}/entitlements/{context.Id}")">@OfferLabel(context)</MudLink>
+                            @if (!string.IsNullOrEmpty(context.ProductDisplayName ?? context.ProductId))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@(context.ProductDisplayName ?? context.ProductId)</MudText>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="State">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.ProvisioningState)">
+                                @(context.ProvisioningState ?? "—")
+                            </MudChip>
+                            @if (context.IsTrial)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">Trial</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Seats" Style="text-align:right">@(Seats(context) ?? "—")</MudTd>
+                        <MudTd DataLabel="Est. monthly" Style="text-align:right">
+                            @if (MonthlyEstimate(context) is { } v)
+                            {
+                                <MudTooltip Text="@EstimateBreakdown(context)"><span>@FormatMoney(v, context.PriceCurrency)</span></MudTooltip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Renewal">
+                            @if (context.Commitment?.EndTime is { } end)
+                            {
+                                <MudTooltip Text="@(context.PlanDescription ?? context.Commitment?.PaymentPlan)"><span>@end.ToString("yyyy-MM-dd")</span></MudTooltip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Auto-renew">
+                            @if (context.Commitment?.RenewalEnabled is { } renew)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(renew ? Color.Success : Color.Warning)">@(renew ? "On" : "Off")</MudChip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No entitlements yet. Use <MudLink Href="@($"/customers/{_customer.Id}/entitlements/new")">Purchase</MudLink> to sell this customer their first SKU.
+                </MudText>
+            }
+        </MudCardContent>
+    </MudCard>
+
     <MudGrid>
         <MudItem xs="12" md="6">
             <MudCard Elevation="2" Class="mb-4">
@@ -370,6 +461,9 @@ else
     private CustomerEstateValue? _value;
     private bool _valueLoading = true;
 
+    private IReadOnlyList<Entitlement>? _entitlements;
+    private bool _entitlementsLoading = true;
+
     private bool _provisionOpen;
     private bool _provisioning;
     private readonly ProvisionModel _provision = new();
@@ -385,6 +479,8 @@ else
         _expandedSkus.Clear();
         _value = null;
         _valueLoading = true;
+        _entitlements = null;
+        _entitlementsLoading = true;
 
         try
         {
@@ -426,11 +522,66 @@ else
             {
                 _valueLoading = false;
             }
+
+            try
+            {
+                var entitlements = await Api.ListEntitlementsAsync(Id);
+                _entitlements = entitlements?.Entitlements ?? [];
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
+                _entitlements = [];
+            }
+            finally
+            {
+                _entitlementsLoading = false;
+            }
         }
         else
         {
             _valueLoading = false;
+            _entitlementsLoading = false;
         }
+    }
+
+    // Prefer the friendly SKU/offer name resolved from the Catalog; fall back to the opaque id.
+    private static string OfferLabel(Entitlement e) =>
+        e.SkuDisplayName ?? e.OfferDisplayName ?? e.OfferId ?? e.Id;
+
+    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    {
+        "ACTIVE" => Color.Success,
+        "SUSPENDED" => Color.Warning,
+        "CANCELLED" or "CANCELED" => Color.Error,
+        "PENDING" => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string? Seats(Entitlement e) =>
+        e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
+        ?? e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
+
+    private static long SeatCount(Entitlement e) =>
+        long.TryParse(Seats(e), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0;
+
+    // Estimated monthly amount = unit price × seats × (1 + repricing markup). Null when unpriced.
+    private static decimal? MonthlyEstimate(Entitlement e)
+    {
+        if (e.UnitPrice is not { } unit || unit <= 0) return null;
+        var seats = SeatCount(e);
+        if (seats <= 0) return null;
+        var markup = 1 + ((e.RepricingPercent ?? 0m) / 100m);
+        return unit * seats * markup;
+    }
+
+    private static string EstimateBreakdown(Entitlement e)
+    {
+        var seats = SeatCount(e);
+        var pct = e.RepricingPercent ?? 0m;
+        var baseLine = $"{FormatMoney(e.UnitPrice ?? 0m, e.PriceCurrency)} × {seats} seat(s)";
+        var markupLine = pct != 0m ? $" + {pct:0.##}% markup" : string.Empty;
+        return $"Estimated from offer list pricing: {baseLine}{markupLine}. Not an invoiced figure.";
     }
 
     private static string FormatMoney(decimal value, string? currency) =>
