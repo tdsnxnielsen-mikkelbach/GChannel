@@ -230,6 +230,7 @@ breaking-change risk:
 - [ ] **Deal registration** — `opportunities.*` (create/get/patch/query) for submitting and
   tracking sales opportunities.
 - [ ] **Provisionable Cloud Identity types** — `accounts.listProvisionableCloudIdentityTypes`
-  to drive the customer-creation UX (shows when a transfer is required).
+  to drive the customer-creation UX (shows when a transfer is required). Plan +
+  GA-interim note in [14-provisionable-cloud-identity-types.md](14-provisionable-cloud-identity-types.md).
 - [ ] **Assign channel partner to entitlement** — `entitlements.assignChannelPartner` for n-tier.
 
