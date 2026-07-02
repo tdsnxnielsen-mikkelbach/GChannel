@@ -17,9 +17,8 @@ detail, rationale and per-phase breakdown.
 | Notes | Reference | [todos/notes.md](todos/notes.md) |
 | 9. User onboarding | Complete (Phases 1–4) + per-feature coverage matrix &amp; new-feature convention | [todos/09-user-onboarding.md](todos/09-user-onboarding.md) |
 | 10. Persistent read-model | Complete (Phases 1–5; snapshots optional) | [todos/10-persistent-read-model.md](todos/10-persistent-read-model.md) |
-| 11. Pricing &amp; billing | Complete in-scope; Phase 4 (BigQuery) planned in §13 | [todos/11-pricing-and-billing.md](todos/11-pricing-and-billing.md) |
+| 11. Pricing &amp; billing | Complete in-scope; Phase 4 (BigQuery) deferred (out of Channel API scope) | [todos/11-pricing-and-billing.md](todos/11-pricing-and-billing.md) |
 | 12. Remaining stable `v1` surface | §12.1–12.4 complete (§12.4 doc-only) | [todos/12-remaining-v1-surface.md](todos/12-remaining-v1-surface.md) |
-| 13. Billing export → BigQuery | Planned (real invoiced cost/revenue/margin; overlays §11 estimates) | [todos/13-billing-export-bigquery.md](todos/13-billing-export-bigquery.md) |
 | 14. Provisionable Cloud Identity types | Deferred (alpha-only; GA `checkCloudIdentityAccountsExist` covers the core decision) | [todos/14-provisionable-cloud-identity-types.md](todos/14-provisionable-cloud-identity-types.md) |
 
 ## Roadmap capabilities (§1–§8)
@@ -46,7 +45,7 @@ Full detail in [todos/11-pricing-and-billing.md](todos/11-pricing-and-billing.md
 | 1 — Map offer pricing | Implemented |
 | 2 — Per-entitlement cost | Implemented |
 | 3 — Estate rollups | Implemented |
-| 4 — Billing export (BigQuery) | Deferred (out of Channel API) — planned in [todos/13-billing-export-bigquery.md](todos/13-billing-export-bigquery.md) |
+| 4 — Billing export (BigQuery) | Deferred (out of Channel API scope) |
 | 5 — Customer list parity + search | Implemented |
 | 6 — Expandable subscription cards | Implemented |
 | 7 — Subscription detail | Implemented |

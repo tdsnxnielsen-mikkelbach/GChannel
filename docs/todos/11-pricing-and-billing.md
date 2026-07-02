@@ -89,9 +89,7 @@ dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
   per-reseller `WholesaleMonthly`/`MarginMonthly` to `TopIndirectResellers`. Home page shows an
   "Estimated estate value (monthly)" panel with the not-invoiced disclaimer.*
 - [ ] **Phase 4 — Billing export (optional, out of Channel API).** Document/integrate BigQuery partner
-  billing export for *actual* invoiced figures; clearly separated from API list pricing. **A concrete
-  implementation plan now lives in [13-billing-export-bigquery.md](13-billing-export-bigquery.md).**
-  *Deferred (not
+  billing export for *actual* invoiced figures; clearly separated from API list pricing. *Deferred (not
   blocking). The Channel API exposes **no** billing actuals (the `accounts.reports.*` reporting API was
   removed in `v1`; `queryEligibleBillingAccounts` returns eligibility, not money), so real invoiced
   totals only exist in the **Cloud Billing partner billing export → BigQuery** — a separate data source
