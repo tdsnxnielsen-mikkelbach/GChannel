@@ -1,5 +1,9 @@
 # Prerequisites & configuration
 
+> **Standing up a new country/region instance?** See the step-by-step
+> [regional deployment guide](regional-deployment.md), which walks through the Google Cloud console,
+> Workspace Admin, and Azure setup end to end. This page is the reference for individual settings.
+
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/)
@@ -45,6 +49,7 @@ optional too and enable [Pub/Sub notifications](#pubsub-notifications-7).
 | `GoogleChannel:UseReadModel` | `false` | Enables the §10 durable SQL read-model: the dashboard indirect estate, the customers/entitlement list pages and the estate value rollup are served from SQL (kept fresh by the incremental sync worker) instead of live Channel API fan-outs. Falls back to the live path before the first sync, so it is safe to toggle. |
 | `GoogleChannel:ReadModelLinksPerCycle` | `18` | How many of the **stalest** ACTIVE channel-partner links the sync worker fans out per cycle (`channelPartnerLinks.customers.list`) to refresh their indirect customer roster + `CustomerCount`. Sized to the `ListCustomers` per-minute quota so each cycle stays within budget; the whole estate is covered over several cycles. |
 | `GoogleChannel:ReadModelCustomersPerCycle` | `60` | How many of the **stalest** customers (direct **and** indirect) the worker syncs entitlements for per cycle, in one unified staleness-rotated pass. This is the only consumer of the contended `ListEntitlements` quota in the sync worker, kept separate from the cheap metadata/link fan-out so the indirect estate and per-link counts populate without waiting on entitlement quota. Raise it if your `ListEntitlements` quota allows; lower it under heavy 429s. |
+| `GoogleChannel:ReadModelDashboardCacheSeconds` | `20` | How long (seconds) the dashboard summary/overview **aggregated from the SQL read-model** is cached before recomputing. Kept short because aggregating the durably-synced tables is cheap (indexed SQL, no Channel API), so the dashboard always reflects the **full persisted estate** — including immediately after a redeploy — rather than the background worker's older warmed snapshot. The cache only deduplicates bursts of concurrent page loads/polls. Only applies when `UseReadModel` is on. Minimum 1. |
 | `GoogleChannel:ServiceAccountKeyJson` | _empty_ | Raw JSON of a Google service-account key used by the background refresher. Treat as a secret. |
 | `GoogleChannel:ServiceAccountKeyPath` | _empty_ | Alternative to `ServiceAccountKeyJson`: path to a service-account key file. |
 | `GoogleChannel:ImpersonateUser` | _empty_ | Reseller admin email the service account impersonates via domain-wide delegation (required for the background refresh). |

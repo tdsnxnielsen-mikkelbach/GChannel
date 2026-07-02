@@ -26,6 +26,7 @@ Open the `webfrontend` endpoint from the Aspire dashboard.
 | Architecture, container apps & secrets | [docs/architecture.md](docs/architecture.md) |
 | Prerequisites & configuration | [docs/configuration.md](docs/configuration.md) |
 | Running locally & deploying to Azure | [docs/deployment.md](docs/deployment.md) |
+| Deploying a new country/region instance | [docs/regional-deployment.md](docs/regional-deployment.md) |
 | Implemented API surface | [docs/api-surface.md](docs/api-surface.md) |
 | Roadmap & future work | [docs/todo.md](docs/todo.md) |
 

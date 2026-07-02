@@ -98,6 +98,12 @@ product mix) become simple `GROUP BY` queries.
 
 - [x] Dashboard `summary` + the indirect estate + **Top indirect resellers** chart read from SQL
   aggregates instead of the live fan-out; the fan-out is skipped when `UseReadModel` is on.
+- [x] Dashboard `/summary` + `/overview` aggregate **directly from SQL on the request path** (short
+  cache under `dashboard:summary:live` / `dashboard:overview:live`, TTL `ReadModelDashboardCacheSeconds`)
+  rather than serving the background worker's long-lived warmed snapshot — so the dashboard reflects the
+  **full estate already persisted in SQL immediately after a redeploy** instead of "starting over" from
+  the latest worker refresh. The read-model is durable (SQL, `EnsureCreated` never drops) and the sync
+  worker only adds **deltas**, so a redeploy resumes the staleness rotation without re-collecting.
 - [x] Customers and Channel-partner-links **list** pages can page/sort/filter server-side against SQL
   (removes the in-memory full-list load at scale).
 - [x] Every estate view shows an *as-of* timestamp; a **Refresh now** action can prioritise a specific

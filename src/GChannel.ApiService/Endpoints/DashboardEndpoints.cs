@@ -23,6 +23,15 @@ public static class DashboardEndpoints
     /// <summary>Redis key the cheap dashboard overview (count + onboarding) is cached under.</summary>
     public const string OverviewCacheKey = "dashboard:overview";
 
+    /// <summary>
+    /// Redis keys the §10 read-model dashboard summary/overview are cached under. Distinct from
+    /// <see cref="CacheKey"/> / <see cref="OverviewCacheKey"/> (which the background worker warms with a
+    /// long TTL for the live fan-out path) so the read-model endpoints serve a short-lived, always-current
+    /// SQL aggregation — reflecting the full durably-synced estate — rather than the worker's older snapshot.
+    /// </summary>
+    public const string LiveCacheKey = "dashboard:summary:live";
+    public const string LiveOverviewCacheKey = "dashboard:overview:live";
+
     /// <summary>Redis key the background refresher's run status (last run + in-progress flag) is stored under.</summary>
     public const string StatusKey = "dashboard:refresh:status";
 
@@ -48,15 +57,21 @@ public static class DashboardEndpoints
             {
                 try
                 {
-                    // §10 read-model: when enabled, the dashboard is built entirely from the durably
-                    // synced SQL tables (zero live Channel API fan-out), so the heavy entitlement work
-                    // only happens once in the read-model sync rather than competing for quota here.
-                    Func<Task<DashboardSummary>> factory = options.Value.UseReadModel
-                        ? () => BuildReadModelSummaryAsync(db, cancellationToken)
-                        : () => channel.GetDashboardSummaryAsync(cancellationToken);
+                    // §10 read-model: aggregate straight from the durably-synced SQL tables (cheap,
+                    // indexed, no Channel API fan-out) on a SHORT cache under a distinct "live" key, so
+                    // the dashboard always reflects the FULL persisted estate — including immediately
+                    // after a redeploy — instead of the background worker's older long-lived snapshot.
+                    // The live/fan-out path (read-model off) keeps its long worker-warmed cache to avoid
+                    // the expensive per-request aggregation.
+                    if (options.Value.UseReadModel)
+                    {
+                        return await CachedAsync(cache, LiveCacheKey,
+                            Math.Max(1, options.Value.ReadModelDashboardCacheSeconds),
+                            () => BuildReadModelSummaryAsync(db, cancellationToken), cancellationToken);
+                    }
 
                     return await CachedAsync(cache, CacheKey, options.Value.CacheSeconds,
-                        factory, cancellationToken);
+                        () => channel.GetDashboardSummaryAsync(cancellationToken), cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -77,12 +92,15 @@ public static class DashboardEndpoints
             {
                 try
                 {
-                    Func<Task<DashboardOverview>> factory = options.Value.UseReadModel
-                        ? () => BuildReadModelOverviewAsync(db, cancellationToken)
-                        : () => channel.GetDashboardOverviewAsync(cancellationToken);
+                    if (options.Value.UseReadModel)
+                    {
+                        return await CachedAsync(cache, LiveOverviewCacheKey,
+                            Math.Max(1, options.Value.ReadModelDashboardCacheSeconds),
+                            () => BuildReadModelOverviewAsync(db, cancellationToken), cancellationToken);
+                    }
 
                     return await CachedAsync(cache, OverviewCacheKey, options.Value.CacheSeconds,
-                        factory, cancellationToken);
+                        () => channel.GetDashboardOverviewAsync(cancellationToken), cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {

@@ -56,6 +56,11 @@ took 433s · next refresh in 8 min"), a "Refreshing…" chip while a background 
 If a banner says "N customers couldn't be loaded", the live aggregation hit its time budget; refresh
 or wait for the background refresh to warm the cache. Nothing is broken — it's a partial result.
 
+When the durable read-model is enabled the dashboard reads directly from SQL, so it shows the **full
+estate collected so far immediately** — including right after a redeploy — rather than restarting from
+the latest background refresh. The background sync keeps adding new data incrementally; it never
+re-collects what's already stored.
+
 ## 2. Check a domain (Cloud Identity)
 
 Before creating a customer, check whether their domain already has a Google Cloud Identity (which can
@@ -124,6 +129,12 @@ The customer detail page also shows an **Estimated monthly value** panel for tha
 priced subscriptions, broken into **Wholesale cost** (what you pay Google), **Repriced revenue** (what
 the customer is billed) and **Margin** — all on the same estimated, not-invoiced basis and shown in the
 customer's dominant currency.
+
+Below that, an **Entitlements** card lists the subscriptions this customer holds, each with its offer/SKU
+name (linking to the entitlement detail page), state, **seats**, **estimated monthly cost**, **renewal
+date** and **auto-renew** status (green **On** / amber **Off**, or “—” when not committed). Estimated
+cost, seats and auto-renew fill in once the background read-model has priced/synced the customer's
+entitlements. A **Manage** action opens the full entitlements page.
 
 ### Estate-wide entitlements list
 

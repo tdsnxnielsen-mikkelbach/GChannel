@@ -24,6 +24,10 @@ docker volume rm gchannel-sql-data gchannel-redis-data
 azd up
 ```
 
+> **First time / a new country or region?** Follow the end-to-end
+> [regional deployment guide](regional-deployment.md) (Google Cloud console + Workspace Admin +
+> Azure environment + parameters) before running `azd up`.
+
 `azd` provisions the Container Apps environment, **Azure Key Vault**, the serverless Azure SQL
 database (`GP_S_Gen5_2`, auto-pause after 60 min, min capacity 0.5) and Azure Managed Redis
 (`Balanced B0`), then deploys all three container apps. You will be prompted for `GoogleClientId`,

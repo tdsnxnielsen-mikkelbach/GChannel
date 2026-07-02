@@ -126,10 +126,23 @@ public sealed class DashboardRefreshService(
                     overview = await client.GetDashboardOverviewAsync(stoppingToken);
                 }
 
-                // Write both the live key (short TTL) and the long-lived "last known good" fallback so
-                // the endpoint can serve a result even when the live recompute later hits the quota.
-                await WarmAsync(DashboardEndpoints.CacheKey, summary, ttl, stoppingToken);
-                await WarmAsync(DashboardEndpoints.OverviewCacheKey, overview, ttl, stoppingToken);
+                // Write the cache the user-facing endpoint reads, plus the long-lived "last known
+                // good" fallback. Under the §10 read-model the endpoint serves from short-lived "live"
+                // keys (it recomputes cheaply from SQL so the dashboard always reflects the full
+                // persisted estate), so warm THOSE with the same short TTL — keeping the background
+                // compute useful (a pre-warm + stale fallback) instead of writing keys nothing reads.
+                // The live/fan-out path (read-model off) warms the long-lived keys as before.
+                if (opts.UseReadModel)
+                {
+                    var liveTtl = TimeSpan.FromSeconds(Math.Max(1, opts.ReadModelDashboardCacheSeconds));
+                    await WarmAsync(DashboardEndpoints.LiveCacheKey, summary, liveTtl, stoppingToken);
+                    await WarmAsync(DashboardEndpoints.LiveOverviewCacheKey, overview, liveTtl, stoppingToken);
+                }
+                else
+                {
+                    await WarmAsync(DashboardEndpoints.CacheKey, summary, ttl, stoppingToken);
+                    await WarmAsync(DashboardEndpoints.OverviewCacheKey, overview, ttl, stoppingToken);
+                }
 
                 // Record completion so the home page can show "Updated X ago".
                 lastCompletedUtc = DateTimeOffset.UtcNow;

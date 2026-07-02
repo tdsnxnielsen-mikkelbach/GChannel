@@ -171,7 +171,13 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > (from `accounts.customers.entitlements.list`, with `accounts.offers.list`/`accounts.products.list`
 > resolving friendly product labels). Those per-customer entitlement calls are paced under the
 > per-minute quota (`DashboardRequestsPerMinute`) and 429s are retried honouring `Retry-After`. Both
-> results are cached in Redis for `CacheSeconds`. A third cheap endpoint `GET /api/dashboard/status`
+> results are cached in Redis for `CacheSeconds`. When the §10 read-model is enabled these two endpoints
+> instead aggregate **directly from the durably-synced SQL tables** (`BuildReadModelSummaryAsync` /
+> `BuildReadModelOverviewAsync`, no live Channel API fan-out) behind a **short** cache under distinct
+> keys (`dashboard:summary:live` / `dashboard:overview:live`, TTL `ReadModelDashboardCacheSeconds`,
+> default 20s) — so the dashboard always reflects the **full estate already persisted in SQL**, including
+> immediately after a redeploy, rather than the background worker's older warmed snapshot. A third cheap
+> endpoint `GET /api/dashboard/status`
 > returns the background refresher's `DashboardRefreshStatus` (enabled / in-progress / last-completed /
 > duration / skipped / next-refresh estimate), which the home page polls every 30 s to show an
 > "Updated X ago · next refresh in X" / "Refreshing…" indicator and to redraw the figures live while a

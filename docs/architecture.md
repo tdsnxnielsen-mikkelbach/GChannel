@@ -349,6 +349,23 @@ loads both phases in `OnAfterRenderAsync(firstRender)` (prerender-safe), ties bo
 benign (no error toast on navigation away). Like the other pages it carries no hardcoded data — empty
 states render when there are no customers/entitlements.
 
+**Read-model dashboard read path (durable across redeploys).** When `UseReadModel` is on, the
+`GET /api/dashboard/summary` and `/overview` endpoints aggregate **directly from the SQL read-model**
+(`BuildReadModelSummaryAsync` / `BuildReadModelOverviewAsync`) rather than serving the background
+worker's long-lived `dashboard:summary` snapshot. Because that aggregation is cheap (indexed SQL, no
+Channel API fan-out), it runs on the request path behind a **short** cache under distinct keys
+(`dashboard:summary:live` / `dashboard:overview:live`, TTL `ReadModelDashboardCacheSeconds`, default
+20s). This means the dashboard always reflects the **full estate already persisted in SQL** — including
+**immediately after a redeploy** — instead of whatever partial/stale snapshot the worker last warmed;
+the short cache only deduplicates bursts of concurrent loads/polls. The read-model itself survives
+redeploys (SQL, `EnsureCreated` never drops) and the sync worker only ever adds **deltas** (incremental
+upserts), so a redeploy never "starts over" — the worker resumes its staleness rotation and the
+dashboard shows everything collected so far. The `DashboardRefreshService` still runs on this path (it
+pre-warms the same live keys with the short TTL and keeps the long-lived `:last` fallback + the
+`dashboard:refresh:status` chip fresh), but it is no longer the *source* of the figures. The live
+fan-out path (`UseReadModel` off) is unchanged: it keeps serving the long-lived worker-warmed
+`dashboard:summary` key to avoid the expensive per-request aggregation.
+
 ### Credential source &amp; optional background refresh
 
 `GoogleChannelClient` gets its credential from an injected `IGoogleChannelCredentialSource` rather than

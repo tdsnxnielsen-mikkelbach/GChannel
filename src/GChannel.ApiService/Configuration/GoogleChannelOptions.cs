@@ -136,6 +136,15 @@ public sealed class GoogleChannelOptions
     public int ReadModelCustomersPerCycle { get; set; } = 60;
 
     /// <summary>
+    /// §10 read-model. How long (seconds) the dashboard summary/overview aggregated from the SQL
+    /// read-model is cached before it is recomputed. Kept short (default 20) because aggregating the
+    /// durably-synced tables is cheap (indexed SQL, no Channel API) — so the dashboard always reflects
+    /// the FULL persisted estate, including immediately after a redeploy, instead of a stale snapshot.
+    /// The cache only deduplicates bursts of concurrent page loads/polls. Minimum 1.
+    /// </summary>
+    public int ReadModelDashboardCacheSeconds { get; set; } = 20;
+
+    /// <summary>
     /// The Google Cloud project id that hosts the Pub/Sub subscription for Channel notifications.
     /// This is your own project, where you create a subscription against the Google-owned topic
     /// returned by <c>accounts.register</c>. Required to run the notification subscriber.
