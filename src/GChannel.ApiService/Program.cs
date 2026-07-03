@@ -178,6 +178,19 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         CREATE INDEX IX_EntitlementRecords_OwningLinkId ON EntitlementRecords(OwningLinkId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_EntitlementRecords_ProductId')
         CREATE INDEX IX_EntitlementRecords_ProductId ON EntitlementRecords(ProductId);
+        -- One-time backfill so estate value shows immediately after the BillableSeats column is added,
+        -- instead of reading 0 everywhere until every entitlement has been re-synced. For COMMITTED
+        -- entitlements the stored Seats already equals num_units (SeatsOf only falls back to a flexible
+        -- plan's max_units CAP when num_units is absent, and those flexible plans carry no CommitmentEndTime),
+        -- so copying Seats is exactly the billable seat count. The Seats <= 100000 guard is belt-and-braces
+        -- against an absurd flexible cap slipping through. A SyncCursors marker makes it run exactly once;
+        -- the worker keeps BillableSeats current from then on.
+        IF NOT EXISTS (SELECT 1 FROM SyncCursors WHERE Scope = 'billableseats-backfill')
+        BEGIN
+            UPDATE EntitlementRecords SET BillableSeats = Seats
+                WHERE BillableSeats = 0 AND Seats > 0 AND Seats <= 100000 AND CommitmentEndTime IS NOT NULL;
+            INSERT INTO SyncCursors (Scope, LastCycleUtc) VALUES ('billableseats-backfill', SYSDATETIMEOFFSET());
+        END
         """;
     await db.Database.ExecuteSqlRawAsync(sql);
 }
