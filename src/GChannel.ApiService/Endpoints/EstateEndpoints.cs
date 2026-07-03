@@ -92,7 +92,7 @@ public static class EstateEndpoints
                         .Where(e => ids.Contains(e.CustomerId) && !e.IsDeleted)
                         .Select(e => new
                         {
-                            e.CustomerId, e.State, e.Currency, e.UnitPrice, e.Seats,
+                            e.CustomerId, e.State, e.Currency, e.UnitPrice, e.Seats, e.BillableSeats,
                             e.RepricingPercent, e.CommitmentEndTime, e.OfferName, e.RenewalEnabled,
                         })
                         .ToListAsync(ct);
@@ -106,15 +106,15 @@ public static class EstateEndpoints
 
                             // Estimated monthly value: Σ over active priced entitlements of
                             // unit price × seats × (1 + markup%), in the customer's dominant currency.
-                            var priced = g.Where(e => e.State == "ACTIVE" && e.UnitPrice > 0 && e.Seats > 0).ToList();
+                            var priced = g.Where(e => e.State == "ACTIVE" && e.UnitPrice > 0 && e.BillableSeats > 0).ToList();
                             decimal? monthly = null;
                             string? currency = null;
                             if (priced.Count > 0)
                             {
                                 var dominant = priced.GroupBy(e => e.Currency ?? "")
-                                    .OrderByDescending(cg => cg.Sum(e => e.UnitPrice * e.Seats))
+                                    .OrderByDescending(cg => cg.Sum(e => e.UnitPrice * e.BillableSeats))
                                     .First();
-                                monthly = dominant.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m)));
+                                monthly = dominant.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m)));
                                 currency = string.IsNullOrEmpty(dominant.Key) ? null : dominant.Key;
                             }
 
@@ -259,9 +259,9 @@ public static class EstateEndpoints
                     .Select(g => new
                     {
                         Currency = g.Key,
-                        Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
-                        Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m))),
-                        Seats = g.Sum(e => e.Seats),
+                        Wholesale = g.Sum(e => e.UnitPrice * e.BillableSeats),
+                        Revenue = g.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m))),
+                        Seats = g.Sum(e => e.BillableSeats),
                         Count = g.Count(),
                     })
                     .ToListAsync(ct);
@@ -313,9 +313,9 @@ public static class EstateEndpoints
                     .Select(g => new
                     {
                         Currency = g.Key,
-                        Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
-                        Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m))),
-                        Seats = g.Sum(e => e.Seats),
+                        Wholesale = g.Sum(e => e.UnitPrice * e.BillableSeats),
+                        Revenue = g.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m))),
+                        Seats = g.Sum(e => e.BillableSeats),
                         Count = g.Count(),
                     })
                     .ToListAsync(ct);
@@ -435,6 +435,7 @@ public static class EstateEndpoints
                         State = x.E.State,
                         IsTrial = x.E.IsTrial,
                         Seats = x.E.Seats,
+                        BillableSeats = x.E.BillableSeats,
                         UnitPrice = x.E.UnitPrice,
                         Currency = x.E.Currency,
                         RepricingPercent = x.E.RepricingPercent,

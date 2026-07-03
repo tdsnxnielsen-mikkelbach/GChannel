@@ -136,6 +136,7 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
             OfferId nvarchar(128) NULL,
             State nvarchar(32) NOT NULL,
             Seats bigint NOT NULL,
+            BillableSeats bigint NOT NULL CONSTRAINT DF_EntitlementRecords_BillableSeats DEFAULT 0,
             IsTrial bit NOT NULL,
             UnitPrice decimal(18,6) NOT NULL CONSTRAINT DF_EntitlementRecords_UnitPrice DEFAULT 0,
             Currency nvarchar(8) NULL,
@@ -165,6 +166,8 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         ALTER TABLE EntitlementRecords ADD PlanDescription nvarchar(128) NULL;
         IF COL_LENGTH('EntitlementRecords','RenewalEnabled') IS NULL
         ALTER TABLE EntitlementRecords ADD RenewalEnabled bit NULL;
+        IF COL_LENGTH('EntitlementRecords','BillableSeats') IS NULL
+        ALTER TABLE EntitlementRecords ADD BillableSeats bigint NOT NULL CONSTRAINT DF_EntitlementRecords_BillableSeats DEFAULT 0;
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_OwningLinkId')
         CREATE INDEX IX_CustomerRecords_OwningLinkId ON CustomerRecords(OwningLinkId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_IsDeleted')

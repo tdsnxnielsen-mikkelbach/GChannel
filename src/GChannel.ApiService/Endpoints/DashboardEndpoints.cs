@@ -403,8 +403,8 @@ public static class DashboardEndpoints
             .Select(g => new
             {
                 LinkId = g.Key,
-                Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
-                Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m)))
+                Wholesale = g.Sum(e => e.UnitPrice * e.BillableSeats),
+                Revenue = g.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m)))
             })
             .ToListAsync(cancellationToken);
         var pricingByLink = resellerPricing.ToDictionary(x => x.LinkId, StringComparer.OrdinalIgnoreCase);
@@ -457,8 +457,8 @@ public static class DashboardEndpoints
             {
                 g.Key.Currency,
                 g.Key.IsDirect,
-                Wholesale = g.Sum(e => e.UnitPrice * e.Seats),
-                Revenue = g.Sum(e => e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m))),
+                Wholesale = g.Sum(e => e.UnitPrice * e.BillableSeats),
+                Revenue = g.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m))),
                 Count = g.Count()
             })
             .ToListAsync(cancellationToken);

@@ -569,7 +569,7 @@ else
     private static decimal? MonthlyEstimate(Entitlement e)
     {
         if (e.UnitPrice is not { } unit || unit <= 0) return null;
-        var seats = SeatCount(e);
+        var seats = e.BillableSeats ?? SeatCount(e);
         if (seats <= 0) return null;
         var markup = 1 + ((e.RepricingPercent ?? 0m) / 100m);
         return unit * seats * markup;
@@ -577,7 +577,7 @@ else
 
     private static string EstimateBreakdown(Entitlement e)
     {
-        var seats = SeatCount(e);
+        var seats = e.BillableSeats ?? SeatCount(e);
         var pct = e.RepricingPercent ?? 0m;
         var baseLine = $"{FormatMoney(e.UnitPrice ?? 0m, e.PriceCurrency)} × {seats} seat(s)";
         var markupLine = pct != 0m ? $" + {pct:0.##}% markup" : string.Empty;

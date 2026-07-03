@@ -145,7 +145,10 @@ public sealed class EntitlementRecord
     /// <summary>Friendly offer display name denormalised at sync time so the entitlement list renders without a live catalog call.</summary>
     public string? OfferName { get; set; }
     public string State { get; set; } = string.Empty;
+    /// <summary>Seat footprint (num_units, falling back to a flexible plan's max_units cap) — used for seat counts and reseller ranking, NOT for pricing.</summary>
     public long Seats { get; set; }
+    /// <summary>Committed/billable seats (num_units only). Money rollups multiply by this so a flexible plan's max_units cap doesn't inflate the estate value. 0 for usage/flexible plans with no committed seats.</summary>
+    public long BillableSeats { get; set; }
     public bool IsTrial { get; set; }
     /// <summary>Entitlement create time, denormalised so the read-model-backed entitlement list can show the "Created" column.</summary>
     public DateTimeOffset? CreateTime { get; set; }

@@ -214,6 +214,7 @@ public static class EntitlementsEndpoints
         UnitPrice = r.UnitPrice > 0 ? r.UnitPrice : null,
         PriceCurrency = r.Currency,
         RepricingPercent = r.RepricingPercent,
+        BillableSeats = r.BillableSeats,
         Parameters = r.Seats > 0
             ? [new EntitlementParameter { Name = "num_units", Value = r.Seats.ToString(CultureInfo.InvariantCulture), Editable = true }]
             : [],

@@ -456,6 +456,7 @@ public sealed class ReadModelSyncService(
         foreach (var e in entitlements)
         {
             var seats = SeatsOf(e);
+            var billable = NumUnitsOf(e);
             var isActive = string.Equals(e.ProvisioningState, "ACTIVE", StringComparison.OrdinalIgnoreCase);
             if (isActive) { activeSeats += seats; }
 
@@ -477,6 +478,7 @@ public sealed class ReadModelSyncService(
             row.OfferName = e.OfferId is not null && offerCatalog.OfferNames.TryGetValue(e.OfferId, out var on) ? on : null;
             row.State = e.ProvisioningState ?? "UNSPECIFIED";
             row.Seats = seats;
+            row.BillableSeats = billable;
             row.IsTrial = e.IsTrial;
             row.CreateTime = e.CreateTime;
             row.CommitmentEndTime = e.Commitment?.EndTime;
@@ -610,6 +612,17 @@ public sealed class ReadModelSyncService(
             string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
             ?? e.Parameters.FirstOrDefault(p =>
             string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
+        return long.TryParse(raw, out var n) ? n : 0;
+    }
+
+    // Committed/billable seats (num_units only). Pricing multiplies by this rather than SeatsOf: a
+    // flexible/usage plan stores its seat CAP in max_units, which is not what's billed — multiplying an
+    // offer's per-seat price by that cap massively inflates the estate value. Flexible plans with no
+    // num_units therefore contribute 0 to the wholesale/revenue rollup (matching their usage-based billing).
+    private static long NumUnitsOf(Entitlement e)
+    {
+        var raw = e.Parameters.FirstOrDefault(p =>
+            string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value;
         return long.TryParse(raw, out var n) ? n : 0;
     }
 

@@ -94,6 +94,8 @@ public sealed record EstateEntitlement
     public string State { get; init; } = string.Empty;
     public bool IsTrial { get; init; }
     public long Seats { get; init; }
+    /// <summary>Committed/billable seats (num_units only) — the monthly estimate uses this so a flexible plan's max_units cap doesn't inflate it.</summary>
+    public long BillableSeats { get; init; }
     /// <summary>Wholesale effective per-seat price (the reseller's cost from Google). 0 if unknown.</summary>
     public decimal UnitPrice { get; init; }
     /// <summary>ISO currency code for <see cref="UnitPrice"/>, or null when no price was resolved.</summary>

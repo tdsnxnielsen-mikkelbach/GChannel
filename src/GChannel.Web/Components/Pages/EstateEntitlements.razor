@@ -70,7 +70,7 @@
         <MudTd DataLabel="Est. monthly" Style="text-align:right">
             @if (EstimatedMonthly(context) is { } v)
             {
-                <MudTooltip Text="@($"Wholesale {FormatMoney(context.UnitPrice * context.Seats, context.Currency)} × (1 + {context.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")">
+                <MudTooltip Text="@($"Wholesale {FormatMoney(context.UnitPrice * context.BillableSeats, context.Currency)} × (1 + {context.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")">
                     <span>@FormatMoney(v, context.Currency)</span>
                 </MudTooltip>
             }
@@ -174,8 +174,8 @@
 
     private static decimal? EstimatedMonthly(EstateEntitlement e)
     {
-        if (e.UnitPrice <= 0 || e.Seats <= 0) return null;
-        return e.UnitPrice * e.Seats * (1 + (e.RepricingPercent / 100m));
+        if (e.UnitPrice <= 0 || e.BillableSeats <= 0) return null;
+        return e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m));
     }
 
     private static string StateLabel(EstateEntitlement e)

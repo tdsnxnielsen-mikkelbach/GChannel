@@ -67,6 +67,13 @@ public sealed record Entitlement
 
     /// <summary>Repricing (rebilling) mark-up percentage applied to this entitlement, when known.</summary>
     public decimal? RepricingPercent { get; init; }
+
+    /// <summary>
+    /// Committed/billable seats (<c>num_units</c> only) used for the monthly cost estimate. Null on the
+    /// live path; from the read-model it excludes a flexible plan's <c>max_units</c> cap so the estimate
+    /// isn't inflated. When null, the UI falls back to the displayed seat count.
+    /// </summary>
+    public long? BillableSeats { get; init; }
 }
 
 /// <summary>Commitment / renewal summary for an entitlement. Maps to <c>CommitmentSettings</c>.</summary>
