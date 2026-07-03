@@ -18,7 +18,11 @@ builder.Services.AddExceptionHandler<GoogleApiExceptionHandler>();
 builder.Services.AddHttpContextAccessor();
 
 // Azure SQL (serverless) via Aspire — connection name must match AppHost ("gchanneldb").
-builder.AddSqlServerDbContext<GChannelDbContext>("gchanneldb");
+// EnableRetryOnFailure gives the serverless DB time to resume from auto-pause instead of the first
+// connection timing out (Win32 258) and failing the request.
+builder.AddSqlServerDbContext<GChannelDbContext>("gchanneldb",
+    configureDbContextOptions: options => options.UseSqlServer(sql =>
+        sql.EnableRetryOnFailure(maxRetryCount: 8, maxRetryDelay: TimeSpan.FromSeconds(20), errorNumbersToAdd: null)));
 
 // Redis client (IConnectionMultiplexer) + distributed cache via Aspire — connection name must match
 // AppHost ("cache"). WithAzureAuthentication enables Microsoft Entra ID (managed identity) auth for
