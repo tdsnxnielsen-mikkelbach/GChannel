@@ -216,12 +216,18 @@
                                     <MudCard Elevation="1" Class="h-100">
                                         <MudCardContent>
                                             <div class="d-flex justify-space-between align-start mb-1">
-                                                <MudText Typo="Typo.subtitle2">@OfferTitle(e)</MudText>
+                                                <div>
+                                                    <MudText Typo="Typo.subtitle2">@OfferTitle(e)</MudText>
+                                                    @if (!string.IsNullOrWhiteSpace(e.ProductDisplayName) && e.ProductDisplayName != OfferTitle(e))
+                                                    {
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@e.ProductDisplayName</MudText>
+                                                    }
+                                                </div>
                                                 <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
                                                          Color="@StateColor(e.ProvisioningState)">@StateLabel(e.ProvisioningState)</MudChip>
                                             </div>
                                             <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
-                                                @(e.PlanDescription ?? e.Commitment?.PaymentPlan ?? "Plan not available")
+                                                @(e.PlanDescription ?? e.Commitment?.PaymentPlan ?? e.OfferDisplayName ?? "Plan not available")
                                             </MudText>
                                             <div class="d-flex align-center mb-1">
                                                 <MudIcon Icon="@Icons.Material.Filled.Event" Size="Size.Small" Class="mr-2" Color="Color.Secondary" />
@@ -319,7 +325,7 @@
     }
 
     private static string OfferTitle(Entitlement e) =>
-        e.OfferDisplayName ?? e.SkuDisplayName ?? e.ProductDisplayName ?? e.OfferId ?? e.Id;
+        e.SkuDisplayName ?? e.ProductDisplayName ?? e.OfferDisplayName ?? e.OfferId ?? e.Id;
 
     private static string StateLabel(string? state) =>
         string.IsNullOrEmpty(state) ? "Unknown" : char.ToUpperInvariant(state[0]) + state[1..].ToLowerInvariant();
