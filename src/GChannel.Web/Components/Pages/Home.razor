@@ -89,17 +89,16 @@
                             {
                                 case "customers":
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        <b>Direct</b> = end customers your account owns directly.
-                                        <b>Indirect</b> = downstream end customers owned by your linked resellers
-                                        (customers that carry a channel partner id). Together they make up your
-                                        total customer estate.
+                                        <b>Direct</b> = a reseller buying from us for their own use (a direct sale).
+                                        <b>Indirect</b> = your resellers' downstream end customers. Together they
+                                        make up your total customer estate.
                                     </MudText>
                                     <div class="d-flex justify-space-between align-center mt-2">
-                                        <MudText Typo="Typo.body2">Direct (your account)</MudText>
+                                        <MudText Typo="Typo.body2">Direct (reseller own use)</MudText>
                                         <MudText Typo="Typo.body2"><b>@DirectEstate</b></MudText>
                                     </div>
                                     <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">Via indirect resellers</MudText>
+                                        <MudText Typo="Typo.body2">Reseller end customers</MudText>
                                         @if (IndirectLoaded)
                                         {
                                             <MudText Typo="Typo.body2"><b>@IndirectEstate</b></MudText>
@@ -274,7 +273,7 @@
                                 {
                                     <td>@cur.Currency</td>
                                 }
-                                <td>Direct (your customers)</td>
+                                <td>Direct (reseller own use)</td>
                                 <td style="text-align:right">@cur.Direct.WholesaleMonthly.ToString("N2")</td>
                                 <td style="text-align:right">@cur.Direct.RevenueMonthly.ToString("N2")</td>
                                 <td style="text-align:right" class="@(cur.Direct.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.Direct.MarginMonthly.ToString("N2")</td>
@@ -408,7 +407,7 @@
             {
                 @* Both direct and reseller (indirect) business exists — show a donut for each so the
                    split is clear rather than blending them into one whole-estate chart. *@
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Direct (your customers)</MudText>
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Direct (reseller own use)</MudText>
                 @if (_directProducts.Count > 0)
                 {
                     <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">

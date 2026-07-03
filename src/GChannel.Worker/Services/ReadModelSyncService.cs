@@ -241,13 +241,13 @@ public sealed class ReadModelSyncService(
             }
         }
 
-        // DIAGNOSTIC (runs early, before the slow entitlement pass, so it logs within a couple minutes):
-        // for a DISTRIBUTOR there are no direct end-customers — but a reseller can buy for its OWN use
-        // directly from us (the disti), which IS a "direct" sale. No explicit flag for that in the Channel
-        // API, so probe two heuristics: (a) the customer's Cloud Identity matches a channel-partner link's
-        // reseller Cloud Identity (same tenant), (b) the customer's DOMAIN matches a reseller's primary
-        // domain (separate tenant, same company). Logs the counts so we can gauge how reliably "reseller
-        // buying for itself" is derivable before changing the direct/indirect rule.
+        // Classify "reseller self-purchase" (DIRECT) vs end customer (INDIRECT): for a DISTRIBUTOR every
+        // end customer sits under a reseller, but a reseller can buy for its OWN use directly from us —
+        // that's a direct sale. There's no explicit flag in the Channel API, so a customer counts as a
+        // reseller self-purchase when its Cloud Identity OR its domain matches one of our channel-partner
+        // links (the reseller). This is STABLE (independent of the link fan-out rotation). We stamp the
+        // flag on CustomerRecords and denormalise it onto EntitlementRecords so the dashboard/estate views
+        // can split direct vs indirect from SQL with no join.
         await WithDbAsync(async db =>
         {
             var resellerLinks = await db.ResellerLinks.AsNoTracking()
@@ -257,18 +257,25 @@ public sealed class ReadModelSyncService(
                 .Select(l => l.ResellerCloudId!).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var resellerDomains = resellerLinks.Where(l => !string.IsNullOrEmpty(l.PrimaryDomain))
                 .Select(l => l.PrimaryDomain!).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var diagCustomers = await db.CustomerRecords.AsNoTracking()
-                .Where(c => !c.IsDeleted)
-                .Select(c => new { c.CloudIdentityId, c.Domain })
-                .ToListAsync(ct);
-            var cidMatch = diagCustomers.Count(c => c.CloudIdentityId != null && resellerCids.Contains(c.CloudIdentityId));
-            var domainMatch = diagCustomers.Count(c => c.Domain != null && resellerDomains.Contains(c.Domain));
-            var eitherMatch = diagCustomers.Count(c =>
-                (c.CloudIdentityId != null && resellerCids.Contains(c.CloudIdentityId)) ||
-                (c.Domain != null && resellerDomains.Contains(c.Domain)));
+
+            var customers = await db.CustomerRecords.Where(c => !c.IsDeleted).ToListAsync(ct);
+            var direct = 0;
+            foreach (var c in customers)
+            {
+                var isSelf = (c.CloudIdentityId != null && resellerCids.Contains(c.CloudIdentityId))
+                    || (c.Domain != null && resellerDomains.Contains(c.Domain));
+                if (c.IsResellerSelf != isSelf) { c.IsResellerSelf = isSelf; }
+                if (isSelf) { direct++; }
+            }
+            await db.SaveChangesAsync(ct);
+
+            // Denormalise the flag onto the customer's entitlements in one set-based update.
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE e SET e.IsResellerSelf = c.IsResellerSelf FROM EntitlementRecords e INNER JOIN CustomerRecords c ON e.CustomerId = c.CustomerId", ct);
+
             logger.LogInformation(
-                "Reseller-self diagnostic: {Total} customers; cloud-identity match={Cid}, domain match={Dom}, either={Either} (candidates for DIRECT = reseller buying for own use). Known: {Cids} reseller cloud identities, {Doms} reseller domains.",
-                diagCustomers.Count, cidMatch, domainMatch, eitherMatch, resellerCids.Count, resellerDomains.Count);
+                "Reseller-self classification: {Total} customers; {Direct} reseller self-purchase (DIRECT), {Indirect} end customers (INDIRECT). Known: {Cids} reseller cloud identities, {Doms} reseller domains.",
+                customers.Count, direct, customers.Count - direct, resellerCids.Count, resellerDomains.Count);
         });
 
         // Unified entitlement sync pass — the single consumer of the contended ListEntitlements quota.

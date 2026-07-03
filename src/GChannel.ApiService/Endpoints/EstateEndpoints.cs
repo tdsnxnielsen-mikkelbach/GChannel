@@ -38,8 +38,8 @@ public static class EstateEndpoints
                 {
                     q = linkId switch
                     {
-                        "direct" => q.Where(c => c.OwningLinkId == null),
-                        "indirect" => q.Where(c => c.OwningLinkId != null),
+                        "direct" => q.Where(c => c.IsResellerSelf),
+                        "indirect" => q.Where(c => !c.IsResellerSelf),
                         _ => q.Where(c => c.OwningLinkId == linkId),
                     };
                 }
@@ -75,6 +75,7 @@ public static class EstateEndpoints
                         Domain = c.Domain,
                         CloudIdentityId = c.CloudIdentityId,
                         OwningLinkId = c.OwningLinkId,
+                        IsResellerSelf = c.IsResellerSelf,
                         SeatCount = c.SeatCount,
                         CreateTime = c.CreateTime,
                         LastSyncedUtc = c.LastSyncedUtc,
@@ -369,12 +370,13 @@ public static class EstateEndpoints
 
                 var q = db.EntitlementRecords.AsNoTracking().Where(e => !e.IsDeleted);
 
-                // Scope mirrors the dashboard KPIs (direct-only) by default; allow indirect/all too.
+                // Scope: "direct" = reseller self-purchases, "indirect" = reseller end customers,
+                // else (default) = the whole estate (matches the whole-estate dashboard KPIs).
                 q = (scope ?? "").ToLowerInvariant() switch
                 {
-                    "indirect" => q.Where(e => e.OwningLinkId != null),
-                    "all" => q,
-                    _ => q.Where(e => e.OwningLinkId == null),
+                    "direct" => q.Where(e => e.IsResellerSelf),
+                    "indirect" => q.Where(e => !e.IsResellerSelf),
+                    _ => q,
                 };
 
                 // State filter mirrors the dashboard lifecycle buckets exactly.

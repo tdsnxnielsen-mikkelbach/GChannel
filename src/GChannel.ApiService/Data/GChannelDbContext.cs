@@ -123,6 +123,8 @@ public sealed class CustomerRecord
     public DateTimeOffset LastSyncedUtc { get; set; }
     /// <summary>Sum of active seats (num_units) across the customer's entitlements; denormalised for fast reseller ranking.</summary>
     public long SeatCount { get; set; }
+    /// <summary>True when this customer IS one of our resellers buying for their own use (its Cloud Identity or domain matches a channel-partner link) — a DIRECT sale from us. False = a reseller's end customer (indirect).</summary>
+    public bool IsResellerSelf { get; set; }
     /// <summary>Soft-delete flag set when a customer disappears from a fresh list pass.</summary>
     public bool IsDeleted { get; set; }
 }
@@ -165,6 +167,8 @@ public sealed class EntitlementRecord
     /// <summary>Repricing mark-up percent applied to this entitlement (§6): per-entitlement config, else owning-link channel-partner config, else 0.</summary>
     public decimal RepricingPercent { get; set; }
     public DateTimeOffset LastSyncedUtc { get; set; }
+    /// <summary>Denormalised from the owning customer: true when the customer is a reseller buying for its own use (direct sale) vs a reseller's end customer (indirect). Lets the dashboard split estate value by source without a join.</summary>
+    public bool IsResellerSelf { get; set; }
     /// <summary>Soft-delete flag set when an entitlement disappears from a fresh list pass.</summary>
     public bool IsDeleted { get; set; }
 }

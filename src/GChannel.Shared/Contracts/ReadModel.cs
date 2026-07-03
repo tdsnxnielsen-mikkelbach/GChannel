@@ -27,6 +27,9 @@ public sealed record EstateCustomer
     public DateTimeOffset? CreateTime { get; init; }
     public DateTimeOffset LastSyncedUtc { get; init; }
 
+    /// <summary>True when this customer is one of our resellers buying for their own use (a DIRECT sale); false = a reseller's end customer (indirect).</summary>
+    public bool IsResellerSelf { get; init; }
+
     /// <summary>
     /// Friendly name of the indirect reseller (channel partner link) that owns this customer — the
     /// link's primary domain, else its reseller cloud id, else the link id. Null for direct customers

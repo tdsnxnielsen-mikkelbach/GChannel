@@ -129,6 +129,7 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
             CreateTime datetimeoffset NULL,
             LastSyncedUtc datetimeoffset NOT NULL,
             SeatCount bigint NOT NULL CONSTRAINT DF_CustomerRecords_SeatCount DEFAULT 0,
+            IsResellerSelf bit NOT NULL CONSTRAINT DF_CustomerRecords_IsResellerSelf DEFAULT 0,
             IsDeleted bit NOT NULL
         );
         IF OBJECT_ID('SyncCursors', 'U') IS NULL
@@ -155,6 +156,7 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
             Currency nvarchar(8) NULL,
             RepricingPercent decimal(9,4) NOT NULL CONSTRAINT DF_EntitlementRecords_RepricingPercent DEFAULT 0,
             LastSyncedUtc datetimeoffset NOT NULL,
+            IsResellerSelf bit NOT NULL CONSTRAINT DF_EntitlementRecords_IsResellerSelf DEFAULT 0,
             IsDeleted bit NOT NULL
         );
         IF COL_LENGTH('CustomerRecords','SeatCount') IS NULL
@@ -181,6 +183,10 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         ALTER TABLE EntitlementRecords ADD RenewalEnabled bit NULL;
         IF COL_LENGTH('EntitlementRecords','BillableSeats') IS NULL
         ALTER TABLE EntitlementRecords ADD BillableSeats bigint NOT NULL CONSTRAINT DF_EntitlementRecords_BillableSeats DEFAULT 0;
+        IF COL_LENGTH('CustomerRecords','IsResellerSelf') IS NULL
+        ALTER TABLE CustomerRecords ADD IsResellerSelf bit NOT NULL CONSTRAINT DF_CustomerRecords_IsResellerSelf DEFAULT 0;
+        IF COL_LENGTH('EntitlementRecords','IsResellerSelf') IS NULL
+        ALTER TABLE EntitlementRecords ADD IsResellerSelf bit NOT NULL CONSTRAINT DF_EntitlementRecords_IsResellerSelf DEFAULT 0;
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_OwningLinkId')
         CREATE INDEX IX_CustomerRecords_OwningLinkId ON CustomerRecords(OwningLinkId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_IsDeleted')

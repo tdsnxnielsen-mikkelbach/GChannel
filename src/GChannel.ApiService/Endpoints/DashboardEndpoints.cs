@@ -208,13 +208,13 @@ public static class DashboardEndpoints
         GChannelDbContext db, CancellationToken cancellationToken)
     {
         // §11 Phase 9: the entitlement KPIs (active/trial/suspended/seats/product mix) span the WHOLE
-        // estate — direct customers plus reseller-owned (indirect) ones — so they line up with the
-        // estate-value panel, which is also whole-estate. Customer count and onboarding stay direct-only
-        // (a distinct concept surfaced separately as IndirectCustomerCount).
+        // estate — direct (reseller self-purchase) plus reseller end customers (indirect) — so they line up
+        // with the estate-value panel, which is also whole-estate. "Direct" here means a reseller buying
+        // for its OWN use (IsResellerSelf); reseller end customers are indirect (IndirectCustomerCount).
         var entitlements = db.EntitlementRecords.Where(e => !e.IsDeleted);
 
         var customerCount = await db.CustomerRecords
-            .CountAsync(c => !c.IsDeleted && c.OwningLinkId == null, cancellationToken);
+            .CountAsync(c => !c.IsDeleted && c.IsResellerSelf, cancellationToken);
         var active = await entitlements.CountAsync(e => e.State == "ACTIVE" && !e.IsTrial, cancellationToken);
         var trials = await entitlements.CountAsync(e => e.IsTrial, cancellationToken);
         var suspended = await entitlements.CountAsync(e => e.State == "SUSPENDED", cancellationToken);
@@ -226,7 +226,7 @@ public static class DashboardEndpoints
         // still listed, so a churned-offer entitlement can carry a null name while a sibling on the
         // same product resolved one; reuse any resolved name across all entitlements of that product.
         var activeMix = await entitlements.Where(e => e.State == "ACTIVE")
-            .Select(e => new { e.ProductId, e.ProductName, e.OwningLinkId })
+            .Select(e => new { e.ProductId, e.ProductName, e.IsResellerSelf })
             .ToListAsync(cancellationToken);
 
         var nameByProductId = activeMix
@@ -248,18 +248,18 @@ public static class DashboardEndpoints
                 .ToList();
 
         var labelledAll = activeMix
-            .Select(e => (Label: Label(e.ProductId, e.ProductName), IsDirect: e.OwningLinkId == null))
+            .Select(e => (Label: Label(e.ProductId, e.ProductName), IsDirect: e.IsResellerSelf))
             .ToList();
         var mix = BuildMix(labelledAll.Select(x => (x.Label, 0)));
         var directMix = BuildMix(labelledAll.Where(x => x.IsDirect).Select(x => (x.Label, 0)));
         var indirectMix = BuildMix(labelledAll.Where(x => !x.IsDirect).Select(x => (x.Label, 0)));
 
         var onboardDates = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && c.OwningLinkId == null)
+            .Where(c => !c.IsDeleted && c.IsResellerSelf)
             .Select(c => c.CreateTime)
             .ToListAsync(cancellationToken);
         var indirectOnboardDates = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && c.OwningLinkId != null)
+            .Where(c => !c.IsDeleted && !c.IsResellerSelf)
             .Select(c => c.CreateTime)
             .ToListAsync(cancellationToken);
 
@@ -292,7 +292,7 @@ public static class DashboardEndpoints
         GChannelDbContext db, CancellationToken cancellationToken)
     {
         var customerCount = await db.CustomerRecords
-            .CountAsync(c => !c.IsDeleted && c.OwningLinkId == null, cancellationToken);
+            .CountAsync(c => !c.IsDeleted && c.IsResellerSelf, cancellationToken);
 
         var linkStates = await db.ResellerLinks
             .GroupBy(l => l.LinkState)
@@ -300,11 +300,11 @@ public static class DashboardEndpoints
             .ToListAsync(cancellationToken);
 
         var onboardDates = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && c.OwningLinkId == null)
+            .Where(c => !c.IsDeleted && c.IsResellerSelf)
             .Select(c => c.CreateTime)
             .ToListAsync(cancellationToken);
         var indirectOnboardDates = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && c.OwningLinkId != null)
+            .Where(c => !c.IsDeleted && !c.IsResellerSelf)
             .Select(c => c.CreateTime)
             .ToListAsync(cancellationToken);
 
@@ -380,7 +380,7 @@ public static class DashboardEndpoints
         DashboardSummary summary, GChannelDbContext db, CancellationToken cancellationToken)
     {
         var indirectCount = await db.CustomerRecords
-            .CountAsync(c => !c.IsDeleted && c.OwningLinkId != null, cancellationToken);
+            .CountAsync(c => !c.IsDeleted && !c.IsResellerSelf, cancellationToken);
 
         // Direct-estate backfill: when the live aggregation skipped customers (typically 429s), serve the
         // last-synced direct figures from EntitlementRecords so the headline KPIs fill in from the DB
@@ -448,11 +448,11 @@ public static class DashboardEndpoints
     {
         var active = db.EntitlementRecords.Where(e => !e.IsDeleted && e.State == "ACTIVE");
 
-        // Group by currency AND source (direct = no owning channel link, indirect = reseller-owned) so
-        // the estate value can be split into what comes from your own customers vs downstream resellers.
+        // Group by currency AND source (direct = a reseller buying for its own use, indirect = a
+        // reseller's end customer) so the estate value can be split into direct vs indirect business.
         var byCurrencyScope = await active
             .Where(e => e.UnitPrice > 0 && e.Currency != null)
-            .GroupBy(e => new { Currency = e.Currency!, IsDirect = e.OwningLinkId == null })
+            .GroupBy(e => new { Currency = e.Currency!, IsDirect = e.IsResellerSelf })
             .Select(g => new
             {
                 g.Key.Currency,
