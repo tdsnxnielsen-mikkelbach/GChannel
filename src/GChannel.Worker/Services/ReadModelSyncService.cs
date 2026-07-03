@@ -47,6 +47,12 @@ public sealed class ReadModelSyncService(
             "Read-model sync enabled; cycle every {Interval}s, up to {Links} links/cycle.",
             opts.BackgroundRefreshSeconds, opts.ReadModelLinksPerCycle);
 
+        // Clear the single-flight lock on startup so a (re)deploy runs a fresh cycle immediately instead
+        // of skipping and waiting up to a full interval for the previous run's lock to expire. Safe with a
+        // single pinned worker replica; the lock is re-taken at the start of the cycle below (and its TTL
+        // still paces subsequent cycles), so normal cadence is preserved.
+        try { await db.KeyDeleteAsync(SyncLockKey); } catch (Exception ex) { logger.LogDebug(ex, "Could not clear read-model sync lock on startup."); }
+
         do
         {
             try
@@ -234,6 +240,36 @@ public sealed class ReadModelSyncService(
                 logger.LogWarning(ex, "Read-model sync failed for link {Link}.", linkId);
             }
         }
+
+        // DIAGNOSTIC (runs early, before the slow entitlement pass, so it logs within a couple minutes):
+        // for a DISTRIBUTOR there are no direct end-customers — but a reseller can buy for its OWN use
+        // directly from us (the disti), which IS a "direct" sale. No explicit flag for that in the Channel
+        // API, so probe two heuristics: (a) the customer's Cloud Identity matches a channel-partner link's
+        // reseller Cloud Identity (same tenant), (b) the customer's DOMAIN matches a reseller's primary
+        // domain (separate tenant, same company). Logs the counts so we can gauge how reliably "reseller
+        // buying for itself" is derivable before changing the direct/indirect rule.
+        await WithDbAsync(async db =>
+        {
+            var resellerLinks = await db.ResellerLinks.AsNoTracking()
+                .Select(l => new { l.ResellerCloudId, l.PrimaryDomain })
+                .ToListAsync(ct);
+            var resellerCids = resellerLinks.Where(l => !string.IsNullOrEmpty(l.ResellerCloudId))
+                .Select(l => l.ResellerCloudId!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var resellerDomains = resellerLinks.Where(l => !string.IsNullOrEmpty(l.PrimaryDomain))
+                .Select(l => l.PrimaryDomain!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var diagCustomers = await db.CustomerRecords.AsNoTracking()
+                .Where(c => !c.IsDeleted)
+                .Select(c => new { c.CloudIdentityId, c.Domain })
+                .ToListAsync(ct);
+            var cidMatch = diagCustomers.Count(c => c.CloudIdentityId != null && resellerCids.Contains(c.CloudIdentityId));
+            var domainMatch = diagCustomers.Count(c => c.Domain != null && resellerDomains.Contains(c.Domain));
+            var eitherMatch = diagCustomers.Count(c =>
+                (c.CloudIdentityId != null && resellerCids.Contains(c.CloudIdentityId)) ||
+                (c.Domain != null && resellerDomains.Contains(c.Domain)));
+            logger.LogInformation(
+                "Reseller-self diagnostic: {Total} customers; cloud-identity match={Cid}, domain match={Dom}, either={Either} (candidates for DIRECT = reseller buying for own use). Known: {Cids} reseller cloud identities, {Doms} reseller domains.",
+                diagCustomers.Count, cidMatch, domainMatch, eitherMatch, resellerCids.Count, resellerDomains.Count);
+        });
 
         // Unified entitlement sync pass — the single consumer of the contended ListEntitlements quota.
         // Refresh the stalest customers across the WHOLE estate (direct + indirect), capped per cycle,
