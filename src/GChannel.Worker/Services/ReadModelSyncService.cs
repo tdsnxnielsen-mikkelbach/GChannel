@@ -469,13 +469,17 @@ public sealed class ReadModelSyncService(
             row.CustomerId = customerId;
             row.OwningLinkId = owningLinkId;
             row.ProductId = e.ProductId;
+            // Names come from the account's sellable catalog (offers.list/products.list). When that misses
+            // (education/legacy/churned offers a customer already holds aren't in the sellable catalog),
+            // KEEP any name resolved on a prior cycle (via the lookupOffer fallback below) instead of
+            // resetting to null — mirrors how the price is preserved, so the fallback stays one-time.
             row.ProductName = e.ProductId is not null
                 && (productNames.TryGetValue(e.ProductId, out var pn) || offerCatalog.ProductNames.TryGetValue(e.ProductId, out pn))
-                ? pn : null;
+                ? pn : row.ProductName;
             row.SkuId = e.SkuId;
-            row.SkuName = e.SkuId is not null && offerCatalog.SkuNames.TryGetValue(e.SkuId, out var sn) ? sn : null;
+            row.SkuName = e.SkuId is not null && offerCatalog.SkuNames.TryGetValue(e.SkuId, out var sn) ? sn : row.SkuName;
             row.OfferId = e.OfferId;
-            row.OfferName = e.OfferId is not null && offerCatalog.OfferNames.TryGetValue(e.OfferId, out var on) ? on : null;
+            row.OfferName = e.OfferId is not null && offerCatalog.OfferNames.TryGetValue(e.OfferId, out var on) ? on : row.OfferName;
             row.State = e.ProvisioningState ?? "UNSPECIFIED";
             row.Seats = seats;
             row.BillableSeats = billable;
@@ -511,6 +515,7 @@ public sealed class ReadModelSyncService(
             // on an earlier cycle isn't lost, and so we only pay that per-entitlement call once.
             var existingUnitPrice = row.UnitPrice;
             var existingCurrency = row.Currency;
+            CatalogOffer? lookedUp = null; // cached lookupOffer result, reused by the price + name fallbacks
             if (e.OfferId is not null && offerCatalog.Pricing.TryGetValue(e.OfferId, out var price))
             {
                 row.UnitPrice = price.Unit;
@@ -542,7 +547,7 @@ public sealed class ReadModelSyncService(
                     {
                         try
                         {
-                            var lookedUp = await client.LookupEntitlementOfferAsync(customerId, e.Id, ct);
+                            lookedUp = await client.LookupEntitlementOfferAsync(customerId, e.Id, ct);
                             var seat = lookedUp.Pricing.FirstOrDefault(p =>
                                 string.Equals(p.ResourceType, "SEAT", StringComparison.OrdinalIgnoreCase))
                                 ?? lookedUp.Pricing.FirstOrDefault();
@@ -579,6 +584,28 @@ public sealed class ReadModelSyncService(
                         diag.ActiveUnpriced++;
                         diag.MissingFromCatalog[e.OfferId] = diag.MissingFromCatalog.GetValueOrDefault(e.OfferId) + 1;
                     }
+                }
+            }
+            // Friendly-name fallback (what the Channel Services console shows): the account's
+            // offers.list/products.list only covers the reseller's SELLABLE catalog, so education, legacy
+            // or churned offers a customer already holds resolve to raw ids. Resolve the offer/SKU/product
+            // display names from the entitlement's OWN offer via lookupOffer — reusing the call the price
+            // fallback already made when possible, else one best-effort call. Runs for ANY state (incl.
+            // SUSPENDED) and any seat count since names are cosmetic; the preserved names above keep it
+            // effectively one-time (only fires while a name is still missing).
+            if (e.OfferId is not null &&
+                (string.IsNullOrEmpty(row.OfferName) || string.IsNullOrEmpty(row.SkuName) || string.IsNullOrEmpty(row.ProductName)))
+            {
+                try
+                {
+                    lookedUp ??= await client.LookupEntitlementOfferAsync(customerId, e.Id, ct);
+                    if (string.IsNullOrEmpty(row.OfferName)) { row.OfferName = lookedUp.DisplayName; }
+                    if (string.IsNullOrEmpty(row.SkuName)) { row.SkuName = lookedUp.SkuDisplayName; }
+                    if (string.IsNullOrEmpty(row.ProductName)) { row.ProductName = lookedUp.ProductDisplayName; }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Offer-name fallback (lookupOffer) failed for entitlement {Entitlement}; leaving raw ids.", e.Id);
                 }
             }
             // Per-entitlement override wins; otherwise the link-wide channel-partner mark-up (0 for direct).
