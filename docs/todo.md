@@ -20,6 +20,7 @@ detail, rationale and per-phase breakdown.
 | 11. Pricing &amp; billing | Complete in-scope; Phase 4 (BigQuery) deferred (out of Channel API scope) | [todos/11-pricing-and-billing.md](todos/11-pricing-and-billing.md) |
 | 12. Remaining stable `v1` surface | §12.1–12.4 complete (§12.4 doc-only) | [todos/12-remaining-v1-surface.md](todos/12-remaining-v1-surface.md) |
 | 13. Provisionable Cloud Identity types | Deferred (alpha-only; GA `checkCloudIdentityAccountsExist` covers the core decision) | [todos/13-provisionable-cloud-identity-types.md](todos/13-provisionable-cloud-identity-types.md) |
+| 14. CQRS &amp; event-driven projections | Analysis only (no code) — write-through on commands &amp; event-driven projections worth revisiting | [todos/14-cqrs-and-event-driven-projections.md](todos/14-cqrs-and-event-driven-projections.md) |
 
 ## Roadmap capabilities (§1–§8)
 
