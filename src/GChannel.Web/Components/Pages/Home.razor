@@ -460,19 +460,33 @@
 
     <MudItem xs="12">
         <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6">Top indirect resellers</MudText>
-            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
-                Ranked by total active seats. The number in parentheses after each reseller is its customer count.
-            </MudText>
+            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
+                <div>
+                    <MudText Typo="Typo.h6">Top indirect resellers</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                        @(_resellerMetric == "avg"
+                            ? "Ranked by average active seats per customer — a fairer comparison when one reseller dwarfs the rest. Parentheses show the customer count; each bar is labelled with its exact figure."
+                            : "Ranked by total active seats. Parentheses show the customer count; each bar is labelled with its exact seat count.")
+                    </MudText>
+                </div>
+                @if (_resellers.Count > 0)
+                {
+                    <MudSelect T="string" Value="_resellerMetric" Label="Rank by" Dense="true" Margin="Margin.Dense"
+                               Variant="Variant.Outlined" Style="max-width:220px" ValueChanged="OnResellerMetricChanged">
+                        <MudSelectItem Value="@("seats")">Total seats</MudSelectItem>
+                        <MudSelectItem Value="@("avg")">Avg seats / customer</MudSelectItem>
+                    </MudSelect>
+                }
+            </div>
             @if (_resellers.Count > 0)
             {
-                <ApexChart TItem="ResellerSlice" Title="Seats per reseller" Options="_resellerOptions" @ref="_resellerChart">
+                <ApexChart TItem="ResellerSlice" Title="@_resellerTitle" Options="_resellerOptions" @ref="_resellerChart">
                     <ApexPointSeries TItem="ResellerSlice"
-                                     Items="_resellers"
-                                     Name="Seats"
+                                     Items="_resellerView"
+                                     Name="@_resellerSeriesName"
                                      SeriesType="SeriesType.Bar"
                                      XValue="@(r => $"{r.Reseller} ({r.Customers:0})")"
-                                     YValue="@(r => r.Seats)" />
+                                     YValue="@(r => _resellerMetric == "avg" ? r.AvgSeats : r.Seats)" />
                 </ApexChart>
             }
             else if (_entitlementsLoading)
@@ -496,7 +510,7 @@
     private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
     private record MonthlyPoint(string Key, string Label, decimal Direct, decimal Indirect);
     private record ProductSlice(string Product, decimal Count);
-    private record ResellerSlice(string Reseller, decimal Customers, decimal Seats);
+    private record ResellerSlice(string Reseller, decimal Customers, decimal Seats, decimal AvgSeats);
 
     // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
     // its own axis/legend/title text in a fixed colour that ignores MudBlazor's theme, so without this
@@ -514,8 +528,24 @@
     private readonly ApexChartOptions<ProductSlice> _indirectProductOptions = new();
     private readonly ApexChartOptions<ResellerSlice> _resellerOptions = new()
     {
-        PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } }
+        PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } },
+        // Print the exact figure on every bar so the tiny resellers stay readable even when a single
+        // reseller (e.g. a large EDU tenant) is orders of magnitude bigger and dwarfs the bar lengths.
+        DataLabels = new DataLabels
+        {
+            Enabled = true,
+            Formatter = "function (val) { return val === null ? '' : Number(val).toLocaleString(undefined, { maximumFractionDigits: 1 }); }"
+        }
     };
+
+    // "seats" = rank by total active seats; "avg" = rank by average active seats per customer.
+    private string _resellerMetric = "seats";
+    private string _resellerTitle => _resellerMetric == "avg" ? "Avg seats per customer" : "Seats per reseller";
+    private string _resellerSeriesName => _resellerMetric == "avg" ? "Avg seats / customer" : "Seats";
+
+    // The metric-ordered slice the chart actually renders (mirrors the _allMonthly/_monthly pattern so
+    // ApexChart.UpdateSeriesAsync picks up the change without a full data reload).
+    private readonly List<ResellerSlice> _resellerView = [];
 
     private DashboardOverview? _overview;
     private DashboardSummary? _data;
@@ -794,6 +824,30 @@
         }
     }
 
+    private static ResellerSlice ToResellerSlice(DashboardResellerCustomers reseller) =>
+        new(reseller.Reseller, reseller.CustomerCount, reseller.SeatCount,
+            reseller.CustomerCount > 0 ? (decimal)reseller.SeatCount / reseller.CustomerCount : 0);
+
+    // Re-populate the chart's bound list ordered by the selected metric (highest first).
+    private void ApplyResellerMetric()
+    {
+        _resellerView.Clear();
+        var ordered = _resellerMetric == "avg"
+            ? _resellers.OrderByDescending(r => r.AvgSeats).ThenBy(r => r.Reseller)
+            : _resellers.OrderByDescending(r => r.Seats).ThenBy(r => r.Reseller);
+        _resellerView.AddRange(ordered);
+    }
+
+    private async Task OnResellerMetricChanged(string metric)
+    {
+        _resellerMetric = metric;
+        ApplyResellerMetric();
+        if (_resellerChart is not null)
+        {
+            await _resellerChart.UpdateSeriesAsync();
+        }
+    }
+
     private async Task LoadOverviewAsync(CancellationToken cancellationToken)
     {
         _overviewLoading = true;
@@ -847,8 +901,9 @@
             _resellers.Clear();
             foreach (var reseller in _data?.TopIndirectResellers ?? [])
             {
-                _resellers.Add(new ResellerSlice(reseller.Reseller, reseller.CustomerCount, reseller.SeatCount));
+                _resellers.Add(ToResellerSlice(reseller));
             }
+            ApplyResellerMetric();
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
@@ -901,8 +956,9 @@
             _resellers.Clear();
             foreach (var reseller in data.TopIndirectResellers)
             {
-                _resellers.Add(new ResellerSlice(reseller.Reseller, reseller.CustomerCount, reseller.SeatCount));
+                _resellers.Add(ToResellerSlice(reseller));
             }
+            ApplyResellerMetric();
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {

@@ -212,12 +212,81 @@ else
                     <HeaderContent>
                         <MudTh>Organization</MudTh>
                         <MudTh>Domain</MudTh>
+                        <MudTh>Subscriptions</MudTh>
+                        <MudTh>Renewal</MudTh>
+                        <MudTh>Auto-renew</MudTh>
+                        <MudTh Style="text-align:right">Est. monthly</MudTh>
                         <MudTh>Created</MudTh>
                         <MudTh Style="text-align:right">Actions</MudTh>
                     </HeaderContent>
                     <RowTemplate>
+                        @{ var est = EstateFor(context.Id); }
                         <MudTd DataLabel="Organization">@(context.OrgDisplayName ?? context.Id)</MudTd>
                         <MudTd DataLabel="Domain">@context.Domain</MudTd>
+                        <MudTd DataLabel="Subscriptions">
+                            @if (est is not null)
+                            {
+                                <span>@est.ActiveSubscriptions Active</span>
+                                @if (est.SuspendedSubscriptions > 0)
+                                {
+                                    <span class="mud-text-secondary"> · @est.SuspendedSubscriptions Suspended</span>
+                                }
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Renewal">
+                            @if (est?.NextRenewalUtc is { } r)
+                            {
+                                <MudTooltip Text="@(est.NextRenewalOfferName ?? "Next commitment renewal")">
+                                    <div>
+                                        <div>@r.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)</div>
+                                        @if (!string.IsNullOrEmpty(est.NextRenewalOfferName))
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@est.NextRenewalOfferName</MudText>
+                                        }
+                                    </div>
+                                </MudTooltip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Auto-renew">
+                            @if (est?.NextRenewalAutoRenew is true)
+                            {
+                                <MudTooltip Text="Auto-renewal is on for the next renewing subscription.">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text"
+                                             Icon="@Icons.Material.Filled.Autorenew">On</MudChip>
+                                </MudTooltip>
+                            }
+                            else if (est?.NextRenewalAutoRenew is false)
+                            {
+                                <MudTooltip Text="Auto-renewal is off — the next renewing subscription will not renew automatically.">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text"
+                                             Icon="@Icons.Material.Filled.Block">Off</MudChip>
+                                </MudTooltip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Est. monthly" Style="text-align:right">
+                            @if (est?.EstimatedMonthlyTotal is { } v)
+                            {
+                                <MudTooltip Text="Estimated from offer list pricing with repricing applied — not invoiced.">
+                                    <span>@FormatMoney(v, est.Currency)</span>
+                                </MudTooltip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
                         <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
                         <MudTd DataLabel="Actions" Style="text-align:right">
                             <MudTooltip Text="View customer">
@@ -348,6 +417,7 @@ else
         {
             var result = await Api.ListChannelPartnerCustomersAsync(Id);
             _customers = result?.Customers ?? [];
+            await LoadEstateRollupsAsync();
         }
         catch (Exception ex)
         {
@@ -357,6 +427,48 @@ else
         finally
         {
             _customersLoading = false;
+        }
+    }
+
+    // Per-customer read-model rollups (subscription counts, next renewal, auto-renew, estimated
+    // monthly value) keyed by customer id, so the roster can show the same columns as the Customers
+    // page. Best-effort: rows not yet in the read-model simply show "—".
+    private readonly Dictionary<string, EstateCustomer> _estate = new(StringComparer.OrdinalIgnoreCase);
+
+    private EstateCustomer? EstateFor(string customerId) =>
+        _estate.TryGetValue(customerId, out var e) ? e : null;
+
+    private async Task LoadEstateRollupsAsync()
+    {
+        _estate.Clear();
+        try
+        {
+            var page = 0;
+            while (true)
+            {
+                var result = await Api.ListEstateCustomersAsync(page, 200, "org", false, null, Id);
+                var items = result?.Items;
+                if (items is null || items.Count == 0)
+                {
+                    break;
+                }
+
+                foreach (var e in items)
+                {
+                    _estate[e.CustomerId] = e;
+                }
+
+                if (items.Count < 200 || _estate.Count >= result!.Total)
+                {
+                    break;
+                }
+
+                page++;
+            }
+        }
+        catch
+        {
+            // Best-effort enrichment — the extra columns fall back to "—" if this fails.
         }
     }
 
