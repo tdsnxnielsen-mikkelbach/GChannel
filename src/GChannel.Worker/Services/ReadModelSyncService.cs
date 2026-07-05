@@ -22,6 +22,7 @@ public sealed class ReadModelSyncService(
     IOptions<GoogleChannelOptions> options,
     IServiceScopeFactory scopeFactory,
     IConnectionMultiplexer redis,
+    ReadModelProjector projector,
     ILoggerFactory loggerFactory,
     ILogger<ReadModelSyncService> logger) : BackgroundService
 {
@@ -294,7 +295,7 @@ public sealed class ReadModelSyncService(
         // config applies to every downstream entitlement under the link with no per-entitlement
         // override). Cache per cycle so a link shared by many customers in this slice is fetched once.
         var linkPercentCache = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-        var pricingDiag = new PricingDiagnostics();
+        var pricingDiag = new ReadModelProjector.PricingDiagnostics();
         var syncedCount = 0;
         foreach (var c in due)
         {
@@ -303,12 +304,12 @@ public sealed class ReadModelSyncService(
             {
                 if (!linkPercentCache.TryGetValue(c.OwningLinkId, out linkFallbackPercent))
                 {
-                    linkFallbackPercent = await ResolveChannelPartnerPercentAsync(client, c.OwningLinkId, now, ct);
+                    linkFallbackPercent = await projector.ResolveChannelPartnerPercentAsync(client, c.OwningLinkId, now, ct);
                     linkPercentCache[c.OwningLinkId] = linkFallbackPercent;
                 }
             }
 
-            await WithDbAsync(db => SyncCustomerEntitlementsAsync(
+            await WithDbAsync(db => projector.SyncCustomerEntitlementsAsync(
                 db, client, c.CustomerId, c.OwningLinkId, offerCatalog, productNames, linkFallbackPercent, pricingDiag, now, ct));
             syncedCount++;
         }
@@ -453,255 +454,12 @@ public sealed class ReadModelSyncService(
         await db.SaveChangesAsync(ct);
     }
 
-    // Upserts one customer's entitlements, soft-deletes vanished ones, and denormalises the customer's
-    // active seat total onto CustomerRecord for fast reseller ranking. Tolerates a single customer's
-    // read failing (the customer simply keeps its previous seat/product rows). Also denormalises §11
-    // pricing (offer wholesale price) and the §6 repricing mark-up onto each entitlement so the
-    // dashboard can roll up estimated cost/revenue/margin from SQL without any live API fan-out.
-    private async Task SyncCustomerEntitlementsAsync(
-        GChannelDbContext db, GoogleChannelClient client, string customerId, string? owningLinkId,
-        OfferCatalog offerCatalog,
-        IReadOnlyDictionary<string, string> productNames, decimal linkFallbackPercent,
-        PricingDiagnostics diag,
-        DateTimeOffset now, CancellationToken ct)
-    {
-        IReadOnlyList<Entitlement> entitlements;
-        try
-        {
-            var result = await client.ListEntitlementsForSyncAsync(customerId, ct);
-            entitlements = result.Entitlements;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Read-model entitlement sync skipped for customer {Customer}.", customerId);
-            // Stamp the customer as visited so the staleness rotation advances past a throttled customer
-            // instead of retrying it ahead of everyone else next cycle (keeps the queue moving).
-            var skipped = await db.CustomerRecords.FindAsync([customerId], ct);
-            if (skipped is not null)
-            {
-                skipped.LastSyncedUtc = DateTimeOffset.UtcNow;
-                await db.SaveChangesAsync(ct);
-            }
-            return;
-        }
-
-        // Per-entitlement repricing overrides for this customer (best-effort; a failure just falls back
-        // to the link-wide percent). Keyed by entitlement id.
-        var entitlementPercents = await ResolveCustomerEntitlementPercentsAsync(client, customerId, now, ct);
-
-        var seen = entitlements.Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var stored = await db.EntitlementRecords
-            .Where(r => r.CustomerId == customerId)
-            .ToListAsync(ct);
-        var byId = stored.ToDictionary(r => r.EntitlementId, StringComparer.OrdinalIgnoreCase);
-
-        long activeSeats = 0;
-        foreach (var e in entitlements)
-        {
-            var seats = SeatsOf(e);
-            var billable = NumUnitsOf(e);
-            var isActive = string.Equals(e.ProvisioningState, "ACTIVE", StringComparison.OrdinalIgnoreCase);
-            if (isActive) { activeSeats += seats; }
-
-            if (!byId.TryGetValue(e.Id, out var row))
-            {
-                row = new EntitlementRecord { EntitlementId = e.Id };
-                db.EntitlementRecords.Add(row);
-                byId[e.Id] = row; // guard against duplicate ids in the same list (would double-add the PK)
-            }
-            row.CustomerId = customerId;
-            row.OwningLinkId = owningLinkId;
-            row.ProductId = e.ProductId;
-            // Names come from the account's sellable catalog (offers.list/products.list). When that misses
-            // (education/legacy/churned offers a customer already holds aren't in the sellable catalog),
-            // KEEP any name resolved on a prior cycle (via the lookupOffer fallback below) instead of
-            // resetting to null — mirrors how the price is preserved, so the fallback stays one-time.
-            row.ProductName = e.ProductId is not null
-                && (productNames.TryGetValue(e.ProductId, out var pn) || offerCatalog.ProductNames.TryGetValue(e.ProductId, out pn))
-                ? pn : row.ProductName;
-            row.SkuId = e.SkuId;
-            row.SkuName = e.SkuId is not null && offerCatalog.SkuNames.TryGetValue(e.SkuId, out var sn) ? sn : row.SkuName;
-            row.OfferId = e.OfferId;
-            row.OfferName = e.OfferId is not null && offerCatalog.OfferNames.TryGetValue(e.OfferId, out var on) ? on : row.OfferName;
-            row.State = e.ProvisioningState ?? "UNSPECIFIED";
-            row.Seats = seats;
-            row.BillableSeats = billable;
-            row.IsTrial = e.IsTrial;
-            row.CreateTime = e.CreateTime;
-            row.CommitmentEndTime = e.Commitment?.EndTime;
-            // Prior stored auto-renew flag (may hold a value fetched via the fallback below on an earlier
-            // cycle) — captured before we overwrite it with the list value so a transient fallback failure
-            // doesn't clobber a good value with null.
-            var existingRenewal = row.RenewalEnabled;
-            row.RenewalEnabled = e.Commitment?.RenewalEnabled;
-            // entitlements.list omits commitmentSettings.renewalSettings for commitment offers, so the
-            // auto-renew flag comes back null even though the commitment end date is present. Fall back to
-            // a lean entitlements.get for active commitment entitlements whose renewal flag is still unknown
-            // (self-limiting: fires only when list didn't supply it). Best-effort — a failure keeps the
-            // previously stored value rather than clobbering it with null.
-            if (isActive && row.RenewalEnabled is null && e.Commitment is { EndTime: not null })
-            {
-                try
-                {
-                    row.RenewalEnabled = await client.GetEntitlementRenewalEnabledAsync(customerId, e.Id, ct) ?? existingRenewal;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogDebug(ex, "Auto-renew fallback fetch failed for entitlement {Entitlement}; keeping prior value.", e.Id);
-                    row.RenewalEnabled = existingRenewal;
-                }
-            }
-            row.PlanDescription = BuildPlanDescription(
-                e.Commitment,
-                e.OfferId is not null && offerCatalog.Plans.TryGetValue(e.OfferId, out var plan) ? plan : default);
-            // Prior stored price — captured before overwrite so a value the lookupOffer fallback resolved
-            // on an earlier cycle isn't lost, and so we only pay that per-entitlement call once.
-            var existingUnitPrice = row.UnitPrice;
-            var existingCurrency = row.Currency;
-            CatalogOffer? lookedUp = null; // cached lookupOffer result, reused by the price + name fallbacks
-            if (e.OfferId is not null && offerCatalog.Pricing.TryGetValue(e.OfferId, out var price))
-            {
-                row.UnitPrice = price.Unit;
-                row.Currency = price.Currency;
-                if (isActive) { diag.ActivePriced++; }
-            }
-            else if (isActive && existingUnitPrice > 0m)
-            {
-                // Already resolved on a prior cycle via the lookupOffer fallback below; keep it instead of
-                // re-fetching every cycle (offers.list still can't price this offer — churn/legacy).
-                row.UnitPrice = existingUnitPrice;
-                row.Currency = existingCurrency;
-                diag.ActivePriced++;
-            }
-            else
-            {
-                row.UnitPrice = 0m;
-                row.Currency = null;
-                if (isActive)
-                {
-                    // Fallback: the account's offers.list can't price this active entitlement even though
-                    // entitlements.lookupOffer (the same source the entitlement detail page prices from)
-                    // can — the backing offer isn't in the sellable offers.list (churn/legacy/sub-reseller).
-                    // Do a best-effort per-entitlement lookupOffer so the price rolls up to the read-model
-                    // list/customer/estate views like the detail page. Gated on seats>0 (skips free/0-seat
-                    // entitlements like Cloud Identity Free that never roll up a cost) and on the value being
-                    // unresolved (guarded above), so it's a one-time, bounded cost per priceable entitlement.
-                    if (e.OfferId is not null && seats > 0)
-                    {
-                        try
-                        {
-                            lookedUp = await client.LookupEntitlementOfferAsync(customerId, e.Id, ct);
-                            var seat = lookedUp.Pricing.FirstOrDefault(p =>
-                                string.Equals(p.ResourceType, "SEAT", StringComparison.OrdinalIgnoreCase))
-                                ?? lookedUp.Pricing.FirstOrDefault();
-                            if ((seat?.EffectivePrice ?? seat?.BasePrice) is { } money)
-                            {
-                                row.UnitPrice = money.Value;
-                                row.Currency = money.CurrencyCode;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.LogDebug(ex, "Offer-price fallback (lookupOffer) failed for entitlement {Entitlement}; leaving unpriced.", e.Id);
-                        }
-                    }
-
-                    if (row.UnitPrice > 0m)
-                    {
-                        diag.ActivePriced++;
-                    }
-                    else if (e.OfferId is null)
-                    {
-                        diag.ActiveUnpriced++;
-                        diag.ActiveWithoutOfferId++;
-                    }
-                    else if (offerCatalog.OfferNames.ContainsKey(e.OfferId))
-                    {
-                        // Offer IS in the account's offers.list but exposes no SEAT/base price (and lookupOffer didn't either).
-                        diag.ActiveUnpriced++;
-                        diag.ListedWithoutPrice[e.OfferId] = diag.ListedWithoutPrice.GetValueOrDefault(e.OfferId) + 1;
-                    }
-                    else
-                    {
-                        // Offer the entitlement references is absent from the account's offers.list (churn/legacy/sub-reseller).
-                        diag.ActiveUnpriced++;
-                        diag.MissingFromCatalog[e.OfferId] = diag.MissingFromCatalog.GetValueOrDefault(e.OfferId) + 1;
-                    }
-                }
-            }
-            // Friendly-name fallback (what the Channel Services console shows): the account's
-            // offers.list/products.list only covers the reseller's SELLABLE catalog, so education, legacy
-            // or churned offers a customer already holds resolve to raw ids. Resolve the offer/SKU/product
-            // display names from the entitlement's OWN offer via lookupOffer — reusing the call the price
-            // fallback already made when possible, else one best-effort call. Runs for ANY state (incl.
-            // SUSPENDED) and any seat count since names are cosmetic; the preserved names above keep it
-            // effectively one-time (only fires while a name is still missing).
-            if (e.OfferId is not null &&
-                (string.IsNullOrEmpty(row.OfferName) || string.IsNullOrEmpty(row.SkuName) || string.IsNullOrEmpty(row.ProductName)))
-            {
-                try
-                {
-                    lookedUp ??= await client.LookupEntitlementOfferAsync(customerId, e.Id, ct);
-                    if (string.IsNullOrEmpty(row.OfferName)) { row.OfferName = lookedUp.DisplayName; }
-                    if (string.IsNullOrEmpty(row.SkuName)) { row.SkuName = lookedUp.SkuDisplayName; }
-                    if (string.IsNullOrEmpty(row.ProductName)) { row.ProductName = lookedUp.ProductDisplayName; }
-                }
-                catch (Exception ex)
-                {
-                    logger.LogDebug(ex, "Offer-name fallback (lookupOffer) failed for entitlement {Entitlement}; leaving raw ids.", e.Id);
-                }
-            }
-            // Per-entitlement override wins; otherwise the link-wide channel-partner mark-up (0 for direct).
-            row.RepricingPercent = entitlementPercents.TryGetValue(e.Id, out var pct) ? pct : linkFallbackPercent;
-            row.LastSyncedUtc = now;
-            row.IsDeleted = false;
-        }
-
-        foreach (var row in stored.Where(r => !seen.Contains(r.EntitlementId) && !r.IsDeleted))
-        {
-            row.IsDeleted = true;
-        }
-
-        var customer = await db.CustomerRecords.FindAsync([customerId], ct);
-        if (customer is not null)
-        {
-            customer.SeatCount = activeSeats;
-            // Stamp entitlement-sync freshness so the staleness rotation advances to the next customer.
-            customer.LastSyncedUtc = DateTimeOffset.UtcNow;
-        }
-
-        await db.SaveChangesAsync(ct);
-    }
-
-    private static long SeatsOf(Entitlement e)
-    {
-        // Prefer num_units (commitment/seat offers); fall back to max_units (flexible/usage plans, incl.
-        // some free/EDU editions, store their seat cap here). Matches the Web UI's seat helper so the
-        // reseller seat ranking and per-customer seat counts aren't undercounted for flexible plans.
-        var raw = e.Parameters.FirstOrDefault(p =>
-            string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
-            ?? e.Parameters.FirstOrDefault(p =>
-            string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
-        return long.TryParse(raw, out var n) ? n : 0;
-    }
-
-    // Committed/billable seats (num_units only). Pricing multiplies by this rather than SeatsOf: a
-    // flexible/usage plan stores its seat CAP in max_units, which is not what's billed — multiplying an
-    // offer's per-seat price by that cap massively inflates the estate value. Flexible plans with no
-    // num_units therefore contribute 0 to the wholesale/revenue rollup (matching their usage-based billing).
-    private static long NumUnitsOf(Entitlement e)
-    {
-        var raw = e.Parameters.FirstOrDefault(p =>
-            string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value;
-        return long.TryParse(raw, out var n) ? n : 0;
-    }
-
     // §11: build an offerId → (effective unit price, currency) lookup from the account's sellable
     // offers. SEAT pricing is preferred (the seat count we store multiplies against it); otherwise the
     // first priced resource is used. Best-effort: any failure yields an empty lookup (entitlements then
     // cost as 0 and are reported as "unpriced"). The same offers.list pass also yields offer/SKU display
     // names (a CatalogOffer carries both), so the entitlement list renders friendly names from SQL.
-    private async Task<OfferCatalog> BuildOfferCatalogAsync(
+    private async Task<ReadModelProjector.OfferCatalog> BuildOfferCatalogAsync(
         GoogleChannelClient client, CancellationToken ct)
     {
         var pricing = new Dictionary<string, (decimal, string)>(StringComparer.OrdinalIgnoreCase);
@@ -757,71 +515,7 @@ public sealed class ReadModelSyncService(
         {
             logger.LogWarning(ex, "Read-model offer catalog lookup failed this cycle; entitlements will be reported as unpriced/unnamed.");
         }
-        return new OfferCatalog(pricing, offerNames, skuNames, plans, productNames);
-    }
-
-    /// <summary>Per-cycle offer catalog: wholesale pricing plus offer/SKU display names, all keyed by id.</summary>
-    private readonly record struct OfferCatalog(
-        IReadOnlyDictionary<string, (decimal Unit, string Currency)> Pricing,
-        IReadOnlyDictionary<string, string> OfferNames,
-        IReadOnlyDictionary<string, string> SkuNames,
-        IReadOnlyDictionary<string, (string? PaymentPlan, string? PaymentCycle)> Plans,
-        IReadOnlyDictionary<string, string> ProductNames);
-
-    /// <summary>
-    /// Accumulates, across one sync cycle's entitlement pass, why ACTIVE entitlements end up unpriced so
-    /// the cause can be diagnosed from logs: offers absent from the account's offers.list vs offers that
-    /// are listed but carry no SEAT/base price vs entitlements with no offer id at all.
-    /// </summary>
-    private sealed class PricingDiagnostics
-    {
-        public int ActivePriced;
-        public int ActiveUnpriced;
-        public int ActiveWithoutOfferId;
-        public readonly Dictionary<string, int> MissingFromCatalog = new(StringComparer.OrdinalIgnoreCase);
-        public readonly Dictionary<string, int> ListedWithoutPrice = new(StringComparer.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Builds a human-friendly plan summary (e.g. "Annual Plan (Monthly Payment)") from the entitlement's
-    /// commitment term and the offer's payment plan/cycle. The commitment term (Annual/Monthly/N-Year)
-    /// is derived from the commitment start→end span when present; otherwise the offer's payment plan
-    /// (Commitment/Flexible/…) is used. Returns null when nothing is known.
-    /// </summary>
-    private static string? BuildPlanDescription(EntitlementCommitment? commitment, (string? PaymentPlan, string? PaymentCycle) plan)
-    {
-        string? term = null;
-        if (commitment?.StartTime is { } start && commitment.EndTime is { } end && end > start)
-        {
-            var months = (int)Math.Round((end - start).TotalDays / 30.44, MidpointRounding.AwayFromZero);
-            term = months switch
-            {
-                <= 0 => null,
-                1 => "Monthly",
-                12 => "Annual",
-                _ when months % 12 == 0 => $"{months / 12}-Year",
-                _ => $"{months}-Month",
-            };
-        }
-
-        term ??= plan.PaymentPlan?.ToUpperInvariant() switch
-        {
-            "COMMITMENT" => "Commitment",
-            "FLEXIBLE" => "Flexible",
-            "TRIAL" => "Trial",
-            "FREE" => "Free",
-            "OFFLINE" => "Offline",
-            _ => null,
-        };
-
-        var payment = string.IsNullOrWhiteSpace(plan.PaymentCycle) ? null : plan.PaymentCycle;
-        return (term, payment) switch
-        {
-            (not null, not null) => $"{term} Plan ({payment} Payment)",
-            (not null, null) => $"{term} Plan",
-            (null, not null) => $"{payment} Payment",
-            _ => null,
-        };
+        return new ReadModelProjector.OfferCatalog(pricing, offerNames, skuNames, plans, productNames);
     }
 
     // Friendly product display names keyed by product id (one quota-light products.list pass). Best-effort.
@@ -845,73 +539,5 @@ public sealed class ReadModelSyncService(
             logger.LogWarning(ex, "Read-model product-name lookup failed this cycle; product mix will fall back to product ids.");
         }
         return map;
-    }
-
-    // §6: per-entitlement repricing mark-ups for one customer, keyed by entitlement id. Best-effort.
-    private async Task<IReadOnlyDictionary<string, decimal>> ResolveCustomerEntitlementPercentsAsync(
-        GoogleChannelClient client, string customerId, DateTimeOffset now, CancellationToken ct)
-    {
-        var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-        try
-        {
-            var configs = await client.ListCustomerRepricingConfigsAsync(customerId, ct);
-            foreach (var group in configs.Configs
-                .Where(c => !string.IsNullOrEmpty(c.EntitlementId))
-                .GroupBy(c => c.EntitlementId!, StringComparer.OrdinalIgnoreCase))
-            {
-                var effective = SelectEffectiveConfig(group, now);
-                if (effective is not null)
-                {
-                    map[group.Key] = effective.PercentageAdjustment;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogDebug(ex, "Read-model customer repricing lookup skipped for customer {Customer}.", customerId);
-        }
-        return map;
-    }
-
-    // §6: the reseller-wide (channel-partner granularity) mark-up for a link, or 0 when none applies.
-    private async Task<decimal> ResolveChannelPartnerPercentAsync(
-        GoogleChannelClient client, string linkId, DateTimeOffset now, CancellationToken ct)
-    {
-        try
-        {
-            var configs = await client.ListChannelPartnerRepricingConfigsAsync(linkId, ct);
-            var partnerConfigs = configs.Configs.Where(c =>
-                string.Equals(c.Granularity, RepricingGranularities.ChannelPartner, StringComparison.OrdinalIgnoreCase));
-            return SelectEffectiveConfig(partnerConfigs, now)?.PercentageAdjustment ?? 0m;
-        }
-        catch (Exception ex)
-        {
-            logger.LogDebug(ex, "Read-model channel-partner repricing lookup skipped for link {Link}.", linkId);
-            return 0m;
-        }
-    }
-
-    // Picks the config currently in force: the latest whose effective invoice month is on or before the
-    // current month, else the earliest future one (so a freshly-created future config still previews).
-    private static RepricingConfig? SelectEffectiveConfig(IEnumerable<RepricingConfig> configs, DateTimeOffset now)
-    {
-        var currentKey = (now.Year * 12) + now.Month;
-        RepricingConfig? best = null;
-        var bestKey = int.MinValue;
-        RepricingConfig? earliestFuture = null;
-        var earliestFutureKey = int.MaxValue;
-        foreach (var c in configs)
-        {
-            var key = (c.EffectiveInvoiceYear * 12) + c.EffectiveInvoiceMonth;
-            if (key <= currentKey)
-            {
-                if (key > bestKey) { bestKey = key; best = c; }
-            }
-            else if (key < earliestFutureKey)
-            {
-                earliestFutureKey = key; earliestFuture = c;
-            }
-        }
-        return best ?? earliestFuture;
     }
 }

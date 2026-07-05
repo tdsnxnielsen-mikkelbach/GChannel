@@ -17,8 +17,11 @@
 
 <MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
     Google publishes entitlement and customer change events to a Cloud Pub/Sub topic. A background
-    subscriber in the API records them into a live feed so the console reacts to changes without
+    subscriber in the worker records them into a live feed so the console reacts to changes without
     polling. Each event deep-links to the customer or entitlement it concerns.
+    <MudTooltip Text="When the read-model is enabled, each change event also triggers a targeted refresh of the affected customer's synced data (seats, subscriptions, renewal, pricing) within seconds — so lists and dashboards update in near-real-time, with the periodic background sync as a backstop.">
+        <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Class="ml-1" Style="vertical-align:text-bottom" />
+    </MudTooltip>
 </MudText>
 
 @if (!_feedLoading && _feed is not null && !_feed.SubscriberEnabled)

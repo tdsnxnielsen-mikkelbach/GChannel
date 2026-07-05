@@ -458,6 +458,27 @@ aborting the entire cycle (so links never persisted their customer counts and th
 ran) and bloating worker memory. Fresh per-unit contexts keep each change tracker tiny, isolate a bad
 save to its own unit, and bound memory across a long pass.
 
+**Write-through &amp; event-driven projection (near-real-time freshness).** The per-customer projection
+logic (metadata + entitlements with seat/price/name/renewal/repricing denormalisation) lives in a shared
+`ReadModelProjector` (`GChannel.ApiService/Services`) so three callers denormalise identical fields:
+(1) the background `ReadModelSyncService` bulk sync (passes a pre-built per-cycle offer catalog);
+(2) **write-through** — the customer mutation endpoints (direct `CustomersEndpoints` and n-tier
+`ChannelPartnerLinksEndpoints`) upsert the one changed `CustomerRecord` immediately after a successful
+create/import/update (soft-delete on delete), using the **mutation result** with no extra Channel API
+call, gated on `UseReadModel` and best-effort (a failure logs and is left for the poll — it never fails
+the already-successful mutation); (3) **event-driven projection** — `ChannelNotificationsService`, on each
+Pub/Sub change event, triggers a **targeted refresh of the affected customer** (`ProjectCustomerAsync`:
+metadata + all entitlements, priced/named via the per-entitlement `lookupOffer` fallback so an empty
+catalog still resolves everything). The projection **re-reads live state** rather than applying the event
+payload, so duplicate / out-of-order events converge on current truth, and a projection failure never
+nacks the message (which would duplicate the feed entry). Event projection needs a service-account
+credential with domain-wide delegation to read the Channel API (built separately from the Pub/Sub
+credential, which may be key-less WIF without DWD), so it activates only when `ReadModelSyncEnabled`. The
+periodic background sync remains the **reconciliation backstop** for anything an event missed. Net effect:
+a create/import/update/delete shows in the customers/estate/partner-detail lists instantly, and a change
+originating outside the app refreshes the affected customer within seconds — the "As of" badge (which
+tracks the periodic full sync) is therefore usually *older* than the data it labels.
+
 **Estimated estate value (pricing).** When the §10 read-model is enabled, the worker also denormalises
 pricing onto each synced entitlement so the dashboard can show an estimated monetary rollup without any
 per-request Channel API calls. Once per sync cycle `ReadModelSyncService` builds an

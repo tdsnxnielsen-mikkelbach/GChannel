@@ -116,6 +116,7 @@ below).
 | Provision Cloud Identity (§12.2) | Feature beacon (`provision-cloud-identity-v1`) on the customer detail |
 | Eligible billing accounts (§12.3) | Extra step in the `purchase-entitlement` walkthrough (`pe-billing`) |
 | `v1` doc-hygiene non-implementations (§12.4) | n/a (no UI) |
+| Read-model write-through &amp; event-driven projection (§14) | Ambient `MudTooltip` on the **As-of badge** (freshness model: your changes appear instantly, events refresh within seconds) + info tooltip on the **Notifications** page (events also trigger a targeted read-model refresh) |
 
 ### Convention: new features ship with onboarding
 

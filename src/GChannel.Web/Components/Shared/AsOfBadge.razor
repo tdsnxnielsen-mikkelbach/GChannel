@@ -1,10 +1,23 @@
 @namespace GChannel.Web.Components
 @* Shows how fresh synced read-model data is. Bound to the page's "as-of" timestamp. *@
-<MudTooltip Text="@(AsOf is null ? "No synced data yet" : $"Synced {AsOf:yyyy-MM-dd HH:mm:ss} UTC")">
-    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
-             Icon="@Icons.Material.Filled.Schedule">
-        As of @(AsOf is null ? "—" : $"{Relative(AsOf.Value)} ago")
-    </MudChip>
+<MudTooltip>
+    <TooltipContent>
+        <div style="max-width:280px;text-align:left">
+            @(AsOf is null
+                ? "No background sync has completed yet."
+                : $"Last background reconciliation: {AsOf:yyyy-MM-dd HH:mm:ss} UTC.")
+            <br />
+            <span>Changes you make here are written through immediately, and Google change events
+            refresh the affected customer within seconds — so the list is usually fresher than this
+            timestamp, which tracks the periodic full background sync.</span>
+        </div>
+    </TooltipContent>
+    <ChildContent>
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default"
+                 Icon="@Icons.Material.Filled.Schedule">
+            As of @(AsOf is null ? "—" : $"{Relative(AsOf.Value)} ago")
+        </MudChip>
+    </ChildContent>
 </MudTooltip>
 
 @code {

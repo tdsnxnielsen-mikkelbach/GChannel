@@ -207,6 +207,18 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > **detail** (`.get`), customer **detail**, the **catalog**, **repricing** and **transfers** stay live —
 > those are on lighter/uncontended quotas or, for transfers, must be computed in real time.
 
+> **Read-model write-through &amp; event-driven projection (§14).** The customer mutation endpoints
+> (`POST/PUT/DELETE /api/customers[/…]` and the n-tier `…/channel-partner-links/{id}/customers[/…]`
+> variants) **write through** to the read-model when `UseReadModel` is on: after the successful Channel API
+> call they upsert the one changed `CustomerRecord` (soft-delete on delete) from the mutation result — no
+> extra API call — so the customers/estate/partner-detail lists reflect it immediately instead of on the
+> next sync cycle (best-effort; a failure is logged and left for the poll). Separately, the Pub/Sub
+> subscriber (`ChannelNotificationsService`) triggers a **targeted projection** of the affected customer on
+> each change event (metadata + all entitlements, priced/named via the per-entitlement `lookupOffer`
+> fallback), re-reading live state so duplicate/out-of-order events converge; the background sync is the
+> reconciliation backstop. All three paths share one `ReadModelProjector` so they denormalise identical
+> fields. See [todos/14-cqrs-and-event-driven-projections.md](todos/14-cqrs-and-event-driven-projections.md).
+
 > **Read-model pricing fields.** The same denormalised pricing the dashboard rollup uses is also exposed
 > per row for UI estimates (no extra Channel API calls): read-model `Entitlement` results carry
 > `UnitPrice` / `PriceCurrency` / `RepricingPercent`, and `GET /api/estate/customers` rows carry an

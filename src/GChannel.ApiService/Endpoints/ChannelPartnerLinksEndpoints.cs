@@ -90,10 +90,15 @@ public static class ChannelPartnerLinksEndpoints
                 SaveCustomerRequest request,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
+                ReadModelProjector projector,
+                IOptions<GoogleChannelOptions> options,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 var created = await channel.CreateChannelPartnerCustomerAsync(linkId, request, cancellationToken);
                 await InvalidateCustomersAsync(cache, linkId, created.Id, cancellationToken);
+                await WriteThroughUpsertAsync(projector, db, options.Value, created, linkId, loggerFactory, cancellationToken);
                 return Results.Created($"/api/channel-partner-links/{linkId}/customers/{created.Id}", created);
             })
             .WithName("CreateChannelPartnerCustomer")
@@ -105,10 +110,15 @@ public static class ChannelPartnerLinksEndpoints
                 SaveCustomerRequest request,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
+                ReadModelProjector projector,
+                IOptions<GoogleChannelOptions> options,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 var updated = await channel.UpdateChannelPartnerCustomerAsync(linkId, request with { Id = customerId }, cancellationToken);
                 await InvalidateCustomersAsync(cache, linkId, customerId, cancellationToken);
+                await WriteThroughUpsertAsync(projector, db, options.Value, updated, linkId, loggerFactory, cancellationToken);
                 return Results.Ok(updated);
             })
             .WithName("UpdateChannelPartnerCustomer")
@@ -119,10 +129,15 @@ public static class ChannelPartnerLinksEndpoints
                 string customerId,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
+                ReadModelProjector projector,
+                IOptions<GoogleChannelOptions> options,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 await channel.DeleteChannelPartnerCustomerAsync(linkId, customerId, cancellationToken);
                 await InvalidateCustomersAsync(cache, linkId, customerId, cancellationToken);
+                await WriteThroughDeleteAsync(projector, db, options.Value, customerId, loggerFactory, cancellationToken);
                 return Results.NoContent();
             })
             .WithName("DeleteChannelPartnerCustomer")
@@ -133,10 +148,15 @@ public static class ChannelPartnerLinksEndpoints
                 ImportCustomerRequest request,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
+                ReadModelProjector projector,
+                IOptions<GoogleChannelOptions> options,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 var imported = await channel.ImportChannelPartnerCustomerAsync(linkId, request, cancellationToken);
                 await InvalidateCustomersAsync(cache, linkId, imported.Id, cancellationToken);
+                await WriteThroughUpsertAsync(projector, db, options.Value, imported, linkId, loggerFactory, cancellationToken);
                 return Results.Created($"/api/channel-partner-links/{linkId}/customers/{imported.Id}", imported);
             })
             .WithName("ImportChannelPartnerCustomer")
@@ -201,6 +221,53 @@ public static class ChannelPartnerLinksEndpoints
         if (!string.IsNullOrEmpty(customerId))
         {
             await cache.RemoveAsync(CustomerCacheKey(linkId, customerId), cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// §10 read-model write-through: after a successful partner-customer create/import/update, upsert the
+    /// one changed customer row (owned by this link) so the partner-detail and estate lists reflect it
+    /// immediately. Best-effort, gated on <see cref="GoogleChannelOptions.UseReadModel"/>; a failure is
+    /// logged and left for the poll to reconcile.
+    /// </summary>
+    private static async Task WriteThroughUpsertAsync(
+        ReadModelProjector projector, GChannelDbContext db, GoogleChannelOptions options,
+        Customer customer, string? owningLinkId, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+    {
+        if (!options.UseReadModel)
+        {
+            return;
+        }
+
+        try
+        {
+            await projector.UpsertCustomerAsync(db, customer, owningLinkId, DateTimeOffset.UtcNow, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            loggerFactory.CreateLogger("ReadModelWriteThrough")
+                .LogWarning(ex, "Read-model write-through upsert failed for partner customer {Customer}; the next sync will reconcile.", customer.Id);
+        }
+    }
+
+    /// <summary>§10 read-model write-through for a delete: soft-delete the customer (and its entitlements) immediately.</summary>
+    private static async Task WriteThroughDeleteAsync(
+        ReadModelProjector projector, GChannelDbContext db, GoogleChannelOptions options,
+        string customerId, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+    {
+        if (!options.UseReadModel)
+        {
+            return;
+        }
+
+        try
+        {
+            await projector.SoftDeleteCustomerAsync(db, customerId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            loggerFactory.CreateLogger("ReadModelWriteThrough")
+                .LogWarning(ex, "Read-model write-through delete failed for partner customer {Customer}; the next sync will reconcile.", customerId);
         }
     }
 

@@ -140,6 +140,13 @@ product mix) become simple `GROUP BY` queries.
   customer **detail**, the **catalog**, **repricing** and **transfers** stay live — they're on
   lighter/uncontended quotas or, for transfers, must be computed in real time against current external
   subscriptions (a stored copy would be wrong once stale).
+- [x] **Write-through &amp; event-driven projection (§14).** Freshness no longer depends solely on the poll:
+  the per-customer projection now lives in a shared `ReadModelProjector` reused by three callers. Mutation
+  endpoints **write through** the changed `CustomerRecord` immediately after a successful create/import/
+  update/delete (no extra API call), and the Pub/Sub `ChannelNotificationsService` triggers a **targeted
+  projection** of the affected customer on each change event (re-reads live state → idempotent under
+  duplicate/out-of-order events), with the background sync demoted to a reconciliation backstop. See
+  [14 — CQRS &amp; event-driven projections](14-cqrs-and-event-driven-projections.md).
 
 ### Risks &amp; caveats
 

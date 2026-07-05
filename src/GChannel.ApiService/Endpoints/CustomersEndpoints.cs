@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
+using GChannel.ApiService.Data;
 using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
 using Microsoft.Extensions.Caching.Distributed;
@@ -44,10 +45,15 @@ public static class CustomersEndpoints
                 SaveCustomerRequest request,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
+                ReadModelProjector projector,
+                IOptions<GoogleChannelOptions> options,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 var created = await channel.CreateCustomerAsync(request, cancellationToken);
                 await InvalidateAsync(cache, created.Id, cancellationToken);
+                await WriteThroughUpsertAsync(projector, db, options.Value, created, owningLinkId: null, loggerFactory, cancellationToken);
                 return Results.Created($"/api/customers/{created.Id}", created);
             })
             .WithName("CreateCustomer")
@@ -58,10 +64,15 @@ public static class CustomersEndpoints
                 SaveCustomerRequest request,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
+                ReadModelProjector projector,
+                IOptions<GoogleChannelOptions> options,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 var updated = await channel.UpdateCustomerAsync(request with { Id = customerId }, cancellationToken);
                 await InvalidateAsync(cache, customerId, cancellationToken);
+                await WriteThroughUpsertAsync(projector, db, options.Value, updated, owningLinkId: null, loggerFactory, cancellationToken);
                 return Results.Ok(updated);
             })
             .WithName("UpdateCustomer")
@@ -71,10 +82,15 @@ public static class CustomersEndpoints
                 string customerId,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
+                ReadModelProjector projector,
+                IOptions<GoogleChannelOptions> options,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 await channel.DeleteCustomerAsync(customerId, cancellationToken);
                 await InvalidateAsync(cache, customerId, cancellationToken);
+                await WriteThroughDeleteAsync(projector, db, options.Value, customerId, loggerFactory, cancellationToken);
                 return Results.NoContent();
             })
             .WithName("DeleteCustomer")
@@ -86,10 +102,15 @@ public static class CustomersEndpoints
                 ImportCustomerRequest request,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
+                GChannelDbContext db,
+                ReadModelProjector projector,
+                IOptions<GoogleChannelOptions> options,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken) =>
             {
                 var imported = await channel.ImportCustomerAsync(request, cancellationToken);
                 await InvalidateAsync(cache, imported.Id, cancellationToken);
+                await WriteThroughUpsertAsync(projector, db, options.Value, imported, owningLinkId: null, loggerFactory, cancellationToken);
                 return Results.Created($"/api/customers/{imported.Id}", imported);
             })
             .WithName("ImportCustomer")
@@ -157,6 +178,53 @@ public static class CustomersEndpoints
     private const string ListCacheKey = "customers:list";
 
     private static string GetCacheKey(string customerId) => $"customers:get:{customerId}";
+
+    /// <summary>
+    /// §10 read-model write-through: after a successful Channel API create/import/update, upsert the one
+    /// changed customer row so the estate/customers lists reflect it immediately (no wait for the next
+    /// background sync cycle). Best-effort and gated on <see cref="GoogleChannelOptions.UseReadModel"/> —
+    /// a failure is logged and left for the poll to reconcile, never failing the already-successful mutation.
+    /// </summary>
+    private static async Task WriteThroughUpsertAsync(
+        ReadModelProjector projector, GChannelDbContext db, GoogleChannelOptions options,
+        Customer customer, string? owningLinkId, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+    {
+        if (!options.UseReadModel)
+        {
+            return;
+        }
+
+        try
+        {
+            await projector.UpsertCustomerAsync(db, customer, owningLinkId, DateTimeOffset.UtcNow, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            loggerFactory.CreateLogger("ReadModelWriteThrough")
+                .LogWarning(ex, "Read-model write-through upsert failed for customer {Customer}; the next sync will reconcile.", customer.Id);
+        }
+    }
+
+    /// <summary>§10 read-model write-through for a delete: soft-delete the customer (and its entitlements) immediately.</summary>
+    private static async Task WriteThroughDeleteAsync(
+        ReadModelProjector projector, GChannelDbContext db, GoogleChannelOptions options,
+        string customerId, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+    {
+        if (!options.UseReadModel)
+        {
+            return;
+        }
+
+        try
+        {
+            await projector.SoftDeleteCustomerAsync(db, customerId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            loggerFactory.CreateLogger("ReadModelWriteThrough")
+                .LogWarning(ex, "Read-model write-through delete failed for customer {Customer}; the next sync will reconcile.", customerId);
+        }
+    }
 
     /// <summary>Drops the cached customer list and a specific customer after a mutation.</summary>
     private static async Task InvalidateAsync(IDistributedCache cache, string customerId, CancellationToken cancellationToken)

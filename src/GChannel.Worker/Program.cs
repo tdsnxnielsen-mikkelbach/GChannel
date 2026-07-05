@@ -1,5 +1,6 @@
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
+using GChannel.ApiService.Services;
 using GChannel.Worker.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,6 +35,10 @@ builder.AddRedisClientBuilder("cache")
 builder.Services
     .AddOptions<GoogleChannelOptions>()
     .Bind(builder.Configuration.GetSection(GoogleChannelOptions.SectionName));
+
+// §10 read-model projection helper — shared by the bulk sync and the Pub/Sub event-driven projection
+// so every path denormalises identical fields. Stateless (takes the DbContext/client per call).
+builder.Services.AddSingleton<ReadModelProjector>();
 
 // The estate/dashboard background workers, extracted from the API container so they scale on their
 // own axis (fixed single replica) instead of with HTTP traffic. Each is a no-op unless the relevant

@@ -218,7 +218,16 @@ When a customer already has Google subscriptions (e.g. with another reseller), t
   deep-links to the affected resource. The right-hand card manages the **subscriber registration**
   (which service accounts may receive events). The feed needs an administrator to configure Pub/Sub
   (see [configuration.md](configuration.md#pubsub-notifications-7)); until then the feed simply stays
-  empty and the rest of the app is unaffected.
+  empty and the rest of the app is unaffected. When the read-model is enabled, each event **also triggers
+  a targeted refresh** of the affected customer's synced data (seats, subscriptions, renewal, pricing), so
+  lists and dashboards update in near-real-time — an info tooltip on the page notes this.
+
+> **Data freshness (§14).** Changes you make in the app are **written through** to the synced read-model
+> immediately, so a new/edited/removed customer shows in the customers, estate and partner-detail lists
+> right away — you don't wait for the next background sync. Changes that originate outside the app arrive
+> as Pub/Sub events and refresh the affected customer within seconds. The **"As of" badge** therefore
+> tracks the periodic full background reconciliation and is usually *older* than the data it labels; its
+> tooltip explains this.
 
 ## A typical first session, end to end
 

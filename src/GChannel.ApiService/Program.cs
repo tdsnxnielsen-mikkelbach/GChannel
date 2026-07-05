@@ -49,6 +49,12 @@ builder.Services
 builder.Services.AddScoped<IGoogleChannelCredentialSource, RequestTokenCredentialSource>();
 builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
 
+// §10 read-model write-through: mutation endpoints upsert the one changed customer row into the
+// read-model immediately after a successful Channel API call, so the estate/customers lists reflect a
+// create/import/update/delete without waiting for the next background sync cycle. Stateless (takes the
+// DbContext per call), so a singleton is fine.
+builder.Services.AddSingleton<ReadModelProjector>();
+
 // The background workers (dashboard refresh, Pub/Sub subscriber, read-model sync) have been extracted
 // into the GChannel.Worker container so they scale independently of HTTP traffic (fixed single replica)
 // and the API can scale to zero. The API still owns the read schema (created on startup) and serves the

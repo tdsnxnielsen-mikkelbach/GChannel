@@ -2,11 +2,37 @@
 
 ## 14. CQRS &amp; event-driven projections (architecture note)
 
-> **Status:** Not planned / analysis only — **no code written**. This is a design note capturing whether
-> the CQRS pattern would benefit the app now that a persistent read-model exists (see
-> [10 — Persistent read-model](10-persistent-read-model.md)). Short answer: the *pattern label* buys
-> little (we already have the hard half), but two ideas **adjacent** to CQRS are genuinely valuable and
-> worth revisiting later — **write-through on commands** and **event-driven projections**.
+> **Status:** ✅ **Implemented** (2026-07) — the two CQRS-adjacent ideas below are now in the codebase:
+> **write-through on commands** and **event-driven (Pub/Sub) projections**, both backed by a shared
+> `ReadModelProjector`. A *formal* CQRS/MediatR refactor was deliberately **not** done (it would relabel
+> an existing design without touching the real constraint — Channel API quota). This note is retained as
+> the rationale + design record. See [10 — Persistent read-model](10-persistent-read-model.md).
+
+### What shipped
+
+- **Shared projector** — `GChannel.ApiService/Services/ReadModelProjector.cs` now owns the per-customer
+  projection (the `SyncCustomerEntitlementsAsync` core + seat/price/name/renewal/repricing denormalisation
+  was **moved out of** `ReadModelSyncService` so there is a single source of truth). The background sync,
+  the write-through endpoints and the event projection all call it, so every path denormalises identical
+  fields. Registered as a singleton in both `Program.cs` (API + Worker).
+- **Write-through on commands** — the direct-customer endpoints (`CustomersEndpoints`) and the n-tier
+  partner-customer endpoints (`ChannelPartnerLinksEndpoints`) now upsert the one changed `CustomerRecord`
+  immediately after a successful create / import / update, and soft-delete it on delete. Uses the mutation
+  result (no extra Channel API call), gated on `UseReadModel`, best-effort (a failure logs and is left for
+  the poll to reconcile — never fails the already-successful mutation). Closes the "shows — until next
+  sync" gap for the customers/estate/partner-detail lists.
+- **Event-driven projection** — `ChannelNotificationsService` now, in addition to recording each Pub/Sub
+  event to the feed, triggers a **targeted refresh of the affected customer** (`ReadModelProjector.
+  ProjectCustomerAsync`: metadata + all entitlements, priced/named via the per-entitlement `lookupOffer`
+  fallback so an empty catalog still resolves everything). It re-reads **live state** rather than applying
+  the event payload, so duplicate / out-of-order events converge on current truth; failures never nack
+  (that would duplicate the feed entry). The periodic background sync remains the **reconciliation
+  backstop**. Requires a service-account credential with domain-wide delegation (built separately from the
+  Pub/Sub credential, which may be key-less WIF without DWD), so it activates only when
+  `ReadModelSyncEnabled`.
+- **Onboarding** — the `AsOfBadge` tooltip now explains the freshness model (your changes appear
+  instantly; events refresh within seconds; the timestamp tracks the periodic full sync), and the
+  **Notifications** page notes that events also trigger a targeted read-model refresh.
 
 ### TL;DR
 
@@ -99,25 +125,30 @@ Why this is the real win:
 ### Recommendation
 
 1. **Do not** undertake a formal CQRS / MediatR refactor for its own sake — it renames a design that
-   already exists and does not touch the real constraint (quota).
+   already exists and does not touch the real constraint (quota). *(Not done — deliberately.)*
 2. **Do** borrow two specific CQRS-adjacent ideas when there's appetite:
-   - **Write-through on commands** — after a successful Channel API mutation, optimistically upsert the
+   - ✅ **Write-through on commands** — after a successful Channel API mutation, optimistically upsert the
      affected read-model row so the UI updates instantly (closes the "shows — until next sync" gaps).
-   - **Event-driven projections** — promote the Pub/Sub notifications from a feed into **targeted**
+   - ✅ **Event-driven projections** — promote the Pub/Sub notifications from a feed into **targeted**
      read-model refresh triggers, demoting the poll to a reconciliation backstop. Highest-value,
      best-fit improvement.
 
-Both are **incremental and additive** to the current Worker / read-model design — no big-bang rewrite —
-and they attack the freshness/quota pain directly rather than the code-organisation cosmetics.
+Both were **incremental and additive** to the current Worker / read-model design — no big-bang rewrite —
+and attack the freshness/quota pain directly rather than the code-organisation cosmetics.
 
-### If revisited — rough sequencing (not scheduled)
+### Sequencing as implemented
 
-1. **Write-through on commands** (small, isolated): on each successful mutation endpoint, upsert the one
-   changed `CustomerRecord` / `EntitlementRecord` before returning, mirroring the fields the worker
-   denormalises. Immediate UX win, no infra change.
-2. **Targeted event projection** (medium): route `ChannelNotificationsService` events to a per-resource
-   refresh (one customer / one entitlement) that reuses the existing sync helpers; keep the full
-   rotation as reconciliation. Watch for duplicate/out-of-order events (idempotent upserts, last-write-
-   wins by update time) and missed events (the poll backstop covers gaps).
-3. **Optional handler organisation** (low priority): only if the command/query surface grows enough that
-   an explicit dispatch layer improves clarity — otherwise skip.
+1. ✅ **Write-through on commands** (small, isolated): each customer mutation endpoint (direct +
+   n-tier partner) upserts the one changed `CustomerRecord` after a successful Channel API call
+   (soft-delete on delete), mirroring the metadata fields the worker denormalises, using the mutation
+   result — **no** extra API call. Entitlement-level rows follow from the event projection / poll (an
+   entitlement create is an LRO, so the row may not exist synchronously — the event covers it).
+2. ✅ **Targeted event projection** (medium): `ChannelNotificationsService` routes each change event to a
+   per-**customer** refresh (metadata + all its entitlements) via the shared `ReadModelProjector`, which
+   **reuses the moved sync core**; the full rotation stays as reconciliation. Duplicate / out-of-order
+   events are handled by **re-reading live state** (not applying the event payload) so projections
+   converge on current truth (stronger than last-write-by-timestamp); missed events are covered by the
+   poll backstop. A per-customer refresh (rather than a single entitlement) also correctly recomputes the
+   seat total and soft-deletes cancelled entitlements.
+3. ⏭️ **Optional handler organisation** (low priority): still skipped — the command/query surface hasn't
+   grown enough to justify an explicit dispatch layer.

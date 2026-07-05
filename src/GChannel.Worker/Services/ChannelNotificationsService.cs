@@ -1,8 +1,11 @@
 using System.Text.Json;
 using GChannel.ApiService.Configuration;
+using GChannel.ApiService.Data;
+using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.PubSub.V1;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -28,6 +31,9 @@ namespace GChannel.Worker.Services;
 public sealed class ChannelNotificationsService(
     IOptions<GoogleChannelOptions> options,
     IConnectionMultiplexer redis,
+    IServiceScopeFactory scopeFactory,
+    ReadModelProjector projector,
+    ILoggerFactory loggerFactory,
     ILogger<ChannelNotificationsService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -65,14 +71,29 @@ public sealed class ChannelNotificationsService(
         var db = redis.GetDatabase();
         var maxItems = Math.Max(1, opts.PubSubMaxNotifications);
 
+        // §10 event-driven projection: when the read-model is enabled, a change event triggers a targeted
+        // refresh of just the affected customer (its metadata + entitlements) so the read-model and the UI
+        // it backs update within seconds of a change — the background poll is left as a reconciliation
+        // backstop. Projection needs a service-account credential with domain-wide delegation to read the
+        // Channel API (the Pub/Sub credential above may be key-less WIF without DWD), so it is built
+        // separately and only when the read-model sync is configured.
+        GoogleChannelClient? projectionClient = null;
+        if (opts.ReadModelSyncEnabled)
+        {
+            projectionClient = new GoogleChannelClient(
+                new ServiceAccountCredentialSource(opts), options, loggerFactory.CreateLogger<GoogleChannelClient>());
+            logger.LogInformation("Event-driven read-model projection enabled; change events will refresh the affected customer.");
+        }
+
         logger.LogInformation("Channel Pub/Sub subscriber listening on {Subscription}.", subscriptionName);
 
         // StartAsync completes when StopAsync is called (shutdown) or an unrecoverable fault occurs.
-        var startTask = subscriber.StartAsync(async (message, _) =>
+        var startTask = subscriber.StartAsync(async (message, cancellation) =>
         {
+            ChannelNotification notification;
             try
             {
-                var notification = ParseNotification(message);
+                notification = ParseNotification(message);
                 await db.ListLeftPushAsync(ChannelNotificationFeed.RedisKey, JsonSerializer.Serialize(notification));
                 await db.ListTrimAsync(ChannelNotificationFeed.RedisKey, 0, maxItems - 1);
                 logger.LogInformation(
@@ -85,6 +106,32 @@ public sealed class ChannelNotificationsService(
                 // message instead of dropping it, preserving at-least-once delivery to the feed.
                 logger.LogWarning(ex, "Failed to record a Channel notification (message {MessageId}); requeuing.", message.MessageId);
                 return SubscriberClient.Reply.Nack;
+            }
+
+            // Targeted read-model projection for the affected customer. Best-effort: a failure here must
+            // NOT nack (that would redeliver and duplicate the feed entry) — the projection is idempotent
+            // and re-reads live state, so duplicate/out-of-order events converge, and the poll reconciles
+            // anything missed. Runs on its own DbContext scope (the subscriber may process concurrently).
+            if (projectionClient is not null && !string.IsNullOrEmpty(notification.CustomerId))
+            {
+                try
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var projectDb = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
+                    await projector.ProjectCustomerAsync(
+                        projectDb, projectionClient, notification.CustomerId, DateTimeOffset.UtcNow, cancellation);
+                    logger.LogInformation(
+                        "Projected read-model refresh for customer {Customer} from a {Kind} event.",
+                        notification.CustomerId, notification.Kind);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // Shutting down — leave the refresh for the poll backstop.
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Event-driven projection failed for customer {Customer}; the poll will reconcile.", notification.CustomerId);
+                }
             }
 
             return SubscriberClient.Reply.Ack;
