@@ -458,6 +458,120 @@
         </MudPaper>
     </MudItem>
 
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2" Style="height:100%">
+            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
+                <div>
+                    <MudText Typo="Typo.h6">Onboarding by reseller</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                        Which reseller onboarded which customers in the selected month. "Direct" = account-owned.
+                    </MudText>
+                </div>
+                @if (_onboardMonths.Count > 0)
+                {
+                    <MudSelect T="string" Value="_onboardMonth" Label="Month" Dense="true" Margin="Margin.Dense"
+                               Variant="Variant.Outlined" Style="max-width:170px" ValueChanged="OnOnboardMonthChanged">
+                        @foreach (var m in _onboardMonths)
+                        {
+                            <MudSelectItem Value="@m">@MonthLabel(m)</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+            </div>
+            @if (_onboardBars.Count > 0)
+            {
+                <ApexChart TItem="OnboardBar" Options="_onboardOptions" @ref="_onboardChart">
+                    <ApexPointSeries TItem="OnboardBar" Items="_onboardBars" Name="Customers"
+                                     SeriesType="SeriesType.Bar"
+                                     XValue="@(b => b.Reseller)" YValue="@(b => b.Count)" />
+                </ApexChart>
+                <div style="max-height:150px; overflow:auto" class="mt-2">
+                    @foreach (var g in OnboardDetail())
+                    {
+                        <MudText Typo="Typo.caption" Class="d-block">
+                            <strong>@g.Key</strong>: @string.Join(", ", g.Select(o => o.CustomerName))
+                        </MudText>
+                    }
+                </div>
+            }
+            else if (_entitlementsLoading)
+            {
+                <div class="d-flex align-center" style="height:200px;">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No onboarding data yet. Attribution appears once the background read-model has synced.
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2" Style="height:100%">
+            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
+                <div>
+                    <MudText Typo="Typo.h6">Partner links established</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                        When channel partner links were created, month by month. Pick a month to see with whom.
+                    </MudText>
+                </div>
+                @if (_linkMonths.Count > 0)
+                {
+                    <MudSelect T="string" Value="_linkMonth" Label="Month" Dense="true" Margin="Margin.Dense"
+                               Variant="Variant.Outlined" Style="max-width:170px" ValueChanged="OnLinkMonthChanged">
+                        @foreach (var m in _linkMonths)
+                        {
+                            <MudSelectItem Value="@m">@MonthLabel(m)</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+            </div>
+            @if (_linkSeries.Count > 0)
+            {
+                <ApexChart TItem="LinkMonthPoint" Options="_linkOptions" @ref="_linkChart">
+                    <ApexPointSeries TItem="LinkMonthPoint" Items="_linkSeries" Name="Links established"
+                                     SeriesType="SeriesType.Bar"
+                                     XValue="@(p => p.Label)" YValue="@(p => p.Count)" />
+                </ApexChart>
+                <div style="max-height:150px; overflow:auto" class="mt-2">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-1">
+                        Established in @(_linkMonth is null ? "—" : MonthLabel(_linkMonth)):
+                    </MudText>
+                    @{
+                        var linkDetail = LinkDetail();
+                    }
+                    @if (linkDetail.Count > 0)
+                    {
+                        @foreach (var l in linkDetail)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                     Color="@LinkStateColor(l.LinkState)" Class="ma-1">@l.Reseller</MudChip>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">No links established this month.</MudText>
+                    }
+                </div>
+            }
+            else if (_entitlementsLoading)
+            {
+                <div class="d-flex align-center" style="height:200px;">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No channel partner links established yet.
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
     <MudItem xs="12">
         <MudPaper Class="pa-4" Elevation="2">
             <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
@@ -511,6 +625,8 @@
     private record MonthlyPoint(string Key, string Label, decimal Direct, decimal Indirect);
     private record ProductSlice(string Product, decimal Count);
     private record ResellerSlice(string Reseller, decimal Customers, decimal Seats, decimal AvgSeats);
+    private record OnboardBar(string Reseller, decimal Count);
+    private record LinkMonthPoint(string Key, string Label, decimal Count);
 
     // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
     // its own axis/legend/title text in a fixed colour that ignores MudBlazor's theme, so without this
@@ -562,6 +678,28 @@
     private readonly List<ProductSlice> _directProducts = [];
     private readonly List<ProductSlice> _indirectProducts = [];
     private readonly List<ResellerSlice> _resellers = [];
+
+    // "Onboarding by reseller" (left) + "Partner links established" (right) visualizations.
+    private readonly List<DashboardOnboardedCustomer> _onboarded = [];
+    private readonly List<DashboardEstablishedLink> _links = [];
+    private readonly List<string> _onboardMonths = [];
+    private readonly List<string> _linkMonths = [];
+    private string? _onboardMonth;
+    private string? _linkMonth;
+    private ApexChart<OnboardBar>? _onboardChart;
+    private ApexChart<LinkMonthPoint>? _linkChart;
+    private readonly List<OnboardBar> _onboardBars = [];
+    private readonly List<LinkMonthPoint> _linkSeries = [];
+    private readonly ApexChartOptions<OnboardBar> _onboardOptions = new()
+    {
+        PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } },
+        DataLabels = new DataLabels { Enabled = true }
+    };
+    private readonly ApexChartOptions<LinkMonthPoint> _linkOptions = new()
+    {
+        DataLabels = new DataLabels { Enabled = true }
+    };
+
     private readonly CancellationTokenSource _cts = new();
 
     // How often to poll the background-refresh status (and, while a run is in progress, re-pull the
@@ -630,6 +768,8 @@
         _directProductOptions.Theme = new Theme { Mode = mode };
         _indirectProductOptions.Theme = new Theme { Mode = mode };
         _resellerOptions.Theme = new Theme { Mode = mode };
+        _onboardOptions.Theme = new Theme { Mode = mode };
+        _linkOptions.Theme = new Theme { Mode = mode };
 
         if (_monthlyChart is not null)
         {
@@ -649,6 +789,16 @@
         if (_resellerChart is not null)
         {
             await _resellerChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
+        }
+
+        if (_onboardChart is not null)
+        {
+            await _onboardChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
+        }
+
+        if (_linkChart is not null)
+        {
+            await _linkChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
         }
     }
 
@@ -848,6 +998,115 @@
         }
     }
 
+    // --- Onboarding by reseller (left card) ---
+
+    private void SetOnboardingByReseller(IReadOnlyList<DashboardOnboardedCustomer> data)
+    {
+        _onboarded.Clear();
+        _onboarded.AddRange(data);
+        _onboardMonths.Clear();
+        _onboardMonths.AddRange(_onboarded.Select(o => o.MonthKey).Distinct()
+            .OrderByDescending(m => m, StringComparer.Ordinal));
+        if (_onboardMonth is null || !_onboardMonths.Contains(_onboardMonth))
+        {
+            _onboardMonth = _onboardMonths.FirstOrDefault();
+        }
+        ApplyOnboardMonth();
+    }
+
+    // Bars = customers each reseller onboarded in the selected month (highest first).
+    private void ApplyOnboardMonth()
+    {
+        _onboardBars.Clear();
+        if (_onboardMonth is null)
+        {
+            return;
+        }
+        _onboardBars.AddRange(_onboarded
+            .Where(o => o.MonthKey == _onboardMonth)
+            .GroupBy(o => o.Reseller)
+            .Select(g => new OnboardBar(g.Key, g.Count()))
+            .OrderByDescending(b => b.Count).ThenBy(b => b.Reseller));
+    }
+
+    // Per-reseller customer names for the selected month (the "which customer" detail under the chart).
+    private IEnumerable<IGrouping<string, DashboardOnboardedCustomer>> OnboardDetail() =>
+        _onboardMonth is null
+            ? []
+            : _onboarded.Where(o => o.MonthKey == _onboardMonth)
+                .GroupBy(o => o.Reseller)
+                .OrderByDescending(g => g.Count()).ThenBy(g => g.Key);
+
+    private async Task OnOnboardMonthChanged(string month)
+    {
+        _onboardMonth = month;
+        ApplyOnboardMonth();
+        if (_onboardChart is not null)
+        {
+            await _onboardChart.UpdateSeriesAsync();
+        }
+    }
+
+    // --- Partner links established (right card) ---
+
+    private void SetEstablishedLinks(IReadOnlyList<DashboardEstablishedLink> data)
+    {
+        _links.Clear();
+        _links.AddRange(data);
+        _linkMonths.Clear();
+        _linkMonths.AddRange(_links.Select(l => l.MonthKey).Distinct()
+            .OrderByDescending(m => m, StringComparer.Ordinal));
+        if (_linkMonth is null || !_linkMonths.Contains(_linkMonth))
+        {
+            _linkMonth = _linkMonths.FirstOrDefault();
+        }
+
+        // Column series: links established per month across the full contiguous span (fills empty months).
+        _linkSeries.Clear();
+        var byMonth = _links.GroupBy(l => l.MonthKey).ToDictionary(g => g.Key, g => g.Count());
+        if (byMonth.Count > 0)
+        {
+            var keys = byMonth.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
+            if (TryParseMonth(keys[0], out var start) && TryParseMonth(keys[^1], out var end))
+            {
+                for (var m = start; m <= end; m = m.AddMonths(1))
+                {
+                    var key = m.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+                    _linkSeries.Add(new LinkMonthPoint(
+                        key,
+                        m.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture),
+                        byMonth.GetValueOrDefault(key)));
+                }
+            }
+        }
+    }
+
+    // The resellers whose partner link was established in the selected month (the "with whom" detail).
+    private List<DashboardEstablishedLink> LinkDetail() =>
+        _linkMonth is null
+            ? []
+            : _links.Where(l => l.MonthKey == _linkMonth).OrderBy(l => l.Reseller).ToList();
+
+    private void OnLinkMonthChanged(string month) => _linkMonth = month;
+
+    private static bool TryParseMonth(string key, out DateTime firstOfMonth) =>
+        DateTime.TryParseExact(key + "-01", "yyyy-MM-dd",
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out firstOfMonth);
+
+    private static string MonthLabel(string key) =>
+        TryParseMonth(key, out var d)
+            ? d.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)
+            : key;
+
+    private static Color LinkStateColor(string? state) => state?.ToUpperInvariant() switch
+    {
+        "ACTIVE" => Color.Success,
+        "SUSPENDED" => Color.Warning,
+        "INVITED" => Color.Info,
+        _ => Color.Default
+    };
+
     private async Task LoadOverviewAsync(CancellationToken cancellationToken)
     {
         _overviewLoading = true;
@@ -904,6 +1163,8 @@
                 _resellers.Add(ToResellerSlice(reseller));
             }
             ApplyResellerMetric();
+            SetOnboardingByReseller(_data?.OnboardedByReseller ?? []);
+            SetEstablishedLinks(_data?.EstablishedLinks ?? []);
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
@@ -959,6 +1220,8 @@
                 _resellers.Add(ToResellerSlice(reseller));
             }
             ApplyResellerMetric();
+            SetOnboardingByReseller(data.OnboardedByReseller);
+            SetEstablishedLinks(data.EstablishedLinks);
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {

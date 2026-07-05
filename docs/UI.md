@@ -55,6 +55,13 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
   parentheses after each reseller name is that reseller's **customer count**. Seats count each
   entitlement's licensed units (`num_units`, falling back to `max_units` for flexible/usage plans incl.
   free/EDU editions), regardless of price — so free licences are included in the footprint.
+- **Onboarding by reseller** &amp; **Partner links established** — a side-by-side pair (below *Customers
+  onboarded*, above *Top indirect resellers*). The left card has a **month** selector and shows, for the
+  chosen month, a horizontal bar of how many customers each reseller onboarded (bars labelled with the
+  count), with a per-reseller list of the actual customer names underneath ("Direct" = account-owned).
+  The right card shows a column chart of **how many channel partner links were established each month**
+  (the full timeline) and, for a selected month, lists the reseller(s) established then as chips coloured
+  by link state — the "when" and the "with whom". Both are read-model-only (empty on the live path).
 
 A status line under the title shows when the figures were last refreshed (e.g. "Updated 22 min ago ·
 took 433s · next refresh in 8 min"), a "Refreshing…" chip while a background run is in progress, or

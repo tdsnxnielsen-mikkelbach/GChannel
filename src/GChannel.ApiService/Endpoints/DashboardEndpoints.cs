@@ -263,6 +263,46 @@ public static class DashboardEndpoints
             .Select(c => c.CreateTime)
             .ToListAsync(cancellationToken);
 
+        // Reseller-name lookup (link id -> friendly label) shared by the onboarding-by-reseller and
+        // established-links views below.
+        var links = await db.ResellerLinks
+            .Select(l => new { l.LinkId, l.PrimaryDomain, l.ResellerCloudId, l.CreateTime, l.LinkState })
+            .ToListAsync(cancellationToken);
+        var linkNameById = links.ToDictionary(
+            l => l.LinkId,
+            l => l.PrimaryDomain ?? l.ResellerCloudId ?? l.LinkId,
+            StringComparer.OrdinalIgnoreCase);
+
+        // Onboarding-by-reseller: every held customer with its onboarding month + owning reseller (or
+        // "Direct" when account-owned). Small set (one row per customer); the UI filters it by month.
+        var onboardedByReseller = (await db.CustomerRecords
+                .Where(c => !c.IsDeleted && c.CreateTime != null)
+                .Select(c => new { c.CustomerId, c.OrgName, c.OwningLinkId, c.CreateTime })
+                .ToListAsync(cancellationToken))
+            .Where(c => c.CreateTime!.Value.Year >= 2000)
+            .Select(c => new DashboardOnboardedCustomer
+            {
+                MonthKey = c.CreateTime!.Value.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                CustomerName = c.OrgName ?? c.CustomerId,
+                ResellerLinkId = c.OwningLinkId,
+                Reseller = c.OwningLinkId != null && linkNameById.TryGetValue(c.OwningLinkId, out var rn)
+                    ? rn
+                    : c.OwningLinkId ?? "Direct",
+            })
+            .ToList();
+
+        // Established partner links: each channel partner link with the month it was created + reseller.
+        var establishedLinks = links
+            .Where(l => l.CreateTime is { Year: >= 2000 })
+            .Select(l => new DashboardEstablishedLink
+            {
+                MonthKey = l.CreateTime!.Value.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                LinkId = l.LinkId,
+                Reseller = l.PrimaryDomain ?? l.ResellerCloudId ?? l.LinkId,
+                LinkState = l.LinkState,
+            })
+            .ToList();
+
         var summary = new DashboardSummary
         {
             CustomerCount = customerCount,
@@ -276,6 +316,8 @@ public static class DashboardEndpoints
             ProductMix = mix,
             DirectProductMix = directMix,
             IndirectProductMix = indirectMix,
+            OnboardedByReseller = onboardedByReseller,
+            EstablishedLinks = establishedLinks,
             // Set here so a direct-only estate (no indirect rows yet) still shows the value panel; the
             // overlay recomputes the identical figure when indirect rows exist.
             EstateValue = await ComputeEstateValueAsync(db, cancellationToken)

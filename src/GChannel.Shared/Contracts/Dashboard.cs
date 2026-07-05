@@ -68,6 +68,21 @@ public sealed record DashboardSummary
     /// resolved (e.g. the read-model overlay is off). These are non-invoiced estimates.
     /// </summary>
     public DashboardEstateValue? EstateValue { get; init; }
+
+    /// <summary>
+    /// One row per customer we hold, carrying the month it was onboarded and which reseller (channel
+    /// partner link) it sits under — so the home page can show, for a chosen month, which resellers
+    /// onboarded which customers. Direct (account-owned) customers carry a <c>null</c> owning link and
+    /// the "Direct" label. Read-model path only (empty on the live path).
+    /// </summary>
+    public IReadOnlyList<DashboardOnboardedCustomer> OnboardedByReseller { get; init; } = [];
+
+    /// <summary>
+    /// One row per channel partner link, carrying the month the link was established and the reseller
+    /// it connects — so the home page can show, month by month, when partner channel links were created
+    /// and with whom. Read-model path only (empty on the live path).
+    /// </summary>
+    public IReadOnlyList<DashboardEstablishedLink> EstablishedLinks { get; init; } = [];
 }
 
 /// <summary>
@@ -243,6 +258,44 @@ public sealed record DashboardProductSlice
     public required string Product { get; init; }
 
     public int Count { get; init; }
+}
+
+/// <summary>
+/// A customer paired with the month it was onboarded and the reseller (channel partner link) it sits
+/// under, for the "onboarding by reseller" home-page visualization.
+/// </summary>
+public sealed record DashboardOnboardedCustomer
+{
+    /// <summary>Sortable, year-qualified onboarding month, e.g. "2025-02" (yyyy-MM).</summary>
+    public required string MonthKey { get; init; }
+
+    /// <summary>Friendly customer label (org display name, else the customer id).</summary>
+    public required string CustomerName { get; init; }
+
+    /// <summary>Owning channel partner link id, or <c>null</c> for a direct (account-owned) customer.</summary>
+    public string? ResellerLinkId { get; init; }
+
+    /// <summary>Friendly reseller label (the link's primary domain, else its id), or "Direct" when account-owned.</summary>
+    public required string Reseller { get; init; }
+}
+
+/// <summary>
+/// A channel partner link paired with the month it was established and the reseller it connects, for
+/// the "partner links established" home-page visualization.
+/// </summary>
+public sealed record DashboardEstablishedLink
+{
+    /// <summary>Sortable, year-qualified establishment month, e.g. "2024-09" (yyyy-MM).</summary>
+    public required string MonthKey { get; init; }
+
+    /// <summary>Short channel partner link id.</summary>
+    public required string LinkId { get; init; }
+
+    /// <summary>Friendly reseller label (the link's primary domain, else its reseller cloud id, else its id).</summary>
+    public required string Reseller { get; init; }
+
+    /// <summary>Link state, e.g. <c>ACTIVE</c>, <c>INVITED</c>, <c>SUSPENDED</c>.</summary>
+    public string? LinkState { get; init; }
 }
 
 /// <summary>

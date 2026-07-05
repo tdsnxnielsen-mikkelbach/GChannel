@@ -195,6 +195,14 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > separate *Direct* and *Via resellers (indirect)* donut. The live (non-read-model) path enumerates only
 > direct customers, so it fills the direct mix only.
 
+> **Onboarding-by-reseller &amp; established-links series (read-model).** The read-model summary also
+> carries two per-row datasets for the home page's side-by-side month visualizations:
+> `DashboardSummary.OnboardedByReseller` (one `DashboardOnboardedCustomer` per held customer: onboarding
+> `MonthKey`, customer name, owning reseller link + friendly label — "Direct" for account-owned) and
+> `EstablishedLinks` (one `DashboardEstablishedLink` per channel partner link: establishment `MonthKey`,
+> link id, reseller label, state). Both are aggregated straight from `CustomerRecords` / `ResellerLinks`
+> (`CreateTime` + `OwningLinkId`), so they cost no extra Channel API calls; empty on the live path.
+
 > **Read-model-backed list endpoints (§10).** When `GoogleChannel:UseReadModel` is on, two interactive
 > reads whose live calls sit on the **contended** per-minute quotas are served from SQL instead, so they
 > stop competing with the sync worker: `GET /api/customers/{id}/entitlements` reads `EntitlementRecords`
