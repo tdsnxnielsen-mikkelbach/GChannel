@@ -54,6 +54,15 @@ public sealed class ReadModelSyncService(
         // still paces subsequent cycles), so normal cadence is preserved.
         try { await db.KeyDeleteAsync(SyncLockKey); } catch (Exception ex) { logger.LogDebug(ex, "Could not clear read-model sync lock on startup."); }
 
+        // One-time transition to per-month UnitPrice (guarded by a SyncCursors marker). The read-model
+        // used to store the raw PER-CYCLE offer price (an annual offer's yearly per-seat amount); the
+        // per-month fix divides by the cycle length, but rows priced via the per-entitlement lookupOffer
+        // fallback are kept without re-fetching, so their old (e.g. 12× annual) price would never
+        // self-correct. Zero those stored prices once so the immediate cycle below re-resolves every row
+        // on the now per-month-normalising paths. In-catalog offers re-price from offers.list regardless;
+        // out-of-catalog (legacy/education/churned) ones re-fetch via lookupOffer because UnitPrice is now 0.
+        await ResetPricesForMonthlyNormalisationOnceAsync(stoppingToken);
+
         do
         {
             try
@@ -385,6 +394,50 @@ public sealed class ReadModelSyncService(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
         await work(db);
+    }
+
+    /// <summary>
+    /// One-time (marker-guarded) reset of denormalised entitlement prices so the sync re-resolves them
+    /// on the per-month-normalising code paths. Needed only for the transition after the per-cycle→
+    /// per-month <c>UnitPrice</c> fix: rows kept on the <c>lookupOffer</c> preserve path would otherwise
+    /// retain their old (un-normalised) value. Zeroing them makes the next cycle re-price every row;
+    /// runs exactly once (a <c>SyncCursors</c> marker), best-effort so a failure never blocks syncing.
+    /// </summary>
+    private async Task ResetPricesForMonthlyNormalisationOnceAsync(CancellationToken ct)
+    {
+        const string marker = "unitprice-monthly-reset";
+        try
+        {
+            await WithDbAsync(async db =>
+            {
+                if (await db.SyncCursors.AnyAsync(c => c.Scope == marker, ct))
+                {
+                    return;
+                }
+
+                var reset = await db.EntitlementRecords
+                    .Where(e => e.UnitPrice > 0m)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(e => e.UnitPrice, 0m)
+                        .SetProperty(e => e.Currency, (string?)null), ct);
+
+                db.SyncCursors.Add(new SyncCursor
+                {
+                    Scope = marker,
+                    LastCycleUtc = DateTimeOffset.UtcNow,
+                    Notes = "Zeroed pre-normalisation UnitPrice so the sync re-prices on a per-month basis.",
+                });
+                await db.SaveChangesAsync(ct);
+
+                logger.LogInformation(
+                    "One-time per-month price normalisation: reset {Count} entitlement price(s); the next cycle re-prices them.",
+                    reset);
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "One-time UnitPrice reset failed; will retry on next startup.");
+        }
     }
 
     private async Task<T> WithDbAsync<T>(Func<GChannelDbContext, Task<T>> work)
