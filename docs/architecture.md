@@ -499,7 +499,11 @@ and labels the result "monthly". The sync therefore divides the offer price by t
 divisor the entitlement **detail** page applies. Without this an annual offer showed **12×** its true
 monthly figure everywhere the read-model feeds (customers list, customer/reseller/estate value panels,
 dashboard estate value); the detail page was already correct because it prices live via `lookupOffer`
-and divides by the cycle. **`lookupOffer` price fallback:**
+and divides by the cycle. A one-time, marker-guarded reset in `ReadModelSyncService`
+(`ResetPricesForMonthlyNormalisationOnceAsync`, `SyncCursors` scope `unitprice-monthly-reset`) zeroes
+any pre-existing stored prices on first startup so the immediate cycle re-prices every row on the
+per-month paths — needed because cached legacy/education offers on the `lookupOffer` preserve path (see
+below) would otherwise keep their old per-cycle value. **`lookupOffer` price fallback:**
 the account-wide `offers.list` sometimes doesn't contain the specific offer a customer's entitlement was
 purchased on (offer churn / legacy / sub-reseller), so those entitlements would otherwise store
 `UnitPrice = 0` and show blank *Est. monthly* everywhere the read-model feeds — even though the
