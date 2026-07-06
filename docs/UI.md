@@ -38,7 +38,9 @@ reseller account (`GoogleChannel:AccountId`). You sign in with your Google accou
   customer-level repricing, for **indirect** it's your channel-partner rebilling mark-up. It shows **0**
   when no repricing/rebilling is configured; a downstream reseller's own margin to *their* end customers
   is private and not exposed by the Channel API. These are *estimates from list pricing, not invoiced
-  amounts*, and appear once the background read-model has priced your entitlements.
+  amounts*, and appear once the background read-model has priced your entitlements. All figures are on a
+  **monthly** basis — an offer priced per cycle (e.g. an annual offer) is normalised to a monthly amount
+  (annual ÷ 12), matching the entitlement detail page's "Estimated / month".
 - **Customers onboarded** — a line chart bucketing new customers by their create month across the
   **full available history** (oldest first), with **two lines** when the estate has reseller business:
   **Direct** (account-owned) and **Via resellers (indirect)**. A direct-only estate shows a single
@@ -184,8 +186,9 @@ the **Renewal** term — “Renews/Ends {date} · auto-renew on/off”), and a *
 **ID** with the full resource path. All monetary figures are *estimates from list pricing, not invoices*.
 
 The entitlement list (`/customers/{id}/entitlements`) includes an **Est. monthly** column — unit list
-price × seats × (1 + your repricing %), with a breakdown tooltip; it shows “—” for trials or offers
-that couldn't be priced. As with the dashboard, these are *estimates from list pricing, not invoices*.
+price × seats × (1 + your repricing %), normalised to a **monthly** figure (a per-cycle offer such as an
+annual one is divided by its cycle length, e.g. ÷ 12), with a breakdown tooltip; it shows “—” for trials
+or offers that couldn't be priced. As with the dashboard, these are *estimates from list pricing, not invoices*.
 
 ## 7. Transfer entitlements
 

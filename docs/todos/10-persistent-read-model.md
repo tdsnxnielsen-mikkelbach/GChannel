@@ -76,6 +76,12 @@ product mix) become simple `GROUP BY` queries.
   link's `CustomerCount` + `LastSyncedUtc`. N is sized to the **per-cycle quota budget** (e.g. at
   20/min and a 60s cycle, N≈18 links/cycle) so **every cycle stays within quota** no matter how many
   links exist — the whole estate is covered over several cycles (a "rolling refresh").
+- **Customer-list calls are paced.** The direct `accounts.customers.list` and each per-link
+  `channelPartnerLinks.customers.list` fan-out share one `ListCustomers` per-minute quota bucket, so
+  firing them back-to-back tripped 429s that skipped links each cycle. Both call sites are paced by a
+  per-cycle token-bucket-of-1 (`CustomerListPacer`, mirroring the on-demand dashboard's `RequestPacer`)
+  spaced to the shared `GoogleChannel:DashboardCustomerListRequestsPerMinute` knob, so the batch stays
+  under quota and the indirect estate populates fully in one cycle.
 - **Metadata vs entitlements are separated.** The link/customer **metadata** upsert above touches only
   the `ListCustomers` quota, while **entitlement** syncing (the contended `ListEntitlements` quota) is a
   single **unified staleness-rotated pass** at the end of each cycle over the stalest

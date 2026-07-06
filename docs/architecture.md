@@ -434,7 +434,12 @@ rations the **contended** entitlement quota separately, so the two never starve 
 `ReadModelSyncService`: (1) lists direct customers and upserts their `CustomerRecords` *metadata only*;
 (2) lists the channel-partner-link roster and upserts `ResellerLinks`; (3) fans out the **stalest**
 `ReadModelLinksPerCycle` ACTIVE links (`channelPartnerLinks.customers.list`), upserting each link's
-indirect `CustomerRecords` and stamping the link's `CustomerCount`. None of those steps touch the
+indirect `CustomerRecords` and stamping the link's `CustomerCount`. The direct list and the per-link
+fan-out share one `ListCustomers` per-minute quota bucket, so firing them back-to-back tripped 429s that
+skipped links each cycle; both call sites are now **paced** by a per-cycle token-bucket-of-1
+(`CustomerListPacer`, mirroring the on-demand dashboard's `RequestPacer`) spaced to the shared
+`GoogleChannel:DashboardCustomerListRequestsPerMinute` knob, so the whole batch stays under quota and the
+indirect estate populates fully in one cycle. None of those steps touch the
 `ListEntitlements` quota, so the **indirect estate and per-link customer counts populate as soon as a
 link is fanned out** — the dashboard's "Via indirect resellers" count and "Top indirect resellers" list
 fill in independent of (and without waiting on) entitlement syncing. Then (4) a **single, unified
@@ -486,7 +491,15 @@ offer-id→(effective seat price, currency) lookup from a single `offers.list`, 
 repricing mark-up per entitlement (a per-customer `customerRepricingConfigs` override wins, else the
 owning link's `CHANNEL_PARTNER`-granularity `channelPartnerRepricingConfigs` mark-up, else 0 / pass-through);
 both are stored on `EntitlementRecord` (`UnitPrice`, `Currency`, `RepricingPercent`). All of this is
-best-effort, so a pricing/repricing failure never blocks the estate sync. **`lookupOffer` price fallback:**
+best-effort, so a pricing/repricing failure never blocks the estate sync. **Per-month normalisation:**
+an offer's effective price is quoted per **payment cycle** (an annual offer's price is the *yearly*
+per-seat amount), but `UnitPrice` is a **per-month** figure — every rollup multiplies `UnitPrice × seats`
+and labels the result "monthly". The sync therefore divides the offer price by the cycle length
+(`MonthsInCycle` — Monthly/Daily → 1, Annual/Yearly → 12, `N-monthly`/`N-yearly` parsed), the same
+divisor the entitlement **detail** page applies. Without this an annual offer showed **12×** its true
+monthly figure everywhere the read-model feeds (customers list, customer/reseller/estate value panels,
+dashboard estate value); the detail page was already correct because it prices live via `lookupOffer`
+and divides by the cycle. **`lookupOffer` price fallback:**
 the account-wide `offers.list` sometimes doesn't contain the specific offer a customer's entitlement was
 purchased on (offer churn / legacy / sub-reseller), so those entitlements would otherwise store
 `UnitPrice = 0` and show blank *Est. monthly* everywhere the read-model feeds — even though the

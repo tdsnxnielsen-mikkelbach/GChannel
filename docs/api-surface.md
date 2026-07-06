@@ -231,7 +231,9 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > per row for UI estimates (no extra Channel API calls): read-model `Entitlement` results carry
 > `UnitPrice` / `PriceCurrency` / `RepricingPercent`, and `GET /api/estate/customers` rows carry an
 > `EstimatedMonthlyTotal` + `Currency` (the customer's active priced entitlements summed as
-> `Σ price × seats × (1 + percent/100)` in their dominant currency). All are *estimated list pricing,
+> `Σ price × seats × (1 + percent/100)` in their dominant currency). `UnitPrice` is a **per-month**
+> figure — the sync divides an offer's per-cycle effective price by the cycle length (annual ÷ 12, etc.)
+> so annual offers don't roll up 12× the true monthly amount. All are *estimated list pricing,
 > not invoiced amounts*. The estate-customers *as-of* timestamp is **estate-wide** (the most recent
 > `CustomerRecord.LastSyncedUtc` across all non-deleted customers, ignoring never-synced
 > `LastSyncedUtc == MinValue` rows) rather than page-scoped, so the freshness badge doesn't read "—"

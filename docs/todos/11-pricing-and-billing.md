@@ -87,7 +87,12 @@ dashboard. All figures explicitly marked *estimated list pricing*, not invoices.
   overlay (`ComputeEstateValueAsync`) rolls up active priced entitlements into `DashboardEstateValue`
   (wholesale/revenue/margin in the dominant currency, mixed-currency + unpriced counts) and adds
   per-reseller `WholesaleMonthly`/`MarginMonthly` to `TopIndirectResellers`. Home page shows an
-  "Estimated estate value (monthly)" panel with the not-invoiced disclaimer.*
+  "Estimated estate value (monthly)" panel with the not-invoiced disclaimer. **`UnitPrice` is stored
+  per-month:** an offer's effective price is quoted per payment cycle, so the sync divides it by the
+  cycle length (`MonthsInCycle` — Annual/Yearly → 12, `N-monthly`/`N-yearly` parsed, else 1, mirroring
+  the entitlement detail page) before storing. This fixed annual offers showing 12× the true monthly
+  figure across the customers list, customer/reseller/estate value panels and the dashboard estate value
+  (the detail page was already right — it prices live via `lookupOffer` and divides by the cycle).*
 - [ ] **Phase 4 — Billing export (optional, out of Channel API).** Document/integrate BigQuery partner
   billing export for *actual* invoiced figures; clearly separated from API list pricing. *Deferred (not
   blocking). The Channel API exposes **no** billing actuals (the `accounts.reports.*` reporting API was
