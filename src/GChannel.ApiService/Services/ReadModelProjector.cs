@@ -247,7 +247,12 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
             CatalogOffer? lookedUp = null; // cached lookupOffer result, reused by the price + name fallbacks
             if (e.OfferId is not null && offerCatalog.Pricing.TryGetValue(e.OfferId, out var price))
             {
-                row.UnitPrice = price.Unit;
+                // The offer's effective price is quoted per PAYMENT CYCLE (e.g. an annual offer's price is
+                // the yearly per-seat amount). UnitPrice is a PER-MONTH figure (rollups label it "monthly"),
+                // so normalise by the cycle length — the same divisor the entitlement detail page applies.
+                var cycleMonths = offerCatalog.Plans.TryGetValue(e.OfferId, out var pricedPlan)
+                    ? MonthsInCycle(pricedPlan.PaymentCycle) : 1;
+                row.UnitPrice = cycleMonths > 1 ? price.Unit / cycleMonths : price.Unit;
                 row.Currency = price.Currency;
                 if (isActive) { diag.ActivePriced++; }
             }
@@ -282,7 +287,9 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
                                 ?? lookedUp.Pricing.FirstOrDefault();
                             if ((seat?.EffectivePrice ?? seat?.BasePrice) is { } money)
                             {
-                                row.UnitPrice = money.Value;
+                                // Normalise the per-cycle offer price to a per-month figure (see above).
+                                var cycleMonths = MonthsInCycle(lookedUp.PaymentCycle);
+                                row.UnitPrice = cycleMonths > 1 ? money.Value / cycleMonths : money.Value;
                                 row.Currency = money.CurrencyCode;
                             }
                         }
@@ -444,6 +451,26 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
             (null, not null) => $"{payment} Payment",
             _ => null,
         };
+    }
+
+    /// <summary>
+    /// Number of months an offer's payment cycle spans, used to normalise a per-cycle offer price to a
+    /// per-month figure. Mirrors the entitlement detail page: Monthly/Daily → 1, Annual/Yearly → 12,
+    /// "N-monthly"/"N-yearly" parsed, everything else → 1.
+    /// </summary>
+    private static int MonthsInCycle(string? paymentCycle)
+    {
+        var c = paymentCycle?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(c)) return 1;
+        if (c is "monthly" or "daily") return 1;
+        if (c is "annual" or "yearly") return 12;
+        var dash = c.IndexOf('-');
+        if (dash > 0 && int.TryParse(c[..dash], out var n) && n > 0)
+        {
+            if (c.Contains("year")) return n * 12;
+            if (c.Contains("month")) return n;
+        }
+        return 1;
     }
 
     // §6: per-entitlement repricing mark-ups for one customer, keyed by entitlement id. Best-effort.

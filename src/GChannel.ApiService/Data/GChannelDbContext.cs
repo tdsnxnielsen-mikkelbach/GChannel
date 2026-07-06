@@ -160,7 +160,7 @@ public sealed class EntitlementRecord
     public bool? RenewalEnabled { get; set; }
     /// <summary>Human-friendly plan summary (e.g. "Annual Plan (Monthly Payment)"), denormalised at sync time so subscription cards render without a live offer-plan call.</summary>
     public string? PlanDescription { get; set; }
-    /// <summary>Wholesale effective per-seat price from the entitlement's offer (the reseller's cost from Google). 0 if unknown.</summary>
+    /// <summary>Wholesale effective per-seat price from the entitlement's offer, normalised to a PER-MONTH figure (a per-cycle offer price is divided by the cycle length, e.g. an annual offer ÷ 12). The reseller's cost from Google. 0 if unknown.</summary>
     public decimal UnitPrice { get; set; }
     /// <summary>ISO currency code for <see cref="UnitPrice"/> (e.g. "USD"), or null when no price was resolved.</summary>
     public string? Currency { get; set; }
