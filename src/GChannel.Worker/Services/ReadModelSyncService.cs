@@ -127,10 +127,38 @@ public sealed class ReadModelSyncService(
         }
     }
 
+    /// <summary>
+    /// Token-bucket-of-1 that spaces this cycle's <c>ListCustomers</c> calls (the direct list plus each
+    /// per-link fan-out, which share one per-minute quota bucket) so a burst doesn't trip 429s. Mirrors
+    /// the on-demand dashboard's <c>RequestPacer</c>. Created per cycle and used from a single thread.
+    /// </summary>
+    private sealed class CustomerListPacer(TimeSpan interval)
+    {
+        private DateTimeOffset _nextSlot = DateTimeOffset.MinValue;
+
+        public Task WaitAsync(CancellationToken cancellationToken)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var slot = _nextSlot > now ? _nextSlot : now;
+            _nextSlot = slot + interval;
+            var delay = slot - now;
+            return delay > TimeSpan.Zero ? Task.Delay(delay, cancellationToken) : Task.CompletedTask;
+        }
+    }
+
     private async Task RunCycleAsync(GoogleChannelClient client, GoogleChannelOptions opts, CancellationToken ct)
     {
         var startedAt = Stopwatch.GetTimestamp();
         var now = DateTimeOffset.UtcNow;
+
+        // Pace ListCustomers calls: the direct list and the per-link fan-out below share the same
+        // ListCustomers per-minute quota bucket, and firing the whole batch back-to-back tripped 429s
+        // that skipped links each cycle. Space them with a token-bucket-of-1, mirroring the on-demand
+        // dashboard's customer-list pacer, to the same DashboardCustomerListRequestsPerMinute knob.
+        var customerListPacer = opts.DashboardCustomerListRequestsPerMinute > 0
+            ? new CustomerListPacer(TimeSpan.FromSeconds(60.0 / opts.DashboardCustomerListRequestsPerMinute))
+            : null;
+
         // Each save-unit below runs on its OWN short-lived DbContext (via WithDbAsync). A single
         // context shared across the whole multi-minute cycle accumulated thousands of tracked entities
         // (every direct customer + link + fanned-out customer + entitlement); a cancelled or failed
@@ -159,6 +187,7 @@ public sealed class ReadModelSyncService(
         var directCount = 0;
         try
         {
+            if (customerListPacer is not null) { await customerListPacer.WaitAsync(ct); }
             var direct = await client.ListCustomersAsync(ct);
             directCount = direct.Customers.Count;
             await WithDbAsync(db => UpsertCustomersAsync(db, direct.Customers, owningLinkId: null, now, ct));
@@ -198,6 +227,7 @@ public sealed class ReadModelSyncService(
         {
             try
             {
+                if (customerListPacer is not null) { await customerListPacer.WaitAsync(ct); }
                 var customers = await client.ListChannelPartnerCustomersAsync(linkId, ct);
                 await WithDbAsync(async db =>
                 {
