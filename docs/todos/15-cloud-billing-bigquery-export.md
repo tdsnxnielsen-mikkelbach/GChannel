@@ -52,8 +52,8 @@ service-account key (`GoogleChannel:ServiceAccountKeyJson`) — no BigQuery, no 
   picker, budget table, and a create/edit form (amount, currency, monthly/quarterly/yearly reset,
   50/90/100% alert thresholds) plus delete-with-confirm. Sub-accounts named for a resold Channel
   customer (`channel-gcp:accounts/.../customers/...`) are surfaced as that customer.
-- **Config:** optional `GoogleBilling:BillingAccountIds` (comma-separated) discovery fallback, wired
-  through the AppHost `GoogleBillingAccountIds` parameter to the API service.
+- **Config:** optional `GoogleBilling:BillingAccountIds` (comma-separated) discovery fallback set in
+  the API service configuration; unnecessary when `cloudbilling.googleapis.com` discovery is available.
 - **Caveat carried forward:** budgets raise **alerts** at thresholds — they do **not** cap spend, and
   *actual* consumption vs budget still requires the BigQuery export slice below.
 
