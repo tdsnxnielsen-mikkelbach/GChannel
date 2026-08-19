@@ -21,4 +21,17 @@ public sealed class GoogleBillingOptions
     public IReadOnlyList<string> BillingAccountIdList =>
         BillingAccountIds
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>
+    /// Client-side pacing (requests/minute) for read calls to the Cloud Billing + Budget APIs
+    /// (account/sub-account discovery and budget listing). Kept under the Cloud Billing API's
+    /// "all requests per minute" quota (typically 400) and the Budget API read quota. <c>0</c> disables pacing.
+    /// </summary>
+    public int ReadRequestsPerMinute { get; set; } = 240;
+
+    /// <summary>
+    /// Client-side pacing (requests/minute) for write calls to the Budget API (create/update/delete).
+    /// Kept under the Budget API's write quota (typically 100/min per user). <c>0</c> disables pacing.
+    /// </summary>
+    public int WriteRequestsPerMinute { get; set; } = 60;
 }

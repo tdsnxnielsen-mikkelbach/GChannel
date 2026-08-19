@@ -38,12 +38,23 @@ public sealed class BillingBudgetsService : IBillingBudgetsService
     private CloudBillingClient? _billingClient;
     private GoogleCredential? _credential;
 
+    // Token-bucket-of-1 pacers so bursts (e.g. sub-account discovery, per-account budget lists) stay
+    // under the Cloud Billing / Budget API per-minute quotas, mirroring the Channel client's RequestPacer.
+    private readonly RequestPacer? _readPacer;
+    private readonly RequestPacer? _writePacer;
+
     public BillingBudgetsService(
         IOptions<GoogleChannelOptions> channelOptions,
         IOptions<GoogleBillingOptions> billingOptions)
     {
         _credentialJson = channelOptions.Value.ServiceAccountKeyJson;
         _billingOptions = billingOptions.Value;
+        _readPacer = _billingOptions.ReadRequestsPerMinute > 0
+            ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _billingOptions.ReadRequestsPerMinute))
+            : null;
+        _writePacer = _billingOptions.WriteRequestsPerMinute > 0
+            ? new RequestPacer(TimeSpan.FromSeconds(60.0 / _billingOptions.WriteRequestsPerMinute))
+            : null;
     }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_credentialJson);
@@ -59,30 +70,53 @@ public sealed class BillingBudgetsService : IBillingBudgetsService
         : throw new InvalidOperationException(
             "Billing budgets are not configured: set GoogleChannel:ServiceAccountKeyJson (reused for the Cloud Billing APIs).");
 
+    private Task PaceReadAsync(CancellationToken ct) => _readPacer?.WaitAsync(ct) ?? Task.CompletedTask;
+    private Task PaceWriteAsync(CancellationToken ct) => _writePacer?.WaitAsync(ct) ?? Task.CompletedTask;
+
     public async Task<BillingAccountsResult> ListBillingAccountsAsync(CancellationToken cancellationToken)
     {
         // Live discovery via the Cloud Billing API is best-effort: it needs cloudbilling.googleapis.com
         // enabled and billing.viewer. If it fails, fall back to the configured ids so budgets still work.
         try
         {
-            var accounts = new List<BillingAccountInfo>();
-            var response = BillingClient.ListBillingAccountsAsync(new ListBillingAccountsRequest());
-            await foreach (var account in response.WithCancellation(cancellationToken))
+            var byId = new Dictionary<string, BillingAccountInfo>(StringComparer.OrdinalIgnoreCase);
+
+            // 1) Top-level accounts the SA can access directly (reseller master accounts + any others).
+            await PaceReadAsync(cancellationToken);
+            await foreach (var account in BillingClient
+                .ListBillingAccountsAsync(new ListBillingAccountsRequest())
+                .WithCancellation(cancellationToken))
             {
-                accounts.Add(new BillingAccountInfo
+                Add(byId, account);
+            }
+
+            // 2) A flat list only returns accounts the caller can access directly; reseller sub-accounts
+            // are listed per master via the master_billing_account filter, so enumerate each master's subs.
+            foreach (var masterId in byId.Values.Where(a => !a.IsSubaccount).Select(a => a.Id).ToList())
+            {
+                await PaceReadAsync(cancellationToken);
+                try
                 {
-                    Id = StripPrefix(account.Name),
-                    DisplayName = account.DisplayName,
-                    Open = account.Open,
-                    MasterBillingAccountId = string.IsNullOrEmpty(account.MasterBillingAccount)
-                        ? null
-                        : StripPrefix(account.MasterBillingAccount)
-                });
+                    var request = new ListBillingAccountsRequest
+                    {
+                        Filter = $"master_billing_account=billingAccounts/{masterId}"
+                    };
+                    await foreach (var sub in BillingClient
+                        .ListBillingAccountsAsync(request)
+                        .WithCancellation(cancellationToken))
+                    {
+                        Add(byId, sub);
+                    }
+                }
+                catch (Exception)
+                {
+                    // The master may not expose sub-accounts to this SA; keep what we already have.
+                }
             }
 
             return new BillingAccountsResult
             {
-                Accounts = accounts
+                Accounts = byId.Values
                     .OrderBy(a => a.MasterBillingAccountId ?? a.Id)
                     .ThenBy(a => a.IsSubaccount)
                     .ThenBy(a => a.DisplayName)
@@ -103,9 +137,24 @@ public sealed class BillingBudgetsService : IBillingBudgetsService
         }
     }
 
+    private static void Add(Dictionary<string, BillingAccountInfo> byId, BillingAccount account)
+    {
+        var id = StripPrefix(account.Name);
+        byId[id] = new BillingAccountInfo
+        {
+            Id = id,
+            DisplayName = account.DisplayName,
+            Open = account.Open,
+            MasterBillingAccountId = string.IsNullOrEmpty(account.MasterBillingAccount)
+                ? null
+                : StripPrefix(account.MasterBillingAccount)
+        };
+    }
+
     public async Task<BudgetsResult> ListBudgetsAsync(string billingAccountId, CancellationToken cancellationToken)
     {
         var budgets = new List<BudgetInfo>();
+        await PaceReadAsync(cancellationToken);
         var request = new ListBudgetsRequest { Parent = ParentName(billingAccountId) };
         var response = BudgetClient.ListBudgetsAsync(request);
         await foreach (var budget in response.WithCancellation(cancellationToken))
@@ -141,6 +190,7 @@ public sealed class BillingBudgetsService : IBillingBudgetsService
         Budget saved;
         if (string.IsNullOrWhiteSpace(request.BudgetId))
         {
+            await PaceWriteAsync(cancellationToken);
             saved = await BudgetClient.CreateBudgetAsync(new CreateBudgetRequest
             {
                 Parent = ParentName(request.BillingAccountId),
@@ -150,6 +200,7 @@ public sealed class BillingBudgetsService : IBillingBudgetsService
         else
         {
             budget.Name = BudgetName(request.BillingAccountId, request.BudgetId);
+            await PaceWriteAsync(cancellationToken);
             saved = await BudgetClient.UpdateBudgetAsync(new UpdateBudgetRequest
             {
                 Budget = budget,
@@ -160,11 +211,14 @@ public sealed class BillingBudgetsService : IBillingBudgetsService
         return ToBudgetInfo(saved, request.BillingAccountId);
     }
 
-    public Task DeleteBudgetAsync(string billingAccountId, string budgetId, CancellationToken cancellationToken) =>
-        BudgetClient.DeleteBudgetAsync(new DeleteBudgetRequest
+    public async Task DeleteBudgetAsync(string billingAccountId, string budgetId, CancellationToken cancellationToken)
+    {
+        await PaceWriteAsync(cancellationToken);
+        await BudgetClient.DeleteBudgetAsync(new DeleteBudgetRequest
         {
             Name = BudgetName(billingAccountId, budgetId)
         }, cancellationToken);
+    }
 
     private static BudgetInfo ToBudgetInfo(Budget budget, string billingAccountId)
     {
@@ -219,4 +273,25 @@ public sealed class BillingBudgetsService : IBillingBudgetsService
         "YEAR" => CalendarPeriod.Year,
         _ => CalendarPeriod.Month
     };
+
+    /// <summary>Token-bucket-of-1 that spaces calls to at most one per <c>interval</c>, mirroring the Channel client's pacer.</summary>
+    private sealed class RequestPacer(TimeSpan interval)
+    {
+        private readonly Lock _gate = new();
+        private DateTimeOffset _nextSlot = DateTimeOffset.MinValue;
+
+        public Task WaitAsync(CancellationToken cancellationToken)
+        {
+            DateTimeOffset slot;
+            lock (_gate)
+            {
+                var now = DateTimeOffset.UtcNow;
+                slot = _nextSlot > now ? _nextSlot : now;
+                _nextSlot = slot + interval;
+            }
+
+            var delay = slot - DateTimeOffset.UtcNow;
+            return delay > TimeSpan.Zero ? Task.Delay(delay, cancellationToken) : Task.CompletedTask;
+        }
+    }
 }
