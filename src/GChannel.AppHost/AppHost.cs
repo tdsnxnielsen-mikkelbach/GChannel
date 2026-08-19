@@ -26,6 +26,10 @@ sql.ConfigureInfrastructure(infra =>
     };
     db.MinCapacity = 0.5;
     db.AutoPauseDelay = 60; // pause after 60 minutes of inactivity
+    // The already-provisioned free-limit DB uses BillOverUsage; Azure forbids changing this in place,
+    // so pin it to match the deployed resource (the current Aspire default would try to set AutoPause).
+    db.UseFreeLimit = true;
+    db.FreeLimitExhaustionBehavior = FreeLimitExhaustionBehavior.BillOverUsage;
 });
 
 // Azure Managed Redis — entry-level Balanced B0 tier ("managed redis, basic").
