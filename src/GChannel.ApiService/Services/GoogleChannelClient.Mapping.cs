@@ -280,8 +280,17 @@ public sealed partial class GoogleChannelClient
             Reason = change.ActivationReason
                 ?? change.CancellationReason
                 ?? change.SuspensionReason
-                ?? change.OtherChangeReason
+                ?? change.OtherChangeReason,
+            Seats = SeatsFromParameters(change.Parameters)
         };
+    }
+
+    // num_units recorded on a change's parameter snapshot; used to compute per-change seat deltas.
+    private static long? SeatsFromParameters(IList<GoogleCloudChannelV1Parameter>? parameters)
+    {
+        var raw = parameters?
+            .FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value;
+        return long.TryParse(ValueToString(raw), out var seats) ? seats : null;
     }
 
     private static EntitlementParameter MapParameter(GoogleCloudChannelV1Parameter parameter) => new()

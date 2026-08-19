@@ -118,6 +118,9 @@ public sealed record EntitlementChange
 
     /// <summary>The single populated reason for the change (activation/cancellation/suspension/other).</summary>
     public string? Reason { get; init; }
+
+    /// <summary>Seat count (<c>num_units</c>) recorded at this change; diffing consecutive changes yields the seat delta. Null when the change carries no seat parameter.</summary>
+    public long? Seats { get; init; }
 }
 
 /// <summary>Result of listing an entitlement's change history.</summary>

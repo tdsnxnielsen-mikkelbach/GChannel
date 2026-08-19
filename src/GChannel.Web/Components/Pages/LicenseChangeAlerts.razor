@@ -214,13 +214,14 @@ else if (!_loading && _usingSamples)
                 customerById[id] = await TryGetCustomerAsync(id);
             }
 
-            var entitlementByKey = new Dictionary<string, Entitlement?>(StringComparer.Ordinal);
+            // Change history per distinct entitlement drives the delta (diff of the two latest changes).
+            var changesByKey = new Dictionary<string, IReadOnlyList<EntitlementChange>>(StringComparer.Ordinal);
             foreach (var n in notifications.Where(n => !string.IsNullOrEmpty(n.EntitlementId)))
             {
                 var key = $"{n.CustomerId}/{n.EntitlementId}";
-                if (!entitlementByKey.ContainsKey(key))
+                if (!changesByKey.ContainsKey(key))
                 {
-                    entitlementByKey[key] = await TryGetEntitlementAsync(n.CustomerId!, n.EntitlementId!);
+                    changesByKey[key] = await TryGetChangesAsync(n.CustomerId!, n.EntitlementId!);
                 }
             }
 
@@ -240,10 +241,11 @@ else if (!_loading && _usingSamples)
                     resellerEmail = domain is not null ? $"channel-ops@{domain}" : "partner contact not set";
                 }
 
-                Entitlement? entitlement = null;
-                if (!string.IsNullOrEmpty(n.EntitlementId))
+                IReadOnlyList<EntitlementChange> changes = [];
+                if (!string.IsNullOrEmpty(n.EntitlementId)
+                    && changesByKey.TryGetValue($"{n.CustomerId}/{n.EntitlementId}", out var found))
                 {
-                    entitlementByKey.TryGetValue($"{n.CustomerId}/{n.EntitlementId}", out entitlement);
+                    changes = found;
                 }
 
                 return new LicenseChangeEvent(
@@ -255,7 +257,7 @@ else if (!_loading && _usingSamples)
                     resellerName,
                     resellerEmail,
                     isIndirect,
-                    DescribeChange(entitlement),
+                    DescribeChange(changes),
                     n.ReceivedAt);
             }).ToList();
             _usingSamples = false;
@@ -292,11 +294,12 @@ else if (!_loading && _usingSamples)
         }
     }
 
-    private async Task<Entitlement?> TryGetEntitlementAsync(string customerId, string entitlementId)
+    private async Task<IReadOnlyList<EntitlementChange>> TryGetChangesAsync(string customerId, string entitlementId)
     {
         try
         {
-            return await Api.GetEntitlementAsync(customerId, entitlementId, _cts.Token);
+            var result = await Api.ListEntitlementChangesAsync(customerId, entitlementId, _cts.Token);
+            return result?.Changes ?? [];
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
@@ -304,7 +307,7 @@ else if (!_loading && _usingSamples)
         }
         catch
         {
-            return null;
+            return [];
         }
     }
 
@@ -316,28 +319,45 @@ else if (!_loading && _usingSamples)
         }
     }
 
-    // The license's current state after the change (offer · seats · state) — the concrete "what changed"
-    // context the Pub/Sub event itself doesn't carry. Best-effort; null when the entitlement can't be read.
-    private static string? DescribeChange(Entitlement? entitlement)
+    // The concrete amount that changed, from the entitlement change history: the seat delta between the
+    // two most recent changes (e.g. "added 2 seats → 42") plus any offer switch. Null when nothing to diff.
+    private static string? DescribeChange(IReadOnlyList<EntitlementChange> changes)
     {
-        if (entitlement is null)
+        if (changes.Count == 0)
         {
             return null;
         }
 
+        var ordered = changes.OrderByDescending(c => c.CreateTime ?? DateTimeOffset.MinValue).ToList();
+        var latest = ordered[0];
+        var prior = ordered.ElementAtOrDefault(1);
         var parts = new List<string>();
-        var offer = entitlement.OfferDisplayName ?? entitlement.SkuDisplayName ?? entitlement.ProductDisplayName;
-        if (!string.IsNullOrEmpty(offer)) parts.Add(offer);
-        if (Seats(entitlement) is { } seats) parts.Add($"{seats} seats");
-        if (!string.IsNullOrEmpty(entitlement.ProvisioningState)) parts.Add(entitlement.ProvisioningState);
-        return parts.Count > 0 ? string.Join(" · ", parts) : null;
-    }
 
-    private static long? Seats(Entitlement entitlement)
-    {
-        var units = entitlement.Parameters
-            .FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase));
-        return long.TryParse(units?.Value, out var n) ? n : entitlement.BillableSeats;
+        if (latest.Seats is { } now)
+        {
+            if (prior?.Seats is { } before && before != now)
+            {
+                var diff = now - before;
+                var noun = Math.Abs(diff) == 1 ? "seat" : "seats";
+                parts.Add($"{(diff > 0 ? "added" : "removed")} {Math.Abs(diff)} {noun} → {now}");
+            }
+            else
+            {
+                parts.Add($"{now} seats");
+            }
+        }
+
+        var offerNow = latest.OfferDisplayName ?? latest.OfferId;
+        var offerBefore = prior?.OfferDisplayName ?? prior?.OfferId;
+        if (!string.IsNullOrEmpty(offerNow))
+        {
+            parts.Add(!string.IsNullOrEmpty(offerBefore)
+                      && !string.Equals(offerBefore, offerNow, StringComparison.OrdinalIgnoreCase)
+                ? $"{offerBefore} → {offerNow}"
+                : offerNow);
+        }
+
+        return parts.Count > 0 ? string.Join(" · ", parts) : null;
     }
 
     private static string FriendlyChange(string? eventType) => eventType switch
