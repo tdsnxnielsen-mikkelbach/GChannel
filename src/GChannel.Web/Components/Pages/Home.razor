@@ -578,9 +578,12 @@
                 <div>
                     <MudText Typo="Typo.h6">Top indirect resellers</MudText>
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
-                        @(_resellerMetric == "avg"
-                            ? "Ranked by average active seats per customer — a fairer comparison when one reseller dwarfs the rest. Parentheses show the customer count; each bar is labelled with its exact figure."
-                            : "Ranked by total active seats. Parentheses show the customer count; each bar is labelled with its exact seat count.")
+                        @(_resellerMetric switch
+                        {
+                            "avg" => "Ranked by average active seats per customer — a fairer comparison when one reseller dwarfs the rest. Parentheses show the customer count; each bar is labelled with its exact figure.",
+                            "revenue" => "Ranked by estimated monthly revenue (repriced end-customer billing, from list pricing + repricing mark-ups). Parentheses show the customer count; each bar is labelled with its exact figure.",
+                            _ => "Ranked by total active seats. Parentheses show the customer count; each bar is labelled with its exact seat count."
+                        })
                     </MudText>
                 </div>
                 @if (_resellers.Count > 0)
@@ -589,6 +592,7 @@
                                Variant="Variant.Outlined" Style="max-width:220px" ValueChanged="OnResellerMetricChanged">
                         <MudSelectItem Value="@("seats")">Total seats</MudSelectItem>
                         <MudSelectItem Value="@("avg")">Avg seats / customer</MudSelectItem>
+                        <MudSelectItem Value="@("revenue")">Monthly revenue</MudSelectItem>
                     </MudSelect>
                 }
             </div>
@@ -600,7 +604,7 @@
                                      Name="@_resellerSeriesName"
                                      SeriesType="SeriesType.Bar"
                                      XValue="@(r => $"{r.Reseller} ({r.Customers:0})")"
-                                     YValue="@(r => _resellerMetric == "avg" ? r.AvgSeats : r.Seats)" />
+                                     YValue="@(r => _resellerMetric switch { "avg" => r.AvgSeats, "revenue" => r.Revenue, _ => r.Seats })" />
                 </ApexChart>
             }
             else if (_entitlementsLoading)
@@ -624,7 +628,7 @@
     private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
     private record MonthlyPoint(string Key, string Label, decimal Direct, decimal Indirect);
     private record ProductSlice(string Product, decimal Count);
-    private record ResellerSlice(string Reseller, decimal Customers, decimal Seats, decimal AvgSeats);
+    private record ResellerSlice(string Reseller, decimal Customers, decimal Seats, decimal AvgSeats, decimal Revenue);
     private record OnboardBar(string Reseller, decimal Count);
     private record LinkMonthPoint(string Key, string Label, decimal Count);
 
@@ -654,10 +658,21 @@
         }
     };
 
-    // "seats" = rank by total active seats; "avg" = rank by average active seats per customer.
+    // "seats" = rank by total active seats; "avg" = rank by average active seats per customer;
+    // "revenue" = rank by estimated monthly repriced revenue.
     private string _resellerMetric = "seats";
-    private string _resellerTitle => _resellerMetric == "avg" ? "Avg seats per customer" : "Seats per reseller";
-    private string _resellerSeriesName => _resellerMetric == "avg" ? "Avg seats / customer" : "Seats";
+    private string _resellerTitle => _resellerMetric switch
+    {
+        "avg" => "Avg seats per customer",
+        "revenue" => "Monthly revenue per reseller",
+        _ => "Seats per reseller"
+    };
+    private string _resellerSeriesName => _resellerMetric switch
+    {
+        "avg" => "Avg seats / customer",
+        "revenue" => "Monthly revenue",
+        _ => "Seats"
+    };
 
     // The metric-ordered slice the chart actually renders (mirrors the _allMonthly/_monthly pattern so
     // ApexChart.UpdateSeriesAsync picks up the change without a full data reload).
@@ -976,15 +991,20 @@
 
     private static ResellerSlice ToResellerSlice(DashboardResellerCustomers reseller) =>
         new(reseller.Reseller, reseller.CustomerCount, reseller.SeatCount,
-            reseller.CustomerCount > 0 ? (decimal)reseller.SeatCount / reseller.CustomerCount : 0);
+            reseller.CustomerCount > 0 ? (decimal)reseller.SeatCount / reseller.CustomerCount : 0,
+            // Revenue = wholesale cost + rebilling margin (what the reseller's end customers are billed).
+            reseller.WholesaleMonthly + reseller.MarginMonthly);
 
     // Re-populate the chart's bound list ordered by the selected metric (highest first).
     private void ApplyResellerMetric()
     {
         _resellerView.Clear();
-        var ordered = _resellerMetric == "avg"
-            ? _resellers.OrderByDescending(r => r.AvgSeats).ThenBy(r => r.Reseller)
-            : _resellers.OrderByDescending(r => r.Seats).ThenBy(r => r.Reseller);
+        var ordered = _resellerMetric switch
+        {
+            "avg" => _resellers.OrderByDescending(r => r.AvgSeats).ThenBy(r => r.Reseller),
+            "revenue" => _resellers.OrderByDescending(r => r.Revenue).ThenBy(r => r.Reseller),
+            _ => _resellers.OrderByDescending(r => r.Seats).ThenBy(r => r.Reseller)
+        };
         _resellerView.AddRange(ordered);
     }
 

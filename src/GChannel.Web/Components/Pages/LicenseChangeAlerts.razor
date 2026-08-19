@@ -1,0 +1,324 @@
+@page "/license-change-alerts"
+@attribute [Authorize]
+@implements IDisposable
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>License change alerts · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-2">
+    <div>
+        <MudText Typo="Typo.h4">License change alerts</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Notify indirect resellers when an end customer's license changes</MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="LoadAsync" Disabled="_loading">Refresh</MudButton>
+</div>
+
+<MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+    <b>Preview only.</b> This page showcases the reseller notification email. No mail is sent — the
+    "Send" action is disabled by design.
+</MudAlert>
+
+<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+    License change events arrive live on the Channel <MudLink Href="/notifications">Pub/Sub feed</MudLink>.
+    Each entitlement event is matched to the end customer it concerns and to the indirect reseller that
+    owns that customer, so the owning reseller can be emailed a summary of what changed.
+</MudText>
+
+@if (!_loading && !_subscriberEnabled)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4" Dense="true">
+        The background Pub/Sub subscriber isn't running, so no live change events are arriving. The rows
+        below are illustrative samples. Configure the subscriber on the
+        <MudLink Href="/notifications">Notifications</MudLink> page to drive this from real events.
+    </MudAlert>
+}
+else if (!_loading && _usingSamples)
+{
+    <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+        No license change events have arrived yet — showing illustrative samples so you can preview the email.
+    </MudAlert>
+}
+
+<MudGrid>
+    <MudItem xs="12" md="7">
+        <MudText Typo="Typo.h6" Class="mb-2">Recent license changes</MudText>
+        @if (_loading)
+        {
+            <LoadingPanel Title="Loading license changes…" Hint="Reading the live change feed and resolving owning resellers." />
+        }
+        else
+        {
+            <MudTable Items="_events" Hover="true" Elevation="2" Dense="true"
+                      @bind-SelectedItem="_selected" T="LicenseChangeEvent" OnRowClick="OnRowClick">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortBy="new Func<LicenseChangeEvent, object>(e => e.ChangeType)">Change</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortBy="new Func<LicenseChangeEvent, object>(e => e.CustomerName)">End customer</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<LicenseChangeEvent, object>(e => e.ResellerName)">Indirect reseller</MudTableSortLabel></MudTh>
+                    <MudTh>Reseller email</MudTh>
+                    <MudTh><MudTableSortLabel SortBy="new Func<LicenseChangeEvent, object>(e => e.OccurredAt)">When</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:right">Preview</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Change">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@ChangeColor(context.ChangeType)">
+                            @context.ChangeType
+                        </MudChip>
+                        @if (!string.IsNullOrEmpty(context.Detail))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@context.Detail</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="End customer">
+                        <MudText Typo="Typo.body2">@context.CustomerName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@(context.CustomerDomain ?? context.CustomerId)</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Indirect reseller">
+                        @if (context.IsIndirect)
+                        {
+                            <MudText Typo="Typo.body2">@context.ResellerName</MudText>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">Direct</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Reseller email">
+                        @if (context.IsIndirect)
+                        {
+                            <MudLink Href="@($"mailto:{context.ResellerEmail}")">@context.ResellerEmail</MudLink>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="When">@context.OccurredAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudTd>
+                    <MudTd DataLabel="Preview" Style="text-align:right">
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                   Disabled="!context.IsIndirect" OnClick="@(() => _selected = context)">Preview</MudButton>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>No license changes to show.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        }
+    </MudItem>
+
+    <MudItem xs="12" md="5">
+        <MudText Typo="Typo.h6" Class="mb-2">Email preview</MudText>
+        @if (_selected is null || !_selected.IsIndirect)
+        {
+            <MudAlert Severity="Severity.Info">Select an indirect reseller's license change to preview the email that would be sent.</MudAlert>
+        }
+        else
+        {
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">To</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-2">@_selected.ResellerName &lt;@_selected.ResellerEmail&gt;</MudText>
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Subject</MudText>
+                    <MudText Typo="Typo.body1" Class="mb-3"><b>@Subject(_selected)</b></MudText>
+
+                    <MudDivider Class="mb-3" />
+
+                    <MudText Typo="Typo.body2" Style="white-space:pre-line">@Body(_selected)</MudText>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Send" Disabled="true">
+                        Send (disabled in preview)
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        }
+
+        <MudText Typo="Typo.subtitle2" Class="mt-6 mb-1">How it works</MudText>
+        <MudList T="string" Dense="true">
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Notifications">
+                A Channel entitlement change event arrives on the Pub/Sub feed.
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Hub">
+                The affected customer is resolved to its owning channel partner (indirect reseller).
+            </MudListItem>
+            <MudListItem T="string" Icon="@Icons.Material.Filled.Email">
+                A summary email is composed and sent to the reseller's registered contact.
+            </MudListItem>
+        </MudList>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private sealed record LicenseChangeEvent(
+        string ChangeType,
+        string CustomerName,
+        string? CustomerDomain,
+        string CustomerId,
+        string? EntitlementId,
+        string ResellerName,
+        string ResellerEmail,
+        bool IsIndirect,
+        string? Detail,
+        DateTimeOffset OccurredAt);
+
+    private bool _loading = true;
+    private bool _subscriberEnabled;
+    private bool _usingSamples;
+    private LicenseChangeEvent? _selected;
+    private List<LicenseChangeEvent> _events = [];
+    private readonly CancellationTokenSource _cts = new();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _selected = null;
+        try
+        {
+            // Live Pub/Sub feed + read-model customers (to resolve each event to its owning reseller).
+            var feed = await Api.ListNotificationsAsync(_cts.Token);
+            var customers = await Api.ListEstateCustomersAsync(1, 500, null, false, null, null, _cts.Token);
+
+            _subscriberEnabled = feed?.SubscriberEnabled ?? false;
+
+            var byCustomer = (customers?.Items ?? [])
+                .GroupBy(c => c.CustomerId)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            // Only entitlement (license) events carry a license change; customer events don't.
+            var live = (feed?.Notifications ?? [])
+                .Where(n => string.Equals(n.Kind, "Entitlement", StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrEmpty(n.CustomerId))
+                .Select(n =>
+                {
+                    byCustomer.TryGetValue(n.CustomerId!, out var c);
+                    var isIndirect = c is { IsResellerSelf: false, ResellerName: not null };
+                    var resellerName = isIndirect ? c!.ResellerName! : "Direct";
+                    return new LicenseChangeEvent(
+                        FriendlyChange(n.EventType),
+                        c?.OrgName ?? n.CustomerId!,
+                        c?.Domain,
+                        n.CustomerId!,
+                        n.EntitlementId,
+                        resellerName,
+                        isIndirect ? ResellerEmailFor(resellerName) : string.Empty,
+                        isIndirect,
+                        n.EventType,
+                        n.ReceivedAt);
+                })
+                .ToList();
+
+            if (live.Count > 0)
+            {
+                _events = live;
+                _usingSamples = false;
+            }
+            else
+            {
+                _events = Samples();
+                _usingSamples = true;
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Benign teardown.
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load license changes: {ex.Message}", Severity.Error);
+            _events = Samples();
+            _usingSamples = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnRowClick(TableRowClickEventArgs<LicenseChangeEvent> args)
+    {
+        if (args.Item is { IsIndirect: true })
+        {
+            _selected = args.Item;
+        }
+    }
+
+    // Derive the partner's notification contact from its primary domain (the read-model has no contact
+    // field). Falls back to a placeholder when the reseller label isn't a domain.
+    private static string ResellerEmailFor(string resellerName) =>
+        resellerName.Contains('.') && !resellerName.Contains(' ')
+            ? $"channel-ops@{resellerName}"
+            : "partner contact not set";
+
+    private static string FriendlyChange(string? eventType) => eventType switch
+    {
+        null or "" => "License change",
+        "LICENSE_ASSIGNMENT_CHANGED" => "Seats changed",
+        "LICENSE_CAP_CHANGED" => "Seat cap changed",
+        "ENTITLEMENT_CREATED" => "New license",
+        "ENTITLEMENT_PLAN_CHANGED" or "ENTITLEMENT_OFFER_CHANGED" => "Offer change",
+        "ENTITLEMENT_RENEWED" => "Renewed",
+        "ENTITLEMENT_RENEWAL_SETTING_CHANGED" => "Renewal changed",
+        "ENTITLEMENT_SUSPENDED" => "Suspended",
+        "ENTITLEMENT_ACTIVATED" => "Activated",
+        "ENTITLEMENT_CANCELLED" or "ENTITLEMENT_DELETED" => "Cancelled",
+        _ => "License change"
+    };
+
+    private static Color ChangeColor(string changeType) => changeType switch
+    {
+        "New license" or "Seats changed" or "Activated" or "Renewed" => Color.Success,
+        "Offer change" or "Renewal changed" or "Seat cap changed" => Color.Info,
+        "Suspended" => Color.Warning,
+        "Cancelled" => Color.Error,
+        _ => Color.Default
+    };
+
+    private static string Subject(LicenseChangeEvent e) =>
+        $"License change for {e.CustomerName}: {e.ChangeType}";
+
+    private static string Body(LicenseChangeEvent e) =>
+        $"""
+        Hello {e.ResellerName},
+
+        A license change was recorded for one of your customers:
+
+          Customer:  {e.CustomerName}{(e.CustomerDomain is null ? "" : $" ({e.CustomerDomain})")}
+          Change:    {e.ChangeType}
+          When:      {e.OccurredAt.LocalDateTime:f}
+
+        Sign in to the console to review the entitlement and its change history.
+
+        — GChannel automated notifications
+        """;
+
+    // Illustrative fallback shown only when the live feed has no license change events yet.
+    private static List<LicenseChangeEvent> Samples() =>
+    [
+        new("Seats changed", "Northwind Trading", "northwind.example", "sample-1", null,
+            "contoso.example", "channel-ops@contoso.example", true, "Seats 25 → 40 (+15)",
+            DateTimeOffset.Now.AddHours(-2)),
+        new("Seats changed", "Fabrikam Media", "fabrikam.example", "sample-2", null,
+            "adventure-works.example", "channel-ops@adventure-works.example", true, "Seats 120 → 90 (−30)",
+            DateTimeOffset.Now.AddHours(-6)),
+        new("Offer change", "Tailspin Toys", "tailspin.example", "sample-3", null,
+            "contoso.example", "channel-ops@contoso.example", true, "Business Starter → Business Standard",
+            DateTimeOffset.Now.AddDays(-1)),
+        new("Suspended", "Wingtip Legal", "wingtip.example", "sample-4", null,
+            "adventure-works.example", "channel-ops@adventure-works.example", true, "Entitlement suspended (billing)",
+            DateTimeOffset.Now.AddDays(-2)),
+        new("Cancelled", "Proseware Health", "proseware.example", "sample-5", null,
+            "fourthcoffee.example", "channel-ops@fourthcoffee.example", true, "Entitlement cancelled",
+            DateTimeOffset.Now.AddDays(-3)),
+    ];
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}
