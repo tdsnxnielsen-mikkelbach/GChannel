@@ -323,6 +323,22 @@ public sealed class GChannelApiClient(
     public Task<SubscriberRegistration?> UnregisterSubscriberAsync(string serviceAccount, CancellationToken cancellationToken = default) =>
         SendAsync<SubscriberRegistration>(HttpMethod.Delete, ApiRoutes.PubSubSubscriber(serviceAccount), EmptyBody, cancellationToken);
 
+    /// <summary>Lists the reseller's Cloud Billing accounts + sub-accounts (discovered or configured).</summary>
+    public Task<BillingAccountsResult?> ListBillingAccountsAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<BillingAccountsResult>(ApiRoutes.BillingAccounts, cancellationToken);
+
+    /// <summary>Lists budgets for a billing account.</summary>
+    public Task<BudgetsResult?> ListBudgetsAsync(string billingAccountId, CancellationToken cancellationToken = default) =>
+        GetAsync<BudgetsResult>(ApiRoutes.BillingBudgets(billingAccountId), cancellationToken);
+
+    /// <summary>Creates (no budget id) or updates (budget id set) a budget.</summary>
+    public Task<BudgetInfo?> SaveBudgetAsync(SaveBudgetRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync<BudgetInfo>(HttpMethod.Post, ApiRoutes.BillingBudgetSave, request, cancellationToken);
+
+    /// <summary>Deletes a budget.</summary>
+    public Task DeleteBudgetAsync(string billingAccountId, string budgetId, CancellationToken cancellationToken = default) =>
+        DeleteAsync(ApiRoutes.BillingBudget(billingAccountId, budgetId), cancellationToken);
+
     /// <summary>Shared empty JSON body for state-change POSTs that carry no payload.</summary>
     private static readonly object EmptyBody = new();
 

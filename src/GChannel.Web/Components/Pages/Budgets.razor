@@ -1,0 +1,325 @@
+@page "/billing/budgets"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>GCP budgets · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-2">
+    <div>
+        <MudText Typo="Typo.h4">GCP budgets</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Cloud Billing budgets on your reseller billing accounts and per-customer sub-accounts
+        </MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="ReloadAsync" Disabled="_loadingAccounts">Refresh</MudButton>
+</div>
+
+<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+    Budgets are read and written through the Cloud Billing Budget API using the reseller service
+    account — a separate data plane from the Channel API. Budgets raise alerts at their thresholds; they
+    don't cap spend.
+</MudText>
+
+@if (_accountsError is not null)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4" Dense="true">
+        Couldn't discover billing accounts live (@_accountsError). Showing configured accounts if any —
+        ensure <code>cloudbilling.googleapis.com</code> is enabled and the service account has
+        <code>roles/billing.viewer</code>.
+    </MudAlert>
+}
+
+<MudGrid>
+    <MudItem xs="12" md="5">
+        <MudSelect T="string" Value="_selectedAccountId" Label="Billing account" Dense="true"
+                   Variant="Variant.Outlined" ValueChanged="OnAccountChanged" Disabled="_loadingAccounts">
+            @foreach (var account in _accounts)
+            {
+                <MudSelectItem Value="@account.Id">
+                    @AccountLabel(account)
+                </MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" md="7" Class="d-flex align-center">
+        @if (!string.IsNullOrEmpty(_selectedAccountId))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="StartCreate">New budget</MudButton>
+        }
+    </MudItem>
+</MudGrid>
+
+@if (_editing is not null)
+{
+    <MudPaper Class="pa-4 my-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">@(_editing.BudgetId is null ? "New budget" : "Edit budget")</MudText>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_editing.DisplayName" Label="Display name" Required="true"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudNumericField @bind-Value="_editing.Amount" Label="Amount" Min="0" Variant="Variant.Outlined"
+                                 Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudTextField @bind-Value="_editing.CurrencyCode" Label="Currency" Variant="Variant.Outlined"
+                              Margin="Margin.Dense" MaxLength="3" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="string" @bind-Value="_editing.CalendarPeriod" Label="Reset period" Dense="true"
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("MONTH")">Monthly</MudSelectItem>
+                    <MudSelectItem Value="@("QUARTER")">Quarterly</MudSelectItem>
+                    <MudSelectItem Value="@("YEAR")">Yearly</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="8" Class="d-flex align-center gap-4">
+                <MudText Typo="Typo.body2" Class="mr-2">Alert thresholds:</MudText>
+                <MudCheckBox @bind-Value="_t50" Label="50%" Dense="true" />
+                <MudCheckBox @bind-Value="_t90" Label="90%" Dense="true" />
+                <MudCheckBox @bind-Value="_t100" Label="100%" Dense="true" />
+            </MudItem>
+        </MudGrid>
+        <div class="d-flex justify-end gap-2 mt-3">
+            <MudButton Variant="Variant.Text" OnClick="@(() => _editing = null)" Disabled="_saving">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync"
+                       Disabled="_saving || string.IsNullOrWhiteSpace(_editing.DisplayName)">
+                @(_saving ? "Saving…" : "Save budget")
+            </MudButton>
+        </div>
+    </MudPaper>
+}
+
+<MudText Typo="Typo.h6" Class="mt-4 mb-2">Budgets</MudText>
+@if (_loadingBudgets)
+{
+    <LoadingPanel Title="Loading budgets…" Hint="Reading budgets for the selected billing account." />
+}
+else if (string.IsNullOrEmpty(_selectedAccountId))
+{
+    <MudAlert Severity="Severity.Info">Select a billing account to view its budgets.</MudAlert>
+}
+else
+{
+    <MudTable Items="_budgets" Hover="true" Elevation="2" Dense="true" T="BudgetInfo">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Amount</MudTh>
+            <MudTh>Reset</MudTh>
+            <MudTh>Alert thresholds</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+            <MudTd DataLabel="Amount">
+                @if (context.UsesLastPeriodAmount)
+                {
+                    <MudText Typo="Typo.body2">Tracks last period</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">@context.Amount.ToString("N2") @context.CurrencyCode</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Reset">@(context.CalendarPeriod ?? "Custom")</MudTd>
+            <MudTd DataLabel="Alert thresholds">@string.Join(", ", context.ThresholdPercents.Select(p => $"{p * 100:0}%"))</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary"
+                               OnClick="@(() => StartEdit(context))" Disabled="context.UsesLastPeriodAmount" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="@(() => DeleteAsync(context))" />
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No budgets on this billing account yet.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private sealed class BudgetForm
+    {
+        public string? BudgetId { get; set; }
+        public string DisplayName { get; set; } = "";
+        public decimal Amount { get; set; }
+        public string CurrencyCode { get; set; } = "USD";
+        public string CalendarPeriod { get; set; } = "MONTH";
+    }
+
+    private bool _loadingAccounts = true;
+    private bool _loadingBudgets;
+    private bool _saving;
+    private string? _accountsError;
+    private string? _selectedAccountId;
+    private List<BillingAccountInfo> _accounts = [];
+    private List<BudgetInfo> _budgets = [];
+    private BudgetForm? _editing;
+    private bool _t50 = true, _t90 = true, _t100 = true;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loadingAccounts = true;
+        _editing = null;
+        try
+        {
+            var result = await Api.ListBillingAccountsAsync();
+            _accounts = (result?.Accounts ?? []).Where(a => a.Open).ToList();
+            _accountsError = result is { DiscoveryAvailable: false } ? (result.DiscoveryError ?? "unavailable") : null;
+
+            if (_selectedAccountId is null || _accounts.All(a => a.Id != _selectedAccountId))
+            {
+                _selectedAccountId = _accounts.FirstOrDefault()?.Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load billing accounts: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loadingAccounts = false;
+        }
+
+        await LoadBudgetsAsync();
+    }
+
+    private async Task OnAccountChanged(string accountId)
+    {
+        _selectedAccountId = accountId;
+        _editing = null;
+        await LoadBudgetsAsync();
+    }
+
+    private async Task LoadBudgetsAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedAccountId))
+        {
+            _budgets = [];
+            return;
+        }
+
+        _loadingBudgets = true;
+        try
+        {
+            var result = await Api.ListBudgetsAsync(_selectedAccountId);
+            _budgets = (result?.Budgets ?? []).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load budgets: {ex.Message}", Severity.Error);
+            _budgets = [];
+        }
+        finally
+        {
+            _loadingBudgets = false;
+        }
+    }
+
+    private void StartCreate()
+    {
+        var currency = _budgets.FirstOrDefault()?.CurrencyCode ?? "USD";
+        _editing = new BudgetForm { CurrencyCode = currency };
+        _t50 = _t90 = _t100 = true;
+    }
+
+    private void StartEdit(BudgetInfo budget)
+    {
+        _editing = new BudgetForm
+        {
+            BudgetId = budget.BudgetId,
+            DisplayName = budget.DisplayName ?? "",
+            Amount = budget.Amount,
+            CurrencyCode = budget.CurrencyCode ?? "USD",
+            CalendarPeriod = budget.CalendarPeriod ?? "MONTH"
+        };
+        _t50 = budget.ThresholdPercents.Any(p => Math.Abs(p - 0.5) < 0.001);
+        _t90 = budget.ThresholdPercents.Any(p => Math.Abs(p - 0.9) < 0.001);
+        _t100 = budget.ThresholdPercents.Any(p => Math.Abs(p - 1.0) < 0.001);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_editing is null || string.IsNullOrEmpty(_selectedAccountId))
+        {
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var thresholds = new List<double>();
+            if (_t50) thresholds.Add(0.5);
+            if (_t90) thresholds.Add(0.9);
+            if (_t100) thresholds.Add(1.0);
+
+            await Api.SaveBudgetAsync(new SaveBudgetRequest
+            {
+                BillingAccountId = _selectedAccountId,
+                BudgetId = _editing.BudgetId,
+                DisplayName = _editing.DisplayName,
+                Amount = _editing.Amount,
+                CurrencyCode = string.IsNullOrWhiteSpace(_editing.CurrencyCode) ? "USD" : _editing.CurrencyCode.ToUpperInvariant(),
+                ThresholdPercents = thresholds,
+                CalendarPeriod = _editing.CalendarPeriod
+            });
+
+            Snackbar.Add(_editing.BudgetId is null ? "Budget created." : "Budget updated.", Severity.Success);
+            _editing = null;
+            await LoadBudgetsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save budget: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync(BudgetInfo budget)
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Delete budget",
+            $"Delete the budget \"{budget.DisplayName}\"? This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (confirmed != true || string.IsNullOrEmpty(_selectedAccountId))
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteBudgetAsync(_selectedAccountId, budget.BudgetId);
+            Snackbar.Add("Budget deleted.", Severity.Success);
+            await LoadBudgetsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete budget: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string AccountLabel(BillingAccountInfo account)
+    {
+        var name = account.DisplayName ?? account.Id;
+        // Reseller sub-accounts named for a resold Channel customer carry the customer resource path.
+        if (name.StartsWith("channel-gcp:accounts/", StringComparison.Ordinal))
+        {
+            var customerIdx = name.IndexOf("/customers/", StringComparison.Ordinal);
+            if (customerIdx >= 0)
+            {
+                name = $"Channel customer {name[(customerIdx + "/customers/".Length)..]}";
+            }
+        }
+
+        return account.IsSubaccount ? $"— {name} ({account.Id})" : $"{name} ({account.Id})";
+    }
+}

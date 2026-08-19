@@ -2,13 +2,15 @@
 
 ## 15. Cloud Billing / BigQuery billing export integration (spike / design)
 
-> **Status:** 🧪 Spike / design draft — **not implemented**. Captures how GChannel would ingest
-> **actual** GCP consumption/invoice figures, GCP **budgets**, and **spend trend/anomaly** detection.
-> These are the deferred "Phase 4" concerns from
+> **Status:** 🟡 Partially implemented. The **GCP budgets** slice (see / set via the Cloud Billing
+> Budget API) is **built** — see [Budgets slice](#budgets-slice-implemented) below. The **actual spend**
+> and **spend trend / spike** slices (BigQuery billing export) remain a **spike / design draft**. This
+> doc captures how GChannel ingests **actual** GCP consumption/invoice figures, GCP **budgets**, and
+> **spend trend/anomaly** detection. These are the deferred "Phase 4" concerns from
 > [§11 Pricing &amp; billing](11-pricing-and-billing.md) and the answer to the "can we see GCP spend /
 > set budgets / spot spikes?" questions. **None of this is in the Cloud Channel API** — it needs
-> separate Google Cloud data sources and credentials. This doc scopes the smallest useful spike and a
-> phased plan; nothing here changes the existing (estimate-only) pricing surface.
+> separate Google Cloud data sources and credentials. The remaining sections scope the smallest useful
+> spike and a phased plan; nothing here changes the existing (estimate-only) pricing surface.
 
 ### Why the Channel API can't do this
 
@@ -29,8 +31,31 @@ So the three asks map to three separate Google Cloud data sources, all outside t
 | Ask | Real source | GChannel today |
 | --- | --- | --- |
 | See GCP spend per customer | **Detailed usage cost BigQuery export** (partner/sub-account billing) | Estimated from list pricing only |
-| See / set GCP budgets | **Cloud Billing Budget API** (`billingbudgets.googleapis.com`) | Not available |
+| See / set GCP budgets | **Cloud Billing Budget API** (`billingbudgets.googleapis.com`) | ✅ **Implemented** (Budgets page) |
 | Spend trends / spike detection | Time-series over the **BigQuery** export (+ optional anomaly logic) | Not available |
+
+### Budgets slice (implemented)
+
+The **see / set GCP budgets** ask is built as a self-contained vertical slice, reusing the reseller
+service-account key (`GoogleChannel:ServiceAccountKeyJson`) — no BigQuery, no extra secret:
+
+- **API:** `BillingBudgetsService` (`GChannel.ApiService`) wraps `Google.Cloud.Billing.Budgets.V1`
+  (`BudgetServiceClient`) for list/create/update/delete, and `Google.Cloud.Billing.V1`
+  (`CloudBillingClient`) for best-effort billing-account + sub-account discovery. Endpoints under
+  `/api/billing`: `GET /accounts`, `GET /accounts/{id}/budgets`, `POST /budgets` (create/update),
+  `DELETE /accounts/{id}/budgets/{budgetId}`.
+- **Auth:** the SA credential is scoped to `cloud-platform` (built via `CredentialFactory`); the SA
+  needs `roles/billing.viewer` (read) + `roles/billing.costsManager` (create/set) on the billing
+  account. Account discovery additionally needs **`cloudbilling.googleapis.com`** enabled; when it
+  isn't, the picker falls back to `GoogleBilling:BillingAccountIds`.
+- **UI:** a **Billing → GCP budgets** page (`/billing/budgets`) with a billing-account/sub-account
+  picker, budget table, and a create/edit form (amount, currency, monthly/quarterly/yearly reset,
+  50/90/100% alert thresholds) plus delete-with-confirm. Sub-accounts named for a resold Channel
+  customer (`channel-gcp:accounts/.../customers/...`) are surfaced as that customer.
+- **Config:** optional `GoogleBilling:BillingAccountIds` (comma-separated) discovery fallback, wired
+  through the AppHost `GoogleBillingAccountIds` parameter to the API service.
+- **Caveat carried forward:** budgets raise **alerts** at thresholds — they do **not** cap spend, and
+  *actual* consumption vs budget still requires the BigQuery export slice below.
 
 ### Data sources
 

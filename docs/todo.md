@@ -21,7 +21,7 @@ detail, rationale and per-phase breakdown.
 | 12. Remaining stable `v1` surface | §12.1–12.4 complete (§12.4 doc-only) | [todos/12-remaining-v1-surface.md](todos/12-remaining-v1-surface.md) |
 | 13. Provisionable Cloud Identity types | Deferred (alpha-only; GA `checkCloudIdentityAccountsExist` covers the core decision) | [todos/13-provisionable-cloud-identity-types.md](todos/13-provisionable-cloud-identity-types.md) |
 | 14. CQRS &amp; event-driven projections | Implemented (write-through on commands + Pub/Sub event-driven projection via shared `ReadModelProjector`; formal CQRS/MediatR deliberately skipped) | [todos/14-cqrs-and-event-driven-projections.md](todos/14-cqrs-and-event-driven-projections.md) |
-| 15. Cloud Billing / BigQuery billing export | Spike / design draft (deferred; outside Channel API — actual GCP spend, budgets, spend trends) | [todos/15-cloud-billing-bigquery-export.md](todos/15-cloud-billing-bigquery-export.md) |
+| 15. Cloud Billing / BigQuery billing export | Budgets slice implemented (see/set GCP budgets); actual spend + trends still spike/design | [todos/15-cloud-billing-bigquery-export.md](todos/15-cloud-billing-bigquery-export.md) |
 
 ## Roadmap capabilities (§1–§8)
 

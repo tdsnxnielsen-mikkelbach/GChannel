@@ -87,6 +87,11 @@ var googleChannelPubSubProjectId = builder.AddParameter("GoogleChannelPubSubProj
 var googleChannelPubSubSubscriptionId = builder.AddParameter("GoogleChannelPubSubSubscriptionId");
 var googleChannelWorkloadIdentityCredentialJson = builder.AddParameter("GoogleChannelWorkloadIdentityCredentialJson");
 
+// Optional Cloud Billing budgets (billingbudgets.googleapis.com): comma-separated billing account ids
+// used as a fallback when live discovery (cloudbilling.googleapis.com) is unavailable. Reuses the
+// GoogleChannel service-account key for auth, so no extra secret is needed.
+var googleBillingAccountIds = builder.AddParameter("GoogleBillingAccountIds");
+
 // Back-end services container app (internal): owns SQL, Redis and the Google Channel API.
 var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithReference(database)
@@ -101,6 +106,7 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithEnvironment("GoogleChannel__PubSubProjectId", googleChannelPubSubProjectId)
     .WithEnvironment("GoogleChannel__PubSubSubscriptionId", googleChannelPubSubSubscriptionId)
     .WithEnvironment("GoogleChannel__WorkloadIdentityCredentialJson", googleChannelWorkloadIdentityCredentialJson)
+    .WithEnvironment("GoogleBilling__BillingAccountIds", googleBillingAccountIds)
     .WaitFor(database)
     .WaitFor(cache);
 

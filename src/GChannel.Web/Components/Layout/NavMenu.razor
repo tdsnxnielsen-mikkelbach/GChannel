@@ -51,5 +51,11 @@
             <FeatureBeacon Id="license-change-alerts-v1" MatchPath="license-change-alerts" Tooltip="New: email indirect resellers on license changes" />
         </MudNavLink>
     </MudNavGroup>
+    <MudNavGroup Title="Billing" Icon="@Icons.Material.Filled.Payments" Expanded="true" data-onboarding="nav-billing">
+        <MudNavLink Href="billing/budgets" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Savings">
+            GCP budgets
+            <FeatureBeacon Id="gcp-budgets-v1" MatchPath="billing/budgets" Tooltip="New: view & set GCP billing budgets" />
+        </MudNavLink>
+    </MudNavGroup>
 </MudNavMenu>
 

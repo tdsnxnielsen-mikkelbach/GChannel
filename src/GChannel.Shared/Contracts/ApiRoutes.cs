@@ -209,4 +209,21 @@ public static class ApiRoutes
     /// <summary>A single Pub/Sub subscriber registration (by service-account email).</summary>
     public static string PubSubSubscriber(string serviceAccount) =>
         $"/api/notifications/subscribers/{serviceAccount}";
+
+    // Cloud Billing budgets (billingbudgets.googleapis.com) — outside the Channel API; reads/writes
+    // budgets on the reseller's billing accounts and per-customer sub-accounts via a service account.
+
+    /// <summary>Lists the reseller's billing accounts + sub-accounts (discovered or configured).</summary>
+    public const string BillingAccounts = "/api/billing/accounts";
+
+    /// <summary>Budgets for one billing account.</summary>
+    public static string BillingBudgets(string billingAccountId) =>
+        $"/api/billing/accounts/{billingAccountId}/budgets";
+
+    /// <summary>Create/update a budget (create when no budget id in the payload, else update).</summary>
+    public const string BillingBudgetSave = "/api/billing/budgets";
+
+    /// <summary>A single budget by billing account + budget id (for delete).</summary>
+    public static string BillingBudget(string billingAccountId, string budgetId) =>
+        $"/api/billing/accounts/{billingAccountId}/budgets/{budgetId}";
 }

@@ -46,8 +46,16 @@ builder.Services
     .AddOptions<GoogleChannelOptions>()
     .Bind(builder.Configuration.GetSection(GoogleChannelOptions.SectionName));
 
+builder.Services
+    .AddOptions<GoogleBillingOptions>()
+    .Bind(builder.Configuration.GetSection(GoogleBillingOptions.SectionName));
+
 builder.Services.AddScoped<IGoogleChannelCredentialSource, RequestTokenCredentialSource>();
 builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
+
+// Cloud Billing budgets (billingbudgets.googleapis.com) — reuses the reseller service-account key; the
+// gRPC clients it builds are thread-safe and cached, so a singleton is appropriate.
+builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
 
 // §10 read-model write-through: mutation endpoints upsert the one changed customer row into the
 // read-model immediately after a successful Channel API call, so the estate/customers lists reflect a
@@ -88,6 +96,7 @@ app.MapOperationsEndpoints();
 app.MapNotificationsEndpoints();
 app.MapDashboardEndpoints();
 app.MapEstateEndpoints();
+app.MapBillingEndpoints();
 
 app.Run();
 
