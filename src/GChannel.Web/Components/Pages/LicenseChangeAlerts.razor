@@ -171,6 +171,9 @@ else if (!_loading && _usingSamples)
     private List<LicenseChangeEvent> _events = [];
     private readonly CancellationTokenSource _cts = new();
 
+    // Most-recent license changes resolved live (customer + entitlement lookups per row).
+    private const int MaxRows = 50;
+
     protected override Task OnInitializedAsync() => LoadAsync();
 
     private async Task LoadAsync()
@@ -179,49 +182,83 @@ else if (!_loading && _usingSamples)
         _selected = null;
         try
         {
-            // Live Pub/Sub feed + read-model customers (to resolve each event to its owning reseller).
             var feed = await Api.ListNotificationsAsync(_cts.Token);
-            var customers = await Api.ListEstateCustomersAsync(1, 500, null, false, null, null, _cts.Token);
-
             _subscriberEnabled = feed?.SubscriberEnabled ?? false;
 
-            var byCustomer = (customers?.Items ?? [])
-                .GroupBy(c => c.CustomerId)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            // Only entitlement (license) events carry a license change; customer events don't.
-            var live = (feed?.Notifications ?? [])
+            // License changes ride on entitlement events; customer events don't carry one. Cap the
+            // most-recent rows we resolve live so a busy feed stays responsive and easy on the quota.
+            var notifications = (feed?.Notifications ?? [])
                 .Where(n => string.Equals(n.Kind, "Entitlement", StringComparison.OrdinalIgnoreCase)
                             && !string.IsNullOrEmpty(n.CustomerId))
-                .Select(n =>
-                {
-                    byCustomer.TryGetValue(n.CustomerId!, out var c);
-                    var isIndirect = c is { IsResellerSelf: false, ResellerName: not null };
-                    var resellerName = isIndirect ? c!.ResellerName! : "Direct";
-                    return new LicenseChangeEvent(
-                        FriendlyChange(n.EventType),
-                        c?.OrgName ?? n.CustomerId!,
-                        c?.Domain,
-                        n.CustomerId!,
-                        n.EntitlementId,
-                        resellerName,
-                        isIndirect ? ResellerEmailFor(resellerName) : string.Empty,
-                        isIndirect,
-                        n.EventType,
-                        n.ReceivedAt);
-                })
+                .Take(MaxRows)
                 .ToList();
 
-            if (live.Count > 0)
-            {
-                _events = live;
-                _usingSamples = false;
-            }
-            else
+            if (notifications.Count == 0)
             {
                 _events = Samples();
                 _usingSamples = true;
+                return;
             }
+
+            // Owning reseller comes from each customer's ChannelPartnerId (== a channel partner link's short id).
+            var links = await Api.ListChannelPartnerLinksAsync(_cts.Token);
+            var linkById = (links?.Links ?? [])
+                .GroupBy(l => l.Id, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+            // Resolve each distinct customer live (like the Notifications page) and each distinct
+            // entitlement (for the "what changed" detail); dedupe so a busy feed isn't refetched.
+            var customerById = new Dictionary<string, Customer?>(StringComparer.Ordinal);
+            foreach (var id in notifications.Select(n => n.CustomerId!).Distinct(StringComparer.Ordinal))
+            {
+                customerById[id] = await TryGetCustomerAsync(id);
+            }
+
+            var entitlementByKey = new Dictionary<string, Entitlement?>(StringComparer.Ordinal);
+            foreach (var n in notifications.Where(n => !string.IsNullOrEmpty(n.EntitlementId)))
+            {
+                var key = $"{n.CustomerId}/{n.EntitlementId}";
+                if (!entitlementByKey.ContainsKey(key))
+                {
+                    entitlementByKey[key] = await TryGetEntitlementAsync(n.CustomerId!, n.EntitlementId!);
+                }
+            }
+
+            _events = notifications.Select(n =>
+            {
+                customerById.TryGetValue(n.CustomerId!, out var customer);
+                var channelPartnerId = customer?.ChannelPartnerId;
+                var isIndirect = !string.IsNullOrEmpty(channelPartnerId);
+
+                var resellerName = "Direct";
+                var resellerEmail = string.Empty;
+                if (isIndirect)
+                {
+                    linkById.TryGetValue(channelPartnerId!, out var link);
+                    var domain = link?.ChannelPartner?.PrimaryDomain;
+                    resellerName = domain ?? link?.Id ?? channelPartnerId!;
+                    resellerEmail = domain is not null ? $"channel-ops@{domain}" : "partner contact not set";
+                }
+
+                Entitlement? entitlement = null;
+                if (!string.IsNullOrEmpty(n.EntitlementId))
+                {
+                    entitlementByKey.TryGetValue($"{n.CustomerId}/{n.EntitlementId}", out entitlement);
+                }
+
+                return new LicenseChangeEvent(
+                    FriendlyChange(n.EventType),
+                    customer?.OrgDisplayName ?? n.CustomerId!,
+                    customer?.Domain,
+                    n.CustomerId!,
+                    n.EntitlementId,
+                    resellerName,
+                    resellerEmail,
+                    isIndirect,
+                    DescribeChange(entitlement),
+                    n.ReceivedAt);
+            }).ToList();
+            _usingSamples = false;
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
@@ -239,6 +276,38 @@ else if (!_loading && _usingSamples)
         }
     }
 
+    private async Task<Customer?> TryGetCustomerAsync(string customerId)
+    {
+        try
+        {
+            return await Api.GetCustomerAsync(customerId, _cts.Token);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<Entitlement?> TryGetEntitlementAsync(string customerId, string entitlementId)
+    {
+        try
+        {
+            return await Api.GetEntitlementAsync(customerId, entitlementId, _cts.Token);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private void OnRowClick(TableRowClickEventArgs<LicenseChangeEvent> args)
     {
         if (args.Item is { IsIndirect: true })
@@ -247,12 +316,29 @@ else if (!_loading && _usingSamples)
         }
     }
 
-    // Derive the partner's notification contact from its primary domain (the read-model has no contact
-    // field). Falls back to a placeholder when the reseller label isn't a domain.
-    private static string ResellerEmailFor(string resellerName) =>
-        resellerName.Contains('.') && !resellerName.Contains(' ')
-            ? $"channel-ops@{resellerName}"
-            : "partner contact not set";
+    // The license's current state after the change (offer · seats · state) — the concrete "what changed"
+    // context the Pub/Sub event itself doesn't carry. Best-effort; null when the entitlement can't be read.
+    private static string? DescribeChange(Entitlement? entitlement)
+    {
+        if (entitlement is null)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        var offer = entitlement.OfferDisplayName ?? entitlement.SkuDisplayName ?? entitlement.ProductDisplayName;
+        if (!string.IsNullOrEmpty(offer)) parts.Add(offer);
+        if (Seats(entitlement) is { } seats) parts.Add($"{seats} seats");
+        if (!string.IsNullOrEmpty(entitlement.ProvisioningState)) parts.Add(entitlement.ProvisioningState);
+        return parts.Count > 0 ? string.Join(" · ", parts) : null;
+    }
+
+    private static long? Seats(Entitlement entitlement)
+    {
+        var units = entitlement.Parameters
+            .FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase));
+        return long.TryParse(units?.Value, out var n) ? n : entitlement.BillableSeats;
+    }
 
     private static string FriendlyChange(string? eventType) => eventType switch
     {
@@ -289,6 +375,7 @@ else if (!_loading && _usingSamples)
 
           Customer:  {e.CustomerName}{(e.CustomerDomain is null ? "" : $" ({e.CustomerDomain})")}
           Change:    {e.ChangeType}
+          License:   {e.Detail ?? "—"}
           When:      {e.OccurredAt.LocalDateTime:f}
 
         Sign in to the console to review the entitlement and its change history.
