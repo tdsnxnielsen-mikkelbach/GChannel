@@ -66,7 +66,7 @@ else
                 <MudItem xs="12" sm="4">
                     <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Wholesale cost</MudText>
                     <MudText Typo="Typo.h5">@FormatMoney(v.WholesaleMonthly, v.Currency)</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">What you pay Google</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">What you pay Google — actual (Ion) where available, else estimated from list</MudText>
                 </MudItem>
                 <MudItem xs="12" sm="4">
                     <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Repriced revenue</MudText>
@@ -81,7 +81,7 @@ else
             </MudGrid>
             <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
                 Across @v.PricedEntitlementCount active entitlement(s) · @v.ActiveSeats seat(s)@(v.UnpricedEntitlementCount > 0 ? $"; {v.UnpricedEntitlementCount} unpriced (excluded)" : ""), estimated from offer
-                list pricing with repricing applied. Not an invoiced figure.@(v.MixedCurrencies ? $" Headline shows the dominant currency ({v.Currency}); every currency is broken out below." : "")
+                list pricing with repricing applied; wholesale uses actual Ion cost where available. Not an invoiced figure.@(v.MixedCurrencies ? $" Headline shows the dominant currency ({v.Currency}); every currency is broken out below." : "")
             </MudText>
             @if (v.MixedCurrencies)
             {
@@ -120,6 +120,62 @@ else
         }
     </MudPaper>
 
+    @if (_spend is { Unconfigured: false })
+    {
+        <MudPaper Elevation="2" Class="pa-4 mb-4">
+            <div class="d-flex justify-space-between align-center mb-1">
+                <MudText Typo="Typo.overline" Color="Color.Secondary">Billed spend (actual)</MudText>
+                @if (_spend.AsOf is { } asOf)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">as of @asOf.LocalDateTime.ToString("g")</MudText>
+                }
+            </div>
+            @if (_spendLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_spend.Months is { Count: > 0 })
+            {
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
+                    <thead>
+                        <tr>
+                            <th>Invoice month</th>
+                            <th style="text-align:right">Net cost</th>
+                            <th style="text-align:right">Gross</th>
+                            <th style="text-align:right">Credits</th>
+                            <th>Currency</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in _spend.Months.OrderByDescending(m => m.InvoiceMonth))
+                        {
+                            <tr>
+                                <td>@FormatMonth(m.InvoiceMonth)</td>
+                                <td style="text-align:right">@m.Cost.ToString("N2")</td>
+                                <td style="text-align:right">@m.GrossCost.ToString("N2")</td>
+                                <td style="text-align:right">@m.Credits.ToString("N2")</td>
+                                <td>@m.Currency</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                <div class="d-flex justify-space-between align-center mt-2">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Actual amounts from the GCP/Marketplace billing export — real billed figures, not the list-price estimate above.
+                    </MudText>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ShowChart"
+                               Href="@($"/billing/spend?customerId={_customer.Id}")">Trend</MudButton>
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                    No billed spend recorded for this customer yet — the export sync attributes spend once the customer's entitlements carry a billing account.
+                </MudText>
+            }
+        </MudPaper>
+    }
+
     <MudCard Elevation="2" Class="mb-4">
         <MudCardHeader>
             <CardHeaderContent>
@@ -148,6 +204,7 @@ else
                         <MudTh>State</MudTh>
                         <MudTh Style="text-align:right">Seats</MudTh>
                         <MudTh Style="text-align:right">Est. monthly</MudTh>
+                        <MudTh Style="text-align:right">Ion cost / margin</MudTh>
                         <MudTh>Renewal</MudTh>
                         <MudTh>Auto-renew</MudTh>
                     </HeaderContent>
@@ -173,6 +230,22 @@ else
                             @if (MonthlyEstimate(context) is { } v)
                             {
                                 <MudTooltip Text="@EstimateBreakdown(context)"><span>@FormatMoney(v, context.PriceCurrency)</span></MudTooltip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Ion cost / margin" Style="text-align:right">
+                            @if (context.IonCostPerSeat is { } ionCost)
+                            {
+                                <MudTooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)">
+                                    <span>@FormatMoney(ionCost, context.IonCurrency)</span>
+                                </MudTooltip>
+                                @if (context.IonMarginPercent is { } mp)
+                                {
+                                    <MudText Typo="Typo.caption" Color="@(mp >= 0 ? Color.Success : Color.Error)" Class="d-block">@mp.ToString("0.0")% margin</MudText>
+                                }
                             }
                             else
                             {
@@ -464,6 +537,9 @@ else
     private IReadOnlyList<Entitlement>? _entitlements;
     private bool _entitlementsLoading = true;
 
+    private CustomerSpendResult? _spend;
+    private bool _spendLoading = true;
+
     private bool _provisionOpen;
     private bool _provisioning;
     private readonly ProvisionModel _provision = new();
@@ -481,6 +557,8 @@ else
         _valueLoading = true;
         _entitlements = null;
         _entitlementsLoading = true;
+        _spend = null;
+        _spendLoading = true;
 
         try
         {
@@ -537,17 +615,39 @@ else
             {
                 _entitlementsLoading = false;
             }
+
+            try
+            {
+                _spend = await Api.GetCustomerSpendAsync(Id, 13);
+            }
+            catch
+            {
+                // Billed spend is best-effort (export may be unconfigured); ignore so the page renders.
+                _spend = null;
+            }
+            finally
+            {
+                _spendLoading = false;
+            }
         }
         else
         {
             _valueLoading = false;
             _entitlementsLoading = false;
+            _spendLoading = false;
         }
     }
 
     // Prefer the friendly SKU/offer name resolved from the Catalog; fall back to the opaque id.
     private static string OfferLabel(Entitlement e) =>
         e.SkuDisplayName ?? e.OfferDisplayName ?? e.OfferId ?? e.Id;
+
+    // "202608" -> "Aug 2026"; falls back to the raw value if it isn't a YYYYMM string.
+    private static string FormatMonth(string invoiceMonth) =>
+        DateTime.TryParseExact(invoiceMonth, "yyyyMM", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var d)
+            ? d.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)
+            : invoiceMonth;
 
     private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
     {

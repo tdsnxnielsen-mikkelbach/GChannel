@@ -260,7 +260,7 @@ public static class EstateEndpoints
                     .Select(g => new
                     {
                         Currency = g.Key,
-                        Wholesale = g.Sum(e => e.UnitPrice * e.BillableSeats),
+                        Wholesale = g.Sum(e => (e.IonCostPerSeat ?? e.UnitPrice) * e.BillableSeats),
                         Revenue = g.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m))),
                         Seats = g.Sum(e => e.BillableSeats),
                         Count = g.Count(),
@@ -314,7 +314,7 @@ public static class EstateEndpoints
                     .Select(g => new
                     {
                         Currency = g.Key,
-                        Wholesale = g.Sum(e => e.UnitPrice * e.BillableSeats),
+                        Wholesale = g.Sum(e => (e.IonCostPerSeat ?? e.UnitPrice) * e.BillableSeats),
                         Revenue = g.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m))),
                         Seats = g.Sum(e => e.BillableSeats),
                         Count = g.Count(),

@@ -42,6 +42,7 @@ else if (_entitlements is { Count: > 0 })
             <MudTh>State</MudTh>
             <MudTh>Seats</MudTh>
             <MudTh>Est. monthly</MudTh>
+            <MudTh>Ion cost / margin</MudTh>
             <MudTh>Created</MudTh>
             <MudTh Style="text-align:right">Actions</MudTh>
         </HeaderContent>
@@ -88,6 +89,22 @@ else if (_entitlements is { Count: > 0 })
                     <MudTooltip Text="@EstimateBreakdown(context)">
                         <span>@FormatMoney(v, context.PriceCurrency)</span>
                     </MudTooltip>
+                }
+                else
+                {
+                    <span>—</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Ion cost / margin">
+                @if (context.IonCostPerSeat is { } ionCost)
+                {
+                    <MudTooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)">
+                        <span>@FormatMoney(ionCost, context.IonCurrency)</span>
+                    </MudTooltip>
+                    @if (context.IonMarginPercent is { } mp)
+                    {
+                        <MudText Typo="Typo.caption" Color="@(mp >= 0 ? Color.Success : Color.Error)" Class="d-block">@mp.ToString("0.0")% margin</MudText>
+                    }
                 }
                 else
                 {

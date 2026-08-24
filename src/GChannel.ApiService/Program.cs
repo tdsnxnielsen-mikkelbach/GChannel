@@ -50,6 +50,14 @@ builder.Services
     .AddOptions<GoogleBillingOptions>()
     .Bind(builder.Configuration.GetSection(GoogleBillingOptions.SectionName));
 
+// Ion Gateway (TD SYNNEX StreamOne) enrichment — adds real cost/margin to Google entitlements. Singleton
+// over IHttpClientFactory so it is safe to inject into the singleton ReadModelProjector.
+builder.Services
+    .AddOptions<IonGatewayOptions>()
+    .Bind(builder.Configuration.GetSection(IonGatewayOptions.SectionName));
+builder.Services.AddHttpClient(IonGatewayClient.HttpClientName);
+builder.Services.AddSingleton<IIonGatewayClient, IonGatewayClient>();
+
 builder.Services.AddScoped<IGoogleChannelCredentialSource, RequestTokenCredentialSource>();
 builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
 
@@ -159,6 +167,7 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
             EntitlementId nvarchar(128) NOT NULL PRIMARY KEY,
             CustomerId nvarchar(128) NOT NULL,
             OwningLinkId nvarchar(128) NULL,
+            BillingAccount nvarchar(128) NULL,
             ProductId nvarchar(128) NULL,
             ProductName nvarchar(255) NULL,
             SkuId nvarchar(128) NULL,
@@ -202,6 +211,14 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         ALTER TABLE CustomerRecords ADD IsResellerSelf bit NOT NULL CONSTRAINT DF_CustomerRecords_IsResellerSelf DEFAULT 0;
         IF COL_LENGTH('EntitlementRecords','IsResellerSelf') IS NULL
         ALTER TABLE EntitlementRecords ADD IsResellerSelf bit NOT NULL CONSTRAINT DF_EntitlementRecords_IsResellerSelf DEFAULT 0;
+        IF COL_LENGTH('EntitlementRecords','BillingAccount') IS NULL
+        ALTER TABLE EntitlementRecords ADD BillingAccount nvarchar(128) NULL;
+        IF COL_LENGTH('EntitlementRecords','IonCostPerSeat') IS NULL
+        ALTER TABLE EntitlementRecords ADD IonCostPerSeat decimal(18,6) NULL;
+        IF COL_LENGTH('EntitlementRecords','IonMarginPercent') IS NULL
+        ALTER TABLE EntitlementRecords ADD IonMarginPercent decimal(9,4) NULL;
+        IF COL_LENGTH('EntitlementRecords','IonCurrency') IS NULL
+        ALTER TABLE EntitlementRecords ADD IonCurrency nvarchar(8) NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_OwningLinkId')
         CREATE INDEX IX_CustomerRecords_OwningLinkId ON CustomerRecords(OwningLinkId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerRecords_IsDeleted')
@@ -212,6 +229,40 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         CREATE INDEX IX_EntitlementRecords_OwningLinkId ON EntitlementRecords(OwningLinkId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_EntitlementRecords_ProductId')
         CREATE INDEX IX_EntitlementRecords_ProductId ON EntitlementRecords(ProductId);
+        IF OBJECT_ID('CustomerSpend', 'U') IS NULL
+        CREATE TABLE CustomerSpend (
+            BillingSubAccountId nvarchar(64) NOT NULL,
+            InvoiceMonth nvarchar(6) NOT NULL,
+            Currency nvarchar(8) NOT NULL,
+            CustomerId nvarchar(128) NULL,
+            OwningLinkId nvarchar(128) NULL,
+            Cost decimal(18,6) NOT NULL,
+            GrossCost decimal(18,6) NOT NULL,
+            Credits decimal(18,6) NOT NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            CONSTRAINT PK_CustomerSpend PRIMARY KEY (BillingSubAccountId, InvoiceMonth, Currency)
+        );
+        IF OBJECT_ID('SpendDaily', 'U') IS NULL
+        CREATE TABLE SpendDaily (
+            BillingSubAccountId nvarchar(64) NOT NULL,
+            Day date NOT NULL,
+            Currency nvarchar(8) NOT NULL,
+            CustomerId nvarchar(128) NULL,
+            OwningLinkId nvarchar(128) NULL,
+            Cost decimal(18,6) NOT NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            CONSTRAINT PK_SpendDaily PRIMARY KEY (BillingSubAccountId, Day, Currency)
+        );
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerSpend_CustomerId')
+        CREATE INDEX IX_CustomerSpend_CustomerId ON CustomerSpend(CustomerId);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerSpend_OwningLinkId')
+        CREATE INDEX IX_CustomerSpend_OwningLinkId ON CustomerSpend(OwningLinkId);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerSpend_InvoiceMonth')
+        CREATE INDEX IX_CustomerSpend_InvoiceMonth ON CustomerSpend(InvoiceMonth);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_SpendDaily_CustomerId')
+        CREATE INDEX IX_SpendDaily_CustomerId ON SpendDaily(CustomerId);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_SpendDaily_Day')
+        CREATE INDEX IX_SpendDaily_Day ON SpendDaily(Day);
         -- One-time backfill so estate value shows immediately after the BillableSeats column is added,
         -- instead of reading 0 everywhere until every entitlement has been re-synced. For COMMITTED
         -- entitlements the stored Seats already equals num_units (SeatsOf only falls back to a flexible

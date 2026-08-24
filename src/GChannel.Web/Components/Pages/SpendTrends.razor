@@ -1,0 +1,295 @@
+@page "/billing/spend"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Spend trends · GChannel</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <div>
+        <MudText Typo="Typo.h4">Spend trends</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Actual GCP &amp; Marketplace spend from the Cloud Billing → BigQuery cost export — real billed
+            figures, distinct from the list-price estimates elsewhere.
+        </MudText>
+    </div>
+</div>
+
+@if (_unconfigured)
+{
+    <MudAlert Severity="Severity.Info" Class="mb-4">
+        The BigQuery billing-export sync isn't configured, so there is no billed spend to show. Set
+        <code>GoogleBilling:BigQueryEnabled</code> plus the project/dataset/table to enable it.
+    </MudAlert>
+}
+
+<MudGrid>
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2">Top spenders</MudText>
+            @if (_topLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_top is { Count: > 0 })
+            {
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0">
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th style="text-align:right">Billed (last month)</th>
+                            <th>Currency</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _top)
+                        {
+                            <tr>
+                                <td>
+                                    <MudLink Href="@($"/billing/spend?customerId={s.CustomerId}")">@CustomerLabel(s.CustomerId)</MudLink>
+                                    @if (!string.IsNullOrEmpty(s.OwningLinkId))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">via reseller @s.OwningLinkId</MudText>
+                                    }
+                                </td>
+                                <td style="text-align:right">@s.Cost.ToString("N2")</td>
+                                <td>@s.Currency</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                @if (_topAsOf is { } asOf)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">as of @asOf.LocalDateTime.ToString("g")</MudText>
+                }
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No billed spend recorded yet.</MudText>
+            }
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mt-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2">By reseller</MudText>
+            @if (_resellersLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_resellers is { Count: > 0 })
+            {
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0">
+                    <thead>
+                        <tr>
+                            <th>Reseller</th>
+                            <th style="text-align:right">Customers</th>
+                            <th style="text-align:right">Billed (last month)</th>
+                            <th>Currency</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _resellers)
+                        {
+                            <tr>
+                                <td>
+                                    @if (string.IsNullOrEmpty(r.OwningLinkId))
+                                    {
+                                        <span>Direct (no partner)</span>
+                                    }
+                                    else
+                                    {
+                                        <MudLink Href="@($"/channel-partner-links/{r.OwningLinkId}")">@r.OwningLinkId</MudLink>
+                                    }
+                                </td>
+                                <td style="text-align:right">@r.CustomerCount</td>
+                                <td style="text-align:right">@r.Cost.ToString("N2")</td>
+                                <td>@r.Currency</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
+                    Distributor rollup: each resold customer's billed spend attributed to its owning channel partner.
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No billed spend recorded yet.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4" Elevation="2">
+            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+                <MudText Typo="Typo.h6">Daily trend</MudText>
+                <MudSelect T="string" Value="CustomerId" ValueChanged="OnCustomerChanged" Label="Customer"
+                           Dense="true" Style="min-width: 240px" Clearable="true">
+                    @foreach (var c in _customers)
+                    {
+                        <MudSelectItem T="string" Value="@c.Id">@(c.OrgDisplayName ?? c.Id)</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+
+            @if (string.IsNullOrEmpty(CustomerId))
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Pick a customer to see their daily spend and any spikes.</MudText>
+            }
+            else if (_trendLoading)
+            {
+                <div class="d-flex align-center" style="height: 260px;">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
+                </div>
+            }
+            else if (_trendByCurrency.Count > 0)
+            {
+                @foreach (var group in _trendByCurrency)
+                {
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-2">@group.Key</MudText>
+                    <ApexChart TItem="TrendItem" Options="_trendOptions" @key="(group.Key, IsDarkMode)">
+                        <ApexPointSeries TItem="TrendItem" Items="group.Value" Name="Daily cost"
+                                         SeriesType="SeriesType.Line"
+                                         XValue="@(p => p.Label)" YValue="@(p => p.Cost)" />
+                        @{
+                            var spikes = group.Value.Where(p => p.IsSpike).ToList();
+                        }
+                        @if (spikes.Count > 0)
+                        {
+                            <ApexPointSeries TItem="TrendItem" Items="spikes" Name="Spike"
+                                             SeriesType="SeriesType.Scatter"
+                                             XValue="@(p => p.Label)" YValue="@(p => p.Cost)" />
+                        }
+                    </ApexChart>
+                }
+                @if (_trendAsOf is { } asOf)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">as of @asOf.LocalDateTime.ToString("g")</MudText>
+                }
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No billed spend recorded for this customer yet.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? CustomerId { get; set; }
+
+    // Cascaded from MainLayout so the ApexChart axis/legend text follows the app's light/dark theme.
+    [CascadingParameter(Name = "IsDarkMode")]
+    private bool IsDarkMode { get; set; }
+
+    private readonly ApexChartOptions<TrendItem> _trendOptions = new();
+
+    private bool _unconfigured;
+
+    private IReadOnlyList<TopSpender> _top = [];
+    private DateTimeOffset? _topAsOf;
+    private bool _topLoading = true;
+
+    private IReadOnlyList<ResellerSpend> _resellers = [];
+    private bool _resellersLoading = true;
+
+    private IReadOnlyList<Customer> _customers = [];
+    private readonly Dictionary<string, string> _customerNames = new(StringComparer.Ordinal);
+
+    private readonly List<KeyValuePair<string, List<TrendItem>>> _trendByCurrency = [];
+    private DateTimeOffset? _trendAsOf;
+    private bool _trendLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var customers = await Api.ListCustomersAsync();
+            _customers = customers?.Customers ?? [];
+            foreach (var c in _customers)
+            {
+                _customerNames[c.Id] = c.OrgDisplayName ?? c.Domain ?? c.Id;
+            }
+        }
+        catch
+        {
+            _customers = [];
+        }
+
+        try
+        {
+            var top = await Api.GetTopSpendersAsync(months: 1, limit: 15);
+            _unconfigured = top?.Unconfigured ?? false;
+            _top = top?.Spenders ?? [];
+            _topAsOf = top?.AsOf;
+        }
+        catch
+        {
+            _top = [];
+        }
+        finally
+        {
+            _topLoading = false;
+        }
+
+        try
+        {
+            var resellers = await Api.GetResellerSpendAsync(months: 1);
+            _resellers = resellers?.Resellers ?? [];
+        }
+        catch
+        {
+            _resellers = [];
+        }
+        finally
+        {
+            _resellersLoading = false;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _trendOptions.Theme = new Theme { Mode = IsDarkMode ? Mode.Dark : Mode.Light };
+
+        if (string.IsNullOrEmpty(CustomerId))
+        {
+            _trendByCurrency.Clear();
+            return;
+        }
+
+        _trendLoading = true;
+        _trendByCurrency.Clear();
+        try
+        {
+            var trend = await Api.GetCustomerSpendTrendAsync(CustomerId, days: 90);
+            _trendAsOf = trend?.AsOf;
+            if (trend is { Unconfigured: false, Days.Count: > 0 })
+            {
+                foreach (var byCurrency in trend.Days.GroupBy(d => d.Currency))
+                {
+                    var items = byCurrency
+                        .OrderBy(d => d.Day)
+                        .Select(d => new TrendItem(d.Day.ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture), (decimal)d.Cost, d.IsSpike))
+                        .ToList();
+                    _trendByCurrency.Add(new(byCurrency.Key, items));
+                }
+            }
+        }
+        catch
+        {
+            _trendByCurrency.Clear();
+        }
+        finally
+        {
+            _trendLoading = false;
+        }
+    }
+
+    private void OnCustomerChanged(string? customerId) =>
+        Nav.NavigateTo(string.IsNullOrEmpty(customerId) ? "/billing/spend" : $"/billing/spend?customerId={customerId}");
+
+    private string CustomerLabel(string customerId) =>
+        _customerNames.TryGetValue(customerId, out var name) ? name : customerId;
+
+    private sealed record TrendItem(string Label, decimal Cost, bool IsSpike);
+}

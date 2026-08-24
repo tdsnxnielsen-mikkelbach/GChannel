@@ -21,7 +21,7 @@ namespace GChannel.ApiService.Services;
 /// event payload, so duplicate or out-of-order events converge on the current truth. The write-through
 /// methods take the mutation result directly and make <b>no</b> extra Channel API call.
 /// </summary>
-public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
+public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger, IIonGatewayClient ion)
 {
     /// <summary>An empty offer catalog for single-resource projection: with no pre-built catalog every
     /// entitlement resolves its price and display names via the per-entitlement <c>lookupOffer</c> fallback
@@ -159,6 +159,14 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
         }
         catch (Exception ex)
         {
+            if (IsRateLimited(ex))
+            {
+                // Quota exhausted (429): signal the caller to stop this cycle and DON'T stamp the customer,
+                // so the rotation retries it next cycle instead of skipping it.
+                diag.RateLimited = true;
+                logger.LogDebug(ex, "Read-model entitlement sync throttled (429) for customer {Customer}; will retry next cycle.", customerId);
+                return;
+            }
             logger.LogWarning(ex, "Read-model entitlement sync skipped for customer {Customer}.", customerId);
             // Stamp the customer as visited so the staleness rotation advances past a throttled customer
             // instead of retrying it ahead of everyone else next cycle (keeps the queue moving).
@@ -181,6 +189,11 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
             .ToListAsync(ct);
         var byId = stored.ToDictionary(r => r.EntitlementId, StringComparer.OrdinalIgnoreCase);
 
+        // Ion enrichment: fetch this customer's Google licenses (cost/margin) once and index by SKU / part
+        // number so each entitlement can be decorated below. Best-effort and a no-op when Ion is unconfigured.
+        var customer = await db.CustomerRecords.FindAsync([customerId], ct);
+        var ionBySku = await BuildIonCostMapAsync(db, customer, diag, ct);
+
         long activeSeats = 0;
         foreach (var e in entitlements)
         {
@@ -197,6 +210,7 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
             }
             row.CustomerId = customerId;
             row.OwningLinkId = owningLinkId;
+            row.BillingAccount = e.BillingAccount;
             row.ProductId = e.ProductId;
             // Names come from the account's sellable catalog (offers.list/products.list). When that misses
             // (education/legacy/churned offers a customer already holds aren't in the sellable catalog),
@@ -346,6 +360,20 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
             }
             // Per-entitlement override wins; otherwise the link-wide channel-partner mark-up (0 for direct).
             row.RepricingPercent = entitlementPercents.TryGetValue(e.Id, out var pct) ? pct : linkFallbackPercent;
+            if (ion.IsConfigured)
+            {
+                var nameKey = IonGatewayClient.NormalizeSkuName(row.SkuName ?? e.SkuDisplayName ?? e.SkuId);
+                var ionHit = nameKey.Length > 0 && ionBySku.TryGetValue(nameKey, out var h) ? h : null;
+                row.IonCostPerSeat = ionHit?.Cost;
+                row.IonMarginPercent = ionHit?.MarginPercent;
+                row.IonCurrency = ionHit?.Currency;
+                if (ionHit is not null) { diag.IonEnriched++; }
+                else if (ionBySku.Count > 0 && diag.IonUnmatchedEntitlementSkus.Count < 50)
+                {
+                    // Reseller HAS priced Ion Google lines but this entitlement's SKU name didn't match — the gap.
+                    diag.IonUnmatchedEntitlementSkus.Add(row.SkuName ?? e.SkuDisplayName ?? e.SkuId ?? "(unknown)");
+                }
+            }
             row.LastSyncedUtc = now;
             row.IsDeleted = false;
         }
@@ -355,7 +383,6 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
             row.IsDeleted = true;
         }
 
-        var customer = await db.CustomerRecords.FindAsync([customerId], ct);
         if (customer is not null)
         {
             customer.SeatCount = activeSeats;
@@ -364,6 +391,47 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    // Fetches the owning RESELLER's priced Google order lines from Ion and indexes cost/margin by normalised
+    // SKU name. Ion cost/margin is reseller + SKU level, so an end customer's SKU cost comes from its owning
+    // channel-partner link, matched to an Ion account by the reseller's primary domain (== Ion email domain).
+    private async Task<Dictionary<string, IonGoogleCost>> BuildIonCostMapAsync(GChannelDbContext db, CustomerRecord? customer, PricingDiagnostics diag, CancellationToken ct)
+    {
+        var map = new Dictionary<string, IonGoogleCost>(StringComparer.Ordinal);
+        if (!ion.IsConfigured || customer is null)
+        {
+            return map;
+        }
+
+        // Reseller domain: the owning channel-partner link's primary domain, or the customer's own domain
+        // for a reseller-self customer (buying for its own use).
+        string? resellerDomain = null;
+        if (!string.IsNullOrEmpty(customer.OwningLinkId))
+        {
+            var link = await db.ResellerLinks.AsNoTracking()
+                .FirstOrDefaultAsync(r => r.LinkId == customer.OwningLinkId, ct);
+            resellerDomain = link?.PrimaryDomain;
+        }
+        resellerDomain ??= customer.Domain;
+        if (string.IsNullOrWhiteSpace(resellerDomain))
+        {
+            return map;
+        }
+
+        foreach (var cost in await ion.GetResellerGoogleCostsAsync(resellerDomain, ct))
+        {
+            map[cost.SkuNameKey] = cost; // last wins on duplicate SKUs
+        }
+        if (map.Count > 0)
+        {
+            diag.IonResellersMatched.Add(resellerDomain);
+            foreach (var c in map.Values)
+            {
+                if (diag.IonAvailableSkuNames.Count < 50 && !string.IsNullOrEmpty(c.SkuName)) { diag.IonAvailableSkuNames.Add(c.SkuName); }
+            }
+        }
+        return map;
     }
 
     private static long SeatsOf(Entitlement e)
@@ -409,6 +477,31 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger)
         public int ActiveWithoutOfferId;
         public readonly Dictionary<string, int> MissingFromCatalog = new(StringComparer.OrdinalIgnoreCase);
         public readonly Dictionary<string, int> ListedWithoutPrice = new(StringComparer.OrdinalIgnoreCase);
+
+        // §Ion enrichment tally for the per-cycle diagnostic log.
+        public int IonEnriched;
+        public readonly HashSet<string> IonResellersMatched = new(StringComparer.OrdinalIgnoreCase);
+
+        // SKU-name-gap diagnostic: entitlement SKUs left unmatched even though the reseller HAD priced Ion
+        // Google lines, plus the Ion SKU names on offer — so the divergence can be eyeballed from logs.
+        public readonly HashSet<string> IonUnmatchedEntitlementSkus = new(StringComparer.OrdinalIgnoreCase);
+        public readonly HashSet<string> IonAvailableSkuNames = new(StringComparer.OrdinalIgnoreCase);
+
+        // Set when a Channel API call was throttled (429) so the caller can stop the cycle and respect the quota.
+        public bool RateLimited;
+    }
+
+    /// <summary>True when the exception (or an inner one) is a Channel API quota/429 (<c>TooManyRequests</c>).</summary>
+    public static bool IsRateLimited(Exception? ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is Google.GoogleApiException g && g.HttpStatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

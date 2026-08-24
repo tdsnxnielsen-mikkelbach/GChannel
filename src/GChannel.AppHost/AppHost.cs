@@ -91,6 +91,21 @@ var googleChannelPubSubProjectId = builder.AddParameter("GoogleChannelPubSubProj
 var googleChannelPubSubSubscriptionId = builder.AddParameter("GoogleChannelPubSubSubscriptionId");
 var googleChannelWorkloadIdentityCredentialJson = builder.AddParameter("GoogleChannelWorkloadIdentityCredentialJson");
 
+// §15 Cloud Billing → BigQuery detailed cost-export sync. All optional and disabled by default
+// (BigQueryEnabled=false), so the feature stays a no-op until an operator sets these via `azd env set`.
+// Passed to BOTH the worker (runs the sync) and the API (its spend endpoints report configured/unconfigured).
+var googleBillingBigQueryEnabled = builder.AddParameter("GoogleBillingBigQueryEnabled");
+var googleBillingBigQueryProjectId = builder.AddParameter("GoogleBillingBigQueryProjectId");
+var googleBillingExportDataset = builder.AddParameter("GoogleBillingExportDataset");
+var googleBillingExportTable = builder.AddParameter("GoogleBillingExportTable");
+var googleBillingExcludeBillingAccountIds = builder.AddParameter("GoogleBillingExcludeBillingAccountIds");
+
+// Ion Gateway (TD SYNNEX StreamOne) enrichment. Disabled by default; the API key is a secret persisted in
+// Key Vault (like the OAuth secret and SA key), so it never appears in the manifest or plain config.
+var ionGatewayEnabled = builder.AddParameter("IonGatewayEnabled");
+var ionGatewayBaseUrl = builder.AddParameter("IonGatewayBaseUrl");
+var ionGatewayApiKeyParam = builder.AddParameter("IonGatewayApiKey", secret: true);
+
 // Back-end services container app (internal): owns SQL, Redis and the Google Channel API.
 var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithReference(database)
@@ -105,6 +120,13 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithEnvironment("GoogleChannel__PubSubProjectId", googleChannelPubSubProjectId)
     .WithEnvironment("GoogleChannel__PubSubSubscriptionId", googleChannelPubSubSubscriptionId)
     .WithEnvironment("GoogleChannel__WorkloadIdentityCredentialJson", googleChannelWorkloadIdentityCredentialJson)
+    .WithEnvironment("GoogleBilling__BigQueryEnabled", googleBillingBigQueryEnabled)
+    .WithEnvironment("GoogleBilling__BigQueryProjectId", googleBillingBigQueryProjectId)
+    .WithEnvironment("GoogleBilling__BillingExportDataset", googleBillingExportDataset)
+    .WithEnvironment("GoogleBilling__BillingExportTable", googleBillingExportTable)
+    .WithEnvironment("GoogleBilling__ExcludeBillingAccountIds", googleBillingExcludeBillingAccountIds)
+    .WithEnvironment("IonGateway__Enabled", ionGatewayEnabled)
+    .WithEnvironment("IonGateway__BaseUrl", ionGatewayBaseUrl)
     .WaitFor(database)
     .WaitFor(cache);
 
@@ -125,6 +147,13 @@ var worker = builder.AddProject<Projects.GChannel_Worker>("worker")
     .WithEnvironment("GoogleChannel__PubSubProjectId", googleChannelPubSubProjectId)
     .WithEnvironment("GoogleChannel__PubSubSubscriptionId", googleChannelPubSubSubscriptionId)
     .WithEnvironment("GoogleChannel__WorkloadIdentityCredentialJson", googleChannelWorkloadIdentityCredentialJson)
+    .WithEnvironment("GoogleBilling__BigQueryEnabled", googleBillingBigQueryEnabled)
+    .WithEnvironment("GoogleBilling__BigQueryProjectId", googleBillingBigQueryProjectId)
+    .WithEnvironment("GoogleBilling__BillingExportDataset", googleBillingExportDataset)
+    .WithEnvironment("GoogleBilling__BillingExportTable", googleBillingExportTable)
+    .WithEnvironment("GoogleBilling__ExcludeBillingAccountIds", googleBillingExcludeBillingAccountIds)
+    .WithEnvironment("IonGateway__Enabled", ionGatewayEnabled)
+    .WithEnvironment("IonGateway__BaseUrl", ionGatewayBaseUrl)
     .WithReplicas(1)
     .WaitFor(database)
     .WaitFor(cache);
@@ -161,6 +190,16 @@ if (builder.ExecutionContext.IsPublishMode)
     worker
         .WithReference(keyVault)
         .WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKey);
+
+    // Ion Gateway API key: persist in Key Vault and surface to both services (the projector runs in both).
+    keyVault.AddSecret("ion-gateway-api-key", ionGatewayApiKeyParam);
+    var ionGatewayApiKey = keyVault.GetSecret("ion-gateway-api-key");
+    apiService
+        .WithReference(keyVault)
+        .WithEnvironment("IonGateway__ApiKey", ionGatewayApiKey);
+    worker
+        .WithReference(keyVault)
+        .WithEnvironment("IonGateway__ApiKey", ionGatewayApiKey);
 }
 else
 {
@@ -169,6 +208,8 @@ else
     webfrontend.WithEnvironment("Authentication__Google__ClientSecret", googleClientSecretParam);
     apiService.WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKeyParam);
     worker.WithEnvironment("GoogleChannel__ServiceAccountKeyJson", googleChannelServiceAccountKeyParam);
+    apiService.WithEnvironment("IonGateway__ApiKey", ionGatewayApiKeyParam);
+    worker.WithEnvironment("IonGateway__ApiKey", ionGatewayApiKeyParam);
 }
 
 builder.Build().Run();

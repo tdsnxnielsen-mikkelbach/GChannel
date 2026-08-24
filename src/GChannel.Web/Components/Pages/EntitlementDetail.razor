@@ -154,6 +154,14 @@ else
                                 <tr><td><strong>Wholesale / seat</strong></td><td>@seat.Display@(string.IsNullOrEmpty(_offerCycle) ? "" : $" · {_offerCycle.ToLowerInvariant()}")</td></tr>
                                 <tr><td><strong>Seats</strong></td><td>@SeatCount</td></tr>
                                 <tr><td><strong>Wholesale total</strong></td><td>@($"{seat.CurrencyCode} {WholesaleTotal:0.00}")</td></tr>
+                                @if (_entitlement.IonCostPerSeat is { } ionCost)
+                                {
+                                    <tr><td><strong>Ion cost / seat (actual)</strong></td><td>@($"{_entitlement.IonCurrency ?? seat.CurrencyCode} {ionCost:0.00}")</td></tr>
+                                    @if (_entitlement.IonMarginPercent is { } ionMp)
+                                    {
+                                        <tr><td><strong>Ion margin</strong></td><td>@ionMp.ToString("0.0")%</td></tr>
+                                    }
+                                }
                                 @if (_repricingPercent is { } pct)
                                 {
                                     <tr><td><strong>Repricing</strong></td><td>@(pct >= 0 ? "+" : "")@pct.ToString("0.##")%</td></tr>
@@ -166,6 +174,10 @@ else
                         </MudSimpleTable>
                         <MudText Typo="Typo.caption" Color="Color.Secondary">
                             Estimated wholesale list pricing × seats, normalised to a monthly figure@(_repricingPercent is null ? " (no repricing config; computed price = wholesale)" : "") — not an invoiced amount.
+                            @if (_entitlement.IonCostPerSeat is not null)
+                            {
+                                <span> The <b>Ion</b> rows are <b>actual</b> transacted cost/margin from TD SYNNEX StreamOne; all other figures are estimated from Google list pricing.</span>
+                            }
                         </MudText>
                     }
                     else

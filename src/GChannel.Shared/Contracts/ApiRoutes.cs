@@ -226,4 +226,24 @@ public static class ApiRoutes
     /// <summary>A single budget by billing account + budget id (for delete).</summary>
     public static string BillingBudget(string billingAccountId, string budgetId) =>
         $"/api/billing/accounts/{billingAccountId}/budgets/{budgetId}";
+
+    // §15 actual spend (BigQuery detailed billing export) — read from the materialised read-model
+    // (CustomerSpend / SpendDaily) the worker's BillingSyncService populates. Distinct from the
+    // estimate-only §11 pricing surface: these are BILLED figures, labelled with an "as of" time.
+
+    /// <summary>Monthly actual spend series for a customer (BigQuery export).</summary>
+    public static string CustomerSpend(string customerId, int months) =>
+        $"/api/billing/customers/{customerId}/spend?months={months}";
+
+    /// <summary>Daily actual spend series + flagged spikes for a customer.</summary>
+    public static string CustomerSpendTrend(string customerId, int days) =>
+        $"/api/billing/customers/{customerId}/trend?days={days}";
+
+    /// <summary>Estate-wide top spenders by billed cost over the recent window.</summary>
+    public static string TopSpenders(int months, int limit) =>
+        $"/api/billing/spend/top?months={months}&limit={limit}";
+
+    /// <summary>Billed spend rolled up per owning reseller (channel partner) over the recent window.</summary>
+    public static string ResellerSpend(int months) =>
+        $"/api/billing/resellers/spend?months={months}";
 }

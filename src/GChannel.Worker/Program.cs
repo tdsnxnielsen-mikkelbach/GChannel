@@ -36,6 +36,17 @@ builder.Services
     .AddOptions<GoogleChannelOptions>()
     .Bind(builder.Configuration.GetSection(GoogleChannelOptions.SectionName));
 
+builder.Services
+    .AddOptions<GoogleBillingOptions>()
+    .Bind(builder.Configuration.GetSection(GoogleBillingOptions.SectionName));
+
+// Ion Gateway enrichment (used by the shared ReadModelProjector during entitlement sync).
+builder.Services
+    .AddOptions<IonGatewayOptions>()
+    .Bind(builder.Configuration.GetSection(IonGatewayOptions.SectionName));
+builder.Services.AddHttpClient(IonGatewayClient.HttpClientName);
+builder.Services.AddSingleton<IIonGatewayClient, IonGatewayClient>();
+
 // §10 read-model projection helper — shared by the bulk sync and the Pub/Sub event-driven projection
 // so every path denormalises identical fields. Stateless (takes the DbContext/client per call).
 builder.Services.AddSingleton<ReadModelProjector>();
@@ -47,6 +58,11 @@ builder.Services.AddSingleton<ReadModelProjector>();
 builder.Services.AddHostedService<DashboardRefreshService>();
 builder.Services.AddHostedService<ChannelNotificationsService>();
 builder.Services.AddHostedService<ReadModelSyncService>();
+
+// §15 billing-export sync — materialises actual GCP/Marketplace spend from the BigQuery detailed cost
+// export into the CustomerSpend/SpendDaily read-model. No-op unless GoogleBilling:BigQueryEnabled + the
+// service-account credential are configured.
+builder.Services.AddHostedService<BillingSyncService>();
 
 var host = builder.Build();
 host.Run();

@@ -2,15 +2,16 @@
 
 ## 15. Cloud Billing / BigQuery billing export integration (spike / design)
 
-> **Status:** 🟡 Partially implemented. The **GCP budgets** slice (see / set via the Cloud Billing
-> Budget API) is **built** — see [Budgets slice](#budgets-slice-implemented) below. The **actual spend**
-> and **spend trend / spike** slices (BigQuery billing export) remain a **spike / design draft**. This
-> doc captures how GChannel ingests **actual** GCP consumption/invoice figures, GCP **budgets**, and
-> **spend trend/anomaly** detection. These are the deferred "Phase 4" concerns from
-> [§11 Pricing &amp; billing](11-pricing-and-billing.md) and the answer to the "can we see GCP spend /
-> set budgets / spot spikes?" questions. **None of this is in the Cloud Channel API** — it needs
-> separate Google Cloud data sources and credentials. The remaining sections scope the smallest useful
-> spike and a phased plan; nothing here changes the existing (estimate-only) pricing surface.
+> **Status:** � Implemented. Both the **GCP budgets** slice (see / set via the Cloud Billing Budget
+> API — see [Budgets slice](#budgets-slice-implemented) below) and the **actual spend** + **spend
+> trend / spike** slices (BigQuery billing export — see [Actual-spend slice](#actual-spend-slice-implemented))
+> are **built** end-to-end. This doc captures how GChannel ingests **actual** GCP consumption/invoice
+> figures, GCP **budgets**, and **spend trend/anomaly** detection. These are the deferred "Phase 4"
+> concerns from [§11 Pricing &amp; billing](11-pricing-and-billing.md) and the answer to the "can we see
+> GCP spend / set budgets / spot spikes?" questions. **None of this is in the Cloud Channel API** — it
+> needs separate Google Cloud data sources and credentials. The remaining sections retain the original
+> design rationale; nothing here changes the existing (estimate-only) pricing surface, which the actual
+> figures are shown *alongside*.
 
 ### Why the Channel API can't do this
 
@@ -30,9 +31,9 @@ So the three asks map to three separate Google Cloud data sources, all outside t
 
 | Ask | Real source | GChannel today |
 | --- | --- | --- |
-| See GCP spend per customer | **Detailed usage cost BigQuery export** (partner/sub-account billing) | Estimated from list pricing only |
+| See GCP spend per customer | **Detailed usage cost BigQuery export** (partner/sub-account billing) | ✅ **Implemented** (Customer detail “Billed spend” + Spend trends) |
 | See / set GCP budgets | **Cloud Billing Budget API** (`billingbudgets.googleapis.com`) | ✅ **Implemented** (Budgets page) |
-| Spend trends / spike detection | Time-series over the **BigQuery** export (+ optional anomaly logic) | Not available |
+| Spend trends / spike detection | Time-series over the **BigQuery** export (+ optional anomaly logic) | ✅ **Implemented** (daily trend + mean+k·stddev spikes) |
 
 ### Budgets slice (implemented)
 
@@ -56,6 +57,42 @@ service-account key (`GoogleChannel:ServiceAccountKeyJson`) — no BigQuery, no 
   the API service configuration; unnecessary when `cloudbilling.googleapis.com` discovery is available.
 - **Caveat carried forward:** budgets raise **alerts** at thresholds — they do **not** cap spend, and
   *actual* consumption vs budget still requires the BigQuery export slice below.
+
+### Actual-spend slice (implemented)
+
+The **see GCP spend** and **spend trends / spike** asks are built as a read-model-backed vertical slice
+that follows the §10/§11 shape — the UI never touches BigQuery on the request path:
+
+- **Worker `BillingSyncService`** (`GChannel.Worker`): once per `SyncIntervalHours` (default 24) it runs
+  two **aggregated, byte-capped** BigQuery queries over the detailed export — monthly by
+  `invoice.month` + `billing_account_id` + `currency`, and daily by `DATE(usage_start_time)` over the
+  trailing `TrendDays` window — and upserts into the read-model. A Redis single-flight lock keeps one
+  replica syncing; the whole service is a no-op unless `GoogleBilling:BigQueryEnabled` + the
+  service-account credential are set. `MaximumBytesBilled` caps every query so a runaway scan fails
+  instead of costing money.
+- **Join to the estate.** Each `billing_account_id` (the billing **sub-account**) resolves to a Channel
+  **customer** and its **owning reseller link** via the `EntitlementRecord.BillingAccount` the §10
+  read-model now stores (normalised: last path segment, upper-cased). A customer can own several
+  sub-accounts (many-to-one); the distributor's own account is excluded via
+  `GoogleBilling:ExcludeBillingAccountIds`; sub-accounts with no matching entitlement are kept as an
+  unmapped bucket so spend is never silently dropped. The export carries **no reseller tier**, so the
+  per-reseller rollup is derived in GChannel from customer → `ChannelPartnerId` (§5).
+- **Read-model tables** (SQL, additively created in `EnsureReadModelTablesAsync`):
+  `CustomerSpend` (sub-account × invoice month × currency → net/gross/credits + resolved customer/link)
+  and `SpendDaily` (sub-account × day × currency, pruned to the trend window).
+- **API endpoints** (`GChannel.ApiService`, read straight from the indexed read-model):
+  `GET /api/billing/customers/{id}/spend` (monthly), `.../trend` (daily + flagged spikes via a pure
+  `mean + k·stddev` rolling window), `/api/billing/spend/top` (estate top spenders) and
+  `/api/billing/resellers/spend` (per-reseller rollup). Each reports `Unconfigured` when the export
+  isn't enabled.
+- **UI.** The **Customer detail** page gains a **Billed spend (actual)** card (monthly net/gross/credits
+  with an "as of" time, clearly distinguished from the §11 estimate). A new **Billing → Spend trends**
+  page (`/billing/spend`) shows estate **top spenders**, a **by-reseller** rollup, and a per-customer
+  **daily trend** ApexChart with spike markers.
+- **Config** (`GoogleBilling:*`, all disabled by default): `BigQueryEnabled`, `BigQueryProjectId`,
+  `BillingExportDataset`, `BillingExportTable`, `ExcludeBillingAccountIds`, plus `SyncIntervalHours`,
+  `TrendDays`, `MaximumBytesBilled`, `SpikeWindowDays`, `SpikeStdDevK`. The reseller service account
+  needs `roles/bigquery.dataViewer` + `roles/bigquery.jobUser` on the export project.
 
 ### Data sources
 

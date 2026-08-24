@@ -278,6 +278,11 @@ public sealed class ReadModelSyncService(
                     logger.LogWarning(saveEx, "Failed to record sync error for link {Link}.", linkId);
                 }
                 logger.LogWarning(ex, "Read-model sync failed for link {Link}.", linkId);
+                if (ReadModelProjector.IsRateLimited(ex))
+                {
+                    logger.LogWarning("Channel API quota (429) reached during link fan-out; stopping this cycle early to respect the limit — remaining links refresh next cycle.");
+                    break;
+                }
             }
         }
 
@@ -351,6 +356,11 @@ public sealed class ReadModelSyncService(
             await WithDbAsync(db => projector.SyncCustomerEntitlementsAsync(
                 db, client, c.CustomerId, c.OwningLinkId, offerCatalog, productNames, linkFallbackPercent, pricingDiag, now, ct));
             syncedCount++;
+            if (pricingDiag.RateLimited)
+            {
+                logger.LogWarning("Channel API quota (429) reached during entitlement sync; stopping early to respect the limit after {Synced} customer(s) — remaining refresh next cycle.", syncedCount);
+                break;
+            }
         }
 
         // Surface WHY active entitlements went unpriced this cycle so unmatched offers can be chased down.
@@ -366,6 +376,25 @@ public sealed class ReadModelSyncService(
                 pricingDiag.ActivePriced, pricingDiag.ActiveUnpriced,
                 pricingDiag.MissingFromCatalog.Count, pricingDiag.ListedWithoutPrice.Count, pricingDiag.ActiveWithoutOfferId,
                 Sample(pricingDiag.MissingFromCatalog), Sample(pricingDiag.ListedWithoutPrice));
+        }
+
+        // §Ion enrichment result this cycle (only when Ion produced something, to keep quiet cycles quiet).
+        if (pricingDiag.IonEnriched > 0 || pricingDiag.IonResellersMatched.Count > 0)
+        {
+            logger.LogInformation(
+                "Ion enrichment this cycle: {Enriched} entitlement(s) decorated with cost/margin across {Resellers} matched reseller(s).",
+                pricingDiag.IonEnriched, pricingDiag.IonResellersMatched.Count);
+        }
+
+        // SKU-name-gap diagnostic: entitlements left unmatched despite a reseller that HAD priced Ion Google
+        // lines — logs our SKU names vs Ion's so the Workspace matching divergence can be pinpointed.
+        if (pricingDiag.IonUnmatchedEntitlementSkus.Count > 0)
+        {
+            logger.LogInformation(
+                "Ion SKU-name gap: {Count} entitlement SKU(s) unmatched despite a priced reseller. Ours: [{Ours}]. Ion offers: [{Ion}].",
+                pricingDiag.IonUnmatchedEntitlementSkus.Count,
+                string.Join(", ", pricingDiag.IonUnmatchedEntitlementSkus.Take(20)),
+                string.Join(", ", pricingDiag.IonAvailableSkuNames.Take(20)));
         }
 
         await WithDbAsync(async db =>

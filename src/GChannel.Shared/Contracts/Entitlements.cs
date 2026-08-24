@@ -68,6 +68,15 @@ public sealed record Entitlement
     /// <summary>Repricing (rebilling) mark-up percentage applied to this entitlement, when known.</summary>
     public decimal? RepricingPercent { get; init; }
 
+    /// <summary>Real per-seat cost from Ion (TD SYNNEX StreamOne) via the Ion Gateway, when matched. The actual wholesale cost vs the list-price estimate in <see cref="UnitPrice"/>.</summary>
+    public decimal? IonCostPerSeat { get; init; }
+
+    /// <summary>Ion gross margin percent on the transacted price, when matched.</summary>
+    public decimal? IonMarginPercent { get; init; }
+
+    /// <summary>Currency of <see cref="IonCostPerSeat"/>, when matched.</summary>
+    public string? IonCurrency { get; init; }
+
     /// <summary>
     /// Committed/billable seats (<c>num_units</c> only) used for the monthly cost estimate. Null on the
     /// live path; from the read-model it excludes a flexible plan's <c>max_units</c> cap so the estimate

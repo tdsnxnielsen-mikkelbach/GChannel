@@ -17,6 +17,10 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
     public DbSet<EntitlementRecord> EntitlementRecords => Set<EntitlementRecord>();
     public DbSet<SyncCursor> SyncCursors => Set<SyncCursor>();
 
+    // §15 actual-spend read-model (BigQuery detailed billing export).
+    public DbSet<CustomerSpendRecord> CustomerSpend => Set<CustomerSpendRecord>();
+    public DbSet<SpendDailyRecord> SpendDaily => Set<SpendDailyRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<IdentityCheckLog>(entity =>
@@ -69,6 +73,9 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
             entity.Property(e => e.PlanDescription).HasMaxLength(128);
             entity.Property(e => e.UnitPrice).HasColumnType("decimal(18,6)");
             entity.Property(e => e.RepricingPercent).HasColumnType("decimal(9,4)");
+            entity.Property(e => e.IonCostPerSeat).HasColumnType("decimal(18,6)");
+            entity.Property(e => e.IonMarginPercent).HasColumnType("decimal(9,4)");
+            entity.Property(e => e.IonCurrency).HasMaxLength(8);
             entity.HasIndex(e => e.CustomerId);
             entity.HasIndex(e => e.OwningLinkId);
             entity.HasIndex(e => e.ProductId);
@@ -80,6 +87,34 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
             entity.HasKey(e => e.Scope);
             entity.Property(e => e.Scope).HasMaxLength(64);
             entity.Property(e => e.Notes).HasMaxLength(512);
+        });
+
+        modelBuilder.Entity<CustomerSpendRecord>(entity =>
+        {
+            entity.HasKey(e => new { e.BillingSubAccountId, e.InvoiceMonth, e.Currency });
+            entity.Property(e => e.BillingSubAccountId).HasMaxLength(64);
+            entity.Property(e => e.InvoiceMonth).HasMaxLength(6);
+            entity.Property(e => e.Currency).HasMaxLength(8);
+            entity.Property(e => e.CustomerId).HasMaxLength(128);
+            entity.Property(e => e.OwningLinkId).HasMaxLength(128);
+            entity.Property(e => e.Cost).HasColumnType("decimal(18,6)");
+            entity.Property(e => e.GrossCost).HasColumnType("decimal(18,6)");
+            entity.Property(e => e.Credits).HasColumnType("decimal(18,6)");
+            entity.HasIndex(e => e.CustomerId);
+            entity.HasIndex(e => e.OwningLinkId);
+            entity.HasIndex(e => e.InvoiceMonth);
+        });
+
+        modelBuilder.Entity<SpendDailyRecord>(entity =>
+        {
+            entity.HasKey(e => new { e.BillingSubAccountId, e.Day, e.Currency });
+            entity.Property(e => e.BillingSubAccountId).HasMaxLength(64);
+            entity.Property(e => e.Currency).HasMaxLength(8);
+            entity.Property(e => e.CustomerId).HasMaxLength(128);
+            entity.Property(e => e.OwningLinkId).HasMaxLength(128);
+            entity.Property(e => e.Cost).HasColumnType("decimal(18,6)");
+            entity.HasIndex(e => e.CustomerId);
+            entity.HasIndex(e => e.Day);
         });
     }
 }
@@ -137,6 +172,8 @@ public sealed class EntitlementRecord
     public string CustomerId { get; set; } = string.Empty;
     /// <summary>Owning channel partner link id, or null for the account's direct customers (denormalised from the customer).</summary>
     public string? OwningLinkId { get; set; }
+    /// <summary>Cloud Billing (sub-)account backing this entitlement — the §15 join key to the BigQuery cost export's <c>billing_account_id</c>. Null when the entitlement carries no billing account (e.g. non-GCP SKUs).</summary>
+    public string? BillingAccount { get; set; }
     public string? ProductId { get; set; }
     /// <summary>Friendly product display name denormalised at sync time so the dashboard product-mix can render without a live catalog call.</summary>
     public string? ProductName { get; set; }
@@ -166,6 +203,12 @@ public sealed class EntitlementRecord
     public string? Currency { get; set; }
     /// <summary>Repricing mark-up percent applied to this entitlement (§6): per-entitlement config, else owning-link channel-partner config, else 0.</summary>
     public decimal RepricingPercent { get; set; }
+    /// <summary>Real per-seat cost from Ion (TD SYNNEX StreamOne) via the Ion Gateway, or null when unmatched/unconfigured. The actual wholesale cost vs the §11 list-price estimate.</summary>
+    public decimal? IonCostPerSeat { get; set; }
+    /// <summary>Ion gross margin percent on the transacted price ((price-cost)/price*100), or null when unmatched.</summary>
+    public decimal? IonMarginPercent { get; set; }
+    /// <summary>ISO currency for <see cref="IonCostPerSeat"/>, or null.</summary>
+    public string? IonCurrency { get; set; }
     public DateTimeOffset LastSyncedUtc { get; set; }
     /// <summary>Denormalised from the owning customer: true when the customer is a reseller buying for its own use (direct sale) vs a reseller's end customer (indirect). Lets the dashboard split estate value by source without a join.</summary>
     public bool IsResellerSelf { get; set; }
@@ -180,4 +223,40 @@ public sealed class SyncCursor
     public DateTimeOffset? LastFullPassUtc { get; set; }
     public DateTimeOffset? LastCycleUtc { get; set; }
     public string? Notes { get; set; }
+}
+
+/// <summary>
+/// §15 read-model: actual billed spend per billing sub-account per invoice month (single currency),
+/// materialised from the BigQuery detailed cost export. Resolved to a Channel customer + owning reseller
+/// link via the entitlement billing sub-account; CustomerId/OwningLinkId are null when the sub-account
+/// doesn't map to a known entitlement (kept so spend is never silently dropped).
+/// </summary>
+public sealed class CustomerSpendRecord
+{
+    /// <summary>Bare billing sub-account id, e.g. <c>010528-357BBF-249088</c> (the export's <c>billing_account_id</c>).</summary>
+    public string BillingSubAccountId { get; set; } = string.Empty;
+    /// <summary>Invoice month as <c>YYYYMM</c>.</summary>
+    public string InvoiceMonth { get; set; } = string.Empty;
+    public string Currency { get; set; } = string.Empty;
+    public string? CustomerId { get; set; }
+    public string? OwningLinkId { get; set; }
+    /// <summary>Net cost after credits (GrossCost + Credits).</summary>
+    public decimal Cost { get; set; }
+    public decimal GrossCost { get; set; }
+    /// <summary>Sum of credits (zero or negative).</summary>
+    public decimal Credits { get; set; }
+    public DateTimeOffset LastSyncedUtc { get; set; }
+}
+
+/// <summary>§15 read-model: actual billed spend per billing sub-account per day (single currency), for the trend chart + spike detection.</summary>
+public sealed class SpendDailyRecord
+{
+    public string BillingSubAccountId { get; set; } = string.Empty;
+    public DateOnly Day { get; set; }
+    public string Currency { get; set; } = string.Empty;
+    public string? CustomerId { get; set; }
+    public string? OwningLinkId { get; set; }
+    /// <summary>Net cost after credits for the day.</summary>
+    public decimal Cost { get; set; }
+    public DateTimeOffset LastSyncedUtc { get; set; }
 }

@@ -339,6 +339,22 @@ public sealed class GChannelApiClient(
     public Task DeleteBudgetAsync(string billingAccountId, string budgetId, CancellationToken cancellationToken = default) =>
         DeleteAsync(ApiRoutes.BillingBudget(billingAccountId, budgetId), cancellationToken);
 
+    /// <summary>Monthly actual (billed) spend for a customer from the §15 BigQuery cost export.</summary>
+    public Task<CustomerSpendResult?> GetCustomerSpendAsync(string customerId, int months = 13, CancellationToken cancellationToken = default) =>
+        GetAsync<CustomerSpendResult>(ApiRoutes.CustomerSpend(customerId, months), cancellationToken);
+
+    /// <summary>Daily actual spend series + flagged spikes for a customer.</summary>
+    public Task<SpendTrendResult?> GetCustomerSpendTrendAsync(string customerId, int days = 90, CancellationToken cancellationToken = default) =>
+        GetAsync<SpendTrendResult>(ApiRoutes.CustomerSpendTrend(customerId, days), cancellationToken);
+
+    /// <summary>Estate-wide top spenders by billed cost over the recent window.</summary>
+    public Task<TopSpendersResult?> GetTopSpendersAsync(int months = 1, int limit = 10, CancellationToken cancellationToken = default) =>
+        GetAsync<TopSpendersResult>(ApiRoutes.TopSpenders(months, limit), cancellationToken);
+
+    /// <summary>Billed spend rolled up per owning reseller (channel partner) over the recent window.</summary>
+    public Task<ResellerSpendResult?> GetResellerSpendAsync(int months = 1, CancellationToken cancellationToken = default) =>
+        GetAsync<ResellerSpendResult>(ApiRoutes.ResellerSpend(months), cancellationToken);
+
     /// <summary>Shared empty JSON body for state-change POSTs that carry no payload.</summary>
     private static readonly object EmptyBody = new();
 

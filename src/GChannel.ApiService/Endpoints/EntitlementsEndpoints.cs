@@ -51,15 +51,50 @@ public static class EntitlementsEndpoints
             .WithName("ListEntitlements")
             .WithSummary("Lists a customer's entitlements.");
 
-        group.MapGet("/{entitlementId}", (
+        group.MapGet("/{entitlementId}", async (
                 string customerId,
                 string entitlementId,
                 IGoogleChannelClient channel,
                 IDistributedCache cache,
                 IOptions<GoogleChannelOptions> options,
+                GChannelDbContext db,
                 CancellationToken cancellationToken) =>
-                CachedAsync(cache, GetCacheKey(customerId, entitlementId), options.Value.CacheSeconds,
-                    () => channel.GetEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken))
+            {
+                // The live Channel API get is cached; Ion cost/margin (which it doesn't carry) is merged
+                // fresh from the read-model each call so it stays current even when the live get is cached.
+                var cacheKey = GetCacheKey(customerId, entitlementId);
+                Entitlement? entitlement;
+                var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
+                if (cached is not null)
+                {
+                    entitlement = JsonSerializer.Deserialize<Entitlement>(cached);
+                }
+                else
+                {
+                    entitlement = await channel.GetEntitlementAsync(customerId, entitlementId, cancellationToken);
+                    await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(entitlement),
+                        new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(options.Value.CacheSeconds) },
+                        cancellationToken);
+                }
+
+                if (entitlement is null)
+                {
+                    return Results.NotFound();
+                }
+
+                var rec = await db.EntitlementRecords.AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.EntitlementId == entitlementId && r.CustomerId == customerId, cancellationToken);
+                if (rec is not null)
+                {
+                    entitlement = entitlement with
+                    {
+                        IonCostPerSeat = rec.IonCostPerSeat,
+                        IonMarginPercent = rec.IonMarginPercent,
+                        IonCurrency = rec.IonCurrency,
+                    };
+                }
+                return Results.Ok(entitlement);
+            })
             .WithName("GetEntitlement")
             .WithSummary("Gets a single entitlement.");
 
@@ -205,6 +240,7 @@ public static class EntitlementsEndpoints
         SkuId = r.SkuId,
         SkuDisplayName = r.SkuName,
         ProvisioningState = r.State,
+        BillingAccount = r.BillingAccount,
         IsTrial = r.IsTrial,
         CreateTime = r.CreateTime,
         PlanDescription = r.PlanDescription,
@@ -214,6 +250,9 @@ public static class EntitlementsEndpoints
         UnitPrice = r.UnitPrice > 0 ? r.UnitPrice : null,
         PriceCurrency = r.Currency,
         RepricingPercent = r.RepricingPercent,
+        IonCostPerSeat = r.IonCostPerSeat,
+        IonMarginPercent = r.IonMarginPercent,
+        IonCurrency = r.IonCurrency,
         BillableSeats = r.BillableSeats,
         Parameters = r.Seats > 0
             ? [new EntitlementParameter { Name = "num_units", Value = r.Seats.ToString(CultureInfo.InvariantCulture), Editable = true }]
