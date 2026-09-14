@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
 using Google.Apis.Auth.OAuth2;
@@ -102,6 +103,30 @@ public sealed class BillingSyncService(
 
         // --- Monthly spend by sub-account (last 13 invoice months). ---
         var minMonth = now.UtcDateTime.AddMonths(-13).ToString("yyyyMM", CultureInfo.InvariantCulture);
+
+        // Fallback correlation: GCP entitlements don't carry a billing sub-account, so the entitlement
+        // join above finds nothing. The export instead ties each sub-account to a customer via the GCP
+        // organization's domain (project.ancestors org display_name == the org's primary domain), which
+        // matches our CustomerRecord.Domain. Build sub-account -> org-domain and domain -> customer maps.
+        var (domainMap, sldMap) = await BuildDomainMapsAsync(ct);
+        var subToDomain = new Dictionary<string, string>(StringComparer.Ordinal);
+        var domainSql = $"""
+            SELECT billing_account_id AS sub_account, ANY_VALUE(a.display_name) AS org_domain
+            FROM {table}, UNNEST(project.ancestors) AS a
+            WHERE a.resource_name LIKE 'organizations/%' AND invoice.month >= @minMonth
+            GROUP BY sub_account
+            """;
+        foreach (var row in await bq.ExecuteQueryAsync(domainSql,
+            [new BigQueryParameter("minMonth", BigQueryDbType.String, minMonth)], queryOptions, cancellationToken: ct))
+        {
+            var s = Normalize(row["sub_account"] as string);
+            var d = (row["org_domain"] as string)?.Trim().ToLowerInvariant();
+            if (s.Length > 0 && !string.IsNullOrEmpty(d)) { subToDomain[s] = d; }
+        }
+        // Manual overrides win: pin sub-accounts the export can't auto-resolve (no org, or a TLD-mismatched
+        // org domain) to a customer domain.
+        foreach (var kv in opts.SubAccountDomainMapParsed) { subToDomain[Normalize(kv.Key)] = kv.Value; }
+
         var monthlySql = $"""
             SELECT
               billing_account_id AS sub_account,
@@ -131,7 +156,7 @@ public sealed class BillingSyncService(
                 if (month.Length == 0 || currency.Length == 0) { continue; }
                 var gross = Dec(row["gross_cost"]);
                 var credits = Dec(row["credits"]);
-                accountMap.TryGetValue(sub, out var owner);
+                var owner = Resolve(sub, accountMap, subToDomain, domainMap, sldMap);
                 if (owner.CustomerId is null) { monthlyUnmapped++; }
 
                 if (!stored.TryGetValue((sub, month, currency), out var rec))
@@ -181,7 +206,7 @@ public sealed class BillingSyncService(
                 if (!DateOnly.TryParseExact(row["day"] as string, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)) { continue; }
                 var currency = row["currency"] as string ?? "";
                 if (currency.Length == 0) { continue; }
-                accountMap.TryGetValue(sub, out var owner);
+                var owner = Resolve(sub, accountMap, subToDomain, domainMap, sldMap);
 
                 if (!stored.TryGetValue((sub, day, currency), out var rec))
                 {
@@ -199,8 +224,73 @@ public sealed class BillingSyncService(
         });
 
         logger.LogInformation(
-            "Billing-export cycle: {Monthly} monthly + {Daily} daily spend rows upserted ({Unmapped} monthly rows had no matching entitlement billing account).",
+            "Billing-export cycle: {Monthly} monthly + {Daily} daily spend rows upserted ({Unmapped} monthly rows unattributed to a customer).",
             monthlyUpserts, dailyUpserts, monthlyUnmapped);
+    }
+
+    // Resolves a sub-account to a customer: the entitlement billing-account map first (precise), else the
+    // export org-domain -> CustomerRecord.Domain, else the unambiguous registrable-domain (SLD) match
+    // (handles TLD mismatches, e.g. formuepleje.dev -> formuepleje.dk).
+    private static (string? CustomerId, string? OwningLinkId) Resolve(
+        string sub,
+        Dictionary<string, (string? CustomerId, string? OwningLinkId)> accountMap,
+        Dictionary<string, string> subToDomain,
+        Dictionary<string, (string? CustomerId, string? OwningLinkId)> domainMap,
+        Dictionary<string, (string? CustomerId, string? OwningLinkId)> sldMap)
+    {
+        if (accountMap.TryGetValue(sub, out var byBilling) && byBilling.CustomerId is not null) { return byBilling; }
+        if (subToDomain.TryGetValue(sub, out var domain))
+        {
+            if (domainMap.TryGetValue(domain, out var byDomain)) { return byDomain; }
+            if (sldMap.TryGetValue(Sld(domain), out var bySld)) { return bySld; }
+        }
+        return (null, null);
+    }
+
+    /// <summary>Builds customer-domain and unambiguous registrable-domain (SLD) maps from the read-model.</summary>
+    private async Task<(Dictionary<string, (string? CustomerId, string? OwningLinkId)> ByDomain,
+                        Dictionary<string, (string? CustomerId, string? OwningLinkId)> BySld)> BuildDomainMapsAsync(CancellationToken ct)
+    {
+        var byDomain = new Dictionary<string, (string?, string?)>(StringComparer.OrdinalIgnoreCase);
+        var sldOwner = new Dictionary<string, (string?, string?)>(StringComparer.OrdinalIgnoreCase);
+        var sldCustomers = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        await WithDbAsync(async dbc =>
+        {
+            var rows = await dbc.CustomerRecords.AsNoTracking()
+                .Where(c => !c.IsDeleted && (c.Domain != null || c.CloudIdentityDomain != null))
+                .Select(c => new { c.Domain, c.CloudIdentityDomain, c.CustomerId, c.OwningLinkId })
+                .ToListAsync(ct);
+            foreach (var r in rows)
+            {
+                // Map BOTH the customer domain and its Cloud Identity primary domain (they can differ).
+                foreach (var d in new[] { r.Domain, r.CloudIdentityDomain })
+                {
+                    var key = d?.Trim().ToLowerInvariant();
+                    if (string.IsNullOrEmpty(key)) { continue; }
+                    byDomain.TryAdd(key, (r.CustomerId, r.OwningLinkId));
+                    var sld = Sld(key);
+                    if (sld.Length > 0)
+                    {
+                        if (!sldCustomers.TryGetValue(sld, out var set)) { set = sldCustomers[sld] = new(StringComparer.OrdinalIgnoreCase); }
+                        set.Add(r.CustomerId);
+                        sldOwner[sld] = (r.CustomerId, r.OwningLinkId);
+                    }
+                }
+            }
+        });
+        // Keep only SLDs owned by exactly one customer (avoids mis-attributing e.g. acme.dk vs acme.com).
+        var bySld = sldOwner
+            .Where(kv => sldCustomers.TryGetValue(kv.Key, out var s) && s.Count == 1)
+            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        return (byDomain, bySld);
+    }
+
+    // Registrable (second-level) label of a domain: formuepleje.dev -> "formuepleje". Sufficient for this
+    // book's TLDs; ambiguous SLDs are excluded from matching above.
+    private static string Sld(string domain)
+    {
+        var parts = domain.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 ? parts[^2] : (parts.Length == 1 ? parts[0] : string.Empty);
     }
 
     /// <summary>Builds a billing sub-account -> (customer, owning reseller link) map from the entitlement read-model.</summary>
@@ -210,18 +300,29 @@ public sealed class BillingSyncService(
         await WithDbAsync(async dbc =>
         {
             var rows = await dbc.EntitlementRecords.AsNoTracking()
-                .Where(e => !e.IsDeleted && e.BillingAccount != null && e.BillingAccount != "")
-                .Select(e => new { e.BillingAccount, e.CustomerId, e.OwningLinkId })
+                .Where(e => !e.IsDeleted && (
+                    (e.BillingAccount != null && e.BillingAccount != "") ||
+                    (e.ProvisioningId != null && e.ProvisioningId != "")))
+                .Select(e => new { e.BillingAccount, e.ProvisioningId, e.CustomerId, e.OwningLinkId })
                 .ToListAsync(ct);
             foreach (var r in rows)
             {
-                var key = Normalize(r.BillingAccount);
-                if (key.Length == 0) { continue; }
-                map.TryAdd(key, (r.CustomerId, r.OwningLinkId));
+                // Channel leaves billingAccount empty for GCP entitlements; there the provisioned-service id
+                // IS the Cloud Billing sub-account, so it's the precise join key to the export. Only accept
+                // candidates shaped like a sub-account (guards against non-GCP provisioning ids).
+                foreach (var candidate in new[] { r.BillingAccount, r.ProvisioningId })
+                {
+                    var key = Normalize(candidate);
+                    if (key.Length == 0 || !BillingAccountPattern.IsMatch(key)) { continue; }
+                    map.TryAdd(key, (r.CustomerId, r.OwningLinkId));
+                }
             }
         });
         return map;
     }
+
+    private static readonly Regex BillingAccountPattern =
+        new("^[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
 
     private async Task WithDbAsync(Func<GChannelDbContext, Task> work)
     {

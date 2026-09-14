@@ -59,6 +59,7 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger, IIonG
         row.OrgName = customer.OrgDisplayName;
         row.Domain = customer.Domain;
         row.CloudIdentityId = customer.CloudIdentityId;
+        row.CloudIdentityDomain = customer.CloudIdentity?.PrimaryDomain;
         row.OwningLinkId = owningLinkId;
         row.CreateTime = customer.CreateTime;
         row.IsDeleted = false;
@@ -211,6 +212,7 @@ public sealed class ReadModelProjector(ILogger<ReadModelProjector> logger, IIonG
             row.CustomerId = customerId;
             row.OwningLinkId = owningLinkId;
             row.BillingAccount = e.BillingAccount;
+            row.ProvisioningId = e.ProvisioningId;
             row.ProductId = e.ProductId;
             // Names come from the account's sellable catalog (offers.list/products.list). When that misses
             // (education/legacy/churned offers a customer already holds aren't in the sellable catalog),

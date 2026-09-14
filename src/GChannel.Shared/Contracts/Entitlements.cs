@@ -41,6 +41,8 @@ public sealed record Entitlement
 
     public string? PurchaseOrderId { get; init; }
     public string? BillingAccount { get; init; }
+    /// <summary>Provisioned-service id. For Google Cloud Platform entitlements this is the Cloud Billing sub-account id (the §15 cost-export join key); for other products it is a product-specific id.</summary>
+    public string? ProvisioningId { get; init; }
     public DateTimeOffset? CreateTime { get; init; }
     public DateTimeOffset? UpdateTime { get; init; }
 

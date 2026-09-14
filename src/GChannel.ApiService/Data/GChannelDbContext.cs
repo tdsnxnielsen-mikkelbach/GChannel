@@ -50,6 +50,7 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
             entity.Property(e => e.OrgName).HasMaxLength(512);
             entity.Property(e => e.Domain).HasMaxLength(255);
             entity.Property(e => e.CloudIdentityId).HasMaxLength(128);
+            entity.Property(e => e.CloudIdentityDomain).HasMaxLength(255);
             entity.Property(e => e.OwningLinkId).HasMaxLength(128);
             entity.HasIndex(e => e.OwningLinkId);
             entity.HasIndex(e => e.LastSyncedUtc);
@@ -152,6 +153,8 @@ public sealed class CustomerRecord
     public string? OrgName { get; set; }
     public string? Domain { get; set; }
     public string? CloudIdentityId { get; set; }
+    /// <summary>Cloud Identity primary domain (may differ from <see cref="Domain"/>) — §15 spend-attribution fallback key.</summary>
+    public string? CloudIdentityDomain { get; set; }
     /// <summary>Owning channel partner link id, or null for the account's direct customers.</summary>
     public string? OwningLinkId { get; set; }
     public DateTimeOffset? CreateTime { get; set; }
@@ -174,6 +177,8 @@ public sealed class EntitlementRecord
     public string? OwningLinkId { get; set; }
     /// <summary>Cloud Billing (sub-)account backing this entitlement — the §15 join key to the BigQuery cost export's <c>billing_account_id</c>. Null when the entitlement carries no billing account (e.g. non-GCP SKUs).</summary>
     public string? BillingAccount { get; set; }
+    /// <summary>Provisioned-service id; for GCP entitlements this is the Cloud Billing sub-account (the precise §15 join key, since Channel leaves <see cref="BillingAccount"/> empty for GCP).</summary>
+    public string? ProvisioningId { get; set; }
     public string? ProductId { get; set; }
     /// <summary>Friendly product display name denormalised at sync time so the dashboard product-mix can render without a live catalog call.</summary>
     public string? ProductName { get; set; }

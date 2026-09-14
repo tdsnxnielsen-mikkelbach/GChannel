@@ -66,6 +66,7 @@ public sealed partial class GoogleChannelClient
             ProvisioningState = entitlement.ProvisioningState,
             PurchaseOrderId = entitlement.PurchaseOrderId,
             BillingAccount = entitlement.BillingAccount,
+            ProvisioningId = entitlement.ProvisionedService?.ProvisioningId,
             CreateTime = entitlement.CreateTimeDateTimeOffset,
             UpdateTime = entitlement.UpdateTimeDateTimeOffset,
             SuspensionReasons = entitlement.SuspensionReasons is { } reasons ? [.. reasons] : [],

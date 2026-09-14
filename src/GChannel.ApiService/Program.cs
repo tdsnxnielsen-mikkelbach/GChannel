@@ -209,10 +209,14 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         ALTER TABLE EntitlementRecords ADD BillableSeats bigint NOT NULL CONSTRAINT DF_EntitlementRecords_BillableSeats DEFAULT 0;
         IF COL_LENGTH('CustomerRecords','IsResellerSelf') IS NULL
         ALTER TABLE CustomerRecords ADD IsResellerSelf bit NOT NULL CONSTRAINT DF_CustomerRecords_IsResellerSelf DEFAULT 0;
+        IF COL_LENGTH('CustomerRecords','CloudIdentityDomain') IS NULL
+        ALTER TABLE CustomerRecords ADD CloudIdentityDomain nvarchar(255) NULL;
         IF COL_LENGTH('EntitlementRecords','IsResellerSelf') IS NULL
         ALTER TABLE EntitlementRecords ADD IsResellerSelf bit NOT NULL CONSTRAINT DF_EntitlementRecords_IsResellerSelf DEFAULT 0;
         IF COL_LENGTH('EntitlementRecords','BillingAccount') IS NULL
         ALTER TABLE EntitlementRecords ADD BillingAccount nvarchar(128) NULL;
+        IF COL_LENGTH('EntitlementRecords','ProvisioningId') IS NULL
+        ALTER TABLE EntitlementRecords ADD ProvisioningId nvarchar(128) NULL;
         IF COL_LENGTH('EntitlementRecords','IonCostPerSeat') IS NULL
         ALTER TABLE EntitlementRecords ADD IonCostPerSeat decimal(18,6) NULL;
         IF COL_LENGTH('EntitlementRecords','IonMarginPercent') IS NULL

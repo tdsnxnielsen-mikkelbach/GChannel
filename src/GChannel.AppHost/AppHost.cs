@@ -99,6 +99,7 @@ var googleBillingBigQueryProjectId = builder.AddParameter("GoogleBillingBigQuery
 var googleBillingExportDataset = builder.AddParameter("GoogleBillingExportDataset");
 var googleBillingExportTable = builder.AddParameter("GoogleBillingExportTable");
 var googleBillingExcludeBillingAccountIds = builder.AddParameter("GoogleBillingExcludeBillingAccountIds");
+var googleBillingSubAccountDomainMap = builder.AddParameter("GoogleBillingSubAccountDomainMap");
 
 // Ion Gateway (TD SYNNEX StreamOne) enrichment. Disabled by default; the API key is a secret persisted in
 // Key Vault (like the OAuth secret and SA key), so it never appears in the manifest or plain config.
@@ -152,6 +153,7 @@ var worker = builder.AddProject<Projects.GChannel_Worker>("worker")
     .WithEnvironment("GoogleBilling__BillingExportDataset", googleBillingExportDataset)
     .WithEnvironment("GoogleBilling__BillingExportTable", googleBillingExportTable)
     .WithEnvironment("GoogleBilling__ExcludeBillingAccountIds", googleBillingExcludeBillingAccountIds)
+    .WithEnvironment("GoogleBilling__SubAccountDomainMap", googleBillingSubAccountDomainMap)
     .WithEnvironment("IonGateway__Enabled", ionGatewayEnabled)
     .WithEnvironment("IonGateway__BaseUrl", ionGatewayBaseUrl)
     .WithReplicas(1)

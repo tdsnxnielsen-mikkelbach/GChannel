@@ -552,6 +552,7 @@ public sealed class ReadModelSyncService(
             row.OrgName = c.OrgDisplayName;
             row.Domain = c.Domain;
             row.CloudIdentityId = c.CloudIdentityId;
+            row.CloudIdentityDomain = c.CloudIdentity?.PrimaryDomain;
             row.OwningLinkId = owningLinkId;
             row.CreateTime = c.CreateTime;
             row.IsDeleted = false;

@@ -71,6 +71,24 @@ public sealed class GoogleBillingOptions
     public IReadOnlyList<string> ExcludeBillingAccountIdList =>
         ExcludeBillingAccountIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+    /// <summary>
+    /// Manual sub-account → customer-domain overrides for spend attribution, for sub-accounts the export
+    /// can't auto-resolve: no GCP organization (projects billed directly, e.g. Søstrene Grene), or an org
+    /// domain that doesn't match the customer's Channel domain (a TLD mismatch, e.g. <c>formuepleje.dev</c>
+    /// vs <c>.dk</c>). Format: comma-separated <c>subAccountId=customerDomain</c>
+    /// (e.g. <c>0153FB-44EC2B-28D7DC=sostrenegrene.com,019BA5-C814BE-FC96AC=formuepleje.dk</c>). The domain
+    /// is then matched to a customer like any auto-resolved one.
+    /// </summary>
+    public string SubAccountDomainMap { get; set; } = string.Empty;
+
+    /// <summary>Parsed <see cref="SubAccountDomainMap"/>: sub-account id (upper) → lower-case customer domain.</summary>
+    public IReadOnlyDictionary<string, string> SubAccountDomainMapParsed =>
+        SubAccountDomainMap.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(pair => pair.Split('=', 2))
+            .Where(kv => kv.Length == 2 && kv[0].Trim().Length > 0 && kv[1].Trim().Length > 0)
+            .GroupBy(kv => kv[0].Trim().ToUpperInvariant())
+            .ToDictionary(g => g.Key, g => g.First()[1].Trim().ToLowerInvariant());
+
     /// <summary>Trailing window (days) used by spike detection's rolling mean/stddev.</summary>
     public int SpikeWindowDays { get; set; } = 30;
 
