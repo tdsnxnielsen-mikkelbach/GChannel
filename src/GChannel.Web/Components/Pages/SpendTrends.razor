@@ -49,7 +49,7 @@
                                     <MudLink Href="@($"/billing/spend?customerId={s.CustomerId}")">@CustomerLabel(s.CustomerId)</MudLink>
                                     @if (!string.IsNullOrEmpty(s.OwningLinkId))
                                     {
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">via reseller @s.OwningLinkId</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">via reseller @(s.ResellerName ?? s.OwningLinkId)</MudText>
                                     }
                                 </td>
                                 <td style="text-align:right">@s.Cost.ToString("N2")</td>
@@ -97,7 +97,7 @@
                                     }
                                     else
                                     {
-                                        <MudLink Href="@($"/channel-partner-links/{r.OwningLinkId}")">@r.OwningLinkId</MudLink>
+                                        <MudLink Href="@($"/channel-partner-links/{r.OwningLinkId}")">@(r.ResellerName ?? r.OwningLinkId)</MudLink>
                                     }
                                 </td>
                                 <td style="text-align:right">@r.CustomerCount</td>

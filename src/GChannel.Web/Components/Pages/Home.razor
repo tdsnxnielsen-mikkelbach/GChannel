@@ -622,6 +622,64 @@
             }
         </MudPaper>
     </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-4" Elevation="2">
+            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+                <div>
+                    <MudText Typo="Typo.h6">GCP &amp; Marketplace consumption (billed)</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Actual spend from the Cloud Billing → BigQuery export (last month) — real billed
+                        figures, distinct from the list-price estimate above.
+                    </MudText>
+                </div>
+                <MudButton Href="/billing/spend" Variant="Variant.Text" Size="Size.Small"
+                           EndIcon="@Icons.Material.Filled.ArrowForward">Spend trends</MudButton>
+            </div>
+
+            @if (_spendUnconfigured)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">The BigQuery billing-export sync isn't configured.</MudText>
+            }
+            else if (_spendLoading)
+            {
+                <div class="d-flex align-center" style="height: 200px;">
+                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
+                </div>
+            }
+            else if (_spendBars.Count > 0)
+            {
+                <div class="d-flex flex-wrap mb-2" style="gap: 32px;">
+                    @foreach (var t in _spendTotals)
+                    {
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total billed (@t.Currency)</MudText>
+                            <MudText Typo="Typo.h5">@t.Currency @t.Total.ToString("N2")</MudText>
+                        </div>
+                    }
+                </div>
+                <ApexChart TItem="SpendBar" Title="@_spendChartTitle" Options="_spendOptions" @ref="_spendChart">
+                    <ApexPointSeries TItem="SpendBar"
+                                     Items="_spendBars"
+                                     Name="Billed spend"
+                                     SeriesType="SeriesType.Bar"
+                                     XValue="@(b => b.Reseller)"
+                                     YValue="@(b => b.Cost)" />
+                </ApexChart>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
+                    Billed spend attributed to each customer's owning channel partner (Direct = account-owned).
+                    @if (_spendAsOf is { } asOf)
+                    {
+                        <span>As of @asOf.LocalDateTime.ToString("g").</span>
+                    }
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No billed spend recorded yet.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
 </MudGrid>
 
 @code {
@@ -631,6 +689,8 @@
     private record ResellerSlice(string Reseller, decimal Customers, decimal Seats, decimal AvgSeats, decimal Revenue);
     private record OnboardBar(string Reseller, decimal Count);
     private record LinkMonthPoint(string Key, string Label, decimal Count);
+    private record SpendBar(string Reseller, decimal Cost);
+    private record SpendTotal(string Currency, decimal Total);
 
     // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
     // its own axis/legend/title text in a fixed colour that ignores MudBlazor's theme, so without this
@@ -715,6 +775,28 @@
         DataLabels = new DataLabels { Enabled = true }
     };
 
+    // Actual billed GCP/Marketplace spend (BigQuery cost export) rolled up per owning reseller.
+    private ApexChart<SpendBar>? _spendChart;
+    private readonly ApexChartOptions<SpendBar> _spendOptions = new()
+    {
+        PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } },
+        DataLabels = new DataLabels
+        {
+            Enabled = true,
+            Formatter = "function (val) { return val === null ? '' : Number(val).toLocaleString(undefined, { maximumFractionDigits: 0 }); }"
+        }
+    };
+    private IReadOnlyList<ResellerSpend> _spendResellers = [];
+    private readonly List<SpendBar> _spendBars = [];
+    private readonly List<SpendTotal> _spendTotals = [];
+    private DateTimeOffset? _spendAsOf;
+    private bool _spendLoading = true;
+    private bool _spendUnconfigured;
+    // The bar chart plots one currency (the largest by total); the headline lists every currency's total.
+    private string _spendChartTitle => _spendTotals.Count > 0
+        ? $"Billed spend by reseller ({_spendTotals[0].Currency})"
+        : "Billed spend by reseller";
+
     private readonly CancellationTokenSource _cts = new();
 
     // How often to poll the background-refresh status (and, while a run is in progress, re-pull the
@@ -785,6 +867,7 @@
         _resellerOptions.Theme = new Theme { Mode = mode };
         _onboardOptions.Theme = new Theme { Mode = mode };
         _linkOptions.Theme = new Theme { Mode = mode };
+        _spendOptions.Theme = new Theme { Mode = mode };
 
         if (_monthlyChart is not null)
         {
@@ -815,6 +898,11 @@
         {
             await _linkChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
         }
+
+        if (_spendChart is not null)
+        {
+            await _spendChart.UpdateOptionsAsync(redrawPaths: true, animate: false, updateSyncedCharts: false);
+        }
     }
 
     // Load after the first interactive render so the API calls run once on the live circuit
@@ -843,6 +931,8 @@
         await LoadOverviewAsync(token);
         StateHasChanged();
         await LoadSummaryAsync(token);
+        StateHasChanged();
+        await LoadSpendAsync(token);
         StateHasChanged();
 
         // Pull the initial refresh status, then keep the page live: poll every 30s so the figures
@@ -1197,6 +1287,49 @@
         finally
         {
             _entitlementsLoading = false;
+        }
+    }
+
+    // Loads actual billed GCP/Marketplace spend (BigQuery cost export) rolled up per reseller. The
+    // headline lists every currency's total; the bar chart plots the largest currency by total.
+    private async Task LoadSpendAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await Api.GetResellerSpendAsync(1, cancellationToken);
+            _spendUnconfigured = result?.Unconfigured ?? false;
+            _spendResellers = result?.Resellers ?? [];
+            _spendAsOf = result?.AsOf;
+
+            _spendTotals.Clear();
+            _spendTotals.AddRange(_spendResellers
+                .GroupBy(r => r.Currency)
+                .Select(g => new SpendTotal(g.Key, g.Sum(x => x.Cost)))
+                .OrderByDescending(t => t.Total));
+
+            _spendBars.Clear();
+            if (_spendTotals.Count > 0)
+            {
+                var primary = _spendTotals[0].Currency;
+                _spendBars.AddRange(_spendResellers
+                    .Where(r => r.Currency == primary)
+                    .OrderByDescending(r => r.Cost)
+                    .Select(r => new SpendBar(
+                        string.IsNullOrEmpty(r.OwningLinkId) ? "Direct" : (r.ResellerName ?? r.OwningLinkId!),
+                        r.Cost)));
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Circuit torn down mid-load — leave the panel in its loading/empty state.
+        }
+        catch
+        {
+            _spendResellers = [];
+        }
+        finally
+        {
+            _spendLoading = false;
         }
     }
 

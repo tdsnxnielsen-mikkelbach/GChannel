@@ -74,6 +74,9 @@ public sealed record TopSpender
     /// <summary>Owning reseller link id, or null for a direct customer.</summary>
     public string? OwningLinkId { get; init; }
 
+    /// <summary>Friendly reseller name (primary domain, else reseller cloud id, else the link id); null for direct.</summary>
+    public string? ResellerName { get; init; }
+
     public required string Currency { get; init; }
 
     /// <summary>Net billed cost over the requested window.</summary>
@@ -95,6 +98,9 @@ public sealed record ResellerSpend
 {
     /// <summary>Owning reseller link id, or null for the distributor's direct customers.</summary>
     public string? OwningLinkId { get; init; }
+
+    /// <summary>Friendly reseller name (primary domain, else reseller cloud id, else the link id); null for the direct bucket.</summary>
+    public string? ResellerName { get; init; }
 
     public required string Currency { get; init; }
 

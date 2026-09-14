@@ -206,6 +206,10 @@ public static class BillingEndpoints
                     .Take(lim)
                     .ToList();
 
+                var topNames = await ResolveResellerNamesAsync(db, top.Select(t => t.OwningLinkId), cancellationToken);
+                top = top.Select(t => t.OwningLinkId != null && topNames.TryGetValue(t.OwningLinkId, out var rn)
+                    ? t with { ResellerName = rn } : t).ToList();
+
                 return Results.Ok(new TopSpendersResult
                 {
                     Spenders = top,
@@ -244,6 +248,10 @@ public static class BillingEndpoints
                     .OrderByDescending(r => r.Cost)
                     .ToList();
 
+                var resellerNames = await ResolveResellerNamesAsync(db, resellers.Select(r => r.OwningLinkId), cancellationToken);
+                resellers = resellers.Select(r => r.OwningLinkId != null && resellerNames.TryGetValue(r.OwningLinkId, out var rn)
+                    ? r with { ResellerName = rn } : r).ToList();
+
                 return Results.Ok(new ResellerSpendResult
                 {
                     Resellers = resellers,
@@ -254,6 +262,18 @@ public static class BillingEndpoints
             .WithSummary("Billed spend rolled up per owning reseller (channel partner).");
 
         return app;
+    }
+
+    // Friendly reseller name per link id (primary domain, else reseller cloud id, else the raw link id),
+    // resolved from the §10 read-model links table. Nulls in the input (direct customers) are ignored.
+    private static async Task<Dictionary<string, string>> ResolveResellerNamesAsync(
+        GChannelDbContext db, IEnumerable<string?> linkIds, CancellationToken ct)
+    {
+        var ids = linkIds.Where(id => id != null).Select(id => id!).Distinct().ToList();
+        if (ids.Count == 0) { return []; }
+        return await db.ResellerLinks.AsNoTracking()
+            .Where(l => ids.Contains(l.LinkId))
+            .ToDictionaryAsync(l => l.LinkId, l => l.PrimaryDomain ?? l.ResellerCloudId ?? l.LinkId, ct);
     }
 
     // Flags a day whose cost exceeds mean + k·stddev over the preceding rolling window (a pure,
