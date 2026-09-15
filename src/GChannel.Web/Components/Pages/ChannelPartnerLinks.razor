@@ -31,6 +31,7 @@
     <HeaderContent>
         <MudTh><MudTableSortLabel SortLabel="domain" T="EstateReseller">Reseller Cloud Identity</MudTableSortLabel></MudTh>
         <MudTh>Customers</MudTh>
+        <MudTh>Billed (last month)</MudTh>
         <MudTh><MudTableSortLabel SortLabel="state" T="EstateReseller">State</MudTableSortLabel></MudTh>
         <MudTh><MudTableSortLabel SortLabel="created" T="EstateReseller">Created</MudTableSortLabel></MudTh>
         <MudTh Style="text-align:right">Actions</MudTh>
@@ -38,6 +39,18 @@
     <RowTemplate>
         <MudTd DataLabel="Reseller Cloud Identity">@(context.PrimaryDomain ?? context.ResellerCloudId ?? context.LinkId)</MudTd>
         <MudTd DataLabel="Customers">@context.CustomerCount</MudTd>
+        <MudTd DataLabel="Billed (last month)">
+            @if (BilledLabel(context.LinkId) is { } billed)
+            {
+                <MudTooltip Text="Actual billed GCP/Marketplace spend across this reseller's customers (BigQuery cost export).">
+                    <span>@billed</span>
+                </MudTooltip>
+            }
+            else
+            {
+                <span>—</span>
+            }
+        </MudTd>
         <MudTd DataLabel="State">
             <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.LinkState)">
                 @(string.IsNullOrEmpty(context.LinkState) ? "—" : context.LinkState)
@@ -78,6 +91,7 @@
     {
         try
         {
+            await EnsureBilledAsync(token);
             var result = await Api.ListEstateResellersAsync(
                 state.Page, state.PageSize, state.SortLabel,
                 state.SortDirection == SortDirection.Descending,
@@ -93,6 +107,36 @@
             return new TableData<EstateReseller> { Items = [], TotalItems = 0 };
         }
     }
+
+    // Billed (actual) spend per reseller link for the list column — loaded once, best-effort.
+    private readonly Dictionary<string, (decimal Cost, string Currency)> _billed = new(StringComparer.OrdinalIgnoreCase);
+    private bool _billedLoaded;
+
+    private async Task EnsureBilledAsync(CancellationToken token)
+    {
+        if (_billedLoaded) { return; }
+        _billedLoaded = true;
+        try
+        {
+            var result = await Api.GetResellerSpendAsync(1, token);
+            foreach (var g in (result?.Resellers ?? [])
+                .Where(r => r.OwningLinkId != null)
+                .GroupBy(r => r.OwningLinkId!, StringComparer.OrdinalIgnoreCase))
+            {
+                var top = g.OrderByDescending(x => x.Cost).First();
+                _billed[g.Key] = (top.Cost, top.Currency);
+            }
+        }
+        catch
+        {
+            // Best-effort column; leave blanks if the billed lookup fails.
+        }
+    }
+
+    private string? BilledLabel(string linkId) =>
+        _billed.TryGetValue(linkId, out var v)
+            ? $"{v.Currency} {v.Cost.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}"
+            : null;
 
     private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
 

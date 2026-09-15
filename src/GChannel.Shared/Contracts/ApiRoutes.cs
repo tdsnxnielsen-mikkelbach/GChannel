@@ -246,4 +246,12 @@ public static class ApiRoutes
     /// <summary>Billed spend rolled up per owning reseller (channel partner) over the recent window.</summary>
     public static string ResellerSpend(int months) =>
         $"/api/billing/resellers/spend?months={months}";
+
+    /// <summary>Bulk last-window billed totals per customer, for the customer-list column.</summary>
+    public static string CustomerBilledSummaries(int months) =>
+        $"/api/billing/customers/spend?months={months}";
+
+    /// <summary>Monthly actual spend series for a single owning reseller (channel partner) link.</summary>
+    public static string ResellerSpendDetail(string linkId, int months) =>
+        $"/api/billing/resellers/{linkId}/spend?months={months}";
 }

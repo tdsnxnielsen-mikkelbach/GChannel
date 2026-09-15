@@ -120,3 +120,38 @@ public sealed record ResellerSpendResult
 
     public bool Unconfigured { get; init; }
 }
+
+/// <summary>One customer's last-window billed total (for list columns), in a single currency.</summary>
+public sealed record CustomerBilledSummary
+{
+    public required string CustomerId { get; init; }
+
+    public required string Currency { get; init; }
+
+    /// <summary>Net billed cost over the requested window.</summary>
+    public decimal Cost { get; init; }
+}
+
+/// <summary>Bulk billed totals per customer over a recent window, for the customer-list column.</summary>
+public sealed record CustomerBilledSummaryResult
+{
+    public IReadOnlyList<CustomerBilledSummary> Customers { get; init; } = [];
+
+    public DateTimeOffset? AsOf { get; init; }
+
+    public bool Unconfigured { get; init; }
+}
+
+/// <summary>A single reseller's monthly actual-spend series (billed spend across the reseller's customers).</summary>
+public sealed record ResellerSpendDetailResult
+{
+    /// <summary>Owning channel partner link id this rollup belongs to.</summary>
+    public required string LinkId { get; init; }
+
+    /// <summary>Monthly points, oldest first. May span multiple currencies (one point per month per currency).</summary>
+    public IReadOnlyList<CustomerSpendPoint> Months { get; init; } = [];
+
+    public DateTimeOffset? AsOf { get; init; }
+
+    public bool Unconfigured { get; init; }
+}

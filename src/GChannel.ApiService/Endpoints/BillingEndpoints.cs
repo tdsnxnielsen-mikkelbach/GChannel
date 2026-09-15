@@ -88,6 +88,44 @@ public static class BillingEndpoints
         // §15 actual spend (BigQuery detailed billing export) — served from the CustomerSpend/SpendDaily
         // read-model the worker's BillingSyncService populates. BILLED figures, distinct from §11 estimates.
 
+        // Bulk last-window billed totals per customer (for the customer-list "Billed" column). Literal
+        // "/customers/spend" outranks the "/customers/{customerId}/spend" param route below.
+        group.MapGet("/customers/spend", async (
+                int? months,
+                GChannelDbContext db,
+                IOptions<GoogleBillingOptions> options,
+                CancellationToken cancellationToken) =>
+            {
+                if (!options.Value.BigQueryConfigured)
+                {
+                    return Results.Ok(new CustomerBilledSummaryResult { Unconfigured = true });
+                }
+
+                var n = Math.Clamp(months ?? 1, 1, 12);
+                var minMonth = DateTime.UtcNow.AddMonths(-(n - 1)).ToString("yyyyMM", CultureInfo.InvariantCulture);
+                var rows = await db.CustomerSpend.AsNoTracking()
+                    .Where(s => s.CustomerId != null && string.Compare(s.InvoiceMonth, minMonth) >= 0)
+                    .ToListAsync(cancellationToken);
+
+                var summaries = rows
+                    .GroupBy(r => new { r.CustomerId, r.Currency })
+                    .Select(g => new CustomerBilledSummary
+                    {
+                        CustomerId = g.Key.CustomerId!,
+                        Currency = g.Key.Currency,
+                        Cost = g.Sum(x => x.Cost)
+                    })
+                    .ToList();
+
+                return Results.Ok(new CustomerBilledSummaryResult
+                {
+                    Customers = summaries,
+                    AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null
+                });
+            })
+            .WithName("CustomerBilledSummaries")
+            .WithSummary("Bulk last-window billed totals per customer for the customer list.");
+
         group.MapGet("/customers/{customerId}/spend", async (
                 string customerId,
                 int? months,
@@ -260,6 +298,47 @@ public static class BillingEndpoints
             })
             .WithName("ResellerSpend")
             .WithSummary("Billed spend rolled up per owning reseller (channel partner).");
+
+        group.MapGet("/resellers/{linkId}/spend", async (
+                string linkId,
+                int? months,
+                GChannelDbContext db,
+                IOptions<GoogleBillingOptions> options,
+                CancellationToken cancellationToken) =>
+            {
+                if (!options.Value.BigQueryConfigured)
+                {
+                    return Results.Ok(new ResellerSpendDetailResult { LinkId = linkId, Unconfigured = true });
+                }
+
+                var n = Math.Clamp(months ?? 13, 1, 36);
+                var minMonth = DateTime.UtcNow.AddMonths(-(n - 1)).ToString("yyyyMM", CultureInfo.InvariantCulture);
+                var rows = await db.CustomerSpend.AsNoTracking()
+                    .Where(s => s.OwningLinkId == linkId && string.Compare(s.InvoiceMonth, minMonth) >= 0)
+                    .ToListAsync(cancellationToken);
+
+                var points = rows
+                    .GroupBy(r => new { r.InvoiceMonth, r.Currency })
+                    .Select(g => new CustomerSpendPoint
+                    {
+                        InvoiceMonth = g.Key.InvoiceMonth,
+                        Currency = g.Key.Currency,
+                        Cost = g.Sum(x => x.Cost),
+                        GrossCost = g.Sum(x => x.GrossCost),
+                        Credits = g.Sum(x => x.Credits)
+                    })
+                    .OrderBy(p => p.InvoiceMonth).ThenBy(p => p.Currency)
+                    .ToList();
+
+                return Results.Ok(new ResellerSpendDetailResult
+                {
+                    LinkId = linkId,
+                    Months = points,
+                    AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null
+                });
+            })
+            .WithName("ResellerSpendDetail")
+            .WithSummary("Monthly billed spend for one owning reseller (channel partner) link.");
 
         return app;
     }

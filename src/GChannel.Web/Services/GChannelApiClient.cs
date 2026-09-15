@@ -355,6 +355,14 @@ public sealed class GChannelApiClient(
     public Task<ResellerSpendResult?> GetResellerSpendAsync(int months = 1, CancellationToken cancellationToken = default) =>
         GetAsync<ResellerSpendResult>(ApiRoutes.ResellerSpend(months), cancellationToken);
 
+    /// <summary>Bulk last-window billed totals per customer (for the customer-list column).</summary>
+    public Task<CustomerBilledSummaryResult?> GetCustomerBilledSummariesAsync(int months = 1, CancellationToken cancellationToken = default) =>
+        GetAsync<CustomerBilledSummaryResult>(ApiRoutes.CustomerBilledSummaries(months), cancellationToken);
+
+    /// <summary>Monthly billed spend for one owning reseller (channel partner) link.</summary>
+    public Task<ResellerSpendDetailResult?> GetResellerSpendDetailAsync(string linkId, int months = 13, CancellationToken cancellationToken = default) =>
+        GetAsync<ResellerSpendDetailResult>(ApiRoutes.ResellerSpendDetail(linkId, months), cancellationToken);
+
     /// <summary>Shared empty JSON body for state-change POSTs that carry no payload.</summary>
     private static readonly object EmptyBody = new();
 

@@ -183,6 +183,65 @@ else
         </MudCardContent>
     </MudCard>
 
+    @if (_spend is { Unconfigured: false })
+    {
+        <MudCard Elevation="2" Class="mt-2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Billed spend (actual)</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Actual GCP/Marketplace spend across this partner's customers from the Cloud Billing → BigQuery
+                        cost export — real billed figures, not the list-price estimate above.
+                    </MudText>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    @if (_spend.AsOf is { } asOf)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mr-2">as of @asOf.LocalDateTime.ToString("g")</MudText>
+                    }
+                </CardHeaderActions>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (_spendLoading)
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                }
+                else if (_spend.Months is { Count: > 0 })
+                {
+                    <MudSimpleTable Dense="true" Hover="true" Elevation="0">
+                        <thead>
+                            <tr>
+                                <th>Invoice month</th>
+                                <th style="text-align:right">Net cost</th>
+                                <th style="text-align:right">Gross</th>
+                                <th style="text-align:right">Credits</th>
+                                <th>Currency</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in _spend.Months.OrderByDescending(m => m.InvoiceMonth).ThenBy(m => m.Currency))
+                            {
+                                <tr>
+                                    <td>@FormatMonth(m.InvoiceMonth)</td>
+                                    <td style="text-align:right">@m.Cost.ToString("N2")</td>
+                                    <td style="text-align:right">@m.GrossCost.ToString("N2")</td>
+                                    <td style="text-align:right">@m.Credits.ToString("N2")</td>
+                                    <td>@m.Currency</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        No billed spend recorded for this partner's customers yet.
+                    </MudText>
+                }
+            </MudCardContent>
+        </MudCard>
+    }
+
     <MudCard Elevation="2" Class="mt-2">
         <MudCardHeader>
             <CardHeaderContent>
@@ -341,9 +400,11 @@ else
     private ChannelPartnerLink? _link;
     private IReadOnlyList<Customer>? _customers;
     private ResellerEstateValue? _value;
+    private ResellerSpendDetailResult? _spend;
     private bool _loading = true;
     private bool _customersLoading = true;
     private bool _valueLoading = true;
+    private bool _spendLoading = true;
     private bool _busy;
 
     // §9 onboarding: walkthrough for the §12.1 n-tier customer CRUD on this page.
@@ -389,6 +450,25 @@ else
         {
             await LoadCustomersAsync();
             await LoadValueAsync();
+            await LoadSpendAsync();
+        }
+    }
+
+    private async Task LoadSpendAsync()
+    {
+        _spendLoading = true;
+        try
+        {
+            _spend = await Api.GetResellerSpendDetailAsync(Id, 13);
+        }
+        catch
+        {
+            // Billed spend is best-effort (export may be unconfigured); ignore so the page renders.
+            _spend = null;
+        }
+        finally
+        {
+            _spendLoading = false;
         }
     }
 
@@ -602,4 +682,10 @@ else
         "REVOKED" => Color.Error,
         _ => Color.Default
     };
+
+    private static string FormatMonth(string invoiceMonth) =>
+        DateTime.TryParseExact(invoiceMonth, "yyyyMM", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var d)
+            ? d.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)
+            : invoiceMonth;
 }

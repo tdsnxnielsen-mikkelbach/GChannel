@@ -59,6 +59,7 @@
         <MudTh>Renewal</MudTh>
         <MudTh>Auto-renew</MudTh>
         <MudTh>Est. monthly</MudTh>
+        <MudTh>Billed (last month)</MudTh>
         <MudTh><MudTableSortLabel SortLabel="created" T="EstateCustomer">Created</MudTableSortLabel></MudTh>
         <MudTh Style="text-align:right">Actions</MudTh>
     </HeaderContent>
@@ -165,6 +166,18 @@
             {
                 <MudTooltip Text="Estimated from offer list pricing with repricing applied — not invoiced.">
                     <span>@FormatMoney(v, context.Currency)</span>
+                </MudTooltip>
+            }
+            else
+            {
+                <span>—</span>
+            }
+        </MudTd>
+        <MudTd DataLabel="Billed (last month)">
+            @if (BilledLabel(context.CustomerId) is { } billed)
+            {
+                <MudTooltip Text="Actual billed GCP/Marketplace spend from the BigQuery cost export — real invoiced-style figure.">
+                    <span>@billed</span>
                 </MudTooltip>
             }
             else
@@ -365,10 +378,37 @@
             ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
             : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
 
+    // Bulk billed (actual) spend per customer for the list column — loaded once, best-effort.
+    private readonly Dictionary<string, (decimal Cost, string Currency)> _billed = new(StringComparer.OrdinalIgnoreCase);
+    private bool _billedLoaded;
+
+    private async Task EnsureBilledAsync(CancellationToken token)
+    {
+        if (_billedLoaded) { return; }
+        _billedLoaded = true;
+        try
+        {
+            var result = await Api.GetCustomerBilledSummariesAsync(1, token);
+            foreach (var g in (result?.Customers ?? []).GroupBy(c => c.CustomerId, StringComparer.OrdinalIgnoreCase))
+            {
+                var top = g.OrderByDescending(x => x.Cost).First();
+                _billed[g.Key] = (top.Cost, top.Currency);
+            }
+        }
+        catch
+        {
+            // Best-effort column; leave blanks if the billed lookup fails.
+        }
+    }
+
+    private string? BilledLabel(string customerId) =>
+        _billed.TryGetValue(customerId, out var v) ? FormatMoney(v.Cost, v.Currency) : null;
+
     private async Task<TableData<EstateCustomer>> LoadServerData(TableState state, CancellationToken token)
     {
         try
         {
+            await EnsureBilledAsync(token);
             var result = await Api.ListEstateCustomersAsync(
                 state.Page, state.PageSize, state.SortLabel,
                 state.SortDirection == SortDirection.Descending,
