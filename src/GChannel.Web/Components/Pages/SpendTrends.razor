@@ -182,7 +182,20 @@
     [CascadingParameter(Name = "IsDarkMode")]
     private bool IsDarkMode { get; set; }
 
-    private readonly ApexChartOptions<TrendItem> _trendOptions = new();
+    private readonly ApexChartOptions<TrendItem> _trendOptions = new()
+    {
+        Yaxis =
+        [
+            new YAxis
+            {
+                DecimalsInFloat = 2,
+                Labels = new YAxisLabels
+                {
+                    Formatter = "function (val) { return val == null ? '' : Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }"
+                }
+            }
+        ]
+    };
 
     private bool _unconfigured;
 
