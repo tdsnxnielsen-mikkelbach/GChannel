@@ -3,6 +3,7 @@ using GChannel.Shared.Contracts;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.Billing.Budgets.V1;
 using Google.Cloud.Billing.V1;
+using Google.Cloud.Iam.V1;
 using Google.Protobuf.WellKnownTypes;
 using Microsoft.Extensions.Options;
 using Money = Google.Type.Money;
@@ -24,6 +25,9 @@ public interface IBillingBudgetsService
     Task<BudgetsResult> ListBudgetsAsync(string billingAccountId, CancellationToken cancellationToken);
     Task<BudgetInfo> SaveBudgetAsync(SaveBudgetRequest request, CancellationToken cancellationToken);
     Task DeleteBudgetAsync(string billingAccountId, string budgetId, CancellationToken cancellationToken);
+
+    /// <summary>Reads a billing (sub-)account's IAM members, split into direct and master-inherited grants.</summary>
+    Task<BillingAccountMembersResult> GetBillingAccountMembersAsync(string billingAccountId, CancellationToken cancellationToken);
 }
 
 public sealed class BillingBudgetsService : IBillingBudgetsService
@@ -218,6 +222,101 @@ public sealed class BillingBudgetsService : IBillingBudgetsService
         {
             Name = BudgetName(billingAccountId, budgetId)
         }, cancellationToken);
+    }
+
+    // Friendly names for the Cloud Billing predefined roles shown in the Partner Sales Console.
+    private static readonly IReadOnlyDictionary<string, string> BillingRoleNames =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["roles/billing.admin"] = "Billing Account Administrator",
+            ["roles/billing.user"] = "Billing Account User",
+            ["roles/billing.viewer"] = "Billing Account Viewer",
+            ["roles/billing.costsManager"] = "Billing Account Costs Manager",
+            ["roles/billing.creator"] = "Billing Account Creator",
+        };
+
+    public async Task<BillingAccountMembersResult> GetBillingAccountMembersAsync(
+        string billingAccountId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Resolve the master so we can split inherited (master policy) from direct (sub-account policy)
+            // grants — the Cloud Billing GetIamPolicy only returns bindings set on the named resource itself.
+            await PaceReadAsync(cancellationToken);
+            var account = await BillingClient.GetBillingAccountAsync(ParentName(billingAccountId), cancellationToken);
+            var masterId = string.IsNullOrEmpty(account.MasterBillingAccount)
+                ? null
+                : StripPrefix(account.MasterBillingAccount);
+
+            // Direct grants: the IAM policy attached to the (sub-)account itself.
+            await PaceReadAsync(cancellationToken);
+            var directPolicy = await BillingClient.GetIamPolicyAsync(ParentName(billingAccountId), cancellationToken);
+            var direct = ToMembers(directPolicy, inherited: false);
+
+            // Inherited grants: the IAM policy on the master billing account (only for sub-accounts).
+            var inherited = new List<BillingAccountMember>();
+            if (masterId is not null)
+            {
+                await PaceReadAsync(cancellationToken);
+                var masterPolicy = await BillingClient.GetIamPolicyAsync(ParentName(masterId), cancellationToken);
+                inherited = ToMembers(masterPolicy, inherited: true);
+
+                // A binding set directly on the sub-account takes precedence; don't list it twice.
+                var directKeys = direct.Select(m => (m.Role, m.Email)).ToHashSet();
+                inherited = inherited.Where(m => !directKeys.Contains((m.Role, m.Email))).ToList();
+            }
+
+            return new BillingAccountMembersResult
+            {
+                BillingAccountId = billingAccountId,
+                MasterBillingAccountId = masterId,
+                Direct = direct,
+                Inherited = inherited,
+                Available = true
+            };
+        }
+        catch (Exception ex)
+        {
+            return new BillingAccountMembersResult
+            {
+                BillingAccountId = billingAccountId,
+                Available = false,
+                Error = ex.Message
+            };
+        }
+    }
+
+    private static List<BillingAccountMember> ToMembers(Policy policy, bool inherited)
+    {
+        var members = new List<BillingAccountMember>();
+        foreach (var binding in policy.Bindings)
+        {
+            var roleName = BillingRoleNames.TryGetValue(binding.Role, out var friendly) ? friendly : binding.Role;
+            foreach (var raw in binding.Members)
+            {
+                var (type, email) = ParseMember(raw);
+                members.Add(new BillingAccountMember
+                {
+                    Email = email,
+                    MemberType = type,
+                    Role = binding.Role,
+                    RoleDisplayName = roleName,
+                    Inherited = inherited
+                });
+            }
+        }
+
+        return members
+            .OrderBy(m => m.RoleDisplayName, StringComparer.Ordinal)
+            .ThenBy(m => m.Email, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    // IAM policy members are prefixed with their type, e.g. "user:a@b.com", "serviceAccount:x@y.iam..".
+    private static (string Type, string Email) ParseMember(string raw)
+    {
+        var idx = raw.IndexOf(':');
+        return idx < 0 ? ("unknown", raw) : (raw[..idx], raw[(idx + 1)..]);
     }
 
     private static BudgetInfo ToBudgetInfo(Budget budget, string billingAccountId)

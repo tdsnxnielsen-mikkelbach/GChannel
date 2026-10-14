@@ -141,6 +141,88 @@ else
     </MudTable>
 }
 
+@if (!string.IsNullOrEmpty(_selectedAccountId))
+{
+    <MudText Typo="Typo.h6" Class="mt-6 mb-2">Billing permissions</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+        Members with roles on this billing account, read live from its Cloud Billing IAM policy. Inherited
+        members come from the master billing account; direct members are granted on this account itself.
+    </MudText>
+
+    @if (_loadingMembers)
+    {
+        <LoadingPanel Title="Loading members…" Hint="Reading the billing account IAM policy." />
+    }
+    else if (_members is { Available: false })
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true">
+            Couldn't read billing permissions (@(_members.Error ?? "unavailable")). The service account needs
+            <code>roles/billing.viewer</code> (or <code>billing.accounts.getIamPolicy</code>) on the account.
+        </MudAlert>
+    }
+    else if (_members is not null)
+    {
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-3" Elevation="2">
+                    <div class="d-flex align-center gap-2 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
+                        <MudText Typo="Typo.subtitle1">Direct members (@_members.Direct.Count)</MudText>
+                    </div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                        Granted on this sub-account — not inherited.
+                    </MudText>
+                    <MudTable Items="_members.Direct" Dense="true" Hover="true" Elevation="0"
+                              T="BillingAccountMember" Breakpoint="Breakpoint.None">
+                        <HeaderContent>
+                            <MudTh>Member</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Role</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Member">@context.Email</MudTd>
+                            <MudTd DataLabel="Type">@context.MemberType</MudTd>
+                            <MudTd DataLabel="Role">@context.RoleDisplayName</MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText Typo="Typo.body2">No members set directly on this account.</MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-3" Elevation="2">
+                    <div class="d-flex align-center gap-2 mb-2">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" />
+                        <MudText Typo="Typo.subtitle1">Inherited members (@_members.Inherited.Count)</MudText>
+                    </div>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                        @(_members.MasterBillingAccountId is null
+                            ? "This is a master account — no inherited members."
+                            : $"Inherited from master billing account {_members.MasterBillingAccountId}.")
+                    </MudText>
+                    <MudTable Items="_members.Inherited" Dense="true" Hover="true" Elevation="0"
+                              T="BillingAccountMember" Breakpoint="Breakpoint.None">
+                        <HeaderContent>
+                            <MudTh>Member</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Role</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Member">@context.Email</MudTd>
+                            <MudTd DataLabel="Type">@context.MemberType</MudTd>
+                            <MudTd DataLabel="Role">@context.RoleDisplayName</MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText Typo="Typo.body2">No inherited members.</MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+}
+
 @code {
     private sealed class BudgetForm
     {
@@ -160,6 +242,8 @@ else
     private List<BudgetInfo> _budgets = [];
     private BudgetForm? _editing;
     private bool _t50 = true, _t90 = true, _t100 = true;
+    private bool _loadingMembers;
+    private BillingAccountMembersResult? _members;
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -202,6 +286,7 @@ else
         if (string.IsNullOrEmpty(_selectedAccountId))
         {
             _budgets = [];
+            _members = null;
             return;
         }
 
@@ -219,6 +304,33 @@ else
         finally
         {
             _loadingBudgets = false;
+        }
+
+        await LoadMembersAsync();
+    }
+
+    private async Task LoadMembersAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedAccountId))
+        {
+            _members = null;
+            return;
+        }
+
+        _loadingMembers = true;
+        _members = null;
+        try
+        {
+            _members = await Api.ListBillingAccountMembersAsync(_selectedAccountId);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load billing permissions: {ex.Message}", Severity.Error);
+            _members = null;
+        }
+        finally
+        {
+            _loadingMembers = false;
         }
     }
 

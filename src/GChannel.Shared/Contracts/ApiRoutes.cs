@@ -220,6 +220,10 @@ public static class ApiRoutes
     public static string BillingBudgets(string billingAccountId) =>
         $"/api/billing/accounts/{billingAccountId}/budgets";
 
+    /// <summary>IAM members (direct + inherited) on one billing (sub-)account.</summary>
+    public static string BillingAccountMembers(string billingAccountId) =>
+        $"/api/billing/accounts/{billingAccountId}/members";
+
     /// <summary>Create/update a budget (create when no budget id in the payload, else update).</summary>
     public const string BillingBudgetSave = "/api/billing/budgets";
 

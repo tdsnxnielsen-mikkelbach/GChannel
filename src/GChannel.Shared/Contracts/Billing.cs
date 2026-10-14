@@ -92,3 +92,46 @@ public sealed record SaveBudgetRequest
     /// <summary>Reset cadence: <c>MONTH</c> (default), <c>QUARTER</c> or <c>YEAR</c>.</summary>
     public string? CalendarPeriod { get; init; }
 }
+
+/// <summary>A principal granted a role on a billing (sub-)account via its Cloud Billing IAM policy.</summary>
+public sealed record BillingAccountMember
+{
+    /// <summary>The principal's identifier, e.g. an email for users/groups/service accounts.</summary>
+    public required string Email { get; init; }
+
+    /// <summary>IAM member type from the policy prefix: <c>user</c>, <c>group</c>, <c>serviceAccount</c>, <c>domain</c>, etc.</summary>
+    public required string MemberType { get; init; }
+
+    /// <summary>The granted role id, e.g. <c>roles/billing.admin</c>.</summary>
+    public required string Role { get; init; }
+
+    /// <summary>Friendly role name, e.g. "Billing Account Administrator", or the raw role id when unknown.</summary>
+    public required string RoleDisplayName { get; init; }
+
+    /// <summary>True when the grant comes from the master billing account (inherited), false when set on the sub-account itself.</summary>
+    public bool Inherited { get; init; }
+}
+
+/// <summary>
+/// The principals on a billing (sub-)account's Cloud Billing IAM policy, split into those set directly
+/// on the account and those inherited from its master billing account.
+/// </summary>
+public sealed record BillingAccountMembersResult
+{
+    public required string BillingAccountId { get; init; }
+
+    /// <summary>The master (parent) billing account id when this is a sub-account, else null.</summary>
+    public string? MasterBillingAccountId { get; init; }
+
+    /// <summary>Members granted directly on this account (editable here, not inherited).</summary>
+    public IReadOnlyList<BillingAccountMember> Direct { get; init; } = [];
+
+    /// <summary>Members inherited from the master billing account.</summary>
+    public IReadOnlyList<BillingAccountMember> Inherited { get; init; } = [];
+
+    /// <summary>True when the IAM policy could be read (service account has <c>billing.accounts.getIamPolicy</c>).</summary>
+    public bool Available { get; init; }
+
+    /// <summary>Why the policy couldn't be read, when applicable (e.g. missing permission).</summary>
+    public string? Error { get; init; }
+}

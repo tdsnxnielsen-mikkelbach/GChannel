@@ -52,6 +52,26 @@ public static class BillingEndpoints
             .WithName("ListBudgets")
             .WithSummary("Lists budgets for a billing account.");
 
+        group.MapGet("/accounts/{billingAccountId}/members", async (
+                string billingAccountId,
+                IBillingBudgetsService billing,
+                CancellationToken cancellationToken) =>
+            {
+                if (!billing.IsConfigured)
+                {
+                    return Results.Ok(new BillingAccountMembersResult
+                    {
+                        BillingAccountId = billingAccountId,
+                        Available = false,
+                        Error = "No service-account credential configured (GoogleChannel:ServiceAccountKeyJson)."
+                    });
+                }
+
+                return Results.Ok(await billing.GetBillingAccountMembersAsync(billingAccountId, cancellationToken));
+            })
+            .WithName("ListBillingAccountMembers")
+            .WithSummary("Lists a billing (sub-)account's IAM members, split into direct and inherited grants.");
+
         group.MapPost("/budgets", async (
                 SaveBudgetRequest request,
                 IBillingBudgetsService billing,

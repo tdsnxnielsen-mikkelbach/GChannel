@@ -331,6 +331,10 @@ public sealed class GChannelApiClient(
     public Task<BudgetsResult?> ListBudgetsAsync(string billingAccountId, CancellationToken cancellationToken = default) =>
         GetAsync<BudgetsResult>(ApiRoutes.BillingBudgets(billingAccountId), cancellationToken);
 
+    /// <summary>Lists a billing (sub-)account's IAM members, split into direct and inherited grants.</summary>
+    public Task<BillingAccountMembersResult?> ListBillingAccountMembersAsync(string billingAccountId, CancellationToken cancellationToken = default) =>
+        GetAsync<BillingAccountMembersResult>(ApiRoutes.BillingAccountMembers(billingAccountId), cancellationToken);
+
     /// <summary>Creates (no budget id) or updates (budget id set) a budget.</summary>
     public Task<BudgetInfo?> SaveBudgetAsync(SaveBudgetRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<BudgetInfo>(HttpMethod.Post, ApiRoutes.BillingBudgetSave, request, cancellationToken);
