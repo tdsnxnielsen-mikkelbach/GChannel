@@ -4,6 +4,7 @@ using Google;
 using Google.Apis.Admin.Directory.directory_v1;
 using Google.Apis.Admin.Reports.reports_v1;
 using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Services;
 using Microsoft.Extensions.Options;
 using System.Net;
@@ -74,9 +75,9 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
 
     private readonly GoogleChannelOptions _options;
     private readonly ILogger<WorkspaceUserSecurityService> _logger;
-    private GoogleCredential? _credential;
     private DirectoryService? _directory;
-    private ReportsService? _reports;
+    private ReportsService? _auditReports;
+    private ReportsService? _usageReports;
 
     public WorkspaceUserSecurityService(
         IOptions<GoogleChannelOptions> options,
@@ -89,42 +90,45 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
     public bool IsConfigured =>
         _options.HasServiceAccountCredential && !string.IsNullOrWhiteSpace(_options.ImpersonateUser);
 
-    private GoogleCredential Credential
+    // One credential PER scope. A domain-wide-delegation token request fails outright
+    // (unauthorized_client) if ANY requested scope is missing from the Admin-console grant, so bundling
+    // scopes would let one un-granted scope take down every signal. Scoped singly, a missing grant only
+    // disables the signal that needs it.
+    private GoogleCredential CreateCredential(string scope)
     {
-        get
+        if (!IsConfigured)
         {
-            if (_credential is not null)
-            {
-                return _credential;
-            }
-
-            if (!IsConfigured)
-            {
-                throw new InvalidOperationException(
-                    "Workspace user lookups need GoogleChannel:ServiceAccountKeyJson (or KeyPath) and GoogleChannel:ImpersonateUser.");
-            }
-
-            var baseCredential = string.IsNullOrWhiteSpace(_options.ServiceAccountKeyJson)
-                ? CredentialFactory.FromFile(_options.ServiceAccountKeyPath, "service_account")
-                : CredentialFactory.FromJson(_options.ServiceAccountKeyJson, "service_account");
-
-            return _credential = baseCredential
-                .CreateScoped(RequiredScopes)
-                .CreateWithUser(_options.ImpersonateUser);
+            throw new InvalidOperationException(
+                "Workspace user lookups need GoogleChannel:ServiceAccountKeyJson (or KeyPath) and GoogleChannel:ImpersonateUser.");
         }
+
+        var baseCredential = string.IsNullOrWhiteSpace(_options.ServiceAccountKeyJson)
+            ? CredentialFactory.FromFile(_options.ServiceAccountKeyPath, "service_account")
+            : CredentialFactory.FromJson(_options.ServiceAccountKeyJson, "service_account");
+
+        return baseCredential.CreateScoped(scope).CreateWithUser(_options.ImpersonateUser);
     }
 
     private DirectoryService Directory => _directory ??= new DirectoryService(new BaseClientService.Initializer
     {
-        HttpClientInitializer = Credential,
+        HttpClientInitializer = CreateCredential(DirectoryService.Scope.AdminDirectoryUserReadonly),
         ApplicationName = _options.ApplicationName
     });
 
-    private ReportsService Reports => _reports ??= new ReportsService(new BaseClientService.Initializer
+    private ReportsService AuditReports => _auditReports ??= new ReportsService(new BaseClientService.Initializer
     {
-        HttpClientInitializer = Credential,
+        HttpClientInitializer = CreateCredential(ReportsService.Scope.AdminReportsAuditReadonly),
         ApplicationName = _options.ApplicationName
     });
+
+    private ReportsService UsageReports => _usageReports ??= new ReportsService(new BaseClientService.Initializer
+    {
+        HttpClientInitializer = CreateCredential(ReportsService.Scope.AdminReportsUsageReadonly),
+        ApplicationName = _options.ApplicationName
+    });
+
+    private static string ScopeNotGranted(string scope) =>
+        $"Domain-wide delegation scope not granted: {scope} (unauthorized_client). Add it to the service account's client ID in the Workspace Admin console.";
 
     public async Task<WorkspaceUserSecurity> GetUserSecurityAsync(string email, string? customerId, CancellationToken cancellationToken)
     {
@@ -160,6 +164,12 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
         {
             // Not a user in the impersonated admin's tenant (customer tenant, group, consumer…).
             return new WorkspaceUserSecurity { Email = email, Found = false, CustomerId = customerId };
+        }
+        catch (TokenResponseException ex) when (ex.Error?.Error == "unauthorized_client")
+        {
+            var msg = ScopeNotGranted(DirectoryService.Scope.AdminDirectoryUserReadonly);
+            _logger.LogWarning("Directory lookup for {Email}: {Message}", email, msg);
+            return new WorkspaceUserSecurity { Email = email, Found = false, CustomerId = customerId, Error = msg };
         }
         catch (GoogleApiException ex) when (ex.HttpStatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized or HttpStatusCode.BadRequest)
         {
@@ -205,7 +215,7 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
     {
         try
         {
-            var list = Reports.Activities.List(email, ActivitiesResource.ListRequest.ApplicationNameEnum.UserAccounts);
+            var list = AuditReports.Activities.List(email, ActivitiesResource.ListRequest.ApplicationNameEnum.UserAccounts);
             list.StartTime = DateTimeOffset.UtcNow.Subtract(AuditLookback).ToString("o");
             list.MaxResults = 1000;
             list.CustomerId = customerId;
@@ -246,6 +256,12 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
 
             return (status, latest, null);
         }
+        catch (TokenResponseException ex) when (ex.Error?.Error == "unauthorized_client")
+        {
+            var msg = ScopeNotGranted(ReportsService.Scope.AdminReportsAuditReadonly);
+            _logger.LogWarning("Audit lookup for {Email}: {Message}", email, msg);
+            return (AdvancedProtectionStatus.Unavailable, null, msg);
+        }
         catch (GoogleApiException ex)
         {
             _logger.LogWarning("Reports activities.list failed for {Email} (customer {CustomerId}): {Status} {Message}",
@@ -266,7 +282,7 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
             var day = today.AddDays(-daysBack);
             try
             {
-                var get = Reports.UserUsageReport.Get(email, day.ToString("yyyy-MM-dd"));
+                var get = UsageReports.UserUsageReport.Get(email, day.ToString("yyyy-MM-dd"));
                 get.Parameters = "accounts:num_security_keys,accounts:num_passkeys_enrolled";
                 get.CustomerId = customerId;
                 var report = await get.ExecuteAsync(cancellationToken);
@@ -293,6 +309,11 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
             {
                 // "Data for dates later than X is not yet available" — try an earlier day.
                 continue;
+            }
+            catch (TokenResponseException ex) when (ex.Error?.Error == "unauthorized_client")
+            {
+                _logger.LogWarning("Usage lookup for {Email}: {Message}", email, ScopeNotGranted(ReportsService.Scope.AdminReportsUsageReadonly));
+                return (null, null, null);
             }
             catch (GoogleApiException ex)
             {
