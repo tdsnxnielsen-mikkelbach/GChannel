@@ -109,7 +109,7 @@ immediately and the (slower) enrichment arrives afterwards.
 | 2-Step Verification | Admin SDK Directory `users.get` / `users.list(customer=…)` → `isEnrolledIn2Sv`, `isEnforcedIn2Sv` | **Yes**, for users in our own tenant **and** for resold customers whose Admin console we have reseller access to (the `cid=…` you see in `admin.google.com` URLs). The Directory API honours that reseller access when the resold customer's id is passed as the `customer` parameter. |
 | Advanced Protection | Directory `users` resource | **No field.** |
 | | Reports API user-usage `accounts:*` parameters | **No Advanced Protection field** — but `accounts:num_security_keys` and `accounts:num_passkeys_enrolled` are there. Advanced Protection *requires* a passkey or security key, so these are surfaced as a supporting signal. |
-| | Reports API **Activities**, application `user_accounts`, events `titanium_enroll` / `titanium_unenroll` | **The only signal.** "Titanium" is Google's internal name for Advanced Protection. Audit events are retained for **6 months**, so status is *inferred* from the most recent event in that window. Works for resold customers too via the `customerId` parameter. |
+| | Reports API **Activities**, application `user_accounts`, events `titanium_enroll` / `titanium_unenroll` | **The only signal — and it works.** "Titanium" is Google's internal name for Advanced Protection. Status is taken from the most recent event; verified against a resold customer's user whose console shows *Advanced Protection: ON*. Works for resold customers via the `customerId` parameter. Audit events are retained for ~6 months, so older enrollments fall back to the key counts above. |
 
 ### 2.2 Authentication
 
@@ -172,16 +172,30 @@ Implemented in `BillingEndpoints.ResolveMemberIdentitiesAsync`
    | Query succeeded, no event retained | `Unknown` — shown as "No recent event" |
    | Query failed (403, API off, …) | `Unavailable` — shown in red with the API error in the tooltip |
 
-   This is the honest limit of what Google exposes: the Admin console shows *Advanced Protection: ON*
-   from internal state, but the only public signal is the enrollment **event**, and the Reports API
-   keeps user-accounts events for ~6 months. A user who enrolled before that (e.g. an account from
-   2020) and hasn't changed state since looks identical to one who never enrolled.
+   **Verified live:** `hn@s360digital.com` (resold customer `C01aihlmh`) returns `Enrolled` with
+   the `titanium_enroll` event of 13 Aug 2026 and 3 passkeys — matching the *Advanced Protection: ON*
+   shown in that customer's Admin console. So for resold customers with reseller access this is a
+   genuine, per-user answer, not just a domain-level guess.
 
-   To partly compensate, the **user usage report** is also read:
+   The remaining limit is retention: the Admin console shows the state from internal data, but the
+   only public signal is the enrollment **event**, and the Reports API keeps user-accounts events
+   for ~6 months. A user whose last enroll/unenroll event is older than that looks identical to one
+   who never enrolled (`Unknown`).
+
+   To cover that gap, the **user usage report** is also read:
    `userUsageReport.get(email, date, parameters=accounts:num_security_keys,accounts:num_passkeys_enrolled)`
    (walking back 2–8 days because usage data lags). Advanced Protection *requires* a passkey or
    security key, so a user with 0 of both is certainly **not** enrolled, while a user with keys
    *may* be. The counts are shown next to "No recent event" and in every Adv. Protection tooltip.
+
+   > **Troubleshooting — everything shows "No recent event" / `n/a` at once.** A domain-wide
+   > delegation token request is all-or-nothing: if *any* requested scope isn't in the Admin-console
+   > grant, Google returns `unauthorized_client` and the token is refused. The service therefore
+   > builds **one single-scope credential per API** (Directory, audit Reports, usage Reports) so a
+   > missing grant only disables the signal that needs it, and reports it as
+   > *"Domain-wide delegation scope not granted: …"* (banner for Directory, red `Unavailable` chip
+   > for Advanced Protection). Before this split, adding the usage scope in code before granting it
+   > in the console silently took down all three lookups.
 
 5. **Domain classification (Channel API).** For users not in our directory,
    `accounts.checkCloudIdentityAccountsExist(domain)` is called once per distinct domain (memoised
