@@ -249,7 +249,13 @@ else
     {
         if (!IsUserLike(m)) { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> return; }
         if (_loadingIdentity && !_identityByEmail.ContainsKey(m.Email)) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> return; }
-        if (!_identityByEmail.TryGetValue(m.Email, out var id)) { <MudText Typo="Typo.caption" Color="Color.Secondary">?</MudText> return; }
+        if (!_identityByEmail.TryGetValue(m.Email, out var id))
+        {
+            <MudTooltip Text="Identity lookup for this member didn't return — refresh to retry.">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">?</MudText>
+            </MudTooltip>
+            return;
+        }
 
         var (label, color) = id.AccountKind switch
         {
@@ -493,14 +499,34 @@ else
         StateHasChanged();
         try
         {
-            _identity = await Api.ResolveMemberIdentitiesAsync(emails);
-            _identityByEmail = (_identity?.Members ?? [])
-                .GroupBy(m => m.Email, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to resolve member identities: {ex.Message}", Severity.Warning);
+            // Chunked so each request stays far inside the HTTP attempt timeout and rows fill in
+            // progressively instead of all-or-nothing after the slowest member.
+            const int chunkSize = 16;
+            var merged = new Dictionary<string, MemberIdentityInfo>(StringComparer.OrdinalIgnoreCase);
+            MemberIdentityResult? last = null;
+            string? firstError = null;
+            foreach (var chunk in emails.Chunk(chunkSize))
+            {
+                try
+                {
+                    var result = await Api.ResolveMemberIdentitiesAsync(chunk);
+                    if (result is null) { continue; }
+                    last = result;
+                    firstError ??= result.DirectoryError;
+                    foreach (var m in result.Members)
+                    {
+                        merged[m.Email] = m;
+                    }
+                    _identityByEmail = new Dictionary<string, MemberIdentityInfo>(merged, StringComparer.OrdinalIgnoreCase);
+                    StateHasChanged();
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Failed to resolve some member identities: {ex.Message}", Severity.Warning);
+                }
+            }
+
+            _identity = last is null ? null : last with { DirectoryError = firstError, DirectoryAvailable = firstError is null && last.DirectoryAvailable };
         }
         finally
         {

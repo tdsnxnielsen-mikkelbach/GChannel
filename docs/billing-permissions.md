@@ -93,10 +93,14 @@ switches stays under the Cloud Billing API per-minute quota.
 
 ## Part 2 — Account type, 2SV and Advanced Protection per member
 
-Once the two member lists are on screen, the page makes a **second** call —
-`POST /api/billing/members/identity` with the distinct `user:`/`group:` emails — and fills in
-three extra columns in place. This is deliberately separate so the member tables render
-immediately and the (slower) enrichment arrives afterwards.
+Once the two member lists are on screen, the page makes a **second** set of calls —
+`POST /api/billing/members/identity` with the distinct `user:`/`group:` emails, **in chunks of
+16** — and fills in three extra columns in place as each chunk returns. This is deliberately
+separate so the member tables render immediately and the (slower) enrichment arrives
+progressively. Server-side, each chunk resolves its members **8 at a time** (bounded fan-out), and
+for each user the audit and usage Reports calls run concurrently; a 65-member master policy
+therefore completes in a few seconds instead of the minutes a sequential pass would take (which
+had been tripping the 60 s HTTP attempt timeout and leaving most rows as `?`).
 
 ### 2.1 What we investigated, and what Google actually exposes
 
@@ -184,7 +188,7 @@ Implemented in `BillingEndpoints.ResolveMemberIdentitiesAsync`
 
    To cover that gap, the **user usage report** is also read:
    `userUsageReport.get(email, date, parameters=accounts:num_security_keys,accounts:num_passkeys_enrolled)`
-   (walking back 2–8 days because usage data lags). Advanced Protection *requires* a passkey or
+   (probing two dates, 3 and 6 days back, because usage data lags). Advanced Protection *requires* a passkey or
    security key, so the counts let the UI resolve the `Unknown` case further:
 
    | Audit event | Usage report | Shown as |

@@ -186,8 +186,12 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
             };
         }
 
-        var (status, asOf, auditError) = await GetAdvancedProtectionAsync(email, customerId, cancellationToken);
-        var (keys, passkeys, keysAsOf) = await GetKeyCountsAsync(email, customerId, cancellationToken);
+        // Independent APIs — run them side by side to halve per-user latency.
+        var auditTask = GetAdvancedProtectionAsync(email, customerId, cancellationToken);
+        var keysTask = GetKeyCountsAsync(email, customerId, cancellationToken);
+        await Task.WhenAll(auditTask, keysTask);
+        var (status, asOf, auditError) = auditTask.Result;
+        var (keys, passkeys, keysAsOf) = keysTask.Result;
 
         return new WorkspaceUserSecurity
         {
@@ -277,7 +281,8 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
         string email, string? customerId, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        foreach (var daysBack in new[] { 2, 3, 5, 8 })
+        // Usage data is normally available after ~2 days; probe only two dates to bound latency.
+        foreach (var daysBack in new[] { 3, 6 })
         {
             var day = today.AddDays(-daysBack);
             try

@@ -5,6 +5,7 @@ using GChannel.Shared.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 
@@ -376,6 +377,10 @@ public static class BillingEndpoints
 
     private const int MaxIdentityBatch = 100;
 
+    // Parallel member lookups per request. Admin SDK Directory allows 2,400 queries/min and Reports
+    // ~2,400/min per project, so 8-wide × ~5 calls/member stays comfortably inside both.
+    private const int IdentityConcurrency = 8;
+
     /// <summary>
     /// Per member email: (1) gmail.com → consumer; (2) found in our own Workspace directory (Admin SDK via
     /// DWD) → managed, plus 2SV + Advanced Protection; (3) otherwise ask the Channel API whether the email's
@@ -411,66 +416,68 @@ public static class BillingEndpoints
 
         // Domain → Cloud Identity check, memoised across this batch (and in Redis via the same key the
         // Cloud-identity-check page uses, so both features share one Channel API call per domain).
-        var domainCache = new Dictionary<string, CheckCloudIdentityResult?>(StringComparer.OrdinalIgnoreCase);
-        async Task<CheckCloudIdentityResult?> CheckDomainAsync(string domain)
-        {
-            if (domainCache.TryGetValue(domain, out var hit)) { return hit; }
-
-            var key = $"cid:{domain}:";
-            CheckCloudIdentityResult? result = null;
-            try
+        // Lazy<Task> so concurrent members of the same domain await a single in-flight call.
+        var domainCache = new ConcurrentDictionary<string, Lazy<Task<CheckCloudIdentityResult?>>>(StringComparer.OrdinalIgnoreCase);
+        Task<CheckCloudIdentityResult?> CheckDomainAsync(string domain) =>
+            domainCache.GetOrAdd(domain, d => new Lazy<Task<CheckCloudIdentityResult?>>(async () =>
             {
-                var cached = await cache.GetStringAsync(key, cancellationToken);
-                if (cached is not null)
+                var key = $"cid:{d}:";
+                try
                 {
-                    result = JsonSerializer.Deserialize<CheckCloudIdentityResult>(cached);
-                }
-                else
-                {
-                    result = await channel.CheckCloudIdentityAsync(new CheckCloudIdentityRequest { Domain = domain }, cancellationToken);
+                    var cached = await cache.GetStringAsync(key, cancellationToken);
+                    if (cached is not null)
+                    {
+                        return JsonSerializer.Deserialize<CheckCloudIdentityResult>(cached);
+                    }
+
+                    var result = await channel.CheckCloudIdentityAsync(new CheckCloudIdentityRequest { Domain = d }, cancellationToken);
                     await cache.SetStringAsync(key, JsonSerializer.Serialize(result), ttl, cancellationToken);
+                    return result;
                 }
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Cloud Identity check failed for member domain {Domain}", domain);
-            }
-
-            domainCache[domain] = result;
-            return result;
-        }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Cloud Identity check failed for member domain {Domain}", d);
+                    return null;
+                }
+            })).Value;
 
         // Workspace customer id ("C01aihlmh") for a managed domain: prefer the id the Channel API just
         // returned for the DOMAIN-type account; fall back to our read-model customer row for the domain.
-        var customerIdCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        async Task<string?> ResolveCustomerIdAsync(string domain, CheckCloudIdentityResult? cid)
-        {
-            if (customerIdCache.TryGetValue(domain, out var hit)) { return hit; }
-
-            var id = cid?.Accounts.FirstOrDefault(a => a.IsDomain && a.Existing)?.CustomerCloudIdentityId;
-            if (string.IsNullOrWhiteSpace(id))
+        // The DbContext isn't thread-safe, so the fallback query is serialised behind a gate.
+        var dbGate = new SemaphoreSlim(1, 1);
+        var customerIdCache = new ConcurrentDictionary<string, Lazy<Task<string?>>>(StringComparer.OrdinalIgnoreCase);
+        Task<string?> ResolveCustomerIdAsync(string domain, CheckCloudIdentityResult? cid) =>
+            customerIdCache.GetOrAdd(domain, d => new Lazy<Task<string?>>(async () =>
             {
-                id = await db.CustomerRecords.AsNoTracking()
-                    .Where(c => c.CloudIdentityId != null && (c.Domain == domain || c.CloudIdentityDomain == domain))
-                    .Select(c => c.CloudIdentityId)
-                    .FirstOrDefaultAsync(cancellationToken);
-            }
+                var id = cid?.Accounts.FirstOrDefault(a => a.IsDomain && a.Existing)?.CustomerCloudIdentityId;
+                if (!string.IsNullOrWhiteSpace(id)) { return id; }
 
-            customerIdCache[domain] = id;
-            return id;
-        }
+                await dbGate.WaitAsync(cancellationToken);
+                try
+                {
+                    return await db.CustomerRecords.AsNoTracking()
+                        .Where(c => c.CloudIdentityId != null && (c.Domain == d || c.CloudIdentityDomain == d))
+                        .Select(c => c.CloudIdentityId)
+                        .FirstOrDefaultAsync(cancellationToken);
+                }
+                finally
+                {
+                    dbGate.Release();
+                }
+            })).Value;
 
-        var members = new List<MemberIdentityInfo>(emails.Count);
         string? directoryError = null;
+        var errorLock = new object();
+        void RecordDirectoryError(string message) { lock (errorLock) { directoryError ??= message; } }
 
-        foreach (var email in emails)
+        async Task<MemberIdentityInfo> ResolveOneAsync(string email)
         {
             var cacheKey = $"member-identity:{email}";
             var cachedJson = await cache.GetStringAsync(cacheKey, cancellationToken);
             if (cachedJson is not null)
             {
                 var cachedInfo = JsonSerializer.Deserialize<MemberIdentityInfo>(cachedJson);
-                if (cachedInfo is not null) { members.Add(cachedInfo); continue; }
+                if (cachedInfo is not null) { return cachedInfo; }
             }
 
             var domain = email[(email.IndexOf('@') + 1)..];
@@ -492,12 +499,12 @@ public static class BillingEndpoints
                     try
                     {
                         sec = await workspace.GetUserSecurityAsync(email, customerId: null, cancellationToken);
-                        if (sec.Error is not null) { directoryError ??= sec.Error; }
+                        if (sec.Error is not null) { RecordDirectoryError(sec.Error); }
                     }
                     catch (Exception ex)
                     {
                         logger.LogWarning(ex, "Workspace security lookup failed for {Email}", email);
-                        directoryError ??= ex.Message;
+                        RecordDirectoryError(ex.Message);
                     }
                 }
 
@@ -588,8 +595,19 @@ public static class BillingEndpoints
             }
 
             await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(info), ttl, cancellationToken);
-            members.Add(info);
+            return info;
         }
+
+        // Each member costs 2–6 sequential Google calls; done one at a time a 60-member policy blows
+        // past the HTTP client's attempt timeout. Bounded fan-out keeps the batch inside it while
+        // staying well under Admin SDK per-minute quotas.
+        var gate = new SemaphoreSlim(IdentityConcurrency);
+        var members = await Task.WhenAll(emails.Select(async email =>
+        {
+            await gate.WaitAsync(cancellationToken);
+            try { return await ResolveOneAsync(email); }
+            finally { gate.Release(); }
+        }));
 
         return Results.Ok(new MemberIdentityResult
         {
