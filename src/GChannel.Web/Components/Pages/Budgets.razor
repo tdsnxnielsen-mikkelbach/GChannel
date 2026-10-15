@@ -171,7 +171,7 @@ else
             </MudAlert>
         }
         <MudGrid>
-            <MudItem xs="12" xl="6">
+            <MudItem xs="12">
                 <MudPaper Class="pa-3" Elevation="2">
                     <div class="d-flex align-center gap-2 mb-2">
                         <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
@@ -183,7 +183,7 @@ else
                     @MemberTable(_members.Direct, "No members set directly on this account.")
                 </MudPaper>
             </MudItem>
-            <MudItem xs="12" xl="6">
+            <MudItem xs="12">
                 <MudPaper Class="pa-3" Elevation="2">
                     <div class="d-flex align-center gap-2 mb-2">
                         <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" />
@@ -207,10 +207,10 @@ else
         <MudTable Items="rows" Dense="true" Hover="true" Elevation="0" T="BillingAccountMember" Breakpoint="Breakpoint.None">
             <HeaderContent>
                 <MudTh>Member</MudTh>
-                <MudTh>Role</MudTh>
+                <MudTh Style="white-space: nowrap;">Role</MudTh>
                 <MudTh>Account</MudTh>
-                <MudTh>2SV</MudTh>
-                <MudTh>Adv. Protection</MudTh>
+                <MudTh Style="white-space: nowrap;">2SV</MudTh>
+                <MudTh Style="white-space: nowrap;">Adv. Protection</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Member">
@@ -234,10 +234,10 @@ else
                         }
                     </div>
                 </MudTd>
-                <MudTd DataLabel="Role">@context.RoleDisplayName</MudTd>
-                <MudTd DataLabel="Account">@AccountKindChip(context)</MudTd>
-                <MudTd DataLabel="2SV">@TwoSvChip(context)</MudTd>
-                <MudTd DataLabel="Adv. Protection">@AdvancedProtectionChip(context)</MudTd>
+                <MudTd DataLabel="Role" Style="white-space: nowrap;">@context.RoleDisplayName</MudTd>
+                <MudTd DataLabel="Account" Style="white-space: nowrap;">@AccountKindChip(context)</MudTd>
+                <MudTd DataLabel="2SV" Style="white-space: nowrap;">@TwoSvChip(context)</MudTd>
+                <MudTd DataLabel="Adv. Protection" Style="white-space: nowrap;">@AdvancedProtectionChip(context)</MudTd>
             </RowTemplate>
             <NoRecordsContent>
                 <MudText Typo="Typo.body2">@emptyText</MudText>
