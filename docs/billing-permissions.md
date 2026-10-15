@@ -108,7 +108,7 @@ immediately and the (slower) enrichment arrives afterwards.
 | | Channel API `accounts.checkCloudIdentityAccountsExist` | **Usable for any domain.** Tells us whether the email's *domain* has a Cloud Identity / Workspace tenant, and returns its customer id. Already used by the "Cloud identity check" page. |
 | 2-Step Verification | Admin SDK Directory `users.get` / `users.list(customer=…)` → `isEnrolledIn2Sv`, `isEnforcedIn2Sv` | **Yes**, for users in our own tenant **and** for resold customers whose Admin console we have reseller access to (the `cid=…` you see in `admin.google.com` URLs). The Directory API honours that reseller access when the resold customer's id is passed as the `customer` parameter. |
 | Advanced Protection | Directory `users` resource | **No field.** |
-| | Reports API user-usage `accounts:*` parameters | **No field.** (Has `is_2sv_enrolled`, `num_security_keys`, `num_passkeys_enrolled`, but nothing for Advanced Protection.) |
+| | Reports API user-usage `accounts:*` parameters | **No Advanced Protection field** — but `accounts:num_security_keys` and `accounts:num_passkeys_enrolled` are there. Advanced Protection *requires* a passkey or security key, so these are surfaced as a supporting signal. |
 | | Reports API **Activities**, application `user_accounts`, events `titanium_enroll` / `titanium_unenroll` | **The only signal.** "Titanium" is Google's internal name for Advanced Protection. Audit events are retained for **6 months**, so status is *inferred* from the most recent event in that window. Works for resold customers too via the `customerId` parameter. |
 
 ### 2.2 Authentication
@@ -122,7 +122,9 @@ to impersonate the reseller admin configured in `GoogleChannel:ImpersonateUser`:
 
 ```
 GoogleCredential.FromJson(ServiceAccountKeyJson)
-    .CreateScoped(admin.directory.user.readonly, admin.reports.audit.readonly)
+    .CreateScoped(admin.directory.user.readonly,
+                  admin.reports.audit.readonly,
+                  admin.reports.usage.readonly)
     .CreateWithUser(ImpersonateUser)
 ```
 
@@ -159,18 +161,27 @@ Implemented in `BillingEndpoints.ResolveMemberIdentitiesAsync`
      missing). The message is inspected; setup problems are surfaced as `DirectoryError` so the
      page can show the info banner. Fall through to step 5.
 
-4. **Advanced Protection (Admin SDK Reports API, our tenant only).**
-   `activities.list(userKey=email, applicationName=user_accounts, startTime=now-180d)`, paged.
+4. **Advanced Protection (Admin SDK Reports API).**
+   `activities.list(userKey=email, applicationName=user_accounts, startTime=now-200d)`, paged.
    All events are scanned for `titanium_enroll` / `titanium_unenroll` and the **latest** one wins:
 
-   | Latest event | Result |
+   | Outcome | Result |
    |---|---|
-   | `titanium_enroll` | `Enrolled` (with the event timestamp) |
-   | `titanium_unenroll` | `NotEnrolled` (with the event timestamp) |
-   | none in 180 days | `Unknown` — shown as "No recent event" |
+   | Latest event `titanium_enroll` | `Enrolled` (with the event timestamp) |
+   | Latest event `titanium_unenroll` | `NotEnrolled` (with the event timestamp) |
+   | Query succeeded, no event retained | `Unknown` — shown as "No recent event" |
+   | Query failed (403, API off, …) | `Unavailable` — shown in red with the API error in the tooltip |
 
-   This is the honest limit of what Google exposes: a user who enrolled more than six months ago
-   and has not changed state since looks identical to one who never enrolled.
+   This is the honest limit of what Google exposes: the Admin console shows *Advanced Protection: ON*
+   from internal state, but the only public signal is the enrollment **event**, and the Reports API
+   keeps user-accounts events for ~6 months. A user who enrolled before that (e.g. an account from
+   2020) and hasn't changed state since looks identical to one who never enrolled.
+
+   To partly compensate, the **user usage report** is also read:
+   `userUsageReport.get(email, date, parameters=accounts:num_security_keys,accounts:num_passkeys_enrolled)`
+   (walking back 2–8 days because usage data lags). Advanced Protection *requires* a passkey or
+   security key, so a user with 0 of both is certainly **not** enrolled, while a user with keys
+   *may* be. The counts are shown next to "No recent event" and in every Adv. Protection tooltip.
 
 5. **Domain classification (Channel API).** For users not in our directory,
    `accounts.checkCloudIdentityAccountsExist(domain)` is called once per distinct domain (memoised
@@ -210,7 +221,7 @@ renders both member tables from one shared template with these columns:
 | Role | IAM policy | friendly role name |
 | Account | step 2 / 3 / 5 / 6 | `Managed` (green) · `Managed (team)` (amber) · `Consumer` (red) · `Unknown`. Tooltip explains which signal decided it, including the resold customer id when reseller access was used. |
 | 2SV | step 3 / 6 | `On · enforced` · `On` · `Off` for our tenant and resold customers with reseller access; `n/a` for everyone else |
-| Adv. Protection | step 4 / 6 | `Enrolled` · `Not enrolled` (with event date in the tooltip) · `No recent event`; `—` for users whose tenant we can't read |
+| Adv. Protection | step 4 / 6 | `Enrolled` · `Not enrolled` (with event date in the tooltip) · `No recent event · N keys, M passkeys` · `Unavailable` (red, API error in tooltip); `—` for users whose tenant we can't read |
 
 Service-account and domain members get `—` in the security columns — they are not Google user
 accounts. If the Admin SDK side isn't configured or is denied, an info banner explains that
@@ -231,7 +242,8 @@ account type still works but 2SV / Advanced Protection are not readable.
    ```
    https://www.googleapis.com/auth/apps.order,
    https://www.googleapis.com/auth/admin.directory.user.readonly,
-   https://www.googleapis.com/auth/admin.reports.audit.readonly
+   https://www.googleapis.com/auth/admin.reports.audit.readonly,
+   https://www.googleapis.com/auth/admin.reports.usage.readonly
    ```
 
    (The first scope is the existing Channel API scope and must be kept.) There is no `gcloud`
@@ -248,7 +260,8 @@ account type still works but 2SV / Advanced Protection are not readable.
   Admin-console access to. Customers who have not granted reseller access (or non-resold tenants)
   show account type only.
 - **Advanced Protection is inferred, not read.** There is no state field; only enroll/unenroll
-  audit events with 6-month retention.
+  audit events with ~6-month retention, plus passkey/security-key counts as a necessary-but-not-
+  sufficient indicator.
 - **Domain classification is per domain, not per user.** A domain with a Workspace tenant may
   still have a legacy "conflicting" consumer account on a specific address; the Channel API cannot
   tell those apart, so such a user would be shown as *Managed*.

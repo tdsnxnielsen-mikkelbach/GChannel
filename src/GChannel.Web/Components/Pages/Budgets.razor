@@ -275,25 +275,47 @@ else
             <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
             return;
         }
+        var keys = KeysSummary(id);
         switch (id.AdvancedProtection)
         {
             case AdvancedProtectionStatus.Enrolled:
-                <MudTooltip Text="@($"Enrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd})")">
+                <MudTooltip Text="@($"Enrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")">
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Icon="@Icons.Material.Filled.Shield">Enrolled</MudChip>
                 </MudTooltip>
                 break;
             case AdvancedProtectionStatus.NotEnrolled:
-                <MudTooltip Text="@($"Unenrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd})")">
+                <MudTooltip Text="@($"Unenrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")">
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled</MudChip>
                 </MudTooltip>
                 break;
+            case AdvancedProtectionStatus.Unavailable:
+                <MudTooltip Text="@($"Audit log not readable: {id.AdvancedProtectionError}{keys}")">
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Icon="@Icons.Material.Filled.ErrorOutline">Unavailable</MudChip>
+                </MudTooltip>
+                break;
             default:
-                <MudTooltip Text="No Advanced Protection enroll/unenroll event in the last 180 days of audit logs — Google exposes no state field for this, so it can't be confirmed either way.">
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">No recent event</MudText>
+                <MudTooltip Text="@($"No Advanced Protection enroll/unenroll event in the ~6 months of audit log Google retains — there is no state field, so enrollment before that can't be confirmed.{keys}")">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        No recent event@(id.SecurityKeys is > 0 || id.Passkeys is > 0 ? $" · {KeysShort(id)}" : "")
+                    </MudText>
                 </MudTooltip>
                 break;
         }
     };
+
+    // Advanced Protection requires a passkey or security key, so surface those counts alongside.
+    private static string KeysSummary(MemberIdentityInfo id) =>
+        id.SecurityKeys is null && id.Passkeys is null
+            ? ""
+            : $" Keys as of {id.KeysAsOf:yyyy-MM-dd}: {id.SecurityKeys ?? 0} security key(s), {id.Passkeys ?? 0} passkey(s).";
+
+    private static string KeysShort(MemberIdentityInfo id)
+    {
+        var parts = new List<string>();
+        if (id.SecurityKeys is > 0) parts.Add($"{id.SecurityKeys} key{(id.SecurityKeys == 1 ? "" : "s")}");
+        if (id.Passkeys is > 0) parts.Add($"{id.Passkeys} passkey{(id.Passkeys == 1 ? "" : "s")}");
+        return string.Join(", ", parts);
+    }
 
     private static bool IsUserLike(BillingAccountMember m) =>
         m.MemberType is "user" || m.MemberType is "group";

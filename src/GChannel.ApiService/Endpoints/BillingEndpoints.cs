@@ -514,6 +514,10 @@ public static class BillingEndpoints
                         IsAdmin = sec.IsAdmin,
                         AdvancedProtection = sec.AdvancedProtection,
                         AdvancedProtectionAsOf = sec.AdvancedProtectionAsOf,
+                        AdvancedProtectionError = sec.AdvancedProtectionError,
+                        SecurityKeys = sec.SecurityKeys,
+                        Passkeys = sec.Passkeys,
+                        KeysAsOf = sec.KeysAsOf,
                         Error = sec.Error
                     };
                 }
@@ -553,6 +557,10 @@ public static class BillingEndpoints
                             IsAdmin = resold.IsAdmin,
                             AdvancedProtection = resold.AdvancedProtection,
                             AdvancedProtectionAsOf = resold.AdvancedProtectionAsOf,
+                            AdvancedProtectionError = resold.AdvancedProtectionError,
+                            SecurityKeys = resold.SecurityKeys,
+                            Passkeys = resold.Passkeys,
+                            KeysAsOf = resold.KeysAsOf,
                             Error = resold.Error
                         },
                         ({ Exists: true }, _) => info with

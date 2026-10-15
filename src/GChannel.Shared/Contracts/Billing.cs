@@ -155,7 +155,7 @@ public enum GoogleAccountKind
 /// <summary>Advanced Protection Program enrollment as inferred from the Workspace audit log.</summary>
 public enum AdvancedProtectionStatus
 {
-    /// <summary>Not determinable — the user isn't in a directory we can read, or no enrollment event is retained.</summary>
+    /// <summary>The audit log was readable but holds no enroll/unenroll event in the retention window.</summary>
     Unknown = 0,
 
     /// <summary>The most recent retained audit event is an Advanced Protection enrollment.</summary>
@@ -163,6 +163,9 @@ public enum AdvancedProtectionStatus
 
     /// <summary>The most recent retained audit event is an Advanced Protection unenrollment.</summary>
     NotEnrolled,
+
+    /// <summary>The audit log could not be queried (permission / API error) — see <see cref="MemberIdentityInfo.AdvancedProtectionError"/>.</summary>
+    Unavailable,
 }
 
 /// <summary>Request to classify and security-check the Google Accounts behind a set of member emails.</summary>
@@ -207,6 +210,18 @@ public sealed record MemberIdentityInfo
 
     /// <summary>Timestamp of the audit event that decided <see cref="AdvancedProtection"/>, when any.</summary>
     public DateTimeOffset? AdvancedProtectionAsOf { get; init; }
+
+    /// <summary>Why the Advanced Protection audit query failed, when <see cref="AdvancedProtection"/> is <c>Unavailable</c>.</summary>
+    public string? AdvancedProtectionError { get; init; }
+
+    /// <summary>Hardware security keys enrolled (Reports usage <c>accounts:num_security_keys</c>); null when not readable.</summary>
+    public int? SecurityKeys { get; init; }
+
+    /// <summary>Passkeys enrolled (Reports usage <c>accounts:num_passkeys_enrolled</c>); null when not readable.</summary>
+    public int? Passkeys { get; init; }
+
+    /// <summary>Date the key/passkey counts were reported for (usage reports lag a few days).</summary>
+    public DateOnly? KeysAsOf { get; init; }
 
     /// <summary>Per-member lookup error, when a signal couldn't be read.</summary>
     public string? Error { get; init; }

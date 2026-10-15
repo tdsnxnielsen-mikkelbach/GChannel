@@ -48,6 +48,11 @@ public sealed record WorkspaceUserSecurity
 
     public AdvancedProtectionStatus AdvancedProtection { get; init; }
     public DateTimeOffset? AdvancedProtectionAsOf { get; init; }
+    public string? AdvancedProtectionError { get; init; }
+
+    public int? SecurityKeys { get; init; }
+    public int? Passkeys { get; init; }
+    public DateOnly? KeysAsOf { get; init; }
 
     /// <summary>Non-fatal lookup error (permission denied, API not enabled, DWD scope missing…).</summary>
     public string? Error { get; init; }
@@ -60,10 +65,12 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
     [
         DirectoryService.Scope.AdminDirectoryUserReadonly,
         ReportsService.Scope.AdminReportsAuditReadonly,
+        ReportsService.Scope.AdminReportsUsageReadonly,
     ];
 
-    // The Reports API retains audit events for 6 months; older enrollments are invisible to us.
-    private static readonly TimeSpan AuditLookback = TimeSpan.FromDays(180);
+    // The Reports API retains user-accounts audit events for 6 months; ask slightly wider so we never
+    // trim retained data ourselves — the API just returns what it still holds.
+    private static readonly TimeSpan AuditLookback = TimeSpan.FromDays(200);
 
     private readonly GoogleChannelOptions _options;
     private readonly ILogger<WorkspaceUserSecurityService> _logger;
@@ -170,6 +177,7 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
         }
 
         var (status, asOf, auditError) = await GetAdvancedProtectionAsync(email, customerId, cancellationToken);
+        var (keys, passkeys, keysAsOf) = await GetKeyCountsAsync(email, customerId, cancellationToken);
 
         return new WorkspaceUserSecurity
         {
@@ -182,7 +190,11 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
             IsAdmin = user.IsAdmin,
             AdvancedProtection = status,
             AdvancedProtectionAsOf = asOf,
-            Error = auditError
+            AdvancedProtectionError = auditError,
+            SecurityKeys = keys,
+            Passkeys = passkeys,
+            KeysAsOf = keysAsOf,
+            Error = auditError is not null && IsSetupMessage(auditError) ? auditError : null
         };
     }
 
@@ -236,14 +248,69 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
         }
         catch (GoogleApiException ex)
         {
-            _logger.LogDebug(ex, "Reports activities.list failed for {Email}", email);
-            return (AdvancedProtectionStatus.Unknown, null, IsSetupProblem(ex) ? $"Reports API: {ex.Message}" : null);
+            _logger.LogWarning("Reports activities.list failed for {Email} (customer {CustomerId}): {Status} {Message}",
+                email, customerId ?? "own", (int)ex.HttpStatusCode, ex.Message);
+            return (AdvancedProtectionStatus.Unavailable, null, $"Reports API {(int)ex.HttpStatusCode}: {ex.Message}");
         }
     }
 
-    private static bool IsSetupProblem(GoogleApiException ex) =>
-        ex.Message.Contains("not enabled", StringComparison.OrdinalIgnoreCase)
-        || ex.Message.Contains("unauthorized_client", StringComparison.OrdinalIgnoreCase)
-        || ex.Message.Contains("insufficient", StringComparison.OrdinalIgnoreCase)
-        || ex.Message.Contains("scope", StringComparison.OrdinalIgnoreCase);
+    // Security-key / passkey counts from the user usage report. Advanced Protection REQUIRES a passkey or
+    // security key, so these are the strongest live indicator Google exposes when no enroll event is
+    // retained. Usage data lags a few days, so walk back until a day with data is found.
+    private async Task<(int? Keys, int? Passkeys, DateOnly? AsOf)> GetKeyCountsAsync(
+        string email, string? customerId, CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        foreach (var daysBack in new[] { 2, 3, 5, 8 })
+        {
+            var day = today.AddDays(-daysBack);
+            try
+            {
+                var get = Reports.UserUsageReport.Get(email, day.ToString("yyyy-MM-dd"));
+                get.Parameters = "accounts:num_security_keys,accounts:num_passkeys_enrolled";
+                get.CustomerId = customerId;
+                var report = await get.ExecuteAsync(cancellationToken);
+
+                var entry = report.UsageReportsValue?.FirstOrDefault();
+                if (entry?.Parameters is null || entry.Parameters.Count == 0)
+                {
+                    continue; // not yet available for this day
+                }
+
+                int? keys = null, passkeys = null;
+                foreach (var p in entry.Parameters)
+                {
+                    switch (p.Name)
+                    {
+                        case "accounts:num_security_keys": keys = (int?)p.IntValue; break;
+                        case "accounts:num_passkeys_enrolled": passkeys = (int?)p.IntValue; break;
+                    }
+                }
+
+                return (keys, passkeys, day);
+            }
+            catch (GoogleApiException ex) when (ex.HttpStatusCode is HttpStatusCode.BadRequest)
+            {
+                // "Data for dates later than X is not yet available" — try an earlier day.
+                continue;
+            }
+            catch (GoogleApiException ex)
+            {
+                _logger.LogWarning("Reports userUsageReport.get failed for {Email} (customer {CustomerId}): {Status} {Message}",
+                    email, customerId ?? "own", (int)ex.HttpStatusCode, ex.Message);
+                return (null, null, null);
+            }
+        }
+
+        return (null, null, null);
+    }
+
+    private static bool IsSetupProblem(GoogleApiException ex) => IsSetupMessage(ex.Message);
+
+    private static bool IsSetupMessage(string message) =>
+        message.Contains("not enabled", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("unauthorized_client", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("insufficient", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("scope", StringComparison.OrdinalIgnoreCase)
+        || message.Contains("accessNotConfigured", StringComparison.OrdinalIgnoreCase);
 }

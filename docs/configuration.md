@@ -76,9 +76,11 @@ service account configured for **domain-wide delegation** that impersonates a re
    To also light up the **Billing permissions** member security columns (2SV / Advanced Protection on
    the GCP budgets page), add these read-only Admin SDK scopes to the same delegation entry and enable
    the **Admin SDK API** in the service account's project:
-   `https://www.googleapis.com/auth/admin.directory.user.readonly` and
-   `https://www.googleapis.com/auth/admin.reports.audit.readonly`. Only users in the impersonated
-   admin's own tenant are visible; members from customer tenants show account type only.
+   `https://www.googleapis.com/auth/admin.directory.user.readonly`,
+   `https://www.googleapis.com/auth/admin.reports.audit.readonly` and
+   `https://www.googleapis.com/auth/admin.reports.usage.readonly`. Users in the impersonated
+   admin's own tenant and in resold customers with reseller Admin-console access are visible;
+   other members show account type only.
 3. Supply the values. The AppHost exposes them as parameters, so they flow the same way as the other
    Google settings: the `Parameters:` configuration section locally, and `azd env set` for deploys.
 
