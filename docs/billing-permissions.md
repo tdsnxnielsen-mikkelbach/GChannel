@@ -231,11 +231,11 @@ renders both member tables from one shared template with these columns:
 
 | Column | Source | Values |
 |---|---|---|
-| Member | IAM policy | email with a type icon (user / group / service account / domain) |
+| Member | IAM policy (+ step 3/6) | email with a type icon (user / group / service account / domain); `admin` badge when `IsAdmin`, red `suspended` badge when the Workspace account is suspended but still holds the billing role |
 | Role | IAM policy | friendly role name |
 | Account | step 2 / 3 / 5 / 6 | `Managed` (green) · `Managed (team)` (amber) · `Consumer` (red) · `Unknown`. Tooltip explains which signal decided it, including the resold customer id when reseller access was used. |
 | 2SV | step 3 / 6 | `On · enforced` · `On` · `Off` for our tenant and resold customers with reseller access; `n/a` for everyone else |
-| Adv. Protection | step 4 / 6 | `Enrolled` · `Not enrolled` (with event date in the tooltip) · `No recent event · N keys, M passkeys` · `Unavailable` (red, API error in tooltip); `—` for users whose tenant we can't read |
+| Adv. Protection | step 4 / 6 | `Enrolled` · `Not enrolled` (audit event, date in tooltip) · `Not enrolled · no keys` (no event, but usage report confirms 0 passkeys and 0 security keys) · `No recent event · N keys, M passkeys` (indeterminate) · `Unavailable` (red, API error in tooltip); `—` for users whose tenant we can't read |
 
 Service-account and domain members get `—` in the security columns — they are not Google user
 accounts. If the Admin SDK side isn't configured or is denied, an info banner explains that

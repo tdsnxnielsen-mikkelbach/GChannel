@@ -217,6 +217,21 @@ else
                     <div class="d-flex align-center gap-1">
                         <MudIcon Icon="@MemberTypeIcon(context.MemberType)" Size="Size.Small" Title="@context.MemberType" />
                         <span>@context.Email</span>
+                        @if (_identityByEmail.TryGetValue(context.Email, out var who))
+                        {
+                            if (who.IsAdmin == true)
+                            {
+                                <MudTooltip Text="Workspace super administrator in their tenant">
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" Class="ml-1">admin</MudChip>
+                                </MudTooltip>
+                            }
+                            if (who.Suspended == true)
+                            {
+                                <MudTooltip Text="Account is suspended in Workspace but still holds this billing role">
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" Class="ml-1">suspended</MudChip>
+                                </MudTooltip>
+                            }
+                        }
                     </div>
                 </MudTd>
                 <MudTd DataLabel="Role">@context.RoleDisplayName</MudTd>
@@ -294,6 +309,15 @@ else
                 </MudTooltip>
                 break;
             default:
+                // Advanced Protection requires a passkey or security key, so a confirmed 0/0 from the usage
+                // report is a safe "not enrolled" even without an audit event.
+                if (id is { SecurityKeys: 0, Passkeys: 0 })
+                {
+                    <MudTooltip Text="@($"No enroll/unenroll audit event retained, but the usage report shows no passkeys or security keys — Advanced Protection requires one.{keys}")">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled · no keys</MudChip>
+                    </MudTooltip>
+                    break;
+                }
                 <MudTooltip Text="@($"No Advanced Protection enroll/unenroll event in the ~6 months of audit log Google retains — there is no state field, so enrollment before that can't be confirmed.{keys}")">
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
                         No recent event@(id.SecurityKeys is > 0 || id.Passkeys is > 0 ? $" · {KeysShort(id)}" : "")
