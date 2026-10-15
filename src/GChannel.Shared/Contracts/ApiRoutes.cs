@@ -224,6 +224,9 @@ public static class ApiRoutes
     public static string BillingAccountMembers(string billingAccountId) =>
         $"/api/billing/accounts/{billingAccountId}/members";
 
+    /// <summary>Classify + security-check the Google Accounts behind a batch of member emails (POST).</summary>
+    public const string BillingMemberIdentity = "/api/billing/members/identity";
+
     /// <summary>Create/update a budget (create when no budget id in the payload, else update).</summary>
     public const string BillingBudgetSave = "/api/billing/budgets";
 

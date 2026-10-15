@@ -65,6 +65,10 @@ builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
 // gRPC clients it builds are thread-safe and cached, so a singleton is appropriate.
 builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
 
+// Admin SDK (Directory + Reports) via domain-wide delegation — per-user 2SV / Advanced Protection for
+// billing IAM members in our own Workspace tenant. Stateless clients, cached credential: singleton.
+builder.Services.AddSingleton<IWorkspaceUserSecurityService, WorkspaceUserSecurityService>();
+
 // §10 read-model write-through: mutation endpoints upsert the one changed customer row into the
 // read-model immediately after a successful Channel API call, so the estate/customers lists reflect a
 // create/import/update/delete without waiting for the next background sync cycle. Stateless (takes the

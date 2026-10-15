@@ -335,6 +335,10 @@ public sealed class GChannelApiClient(
     public Task<BillingAccountMembersResult?> ListBillingAccountMembersAsync(string billingAccountId, CancellationToken cancellationToken = default) =>
         GetAsync<BillingAccountMembersResult>(ApiRoutes.BillingAccountMembers(billingAccountId), cancellationToken);
 
+    /// <summary>Classifies member emails as managed/consumer Google Accounts and reads 2SV + Advanced Protection where visible.</summary>
+    public Task<MemberIdentityResult?> ResolveMemberIdentitiesAsync(IEnumerable<string> emails, CancellationToken cancellationToken = default) =>
+        SendAsync<MemberIdentityResult>(HttpMethod.Post, ApiRoutes.BillingMemberIdentity, new MemberIdentityRequest { Emails = emails.ToList() }, cancellationToken);
+
     /// <summary>Creates (no budget id) or updates (budget id set) a budget.</summary>
     public Task<BudgetInfo?> SaveBudgetAsync(SaveBudgetRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<BudgetInfo>(HttpMethod.Post, ApiRoutes.BillingBudgetSave, request, cancellationToken);

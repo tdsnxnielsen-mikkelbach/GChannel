@@ -3,8 +3,10 @@ using GChannel.ApiService.Data;
 using GChannel.ApiService.Services;
 using GChannel.Shared.Contracts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using System.Globalization;
+using System.Text.Json;
 
 namespace GChannel.ApiService.Endpoints;
 
@@ -71,6 +73,10 @@ public static class BillingEndpoints
             })
             .WithName("ListBillingAccountMembers")
             .WithSummary("Lists a billing (sub-)account's IAM members, split into direct and inherited grants.");
+
+        group.MapPost("/members/identity", ResolveMemberIdentitiesAsync)
+            .WithName("ResolveBillingMemberIdentities")
+            .WithSummary("Classifies member emails as managed/consumer Google Accounts and reads 2SV + Advanced Protection where visible.");
 
         group.MapPost("/budgets", async (
                 SaveBudgetRequest request,
@@ -361,6 +367,173 @@ public static class BillingEndpoints
             .WithSummary("Monthly billed spend for one owning reseller (channel partner) link.");
 
         return app;
+    }
+
+    private static readonly HashSet<string> ConsumerDomains = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "gmail.com", "googlemail.com"
+    };
+
+    private const int MaxIdentityBatch = 100;
+
+    /// <summary>
+    /// Per member email: (1) gmail.com → consumer; (2) found in our own Workspace directory (Admin SDK via
+    /// DWD) → managed, plus 2SV + Advanced Protection; (3) otherwise ask the Channel API whether the email's
+    /// domain has a Cloud Identity / Workspace tenant (<c>checkCloudIdentityAccountsExist</c>) — a
+    /// domain-verified tenant means managed, a team account means partially managed, none means consumer.
+    /// Results are cached per email; signals we can't read come back null/Unknown rather than failing.
+    /// </summary>
+    private static async Task<IResult> ResolveMemberIdentitiesAsync(
+        MemberIdentityRequest request,
+        IWorkspaceUserSecurityService workspace,
+        IGoogleChannelClient channel,
+        IDistributedCache cache,
+        IOptions<GoogleChannelOptions> options,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        var logger = loggerFactory.CreateLogger("BillingEndpoints");
+        var emails = request.Emails
+            .Where(e => !string.IsNullOrWhiteSpace(e) && e.Contains('@'))
+            .Select(e => e.Trim().ToLowerInvariant())
+            .Distinct()
+            .Take(MaxIdentityBatch)
+            .ToList();
+
+        var ttl = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(Math.Max(60, options.Value.CacheSeconds))
+        };
+
+        // Domain → Cloud Identity check, memoised across this batch (and in Redis via the same key the
+        // Cloud-identity-check page uses, so both features share one Channel API call per domain).
+        var domainCache = new Dictionary<string, CheckCloudIdentityResult?>(StringComparer.OrdinalIgnoreCase);
+        async Task<CheckCloudIdentityResult?> CheckDomainAsync(string domain)
+        {
+            if (domainCache.TryGetValue(domain, out var hit)) { return hit; }
+
+            var key = $"cid:{domain}:";
+            CheckCloudIdentityResult? result = null;
+            try
+            {
+                var cached = await cache.GetStringAsync(key, cancellationToken);
+                if (cached is not null)
+                {
+                    result = JsonSerializer.Deserialize<CheckCloudIdentityResult>(cached);
+                }
+                else
+                {
+                    result = await channel.CheckCloudIdentityAsync(new CheckCloudIdentityRequest { Domain = domain }, cancellationToken);
+                    await cache.SetStringAsync(key, JsonSerializer.Serialize(result), ttl, cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Cloud Identity check failed for member domain {Domain}", domain);
+            }
+
+            domainCache[domain] = result;
+            return result;
+        }
+
+        var members = new List<MemberIdentityInfo>(emails.Count);
+        string? directoryError = null;
+
+        foreach (var email in emails)
+        {
+            var cacheKey = $"member-identity:{email}";
+            var cachedJson = await cache.GetStringAsync(cacheKey, cancellationToken);
+            if (cachedJson is not null)
+            {
+                var cachedInfo = JsonSerializer.Deserialize<MemberIdentityInfo>(cachedJson);
+                if (cachedInfo is not null) { members.Add(cachedInfo); continue; }
+            }
+
+            var domain = email[(email.IndexOf('@') + 1)..];
+            var info = new MemberIdentityInfo { Email = email };
+
+            if (ConsumerDomains.Contains(domain))
+            {
+                info = info with
+                {
+                    AccountKind = GoogleAccountKind.Consumer,
+                    AccountKindReason = $"{domain} is a consumer Google Account domain."
+                };
+            }
+            else
+            {
+                WorkspaceUserSecurity? sec = null;
+                if (workspace.IsConfigured)
+                {
+                    try
+                    {
+                        sec = await workspace.GetUserSecurityAsync(email, cancellationToken);
+                        if (sec.Error is not null) { directoryError ??= sec.Error; }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Workspace security lookup failed for {Email}", email);
+                        directoryError ??= ex.Message;
+                    }
+                }
+
+                if (sec is { Found: true })
+                {
+                    info = info with
+                    {
+                        AccountKind = GoogleAccountKind.Managed,
+                        AccountKindReason = "User exists in the reseller's Google Workspace directory.",
+                        InResellerDirectory = true,
+                        TwoStepVerificationEnrolled = sec.Enrolled2Sv,
+                        TwoStepVerificationEnforced = sec.Enforced2Sv,
+                        Suspended = sec.Suspended,
+                        IsAdmin = sec.IsAdmin,
+                        AdvancedProtection = sec.AdvancedProtection,
+                        AdvancedProtectionAsOf = sec.AdvancedProtectionAsOf,
+                        Error = sec.Error
+                    };
+                }
+                else
+                {
+                    var cid = await CheckDomainAsync(domain);
+                    info = cid switch
+                    {
+                        { Exists: true } => info with
+                        {
+                            AccountKind = GoogleAccountKind.Managed,
+                            AccountKindReason = $"{domain} has a domain-verified Cloud Identity / Workspace tenant (not ours — 2SV not visible)."
+                        },
+                        { HasNonDomainAccounts: true } => info with
+                        {
+                            AccountKind = GoogleAccountKind.ManagedTeam,
+                            AccountKindReason = $"{domain} only has a Cloud Identity team (email-verified) account."
+                        },
+                        not null => info with
+                        {
+                            AccountKind = GoogleAccountKind.Consumer,
+                            AccountKindReason = $"No Cloud Identity / Workspace tenant exists for {domain} — unmanaged Google Account."
+                        },
+                        null => info with
+                        {
+                            AccountKind = GoogleAccountKind.Unknown,
+                            AccountKindReason = "Cloud Identity check for the domain was unavailable."
+                        }
+                    };
+                }
+            }
+
+            await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(info), ttl, cancellationToken);
+            members.Add(info);
+        }
+
+        return Results.Ok(new MemberIdentityResult
+        {
+            Members = members,
+            DirectoryAvailable = workspace.IsConfigured && directoryError is null,
+            DirectoryError = workspace.IsConfigured
+                ? directoryError
+                : "Admin SDK lookups need GoogleChannel:ServiceAccountKeyJson and GoogleChannel:ImpersonateUser."
+        });
     }
 
     // Friendly reseller name per link id (primary domain, else reseller cloud id, else the raw link id),

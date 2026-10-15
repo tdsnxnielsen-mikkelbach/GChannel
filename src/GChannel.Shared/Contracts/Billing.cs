@@ -135,3 +135,82 @@ public sealed record BillingAccountMembersResult
     /// <summary>Why the policy couldn't be read, when applicable (e.g. missing permission).</summary>
     public string? Error { get; init; }
 }
+
+/// <summary>Classification of the Google Account behind an IAM member email.</summary>
+public enum GoogleAccountKind
+{
+    /// <summary>Couldn't be determined (lookup failed or the member isn't a user).</summary>
+    Unknown = 0,
+
+    /// <summary>A managed account in a domain-verified Google Workspace / Cloud Identity tenant.</summary>
+    Managed,
+
+    /// <summary>A Cloud Identity "team" account — email-verified but not domain-verified, so only partially managed.</summary>
+    ManagedTeam,
+
+    /// <summary>A consumer (unmanaged) Google Account: gmail.com, or a custom email with no Cloud Identity tenant.</summary>
+    Consumer,
+}
+
+/// <summary>Advanced Protection Program enrollment as inferred from the Workspace audit log.</summary>
+public enum AdvancedProtectionStatus
+{
+    /// <summary>Not determinable — the user isn't in a directory we can read, or no enrollment event is retained.</summary>
+    Unknown = 0,
+
+    /// <summary>The most recent retained audit event is an Advanced Protection enrollment.</summary>
+    Enrolled,
+
+    /// <summary>The most recent retained audit event is an Advanced Protection unenrollment.</summary>
+    NotEnrolled,
+}
+
+/// <summary>Request to classify and security-check the Google Accounts behind a set of member emails.</summary>
+public sealed record MemberIdentityRequest
+{
+    public IReadOnlyList<string> Emails { get; init; } = [];
+}
+
+/// <summary>Identity + security posture of one IAM member's Google Account, assembled best-effort from several Google APIs.</summary>
+public sealed record MemberIdentityInfo
+{
+    public required string Email { get; init; }
+
+    public GoogleAccountKind AccountKind { get; init; }
+
+    /// <summary>Human-readable basis for <see cref="AccountKind"/> (which signal decided it).</summary>
+    public string? AccountKindReason { get; init; }
+
+    /// <summary>True when the user was found in the reseller's own Workspace directory (Admin SDK).</summary>
+    public bool InResellerDirectory { get; init; }
+
+    /// <summary>2-Step Verification enrolled (Admin SDK Directory <c>isEnrolledIn2Sv</c>); null when not readable.</summary>
+    public bool? TwoStepVerificationEnrolled { get; init; }
+
+    /// <summary>2-Step Verification enforced by policy (Admin SDK Directory <c>isEnforcedIn2Sv</c>); null when not readable.</summary>
+    public bool? TwoStepVerificationEnforced { get; init; }
+
+    public bool? Suspended { get; init; }
+
+    public bool? IsAdmin { get; init; }
+
+    public AdvancedProtectionStatus AdvancedProtection { get; init; }
+
+    /// <summary>Timestamp of the audit event that decided <see cref="AdvancedProtection"/>, when any.</summary>
+    public DateTimeOffset? AdvancedProtectionAsOf { get; init; }
+
+    /// <summary>Per-member lookup error, when a signal couldn't be read.</summary>
+    public string? Error { get; init; }
+}
+
+/// <summary>Identity + security results for a batch of member emails.</summary>
+public sealed record MemberIdentityResult
+{
+    public IReadOnlyList<MemberIdentityInfo> Members { get; init; } = [];
+
+    /// <summary>True when the Admin SDK (Directory/Reports) lookups were possible (service account + impersonation configured).</summary>
+    public bool DirectoryAvailable { get; init; }
+
+    /// <summary>Why the Admin SDK lookups were unavailable, when applicable.</summary>
+    public string? DirectoryError { get; init; }
+}

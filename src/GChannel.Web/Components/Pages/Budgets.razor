@@ -162,8 +162,16 @@ else
     }
     else if (_members is not null)
     {
+        @if (_identity is { DirectoryAvailable: false, DirectoryError: not null })
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                2SV / Advanced Protection are only readable for users in your own Workspace tenant via the
+                Admin SDK (@_identity.DirectoryError). Account type is still classified from the domain's
+                Cloud Identity status.
+            </MudAlert>
+        }
         <MudGrid>
-            <MudItem xs="12" md="6">
+            <MudItem xs="12" xl="6">
                 <MudPaper Class="pa-3" Elevation="2">
                     <div class="d-flex align-center gap-2 mb-2">
                         <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
@@ -172,25 +180,10 @@ else
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
                         Granted on this sub-account — not inherited.
                     </MudText>
-                    <MudTable Items="_members.Direct" Dense="true" Hover="true" Elevation="0"
-                              T="BillingAccountMember" Breakpoint="Breakpoint.None">
-                        <HeaderContent>
-                            <MudTh>Member</MudTh>
-                            <MudTh>Type</MudTh>
-                            <MudTh>Role</MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd DataLabel="Member">@context.Email</MudTd>
-                            <MudTd DataLabel="Type">@context.MemberType</MudTd>
-                            <MudTd DataLabel="Role">@context.RoleDisplayName</MudTd>
-                        </RowTemplate>
-                        <NoRecordsContent>
-                            <MudText Typo="Typo.body2">No members set directly on this account.</MudText>
-                        </NoRecordsContent>
-                    </MudTable>
+                    @MemberTable(_members.Direct, "No members set directly on this account.")
                 </MudPaper>
             </MudItem>
-            <MudItem xs="12" md="6">
+            <MudItem xs="12" xl="6">
                 <MudPaper Class="pa-3" Elevation="2">
                     <div class="d-flex align-center gap-2 mb-2">
                         <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Small" />
@@ -201,22 +194,7 @@ else
                             ? "This is a master account — no inherited members."
                             : $"Inherited from master billing account {_members.MasterBillingAccountId}.")
                     </MudText>
-                    <MudTable Items="_members.Inherited" Dense="true" Hover="true" Elevation="0"
-                              T="BillingAccountMember" Breakpoint="Breakpoint.None">
-                        <HeaderContent>
-                            <MudTh>Member</MudTh>
-                            <MudTh>Type</MudTh>
-                            <MudTh>Role</MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd DataLabel="Member">@context.Email</MudTd>
-                            <MudTd DataLabel="Type">@context.MemberType</MudTd>
-                            <MudTd DataLabel="Role">@context.RoleDisplayName</MudTd>
-                        </RowTemplate>
-                        <NoRecordsContent>
-                            <MudText Typo="Typo.body2">No inherited members.</MudText>
-                        </NoRecordsContent>
-                    </MudTable>
+                    @MemberTable(_members.Inherited, "No inherited members.")
                 </MudPaper>
             </MudItem>
         </MudGrid>
@@ -224,6 +202,111 @@ else
 }
 
 @code {
+    private RenderFragment MemberTable(IReadOnlyList<BillingAccountMember> rows, string emptyText) => __builder =>
+    {
+        <MudTable Items="rows" Dense="true" Hover="true" Elevation="0" T="BillingAccountMember" Breakpoint="Breakpoint.None">
+            <HeaderContent>
+                <MudTh>Member</MudTh>
+                <MudTh>Role</MudTh>
+                <MudTh>Account</MudTh>
+                <MudTh>2SV</MudTh>
+                <MudTh>Adv. Protection</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Member">
+                    <div class="d-flex align-center gap-1">
+                        <MudIcon Icon="@MemberTypeIcon(context.MemberType)" Size="Size.Small" Title="@context.MemberType" />
+                        <span>@context.Email</span>
+                    </div>
+                </MudTd>
+                <MudTd DataLabel="Role">@context.RoleDisplayName</MudTd>
+                <MudTd DataLabel="Account">@AccountKindChip(context)</MudTd>
+                <MudTd DataLabel="2SV">@TwoSvChip(context)</MudTd>
+                <MudTd DataLabel="Adv. Protection">@AdvancedProtectionChip(context)</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2">@emptyText</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    };
+
+    private RenderFragment AccountKindChip(BillingAccountMember m) => __builder =>
+    {
+        if (!IsUserLike(m)) { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> return; }
+        if (_loadingIdentity && !_identityByEmail.ContainsKey(m.Email)) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> return; }
+        if (!_identityByEmail.TryGetValue(m.Email, out var id)) { <MudText Typo="Typo.caption" Color="Color.Secondary">?</MudText> return; }
+
+        var (label, color) = id.AccountKind switch
+        {
+            GoogleAccountKind.Managed => ("Managed", Color.Success),
+            GoogleAccountKind.ManagedTeam => ("Managed (team)", Color.Warning),
+            GoogleAccountKind.Consumer => ("Consumer", Color.Error),
+            _ => ("Unknown", Color.Default)
+        };
+        <MudTooltip Text="@(id.AccountKindReason ?? label)">
+            <MudChip T="string" Size="Size.Small" Color="color" Variant="Variant.Text">@label</MudChip>
+        </MudTooltip>
+    };
+
+    private RenderFragment TwoSvChip(BillingAccountMember m) => __builder =>
+    {
+        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id)) { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> return; }
+        if (id.TwoStepVerificationEnrolled is null)
+        {
+            <MudTooltip Text="Not visible: user isn't in the reseller's Workspace tenant.">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">n/a</MudText>
+            </MudTooltip>
+            return;
+        }
+        var enrolled = id.TwoStepVerificationEnrolled.Value;
+        var enforced = id.TwoStepVerificationEnforced == true;
+        <MudTooltip Text="@(enforced ? "Enrolled and enforced by policy" : enrolled ? "Enrolled (not enforced)" : "Not enrolled in 2-Step Verification")">
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(enrolled ? Color.Success : Color.Error)"
+                     Icon="@(enrolled ? Icons.Material.Filled.VerifiedUser : Icons.Material.Filled.GppBad)">
+                @(enrolled ? (enforced ? "On · enforced" : "On") : "Off")
+            </MudChip>
+        </MudTooltip>
+    };
+
+    private RenderFragment AdvancedProtectionChip(BillingAccountMember m) => __builder =>
+    {
+        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id) || !id.InResellerDirectory)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+            return;
+        }
+        switch (id.AdvancedProtection)
+        {
+            case AdvancedProtectionStatus.Enrolled:
+                <MudTooltip Text="@($"Enrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd})")">
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Icon="@Icons.Material.Filled.Shield">Enrolled</MudChip>
+                </MudTooltip>
+                break;
+            case AdvancedProtectionStatus.NotEnrolled:
+                <MudTooltip Text="@($"Unenrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd})")">
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled</MudChip>
+                </MudTooltip>
+                break;
+            default:
+                <MudTooltip Text="No Advanced Protection enroll/unenroll event in the last 180 days of audit logs — Google exposes no state field for this, so it can't be confirmed either way.">
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">No recent event</MudText>
+                </MudTooltip>
+                break;
+        }
+    };
+
+    private static bool IsUserLike(BillingAccountMember m) =>
+        m.MemberType is "user" || m.MemberType is "group";
+
+    private static string MemberTypeIcon(string type) => type switch
+    {
+        "user" => Icons.Material.Filled.Person,
+        "group" => Icons.Material.Filled.Groups,
+        "serviceAccount" => Icons.Material.Filled.SmartToy,
+        "domain" => Icons.Material.Filled.Language,
+        _ => Icons.Material.Filled.HelpOutline
+    };
+
     private sealed class BudgetForm
     {
         public string? BudgetId { get; set; }
@@ -244,6 +327,9 @@ else
     private bool _t50 = true, _t90 = true, _t100 = true;
     private bool _loadingMembers;
     private BillingAccountMembersResult? _members;
+    private bool _loadingIdentity;
+    private MemberIdentityResult? _identity;
+    private Dictionary<string, MemberIdentityInfo> _identityByEmail = new(StringComparer.OrdinalIgnoreCase);
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -319,6 +405,8 @@ else
 
         _loadingMembers = true;
         _members = null;
+        _identity = null;
+        _identityByEmail = new(StringComparer.OrdinalIgnoreCase);
         try
         {
             _members = await Api.ListBillingAccountMembersAsync(_selectedAccountId);
@@ -331,6 +419,46 @@ else
         finally
         {
             _loadingMembers = false;
+        }
+
+        await LoadIdentitiesAsync();
+    }
+
+    // Second pass: classify each user/group member's Google Account and read 2SV / Advanced Protection
+    // where visible. Kept separate so the members tables render immediately and enrich in place.
+    private async Task LoadIdentitiesAsync()
+    {
+        if (_members is not { Available: true })
+        {
+            return;
+        }
+
+        var emails = _members.Direct.Concat(_members.Inherited)
+            .Where(IsUserLike)
+            .Select(m => m.Email)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (emails.Count == 0)
+        {
+            return;
+        }
+
+        _loadingIdentity = true;
+        StateHasChanged();
+        try
+        {
+            _identity = await Api.ResolveMemberIdentitiesAsync(emails);
+            _identityByEmail = (_identity?.Members ?? [])
+                .GroupBy(m => m.Email, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to resolve member identities: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _loadingIdentity = false;
         }
     }
 

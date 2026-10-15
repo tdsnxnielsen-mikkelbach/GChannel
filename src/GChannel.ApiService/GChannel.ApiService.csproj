@@ -12,6 +12,8 @@
     <PackageReference Include="Aspire.Microsoft.Azure.StackExchangeRedis" Version="13.5.0" />
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.5.0" />
     <PackageReference Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.5.0" />
+    <PackageReference Include="Google.Apis.Admin.Directory.directory_v1" Version="1.76.0.4274" />
+    <PackageReference Include="Google.Apis.Admin.Reports.reports_v1" Version="1.77.0.4289" />
     <PackageReference Include="Google.Apis.Cloudchannel.v1" Version="1.75.0.4176" />
     <PackageReference Include="Google.Cloud.BigQuery.V2" Version="3.12.0" />
     <PackageReference Include="Google.Cloud.Billing.Budgets.V1" Version="2.7.0" />
