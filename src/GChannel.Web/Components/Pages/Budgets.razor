@@ -297,40 +297,52 @@ else
             return;
         }
         var keys = KeysSummary(id);
-        switch (id.AdvancedProtection)
-        {
-            case AdvancedProtectionStatus.Enrolled:
-                <MudTooltip Text="@($"Enrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")">
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Icon="@Icons.Material.Filled.Shield">Enrolled</MudChip>
-                </MudTooltip>
-                break;
-            case AdvancedProtectionStatus.NotEnrolled:
-                <MudTooltip Text="@($"Unenrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")">
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled</MudChip>
-                </MudTooltip>
-                break;
-            case AdvancedProtectionStatus.Unavailable:
-                <MudTooltip Text="@($"Audit log not readable: {id.AdvancedProtectionError}{keys}")">
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Icon="@Icons.Material.Filled.ErrorOutline">Unavailable</MudChip>
-                </MudTooltip>
-                break;
-            default:
-                // Advanced Protection requires a passkey or security key, so a confirmed 0/0 from the usage
-                // report is a safe "not enrolled" even without an audit event.
-                if (id is { SecurityKeys: 0, Passkeys: 0 })
-                {
-                    <MudTooltip Text="@($"No enroll/unenroll audit event retained, but the usage report shows no passkeys or security keys — Advanced Protection requires one.{keys}")">
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled · no keys</MudChip>
+        <div class="d-flex flex-column align-start">
+            @switch (id.AdvancedProtection)
+            {
+                case AdvancedProtectionStatus.Enrolled:
+                    <MudTooltip Text="@($"Enrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Icon="@Icons.Material.Filled.Shield">Enrolled</MudChip>
                     </MudTooltip>
                     break;
-                }
-                <MudTooltip Text="@($"No Advanced Protection enroll/unenroll event in the ~6 months of audit log Google retains — there is no state field, so enrollment before that can't be confirmed.{keys}")">
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        No recent event@(id.SecurityKeys is > 0 || id.Passkeys is > 0 ? $" · {KeysShort(id)}" : "")
+                case AdvancedProtectionStatus.NotEnrolled:
+                    <MudTooltip Text="@($"Unenrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled</MudChip>
+                    </MudTooltip>
+                    break;
+                case AdvancedProtectionStatus.Unavailable:
+                    <MudTooltip Text="@($"Audit log not readable: {id.AdvancedProtectionError}{keys}")">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Icon="@Icons.Material.Filled.ErrorOutline">Unavailable</MudChip>
+                    </MudTooltip>
+                    break;
+                default:
+                    // Advanced Protection requires a passkey or security key, so a confirmed 0/0 from the usage
+                    // report is a safe "not enrolled" even without an audit event.
+                    if (id is { SecurityKeys: 0, Passkeys: 0 })
+                    {
+                        <MudTooltip Text="@($"No enroll/unenroll audit event retained, but the usage report shows no passkeys or security keys — Advanced Protection requires one.{keys}")">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled</MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudTooltip Text="@($"No Advanced Protection enroll/unenroll event in the ~6 months of audit log Google retains — there is no state field, so enrollment before that can't be confirmed.{keys}")">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">No recent event</MudText>
+                        </MudTooltip>
+                    }
+                    break;
+            }
+            @* Passkey / security-key line: the factor Advanced Protection enforces, shown for every state. *@
+            @if (id.SecurityKeys is not null || id.Passkeys is not null)
+            {
+                var (label, color) = KeysLine(id);
+                <MudTooltip Text="@($"From the user usage report for {id.KeysAsOf:yyyy-MM-dd} (accounts:num_security_keys / num_passkeys_enrolled).")">
+                    <MudText Typo="Typo.caption" Color="color" Class="d-flex align-center gap-1">
+                        <MudIcon Icon="@Icons.Material.Filled.Key" Style="font-size: 0.85rem;" />@label
                     </MudText>
                 </MudTooltip>
-                break;
-        }
+            }
+        </div>
     };
 
     // Advanced Protection requires a passkey or security key, so surface those counts alongside.
@@ -339,12 +351,19 @@ else
             ? ""
             : $" Keys as of {id.KeysAsOf:yyyy-MM-dd}: {id.SecurityKeys ?? 0} security key(s), {id.Passkeys ?? 0} passkey(s).";
 
-    private static string KeysShort(MemberIdentityInfo id)
+    private static (string Label, Color Color) KeysLine(MemberIdentityInfo id)
     {
+        var keys = id.SecurityKeys ?? 0;
+        var passkeys = id.Passkeys ?? 0;
+        if (keys == 0 && passkeys == 0)
+        {
+            return ("no keys or passkeys", Color.Error);
+        }
+
         var parts = new List<string>();
-        if (id.SecurityKeys is > 0) parts.Add($"{id.SecurityKeys} key{(id.SecurityKeys == 1 ? "" : "s")}");
-        if (id.Passkeys is > 0) parts.Add($"{id.Passkeys} passkey{(id.Passkeys == 1 ? "" : "s")}");
-        return string.Join(", ", parts);
+        if (keys > 0) parts.Add($"{keys} security key{(keys == 1 ? "" : "s")}");
+        if (passkeys > 0) parts.Add($"{passkeys} passkey{(passkeys == 1 ? "" : "s")}");
+        return (string.Join(" · ", parts), Color.Success);
     }
 
     private static bool IsUserLike(BillingAccountMember m) =>

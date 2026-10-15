@@ -192,17 +192,21 @@ Implemented in `BillingEndpoints.ResolveMemberIdentitiesAsync`
    To cover that gap, the **user usage report** is also read:
    `userUsageReport.get(email, date, parameters=accounts:num_security_keys,accounts:num_passkeys_enrolled)`
    (probing two dates, 3 and 6 days back, because usage data lags). Advanced Protection *requires* a passkey or
-   security key, so the counts let the UI resolve the `Unknown` case further:
+   security key — it is the factor the programme enforces — so the counts are shown as a second line
+   **under every status** and also let the UI resolve the `Unknown` case:
 
-   | Audit event | Usage report | Shown as |
-   |---|---|---|
-   | none retained | 0 security keys **and** 0 passkeys | `Not enrolled · no keys` — safe inference, since enrollment is impossible without one |
-   | none retained | ≥ 1 key or passkey | `No recent event · N keys, M passkeys` — indeterminate; the user *may* be enrolled |
-   | none retained | not readable (scope missing / data lag) | `No recent event` |
-   | `titanium_enroll` / `titanium_unenroll` | any | the event wins (`Enrolled` / `Not enrolled`); counts appear in the tooltip only |
+   | Audit event | Usage report | Status chip | Key line |
+   |---|---|---|---|
+   | `titanium_enroll` | any | `Enrolled` (green) | e.g. `3 passkeys` (green) — the factor that satisfies enrollment |
+   | `titanium_unenroll` | any | `Not enrolled` (amber) | counts as reported |
+   | none retained | 0 security keys **and** 0 passkeys | `Not enrolled` (amber) — safe inference, since enrollment is impossible without one | `no keys or passkeys` (red) |
+   | none retained | ≥ 1 key or passkey | `No recent event` (grey) — indeterminate; the user *may* be enrolled | e.g. `1 security key · 2 passkeys` (green) |
+   | none retained | not readable (scope missing / data lag) | `No recent event` (grey) | hidden |
+   | query failed | any | `Unavailable` (red, API error in tooltip) | counts if readable |
 
-   The event always takes precedence because usage data lags a few days: a user who enrolled
-   yesterday has an audit event today but may still report 0 keys for that date.
+   The key line's tooltip names the usage-report date it was read for. The audit event always
+   decides the chip because usage data lags a few days: a user who enrolled yesterday has an audit
+   event today but may still report 0 keys for that date.
 
    > **Troubleshooting — everything shows "No recent event" / `n/a` at once.** A domain-wide
    > delegation token request is all-or-nothing: if *any* requested scope isn't in the Admin-console
@@ -254,7 +258,7 @@ renders both member tables from one shared template with these columns:
 | Role | IAM policy | friendly role name |
 | Account | step 2 / 3 / 5 / 6 | `Managed` (green) · `Managed (team)` (amber) · `Consumer` (red) · `Unknown`. Tooltip explains which signal decided it, including the resold customer id when reseller access was used. |
 | 2SV | step 3 / 6 | `On · enforced` · `On` · `Off` for our tenant and resold customers with reseller access; `n/a` for everyone else |
-| Adv. Protection | step 4 / 6 | `Enrolled` · `Not enrolled` (audit event, date in tooltip) · `Not enrolled · no keys` (no event, but usage report confirms 0 passkeys and 0 security keys) · `No recent event · N keys, M passkeys` (indeterminate) · `Unavailable` (red, API error in tooltip); `—` for users whose tenant we can't read |
+| Adv. Protection | step 4 / 6 | Status chip: `Enrolled` · `Not enrolled` (from an audit event, or inferred from 0 keys + 0 passkeys) · `No recent event` (indeterminate) · `Unavailable` (red, API error in tooltip); `—` for users whose tenant we can't read. Beneath it, a **key line** whenever the usage report was readable: `N security keys · M passkeys` in green, or `no keys or passkeys` in red. |
 
 Service-account and domain members get `—` in the security columns — they are not Google user
 accounts. If the Admin SDK side isn't configured or is denied, an info banner explains that
