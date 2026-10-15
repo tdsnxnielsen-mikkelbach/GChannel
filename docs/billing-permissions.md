@@ -185,8 +185,17 @@ Implemented in `BillingEndpoints.ResolveMemberIdentitiesAsync`
    To cover that gap, the **user usage report** is also read:
    `userUsageReport.get(email, date, parameters=accounts:num_security_keys,accounts:num_passkeys_enrolled)`
    (walking back 2–8 days because usage data lags). Advanced Protection *requires* a passkey or
-   security key, so a user with 0 of both is certainly **not** enrolled, while a user with keys
-   *may* be. The counts are shown next to "No recent event" and in every Adv. Protection tooltip.
+   security key, so the counts let the UI resolve the `Unknown` case further:
+
+   | Audit event | Usage report | Shown as |
+   |---|---|---|
+   | none retained | 0 security keys **and** 0 passkeys | `Not enrolled · no keys` — safe inference, since enrollment is impossible without one |
+   | none retained | ≥ 1 key or passkey | `No recent event · N keys, M passkeys` — indeterminate; the user *may* be enrolled |
+   | none retained | not readable (scope missing / data lag) | `No recent event` |
+   | `titanium_enroll` / `titanium_unenroll` | any | the event wins (`Enrolled` / `Not enrolled`); counts appear in the tooltip only |
+
+   The event always takes precedence because usage data lags a few days: a user who enrolled
+   yesterday has an audit event today but may still report 0 keys for that date.
 
    > **Troubleshooting — everything shows "No recent event" / `n/a` at once.** A domain-wide
    > delegation token request is all-or-nothing: if *any* requested scope isn't in the Admin-console
