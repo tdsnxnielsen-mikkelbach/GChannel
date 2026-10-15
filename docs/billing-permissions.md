@@ -97,10 +97,13 @@ Once the two member lists are on screen, the page makes a **second** set of call
 `POST /api/billing/members/identity` with the distinct `user:`/`group:` emails, **in chunks of
 16** — and fills in three extra columns in place as each chunk returns. This is deliberately
 separate so the member tables render immediately and the (slower) enrichment arrives
-progressively. Server-side, each chunk resolves its members **8 at a time** (bounded fan-out), and
-for each user the audit and usage Reports calls run concurrently; a 65-member master policy
-therefore completes in a few seconds instead of the minutes a sequential pass would take (which
-had been tripping the 60 s HTTP attempt timeout and leaving most rows as `?`).
+progressively. Server-side, each chunk resolves its members **4 at a time** (bounded fan-out), and
+for each user the audit and usage Reports calls run concurrently. All Reports API calls additionally
+go through one shared pacer (≤ 4/s) with backoff-retry on quota 403/429s, because the Reports
+API's per-second quota is far tighter than Directory's — an unpaced 8-wide fan-out produced
+`403 Request rate higher than configured` on most members. A 65-member master policy now
+completes in ~20 s instead of the minutes a sequential pass would take (which had been tripping
+the 60 s HTTP attempt timeout and leaving most rows as `?`).
 
 ### 2.1 What we investigated, and what Google actually exposes
 
@@ -235,7 +238,10 @@ Implemented in `BillingEndpoints.ResolveMemberIdentitiesAsync`
    returns 403/404 and the row stays *Managed* with 2SV `n/a` — nothing breaks.
 
 7. **Cache and return.** Each `MemberIdentityInfo` is stored in Redis and returned in a
-   `MemberIdentityResult { Members[], DirectoryAvailable, DirectoryError }`.
+   `MemberIdentityResult { Members[], DirectoryAvailable, DirectoryError }`. Results whose Reports
+   signal failed on a **quota / rate-limit** error are returned (as `Unavailable` with
+   "rate limit reached — retry shortly") but **not cached**, so the next load retries instead of
+   pinning the failure for the full TTL.
 
 ### 2.4 What the UI shows
 

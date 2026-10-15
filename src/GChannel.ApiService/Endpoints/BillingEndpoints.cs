@@ -377,9 +377,10 @@ public static class BillingEndpoints
 
     private const int MaxIdentityBatch = 100;
 
-    // Parallel member lookups per request. Admin SDK Directory allows 2,400 queries/min and Reports
-    // ~2,400/min per project, so 8-wide × ~5 calls/member stays comfortably inside both.
-    private const int IdentityConcurrency = 8;
+    // Parallel member lookups per request. Directory is generous (2,400/min) but the Reports API's
+    // per-second quota is tight, so Reports calls are additionally paced inside the service; 4-wide
+    // keeps Directory latency overlapped without piling up behind that pacer.
+    private const int IdentityConcurrency = 4;
 
     /// <summary>
     /// Per member email: (1) gmail.com → consumer; (2) found in our own Workspace directory (Admin SDK via
@@ -482,6 +483,7 @@ public static class BillingEndpoints
 
             var domain = email[(email.IndexOf('@') + 1)..];
             var info = new MemberIdentityInfo { Email = email };
+            var transient = false;
 
             if (ConsumerDomains.Contains(domain))
             {
@@ -510,6 +512,7 @@ public static class BillingEndpoints
 
                 if (sec is { Found: true })
                 {
+                    transient = sec.Transient;
                     info = info with
                     {
                         AccountKind = GoogleAccountKind.Managed,
@@ -551,6 +554,7 @@ public static class BillingEndpoints
                         }
                     }
 
+                    transient = resold?.Transient == true;
                     info = (cid, resold) switch
                     {
                         (_, { Found: true }) => info with
@@ -594,7 +598,12 @@ public static class BillingEndpoints
                 }
             }
 
-            await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(info), ttl, cancellationToken);
+            // A quota/rate-limit failure must not be pinned in the cache for the full TTL — leave it
+            // uncached so the next load (or the user's refresh) retries against a replenished bucket.
+            if (!transient)
+            {
+                await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(info), ttl, cancellationToken);
+            }
             return info;
         }
 

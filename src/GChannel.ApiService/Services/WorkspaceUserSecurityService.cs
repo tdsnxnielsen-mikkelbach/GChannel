@@ -57,6 +57,9 @@ public sealed record WorkspaceUserSecurity
 
     /// <summary>Non-fatal lookup error (permission denied, API not enabled, DWD scope missing…).</summary>
     public string? Error { get; init; }
+
+    /// <summary>True when a signal failed for a transient reason (quota / rate limit) and the result shouldn't be cached.</summary>
+    public bool Transient { get; init; }
 }
 
 public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
@@ -78,6 +81,13 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
     private DirectoryService? _directory;
     private ReportsService? _auditReports;
     private ReportsService? _usageReports;
+
+    // The Reports API's per-user-per-second quota is low and its 403 "Request rate higher than
+    // configured" is not retried by the client library. One shared token bucket paces every Reports
+    // call (audit + usage, all requests) so a wide fan-out stays under it; RunReportsAsync adds
+    // bounded retry for the stragglers.
+    private readonly RequestPacer _reportsPacer = new(TimeSpan.FromMilliseconds(250));
+    private static readonly TimeSpan[] RateLimitBackoff = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)];
 
     public WorkspaceUserSecurityService(
         IOptions<GoogleChannelOptions> options,
@@ -129,6 +139,29 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
 
     private static string ScopeNotGranted(string scope) =>
         $"Domain-wide delegation scope not granted: {scope} (unauthorized_client). Add it to the service account's client ID in the Workspace Admin console.";
+
+    private static bool IsRateLimited(GoogleApiException ex) =>
+        ex.HttpStatusCode is HttpStatusCode.TooManyRequests
+        || (ex.HttpStatusCode is HttpStatusCode.Forbidden
+            && (ex.Message.Contains("rate", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase)));
+
+    // Paces a Reports call and retries quota 403/429s with backoff; rethrows the last failure.
+    private async Task<T> RunReportsAsync<T>(Func<Task<T>> call, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            await _reportsPacer.WaitAsync(cancellationToken);
+            try
+            {
+                return await call();
+            }
+            catch (GoogleApiException ex) when (IsRateLimited(ex) && attempt < RateLimitBackoff.Length)
+            {
+                await Task.Delay(RateLimitBackoff[attempt], cancellationToken);
+            }
+        }
+    }
 
     public async Task<WorkspaceUserSecurity> GetUserSecurityAsync(string email, string? customerId, CancellationToken cancellationToken)
     {
@@ -190,8 +223,8 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
         var auditTask = GetAdvancedProtectionAsync(email, customerId, cancellationToken);
         var keysTask = GetKeyCountsAsync(email, customerId, cancellationToken);
         await Task.WhenAll(auditTask, keysTask);
-        var (status, asOf, auditError) = auditTask.Result;
-        var (keys, passkeys, keysAsOf) = keysTask.Result;
+        var (status, asOf, auditError, auditTransient) = auditTask.Result;
+        var (keys, passkeys, keysAsOf, keysTransient) = keysTask.Result;
 
         return new WorkspaceUserSecurity
         {
@@ -208,13 +241,14 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
             SecurityKeys = keys,
             Passkeys = passkeys,
             KeysAsOf = keysAsOf,
+            Transient = auditTransient || keysTransient,
             Error = auditError is not null && IsSetupMessage(auditError) ? auditError : null
         };
     }
 
     // There is no Directory/Reports *state* field for Advanced Protection, so infer it from the most
     // recent titanium_enroll / titanium_unenroll user-accounts audit event within the retention window.
-    private async Task<(AdvancedProtectionStatus Status, DateTimeOffset? AsOf, string? Error)> GetAdvancedProtectionAsync(
+    private async Task<(AdvancedProtectionStatus Status, DateTimeOffset? AsOf, string? Error, bool Transient)> GetAdvancedProtectionAsync(
         string email, string? customerId, CancellationToken cancellationToken)
     {
         try
@@ -230,7 +264,7 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
             do
             {
                 list.PageToken = pageToken;
-                var page = await list.ExecuteAsync(cancellationToken);
+                var page = await RunReportsAsync(() => list.ExecuteAsync(cancellationToken), cancellationToken);
                 foreach (var activity in page.Items ?? [])
                 {
                     var when = activity.Id?.TimeDateTimeOffset;
@@ -258,26 +292,29 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
                 pageToken = page.NextPageToken;
             } while (!string.IsNullOrEmpty(pageToken));
 
-            return (status, latest, null);
+            return (status, latest, null, false);
         }
         catch (TokenResponseException ex) when (ex.Error?.Error == "unauthorized_client")
         {
             var msg = ScopeNotGranted(ReportsService.Scope.AdminReportsAuditReadonly);
             _logger.LogWarning("Audit lookup for {Email}: {Message}", email, msg);
-            return (AdvancedProtectionStatus.Unavailable, null, msg);
+            return (AdvancedProtectionStatus.Unavailable, null, msg, false);
         }
         catch (GoogleApiException ex)
         {
+            var transient = IsRateLimited(ex);
             _logger.LogWarning("Reports activities.list failed for {Email} (customer {CustomerId}): {Status} {Message}",
                 email, customerId ?? "own", (int)ex.HttpStatusCode, ex.Message);
-            return (AdvancedProtectionStatus.Unavailable, null, $"Reports API {(int)ex.HttpStatusCode}: {ex.Message}");
+            return (AdvancedProtectionStatus.Unavailable, null,
+                transient ? "Reports API rate limit reached — retry shortly." : $"Reports API {(int)ex.HttpStatusCode}: {ex.Message}",
+                transient);
         }
     }
 
     // Security-key / passkey counts from the user usage report. Advanced Protection REQUIRES a passkey or
     // security key, so these are the strongest live indicator Google exposes when no enroll event is
     // retained. Usage data lags a few days, so walk back until a day with data is found.
-    private async Task<(int? Keys, int? Passkeys, DateOnly? AsOf)> GetKeyCountsAsync(
+    private async Task<(int? Keys, int? Passkeys, DateOnly? AsOf, bool Transient)> GetKeyCountsAsync(
         string email, string? customerId, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -290,7 +327,7 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
                 var get = UsageReports.UserUsageReport.Get(email, day.ToString("yyyy-MM-dd"));
                 get.Parameters = "accounts:num_security_keys,accounts:num_passkeys_enrolled";
                 get.CustomerId = customerId;
-                var report = await get.ExecuteAsync(cancellationToken);
+                var report = await RunReportsAsync(() => get.ExecuteAsync(cancellationToken), cancellationToken);
 
                 var entry = report.UsageReportsValue?.FirstOrDefault();
                 if (entry?.Parameters is null || entry.Parameters.Count == 0)
@@ -308,7 +345,7 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
                     }
                 }
 
-                return (keys, passkeys, day);
+                return (keys, passkeys, day, false);
             }
             catch (GoogleApiException ex) when (ex.HttpStatusCode is HttpStatusCode.BadRequest)
             {
@@ -318,20 +355,41 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
             catch (TokenResponseException ex) when (ex.Error?.Error == "unauthorized_client")
             {
                 _logger.LogWarning("Usage lookup for {Email}: {Message}", email, ScopeNotGranted(ReportsService.Scope.AdminReportsUsageReadonly));
-                return (null, null, null);
+                return (null, null, null, false);
             }
             catch (GoogleApiException ex)
             {
                 _logger.LogWarning("Reports userUsageReport.get failed for {Email} (customer {CustomerId}): {Status} {Message}",
                     email, customerId ?? "own", (int)ex.HttpStatusCode, ex.Message);
-                return (null, null, null);
+                return (null, null, null, IsRateLimited(ex));
             }
         }
 
-        return (null, null, null);
+        return (null, null, null, false);
     }
 
     private static bool IsSetupProblem(GoogleApiException ex) => IsSetupMessage(ex.Message);
+
+    // Token bucket of size 1: at most one call per interval across all concurrent callers.
+    private sealed class RequestPacer(TimeSpan interval)
+    {
+        private readonly Lock _gate = new();
+        private DateTimeOffset _nextSlot = DateTimeOffset.MinValue;
+
+        public Task WaitAsync(CancellationToken cancellationToken)
+        {
+            DateTimeOffset slot;
+            lock (_gate)
+            {
+                var now = DateTimeOffset.UtcNow;
+                slot = _nextSlot > now ? _nextSlot : now;
+                _nextSlot = slot + interval;
+            }
+
+            var delay = slot - DateTimeOffset.UtcNow;
+            return delay > TimeSpan.Zero ? Task.Delay(delay, cancellationToken) : Task.CompletedTask;
+        }
+    }
 
     private static bool IsSetupMessage(string message) =>
         message.Contains("not enabled", StringComparison.OrdinalIgnoreCase)
