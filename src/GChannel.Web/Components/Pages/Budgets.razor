@@ -291,9 +291,18 @@ else
 
     private RenderFragment AdvancedProtectionChip(BillingAccountMember m) => __builder =>
     {
-        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id) || !id.SecurityVisible)
+        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id))
         {
             <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+            return;
+        }
+        if (!id.SecurityVisible)
+        {
+            <MudTooltip Text="@(id.AccountKind == GoogleAccountKind.Consumer
+                ? "Consumer Google Account — not in any Workspace tenant, so Google exposes no 2SV, passkey or Advanced Protection data to anyone but the owner."
+                : "This user's tenant is neither ours nor a resold customer we have reseller admin access to.")">
+                <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+            </MudTooltip>
             return;
         }
         var keys = KeysSummary(id);
