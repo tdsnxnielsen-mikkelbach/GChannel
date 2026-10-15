@@ -347,7 +347,8 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
 
                 return (keys, passkeys, day, false);
             }
-            catch (GoogleApiException ex) when (ex.HttpStatusCode is HttpStatusCode.BadRequest)
+            catch (GoogleApiException ex) when (ex.HttpStatusCode is HttpStatusCode.BadRequest
+                && ex.Message.Contains("not yet available", StringComparison.OrdinalIgnoreCase))
             {
                 // "Data for dates later than X is not yet available" — try an earlier day.
                 continue;
@@ -365,6 +366,7 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
             }
         }
 
+        _logger.LogInformation("Usage report had no key data for {Email} (customer {CustomerId}) on any probed date", email, customerId ?? "own");
         return (null, null, null, false);
     }
 

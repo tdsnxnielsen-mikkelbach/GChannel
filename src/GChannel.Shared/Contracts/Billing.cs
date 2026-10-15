@@ -172,6 +172,9 @@ public enum AdvancedProtectionStatus
 public sealed record MemberIdentityRequest
 {
     public IReadOnlyList<string> Emails { get; init; } = [];
+
+    /// <summary>When true, cached results are ignored and every email is re-resolved against Google.</summary>
+    public bool Refresh { get; init; }
 }
 
 /// <summary>Identity + security posture of one IAM member's Google Account, assembled best-effort from several Google APIs.</summary>

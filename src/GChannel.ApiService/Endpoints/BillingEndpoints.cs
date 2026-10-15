@@ -474,11 +474,14 @@ public static class BillingEndpoints
         async Task<MemberIdentityInfo> ResolveOneAsync(string email)
         {
             var cacheKey = $"member-identity:{email}";
-            var cachedJson = await cache.GetStringAsync(cacheKey, cancellationToken);
-            if (cachedJson is not null)
+            if (!request.Refresh)
             {
-                var cachedInfo = JsonSerializer.Deserialize<MemberIdentityInfo>(cachedJson);
-                if (cachedInfo is not null) { return cachedInfo; }
+                var cachedJson = await cache.GetStringAsync(cacheKey, cancellationToken);
+                if (cachedJson is not null)
+                {
+                    var cachedInfo = JsonSerializer.Deserialize<MemberIdentityInfo>(cachedJson);
+                    if (cachedInfo is not null) { return cachedInfo; }
+                }
             }
 
             var domain = email[(email.IndexOf('@') + 1)..];

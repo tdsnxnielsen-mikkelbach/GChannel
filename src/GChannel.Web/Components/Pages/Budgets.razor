@@ -14,7 +14,7 @@
         </MudText>
     </div>
     <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
-               OnClick="ReloadAsync" Disabled="_loadingAccounts">Refresh</MudButton>
+               OnClick="RefreshAsync" Disabled="_loadingAccounts">Refresh</MudButton>
 </div>
 
 <MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
@@ -411,9 +411,13 @@ else
     private MemberIdentityResult? _identity;
     private Dictionary<string, MemberIdentityInfo> _identityByEmail = new(StringComparer.OrdinalIgnoreCase);
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    protected override Task OnInitializedAsync() => ReloadAsync(refreshIdentities: false);
 
-    private async Task ReloadAsync()
+    // The toolbar Refresh button bypasses the server-side identity cache so a stale security verdict
+    // can be re-read from Google on demand; initial load and account switches use the cache.
+    private Task RefreshAsync() => ReloadAsync(refreshIdentities: true);
+
+    private async Task ReloadAsync(bool refreshIdentities)
     {
         _loadingAccounts = true;
         _editing = null;
@@ -437,17 +441,17 @@ else
             _loadingAccounts = false;
         }
 
-        await LoadBudgetsAsync();
+        await LoadBudgetsAsync(refreshIdentities);
     }
 
     private async Task OnAccountChanged(string accountId)
     {
         _selectedAccountId = accountId;
         _editing = null;
-        await LoadBudgetsAsync();
+        await LoadBudgetsAsync(refreshIdentities: false);
     }
 
-    private async Task LoadBudgetsAsync()
+    private async Task LoadBudgetsAsync(bool refreshIdentities = false)
     {
         if (string.IsNullOrEmpty(_selectedAccountId))
         {
@@ -472,10 +476,10 @@ else
             _loadingBudgets = false;
         }
 
-        await LoadMembersAsync();
+        await LoadMembersAsync(refreshIdentities);
     }
 
-    private async Task LoadMembersAsync()
+    private async Task LoadMembersAsync(bool refreshIdentities)
     {
         if (string.IsNullOrEmpty(_selectedAccountId))
         {
@@ -501,12 +505,12 @@ else
             _loadingMembers = false;
         }
 
-        await LoadIdentitiesAsync();
+        await LoadIdentitiesAsync(refreshIdentities);
     }
 
     // Second pass: classify each user/group member's Google Account and read 2SV / Advanced Protection
     // where visible. Kept separate so the members tables render immediately and enrich in place.
-    private async Task LoadIdentitiesAsync()
+    private async Task LoadIdentitiesAsync(bool refresh)
     {
         if (_members is not { Available: true })
         {
@@ -537,7 +541,7 @@ else
             {
                 try
                 {
-                    var result = await Api.ResolveMemberIdentitiesAsync(chunk);
+                    var result = await Api.ResolveMemberIdentitiesAsync(chunk, refresh);
                     if (result is null) { continue; }
                     last = result;
                     firstError ??= result.DirectoryError;
