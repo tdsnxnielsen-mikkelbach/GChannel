@@ -105,11 +105,11 @@ immediately and the (slower) enrichment arrives afterwards.
 | Is the account managed or consumer? | Cloud Identity SCIM `customers.v2.Users.get` | **Not usable.** SCIM is for provisioning users *inside your own tenant*; it cannot classify an arbitrary external email. |
 | | Cloud Identity `userinvitations.isInvitableUser` | **Not usable for our case.** Only answers for domains verified in *our* Cloud Identity customer; sub-account members are mostly from other tenants. |
 | | Admin SDK Directory `users.get` | **Usable for our own tenant.** A 200 means the user exists in the reseller's Workspace directory → managed. 404 means not ours. |
-| | Channel API `accounts.checkCloudIdentityAccountsExist` | **Usable for any domain.** Tells us whether the email's *domain* has a Cloud Identity / Workspace tenant. Already used by the "Cloud identity check" page. |
-| 2-Step Verification | Admin SDK Directory `users.get` → `isEnrolledIn2Sv`, `isEnforcedIn2Sv` | **Yes**, for users in our own tenant. Google exposes no reseller-side API into a *customer's* user security. |
+| | Channel API `accounts.checkCloudIdentityAccountsExist` | **Usable for any domain.** Tells us whether the email's *domain* has a Cloud Identity / Workspace tenant, and returns its customer id. Already used by the "Cloud identity check" page. |
+| 2-Step Verification | Admin SDK Directory `users.get` / `users.list(customer=…)` → `isEnrolledIn2Sv`, `isEnforcedIn2Sv` | **Yes**, for users in our own tenant **and** for resold customers whose Admin console we have reseller access to (the `cid=…` you see in `admin.google.com` URLs). The Directory API honours that reseller access when the resold customer's id is passed as the `customer` parameter. |
 | Advanced Protection | Directory `users` resource | **No field.** |
 | | Reports API user-usage `accounts:*` parameters | **No field.** (Has `is_2sv_enrolled`, `num_security_keys`, `num_passkeys_enrolled`, but nothing for Advanced Protection.) |
-| | Reports API **Activities**, application `user_accounts`, events `titanium_enroll` / `titanium_unenroll` | **The only signal.** "Titanium" is Google's internal name for Advanced Protection. Audit events are retained for **6 months**, so status is *inferred* from the most recent event in that window. |
+| | Reports API **Activities**, application `user_accounts`, events `titanium_enroll` / `titanium_unenroll` | **The only signal.** "Titanium" is Google's internal name for Advanced Protection. Audit events are retained for **6 months**, so status is *inferred* from the most recent event in that window. Works for resold customers too via the `customerId` parameter. |
 
 ### 2.2 Authentication
 
@@ -128,7 +128,10 @@ GoogleCredential.FromJson(ServiceAccountKeyJson)
 
 Because the token is minted *as that admin*, the Directory and Reports APIs answer for the
 admin's tenant (`dk.gsuite.dist.techdata.com` and any secondary domains of that Workspace
-customer) and nothing else.
+customer) **plus every resold customer that admin can open in the Admin console** as a reseller
+— provided the resold customer's id is passed explicitly (`users.list?customer=C01aihlmh`,
+`activities.list?customerId=C01aihlmh`). Without the id, the APIs default to the caller's own
+tenant.
 
 ### 2.3 Step by step per email
 
@@ -176,12 +179,24 @@ Implemented in `BillingEndpoints.ResolveMemberIdentitiesAsync`
 
    | Channel API answer | `AccountKind` | Meaning |
    |---|---|---|
-   | A `DOMAIN`-type account exists | **Managed** | Domain-verified Workspace / Cloud Identity tenant — but not ours, so 2SV/Advanced Protection are not visible. |
+   | A `DOMAIN`-type account exists | **Managed** | Domain-verified Workspace / Cloud Identity tenant. Continue to step 6. |
    | Only non-`DOMAIN` (team) accounts | **Managed (team)** | Email-verified Cloud Identity team account; partially managed. |
    | No account | **Consumer** | No tenant owns this domain → an unmanaged Google Account created with a custom email. |
    | Call failed | **Unknown** | |
 
-6. **Cache and return.** Each `MemberIdentityInfo` is stored in Redis and returned in a
+6. **Resold-customer lookup (Admin SDK, reseller access).** For a *Managed* domain, resolve the
+   customer's Workspace id — `customerCloudIdentityId` from the Channel API answer in step 5
+   (e.g. `C01aihlmh` for `s360digital.com`), falling back to `CloudIdentityId` on our read-model
+   customer row — and repeat steps 3–4 scoped to it:
+
+   - `users.list(customer=C01aihlmh, query="email=hn@s360digital.com")`
+   - `activities.list(userKey=hn@s360digital.com, applicationName=user_accounts, customerId=C01aihlmh)`
+
+   If we have reseller Admin-console access to that customer, both succeed and the row gets real
+   2SV / Advanced Protection values with `WorkspaceCustomerId` set. If not, the Directory API
+   returns 403/404 and the row stays *Managed* with 2SV `n/a` — nothing breaks.
+
+7. **Cache and return.** Each `MemberIdentityInfo` is stored in Redis and returned in a
    `MemberIdentityResult { Members[], DirectoryAvailable, DirectoryError }`.
 
 ### 2.4 What the UI shows
@@ -193,9 +208,9 @@ renders both member tables from one shared template with these columns:
 |---|---|---|
 | Member | IAM policy | email with a type icon (user / group / service account / domain) |
 | Role | IAM policy | friendly role name |
-| Account | step 2 / 3 / 5 | `Managed` (green) · `Managed (team)` (amber) · `Consumer` (red) · `Unknown`. Tooltip explains which signal decided it. |
-| 2SV | step 3 | `On · enforced` · `On` · `Off` for our tenant; `n/a` for everyone else |
-| Adv. Protection | step 4 | `Enrolled` · `Not enrolled` (with event date in the tooltip) · `No recent event`; `—` for users outside our tenant |
+| Account | step 2 / 3 / 5 / 6 | `Managed` (green) · `Managed (team)` (amber) · `Consumer` (red) · `Unknown`. Tooltip explains which signal decided it, including the resold customer id when reseller access was used. |
+| 2SV | step 3 / 6 | `On · enforced` · `On` · `Off` for our tenant and resold customers with reseller access; `n/a` for everyone else |
+| Adv. Protection | step 4 / 6 | `Enrolled` · `Not enrolled` (with event date in the tooltip) · `No recent event`; `—` for users whose tenant we can't read |
 
 Service-account and domain members get `—` in the security columns — they are not Google user
 accounts. If the Admin SDK side isn't configured or is denied, an info banner explains that
@@ -228,9 +243,10 @@ account type still works but 2SV / Advanced Protection are not readable.
 
 ### 2.6 Known limits
 
-- **Scope of visibility.** 2SV and Advanced Protection are only readable for users in the
-  impersonated admin's own Workspace tenant. Google provides no API for a reseller/distributor to
-  read a *customer's* user security settings.
+- **Scope of visibility.** 2SV and Advanced Protection are readable for users in the
+  impersonated admin's own Workspace tenant and in resold customers that admin has reseller
+  Admin-console access to. Customers who have not granted reseller access (or non-resold tenants)
+  show account type only.
 - **Advanced Protection is inferred, not read.** There is no state field; only enroll/unenroll
   audit events with 6-month retention.
 - **Domain classification is per domain, not per user.** A domain with a Workspace tenant may

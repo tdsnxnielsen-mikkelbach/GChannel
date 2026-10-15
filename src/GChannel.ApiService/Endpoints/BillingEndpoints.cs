@@ -381,13 +381,17 @@ public static class BillingEndpoints
     /// DWD) → managed, plus 2SV + Advanced Protection; (3) otherwise ask the Channel API whether the email's
     /// domain has a Cloud Identity / Workspace tenant (<c>checkCloudIdentityAccountsExist</c>) — a
     /// domain-verified tenant means managed, a team account means partially managed, none means consumer.
-    /// Results are cached per email; signals we can't read come back null/Unknown rather than failing.
+    /// (4) For a managed tenant that is a resold customer, retry the Admin SDK lookup scoped to that
+    /// customer's id: the reseller admin's delegated Admin-console access then also yields 2SV / Advanced
+    /// Protection for the customer's users. Results are cached per email; unreadable signals come back
+    /// null/Unknown rather than failing.
     /// </summary>
     private static async Task<IResult> ResolveMemberIdentitiesAsync(
         MemberIdentityRequest request,
         IWorkspaceUserSecurityService workspace,
         IGoogleChannelClient channel,
         IDistributedCache cache,
+        GChannelDbContext db,
         IOptions<GoogleChannelOptions> options,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
@@ -436,6 +440,26 @@ public static class BillingEndpoints
             return result;
         }
 
+        // Workspace customer id ("C01aihlmh") for a managed domain: prefer the id the Channel API just
+        // returned for the DOMAIN-type account; fall back to our read-model customer row for the domain.
+        var customerIdCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        async Task<string?> ResolveCustomerIdAsync(string domain, CheckCloudIdentityResult? cid)
+        {
+            if (customerIdCache.TryGetValue(domain, out var hit)) { return hit; }
+
+            var id = cid?.Accounts.FirstOrDefault(a => a.IsDomain && a.Existing)?.CustomerCloudIdentityId;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                id = await db.CustomerRecords.AsNoTracking()
+                    .Where(c => c.CloudIdentityId != null && (c.Domain == domain || c.CloudIdentityDomain == domain))
+                    .Select(c => c.CloudIdentityId)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
+            customerIdCache[domain] = id;
+            return id;
+        }
+
         var members = new List<MemberIdentityInfo>(emails.Count);
         string? directoryError = null;
 
@@ -467,7 +491,7 @@ public static class BillingEndpoints
                 {
                     try
                     {
-                        sec = await workspace.GetUserSecurityAsync(email, cancellationToken);
+                        sec = await workspace.GetUserSecurityAsync(email, customerId: null, cancellationToken);
                         if (sec.Error is not null) { directoryError ??= sec.Error; }
                     }
                     catch (Exception ex)
@@ -496,24 +520,57 @@ public static class BillingEndpoints
                 else
                 {
                     var cid = await CheckDomainAsync(domain);
-                    info = cid switch
+
+                    // Resold customer tenant: retry the Admin SDK lookup scoped to its customer id. Works only
+                    // for customers who granted us reseller Admin-console access; otherwise Found=false.
+                    WorkspaceUserSecurity? resold = null;
+                    if (cid is { Exists: true } && workspace.IsConfigured)
                     {
-                        { Exists: true } => info with
+                        var customerId = await ResolveCustomerIdAsync(domain, cid);
+                        if (customerId is not null)
+                        {
+                            try
+                            {
+                                resold = await workspace.GetUserSecurityAsync(email, customerId, cancellationToken);
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.LogDebug(ex, "Resold-customer security lookup failed for {Email} in {CustomerId}", email, customerId);
+                            }
+                        }
+                    }
+
+                    info = (cid, resold) switch
+                    {
+                        (_, { Found: true }) => info with
                         {
                             AccountKind = GoogleAccountKind.Managed,
-                            AccountKindReason = $"{domain} has a domain-verified Cloud Identity / Workspace tenant (not ours — 2SV not visible)."
+                            AccountKindReason = $"{domain} is a resold Workspace customer ({resold.CustomerId}) we have reseller admin access to.",
+                            WorkspaceCustomerId = resold.CustomerId,
+                            TwoStepVerificationEnrolled = resold.Enrolled2Sv,
+                            TwoStepVerificationEnforced = resold.Enforced2Sv,
+                            Suspended = resold.Suspended,
+                            IsAdmin = resold.IsAdmin,
+                            AdvancedProtection = resold.AdvancedProtection,
+                            AdvancedProtectionAsOf = resold.AdvancedProtectionAsOf,
+                            Error = resold.Error
                         },
-                        { HasNonDomainAccounts: true } => info with
+                        ({ Exists: true }, _) => info with
+                        {
+                            AccountKind = GoogleAccountKind.Managed,
+                            AccountKindReason = $"{domain} has a domain-verified Cloud Identity / Workspace tenant we have no reseller admin access to — 2SV not visible."
+                        },
+                        ({ HasNonDomainAccounts: true }, _) => info with
                         {
                             AccountKind = GoogleAccountKind.ManagedTeam,
                             AccountKindReason = $"{domain} only has a Cloud Identity team (email-verified) account."
                         },
-                        not null => info with
+                        (not null, _) => info with
                         {
                             AccountKind = GoogleAccountKind.Consumer,
                             AccountKindReason = $"No Cloud Identity / Workspace tenant exists for {domain} — unmanaged Google Account."
                         },
-                        null => info with
+                        (null, _) => info with
                         {
                             AccountKind = GoogleAccountKind.Unknown,
                             AccountKindReason = "Cloud Identity check for the domain was unavailable."

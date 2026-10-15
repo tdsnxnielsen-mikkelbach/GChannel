@@ -184,6 +184,15 @@ public sealed record MemberIdentityInfo
     /// <summary>True when the user was found in the reseller's own Workspace directory (Admin SDK).</summary>
     public bool InResellerDirectory { get; init; }
 
+    /// <summary>
+    /// The Workspace customer id (e.g. <c>C01aihlmh</c>) whose directory answered for this user, when it is a
+    /// resold customer we have reseller Admin-console access to. Null for our own tenant or when not found.
+    /// </summary>
+    public string? WorkspaceCustomerId { get; init; }
+
+    /// <summary>True when 2SV / Advanced Protection were readable (own tenant or a resold customer with reseller access).</summary>
+    public bool SecurityVisible => InResellerDirectory || WorkspaceCustomerId is not null;
+
     /// <summary>2-Step Verification enrolled (Admin SDK Directory <c>isEnrolledIn2Sv</c>); null when not readable.</summary>
     public bool? TwoStepVerificationEnrolled { get; init; }
 

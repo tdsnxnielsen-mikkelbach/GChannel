@@ -22,7 +22,12 @@ public interface IWorkspaceUserSecurityService
     /// <summary>True when a service-account key + impersonation user are configured.</summary>
     bool IsConfigured { get; }
 
-    Task<WorkspaceUserSecurity> GetUserSecurityAsync(string email, CancellationToken cancellationToken);
+    /// <summary>
+    /// Looks the user up in the impersonated admin's own tenant when <paramref name="customerId"/> is null,
+    /// or in a resold customer's tenant (Workspace customer id such as <c>C01aihlmh</c>) using the reseller
+    /// admin's delegated access to that customer's Admin console.
+    /// </summary>
+    Task<WorkspaceUserSecurity> GetUserSecurityAsync(string email, string? customerId, CancellationToken cancellationToken);
 }
 
 /// <summary>Raw per-user signals from the Admin SDK; the identity endpoint folds these into <see cref="MemberIdentityInfo"/>.</summary>
@@ -32,6 +37,9 @@ public sealed record WorkspaceUserSecurity
 
     /// <summary>True when <c>users.get</c> returned the user (i.e. they're in the reseller's tenant).</summary>
     public bool Found { get; init; }
+
+    /// <summary>The Workspace customer id the user was found in (null = the impersonated admin's own tenant).</summary>
+    public string? CustomerId { get; init; }
 
     public bool? Enrolled2Sv { get; init; }
     public bool? Enforced2Sv { get; init; }
@@ -111,39 +119,63 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
         ApplicationName = _options.ApplicationName
     });
 
-    public async Task<WorkspaceUserSecurity> GetUserSecurityAsync(string email, CancellationToken cancellationToken)
+    public async Task<WorkspaceUserSecurity> GetUserSecurityAsync(string email, string? customerId, CancellationToken cancellationToken)
     {
-        Google.Apis.Admin.Directory.directory_v1.Data.User user;
+        const string fields = "primaryEmail,isEnrolledIn2Sv,isEnforcedIn2Sv,suspended,isAdmin";
+        Google.Apis.Admin.Directory.directory_v1.Data.User? user;
         try
         {
-            var get = Directory.Users.Get(email);
-            get.Fields = "primaryEmail,isEnrolledIn2Sv,isEnforcedIn2Sv,suspended,isAdmin";
-            user = await get.ExecuteAsync(cancellationToken);
+            if (customerId is null)
+            {
+                var get = Directory.Users.Get(email);
+                get.Fields = fields;
+                user = await get.ExecuteAsync(cancellationToken);
+            }
+            else
+            {
+                // Resold customer: the reseller admin's delegated console access is honoured by the Directory
+                // API when the resold customer's id is passed explicitly. users.get(email) alone resolves
+                // against the caller's own tenant, so search within that customer instead.
+                var list = Directory.Users.List();
+                list.Customer = customerId;
+                list.Query = $"email={email}";
+                list.MaxResults = 1;
+                list.Fields = $"users({fields})";
+                var page = await list.ExecuteAsync(cancellationToken);
+                user = page.UsersValue?.FirstOrDefault();
+                if (user is null)
+                {
+                    return new WorkspaceUserSecurity { Email = email, Found = false, CustomerId = customerId };
+                }
+            }
         }
         catch (GoogleApiException ex) when (ex.HttpStatusCode is HttpStatusCode.NotFound)
         {
             // Not a user in the impersonated admin's tenant (customer tenant, group, consumer…).
-            return new WorkspaceUserSecurity { Email = email, Found = false };
+            return new WorkspaceUserSecurity { Email = email, Found = false, CustomerId = customerId };
         }
-        catch (GoogleApiException ex) when (ex.HttpStatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
+        catch (GoogleApiException ex) when (ex.HttpStatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized or HttpStatusCode.BadRequest)
         {
-            // Either the user is in a tenant we can't read, or the DWD scope / API isn't enabled.
-            // Distinguish via the message so operators can tell a setup problem from a foreign user.
-            _logger.LogDebug(ex, "Directory users.get denied for {Email}", email);
+            // Either the user is in a tenant we can't read (no reseller console access to that customer),
+            // or the DWD scope / API isn't enabled. Distinguish via the message so operators can tell a
+            // setup problem from a foreign user.
+            _logger.LogDebug(ex, "Directory lookup denied for {Email} (customer {CustomerId})", email, customerId ?? "own");
             return new WorkspaceUserSecurity
             {
                 Email = email,
                 Found = false,
+                CustomerId = customerId,
                 Error = IsSetupProblem(ex) ? $"Admin SDK: {ex.Message}" : null
             };
         }
 
-        var (status, asOf, auditError) = await GetAdvancedProtectionAsync(email, cancellationToken);
+        var (status, asOf, auditError) = await GetAdvancedProtectionAsync(email, customerId, cancellationToken);
 
         return new WorkspaceUserSecurity
         {
             Email = user.PrimaryEmail ?? email,
             Found = true,
+            CustomerId = customerId,
             Enrolled2Sv = user.IsEnrolledIn2Sv,
             Enforced2Sv = user.IsEnforcedIn2Sv,
             Suspended = user.Suspended,
@@ -157,13 +189,14 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
     // There is no Directory/Reports *state* field for Advanced Protection, so infer it from the most
     // recent titanium_enroll / titanium_unenroll user-accounts audit event within the retention window.
     private async Task<(AdvancedProtectionStatus Status, DateTimeOffset? AsOf, string? Error)> GetAdvancedProtectionAsync(
-        string email, CancellationToken cancellationToken)
+        string email, string? customerId, CancellationToken cancellationToken)
     {
         try
         {
             var list = Reports.Activities.List(email, ActivitiesResource.ListRequest.ApplicationNameEnum.UserAccounts);
             list.StartTime = DateTimeOffset.UtcNow.Subtract(AuditLookback).ToString("o");
             list.MaxResults = 1000;
+            list.CustomerId = customerId;
 
             DateTimeOffset? latest = null;
             var status = AdvancedProtectionStatus.Unknown;

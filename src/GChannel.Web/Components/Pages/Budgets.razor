@@ -165,9 +165,9 @@ else
         @if (_identity is { DirectoryAvailable: false, DirectoryError: not null })
         {
             <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
-                2SV / Advanced Protection are only readable for users in your own Workspace tenant via the
-                Admin SDK (@_identity.DirectoryError). Account type is still classified from the domain's
-                Cloud Identity status.
+                2SV / Advanced Protection are readable via the Admin SDK only for users in your own Workspace
+                tenant or in resold customers you have reseller admin access to (@_identity.DirectoryError).
+                Account type is still classified from the domain's Cloud Identity status.
             </MudAlert>
         }
         <MudGrid>
@@ -253,7 +253,7 @@ else
         if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id)) { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> return; }
         if (id.TwoStepVerificationEnrolled is null)
         {
-            <MudTooltip Text="Not visible: user isn't in the reseller's Workspace tenant.">
+            <MudTooltip Text="Not visible: the user's tenant is neither ours nor a resold customer we have reseller admin access to.">
                 <MudText Typo="Typo.caption" Color="Color.Secondary">n/a</MudText>
             </MudTooltip>
             return;
@@ -270,7 +270,7 @@ else
 
     private RenderFragment AdvancedProtectionChip(BillingAccountMember m) => __builder =>
     {
-        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id) || !id.InResellerDirectory)
+        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id) || !id.SecurityVisible)
         {
             <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
             return;
