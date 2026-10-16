@@ -516,11 +516,16 @@ public static class BillingEndpoints
                 if (sec is { Found: true })
                 {
                     transient = sec.Transient;
+                    // users.get resolves resold-customer users too; the service flags those via CustomerId.
+                    var viaReseller = sec.CustomerId is not null;
                     info = info with
                     {
                         AccountKind = GoogleAccountKind.Managed,
-                        AccountKindReason = "User exists in the reseller's Google Workspace directory.",
-                        InResellerDirectory = true,
+                        AccountKindReason = viaReseller
+                            ? $"{domain} is a resold Workspace customer ({sec.CustomerId}) we have reseller admin access to."
+                            : "User exists in the reseller's Google Workspace directory.",
+                        InResellerDirectory = !viaReseller,
+                        WorkspaceCustomerId = sec.CustomerId,
                         TwoStepVerificationEnrolled = sec.Enrolled2Sv,
                         TwoStepVerificationEnforced = sec.Enforced2Sv,
                         Suspended = sec.Suspended,

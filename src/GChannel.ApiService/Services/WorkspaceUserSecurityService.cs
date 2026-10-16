@@ -140,6 +140,25 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
     private static string ScopeNotGranted(string scope) =>
         $"Domain-wide delegation scope not granted: {scope} (unauthorized_client). Add it to the service account's client ID in the Workspace Admin console.";
 
+    // The impersonated admin's own Workspace customer id, resolved once. users.get(email) answers for
+    // resold customers too (reseller access), so the returned user's customerId must be compared to
+    // this to tell "ours" from "a resold customer's" — Reports calls must then be scoped to theirs.
+    private string? _ownCustomerId;
+    private async Task<string?> GetOwnCustomerIdAsync(CancellationToken cancellationToken)
+    {
+        if (_ownCustomerId is not null) { return _ownCustomerId; }
+        try
+        {
+            var me = await Directory.Customers.Get("my_customer").ExecuteAsync(cancellationToken);
+            return _ownCustomerId = me.Id;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve own Workspace customer id (customers.get my_customer)");
+            return null;
+        }
+    }
+
     private static bool IsRateLimited(GoogleApiException ex) =>
         ex.HttpStatusCode is HttpStatusCode.TooManyRequests
         || (ex.HttpStatusCode is HttpStatusCode.Forbidden
@@ -165,7 +184,7 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
 
     public async Task<WorkspaceUserSecurity> GetUserSecurityAsync(string email, string? customerId, CancellationToken cancellationToken)
     {
-        const string fields = "primaryEmail,isEnrolledIn2Sv,isEnforcedIn2Sv,suspended,isAdmin";
+        const string fields = "primaryEmail,customerId,isEnrolledIn2Sv,isEnforcedIn2Sv,suspended,isAdmin";
         Google.Apis.Admin.Directory.directory_v1.Data.User? user;
         try
         {
@@ -217,6 +236,17 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
                 CustomerId = customerId,
                 Error = IsSetupProblem(ex) ? $"Admin SDK: {ex.Message}" : null
             };
+        }
+
+        // users.get(email) with no customer id still resolves users in resold customers we have reseller
+        // access to. Detect that from the returned customerId so the Reports calls hit the right tenant.
+        if (customerId is null && !string.IsNullOrEmpty(user.CustomerId))
+        {
+            var own = await GetOwnCustomerIdAsync(cancellationToken);
+            if (own is not null && !string.Equals(own, user.CustomerId, StringComparison.Ordinal))
+            {
+                customerId = user.CustomerId;
+            }
         }
 
         // Independent APIs — run them side by side to halve per-user latency.
