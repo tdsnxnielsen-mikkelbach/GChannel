@@ -155,15 +155,23 @@ Implemented in `BillingEndpoints.ResolveMemberIdentitiesAsync`
    **Consumer**. No further lookups.
 
 3. **Our own directory (Admin SDK Directory API).**
-   `users.get(email)` with `fields=primaryEmail,isEnrolledIn2Sv,isEnforcedIn2Sv,suspended,isAdmin`.
+   `users.get(email)` with `fields=primaryEmail,customerId,isEnrolledIn2Sv,isEnforcedIn2Sv,suspended,isAdmin`.
 
-   - **200** → the user is in the reseller's tenant → **Managed**, and we now have:
+   - **200** → the user is in a tenant we can read → **Managed**, and we now have:
      - `TwoStepVerificationEnrolled` ← `isEnrolledIn2Sv`
      - `TwoStepVerificationEnforced` ← `isEnforcedIn2Sv`
      - `Suspended`, `IsAdmin`
 
+     **Important:** `users.get(email)` with no customer parameter also resolves users in **resold
+     customers** we have reseller access to — it is not limited to our own tenant. The returned
+     `customerId` is therefore compared with `customers.get("my_customer")`; when they differ the
+     user is in a resold tenant and that id is carried into the Reports calls in step 4. Without
+     this, the audit and usage queries ran against *our* tenant for a foreign user and came back
+     empty — which is exactly why `hn@s360digital.com` showed "No recent event" with no key line
+     while the Directory data (2SV) looked fine.
+
      Then the **Reports API** is queried for Advanced Protection (step 4).
-   - **404** → not in our tenant. Fall through to step 5.
+   - **404** → not in any tenant we can read. Fall through to step 5.
    - **403 / 401** → either a foreign user, or a setup problem (API not enabled, DWD scope
      missing). The message is inspected; setup problems are surfaced as `DirectoryError` so the
      page can show the info banner. Fall through to step 5.
