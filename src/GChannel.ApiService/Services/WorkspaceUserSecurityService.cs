@@ -143,18 +143,26 @@ public sealed class WorkspaceUserSecurityService : IWorkspaceUserSecurityService
     // The impersonated admin's own Workspace customer id, resolved once. users.get(email) answers for
     // resold customers too (reseller access), so the returned user's customerId must be compared to
     // this to tell "ours" from "a resold customer's" — Reports calls must then be scoped to theirs.
+    // Read off the admin's own user record: customers.get would need an extra DWD scope.
     private string? _ownCustomerId;
     private async Task<string?> GetOwnCustomerIdAsync(CancellationToken cancellationToken)
     {
         if (_ownCustomerId is not null) { return _ownCustomerId; }
         try
         {
-            var me = await Directory.Customers.Get("my_customer").ExecuteAsync(cancellationToken);
-            return _ownCustomerId = me.Id;
+            var get = Directory.Users.Get(_options.ImpersonateUser);
+            get.Fields = "customerId";
+            var me = await get.ExecuteAsync(cancellationToken);
+            if (string.IsNullOrEmpty(me.CustomerId))
+            {
+                _logger.LogWarning("users.get({ImpersonateUser}) returned no customerId", _options.ImpersonateUser);
+                return null;
+            }
+            return _ownCustomerId = me.CustomerId;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not resolve own Workspace customer id (customers.get my_customer)");
+            _logger.LogWarning(ex, "Could not resolve own Workspace customer id via users.get({ImpersonateUser})", _options.ImpersonateUser);
             return null;
         }
     }
