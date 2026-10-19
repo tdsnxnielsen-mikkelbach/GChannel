@@ -206,11 +206,11 @@ else
     {
         <MudTable Items="rows" Dense="true" Hover="true" Elevation="0" T="BillingAccountMember" Breakpoint="Breakpoint.None">
             <HeaderContent>
-                <MudTh>Member</MudTh>
-                <MudTh Style="white-space: nowrap;">Role</MudTh>
-                <MudTh>Account</MudTh>
-                <MudTh Style="white-space: nowrap;">2SV</MudTh>
-                <MudTh Style="white-space: nowrap;">Adv. Protection</MudTh>
+                <MudTh><MudTableSortLabel T="BillingAccountMember" SortBy="@(m => m.Email)">Member</MudTableSortLabel></MudTh>
+                <MudTh Style="white-space: nowrap;"><MudTableSortLabel T="BillingAccountMember" SortBy="@(m => m.RoleDisplayName)">Role</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="BillingAccountMember" SortBy="@(m => (object)AccountRank(m))">Account</MudTableSortLabel></MudTh>
+                <MudTh Style="white-space: nowrap;"><MudTableSortLabel T="BillingAccountMember" SortBy="@(m => (object)TwoSvRank(m))">2SV</MudTableSortLabel></MudTh>
+                <MudTh Style="white-space: nowrap;"><MudTableSortLabel T="BillingAccountMember" SortBy="@(m => (object)AdvancedProtectionRank(m))">Adv. Protection</MudTableSortLabel></MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Member">
@@ -377,6 +377,47 @@ else
 
     private static bool IsUserLike(BillingAccountMember m) =>
         m.MemberType is "user" || m.MemberType is "group";
+
+    // Sort keys: ascending = weakest posture first, so one click surfaces the members to act on.
+    // Rows with no data (service accounts, unreadable tenants) sink to the bottom.
+    private int AccountRank(BillingAccountMember m)
+    {
+        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id)) { return 9; }
+        return id.AccountKind switch
+        {
+            GoogleAccountKind.Consumer => 0,
+            GoogleAccountKind.ManagedTeam => 1,
+            GoogleAccountKind.Unknown => 2,
+            GoogleAccountKind.Managed => 3,
+            _ => 8
+        };
+    }
+
+    private int TwoSvRank(BillingAccountMember m)
+    {
+        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id)) { return 9; }
+        return id.TwoStepVerificationEnrolled switch
+        {
+            false => 0,                                                 // Off
+            true when id.TwoStepVerificationEnforced != true => 1,      // On, not enforced
+            true => 2,                                                  // On · enforced
+            null => 8                                                   // n/a (tenant not readable)
+        };
+    }
+
+    private int AdvancedProtectionRank(BillingAccountMember m)
+    {
+        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id) || !id.SecurityVisible) { return 9; }
+        return id.AdvancedProtection switch
+        {
+            AdvancedProtectionStatus.NotEnrolled => 0,
+            AdvancedProtectionStatus.Unknown when id is { SecurityKeys: 0, Passkeys: 0 } => 0, // inferred not enrolled
+            AdvancedProtectionStatus.Unavailable => 1,
+            AdvancedProtectionStatus.Unknown => 2,                       // no recent event, has keys
+            AdvancedProtectionStatus.Enrolled => 3,
+            _ => 8
+        };
+    }
 
     private static string MemberTypeIcon(string type) => type switch
     {
