@@ -272,6 +272,15 @@ Service-account and domain members get `—` in the security columns — they ar
 accounts. If the Admin SDK side isn't configured or is denied, an info banner explains that
 account type still works but 2SV / Advanced Protection are not readable.
 
+Every column header is **sortable**. The three security columns sort by posture rather than
+label, so an ascending sort puts the members to act on first:
+
+| Column | Ascending order |
+|---|---|
+| Account | Consumer → Managed (team) → Unknown → Managed → no data |
+| 2SV | Off → On (not enforced) → On · enforced → n/a |
+| Adv. Protection | Not enrolled (event **or** 0 keys/passkeys) → Unavailable → No recent event (has keys) → Enrolled → — |
+
 ### 2.5 Setup required
 
 1. **Enable the Admin SDK API** in the service account's project:
