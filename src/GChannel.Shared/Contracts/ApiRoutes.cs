@@ -241,6 +241,23 @@ public static class ApiRoutes
     public static string BillingPostureFindings(string scope) =>
         $"/api/billing/posture/findings?scope={scope}";
 
+    // Native Google vs third-party (Marketplace / partner) spend split, from the export's
+    // transaction_type / seller_name, plus Marketplace orders from the Consumer Procurement API.
+
+    /// <summary>Estate-wide native vs third-party totals + per-seller / per-product breakdown.</summary>
+    public static string SellerSpend(int months) => $"/api/billing/spend/sellers?months={months}";
+
+    /// <summary>One customer's native vs third-party totals + per-seller / per-product breakdown.</summary>
+    public static string CustomerSellerSpend(string customerId, int months) =>
+        $"/api/billing/customers/{customerId}/spend/sellers?months={months}";
+
+    /// <summary>Per-customer Google vs third-party split table.</summary>
+    public static string CustomerSellerSplits(int months) => $"/api/billing/spend/sellers/customers?months={months}";
+
+    /// <summary>Marketplace orders across all billing accounts, or one customer's when customerId is set.</summary>
+    public static string MarketplaceOrders(string? customerId = null) =>
+        customerId is null ? "/api/billing/marketplace/orders" : $"/api/billing/marketplace/orders?customerId={customerId}";
+
     /// <summary>Create/update a budget (create when no budget id in the payload, else update).</summary>
     public const string BillingBudgetSave = "/api/billing/budgets";
 

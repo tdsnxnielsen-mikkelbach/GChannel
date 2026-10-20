@@ -174,6 +174,18 @@ else
                 </MudText>
             }
         </MudPaper>
+
+        @if (_sellerSpend is { Unconfigured: false, ByCategory.Count: > 0 } || _marketplace is { Orders.Count: > 0 })
+        {
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" md="6">
+                    <SellerSplitCard Summary="_sellerSpend" Loading="_spendLoading" Subtitle="This customer, last 3 invoice months" MaxRows="6" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MarketplaceOrdersTable Result="_marketplace" Loading="_spendLoading" ShowAccount="false" />
+                </MudItem>
+            </MudGrid>
+        }
     }
 
     <MudCard Elevation="2" Class="mb-4">
@@ -538,6 +550,8 @@ else
     private bool _entitlementsLoading = true;
 
     private CustomerSpendResult? _spend;
+    private SellerSpendSummary? _sellerSpend;
+    private MarketplaceOrdersResult? _marketplace;
     private bool _spendLoading = true;
 
     private bool _provisionOpen;
@@ -619,11 +633,13 @@ else
             try
             {
                 _spend = await Api.GetCustomerSpendAsync(Id, 13);
+                _sellerSpend = await Api.GetCustomerSellerSpendAsync(Id, 3);
+                _marketplace = await Api.GetMarketplaceOrdersAsync(Id);
             }
             catch
             {
                 // Billed spend is best-effort (export may be unconfigured); ignore so the page renders.
-                _spend = null;
+                _spend ??= null;
             }
             finally
             {

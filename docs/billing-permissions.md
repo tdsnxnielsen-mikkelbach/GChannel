@@ -410,26 +410,119 @@ No new Google permissions: the scan reuses the Cloud Billing viewer role (Part 1
 
 ---
 
+## Part 4 — Native Google vs third-party (Marketplace / ISV / partner)
+
+Two complementary sources, both materialised nightly and surfaced on **Spend trends** and each
+**customer detail** page.
+
+### §1 Spend split from the billing export (`CustomerSpendBySeller`)
+
+The Cloud Billing BigQuery export carries purpose-built columns for this:
+
+| Column | Values | Meaning |
+|---|---|---|
+| `transaction_type` | `GOOGLE` · `THIRD_PARTY_RESELLER` · `THIRD_PARTY_AGENCY` | Who sold the line item. `GOOGLE` = native Google Cloud. The two `THIRD_PARTY_*` values are Marketplace / ISV / partner products (resold by Google, or sold by the partner with Google as agent). Only populated for `cost_type = regular`. |
+| `seller_name` | legal entity | The ISV / partner on Marketplace rows (e.g. Anthropic, Databricks); blank on Google rows. |
+| `service.description` | text | Product name ("Compute Engine", "Anthropic Claude 3.5 Sonnet"). |
+
+`BillingSyncService` runs a third aggregation per cycle grouped by
+*(sub-account, invoice month, currency, transaction_type, seller_name, service.description)*,
+attributes each row to a customer with the same resolver as the monthly spend, and replaces the
+window in `CustomerSpendBySeller`. The contract maps `transaction_type` to `SellerCategory`
+(`Google` / `ThirdPartyReseller` / `ThirdPartyAgency` / `Unknown` for taxes, adjustments and untyped rows).
+
+| Route | Returns |
+|---|---|
+| `GET /api/billing/spend/sellers?months=` | Estate totals per category + per-seller + per-product (third-party only) |
+| `GET /api/billing/customers/{id}/spend/sellers?months=` | Same for one customer |
+| `GET /api/billing/spend/sellers/customers?months=` | Per-customer Google vs third-party split with seller list |
+
+UI: `SellerSplitCard` (third-party share, category table, top sellers / products) on Spend trends
+(estate, last month) and customer detail (last 3 months); a *Third-party share by customer* table on
+Spend trends. No new permissions — it is the same export the spend sync already reads.
+
+### §2 Marketplace orders from the Consumer Procurement API (`MarketplaceOrders`)
+
+Spend only shows products that billed in the window. Marketplace **orders** (subscriptions / plans)
+are the entitlement-level view: a customer *has* Databricks on a plan even in a month with no usage.
+
+`MarketplaceOrdersService` calls `GET https://cloudcommerceconsumerprocurement.googleapis.com/v1/billingAccounts/{id}/orders`
+over REST (no official .NET client) with the service account's own cloud-platform credential, and
+`BillingPostureSyncService` runs it for every open billing account right after the nightly posture
+scan. Per order we keep display name, product external names (e.g.
+`databricks.endpoints.databricks-prod.cloud.goog`), offers, inferred provider, create/update time and
+whether any line item is still active. Accounts that fail (API not enabled, no permission) are recorded
+in `SyncCursors['marketplace-orders'].Notes` and surfaced as a warning; their previous snapshot is kept.
+
+| Route | Returns |
+|---|---|
+| `GET /api/billing/marketplace/orders[?customerId=]` | All orders (or one customer's), with per-account errors and scan time |
+
+UI: `MarketplaceOrdersTable` on Spend trends (all accounts) and customer detail (that customer's).
+
+**Setup required (one-off):**
+
+```bash
+# Enable the API in the service account's project
+gcloud services enable cloudcommerceconsumerprocurement.googleapis.com --project tdsgchannel
+
+# Grant order-list permission on each MASTER billing account (sub-accounts inherit)
+for BA in 016E74-10DE75-21330A 01F210-8698CB-C16E8D; do
+  gcloud billing accounts add-iam-policy-binding "$BA" \
+    --member="serviceAccount:gchannel-dashboard@tdsgchannel.iam.gserviceaccount.com" \
+    --role="roles/consumerprocurement.orderViewer"
+done
+```
+
+If `roles/consumerprocurement.orderViewer` isn't available in your org, create a custom role with
+`consumerprocurement.orders.list` and `consumerprocurement.orders.get` and bind that instead.
+
+### What is **not** available by API
+
+- **Google Cloud Ready** badges, **Partner Advantage** tiers / specialisations, "built with Google"
+  marks — partner-programme designations with no public API; they only exist in the Partner Directory
+  and Marketplace listing pages.
+- **ISV** as a field — not exposed anywhere; in practice `transaction_type ≠ GOOGLE` *is* the ISV /
+  partner signal, and `seller_name` names the ISV.
+- Marketplace **catalogue** metadata (categories, listing badges) — the Producer Portal / Partner APIs
+  are vendor-side only.
+- The Channel API itself is first-party only (Workspace, GCP, Chrome, Voice); third-party Marketplace
+  never appears there, so *entitlement in Channel API* ⇒ native Google by construction.
+
+### Configuration
+
+| Key | Default | Meaning |
+|---|---|---|
+| `GoogleBilling:MarketplaceOrdersEnabled` | `true` | Scan Marketplace orders nightly with the posture scan |
+
+---
+
 ## Files touched
 
 | File | Purpose |
 |---|---|
 | `src/GChannel.Shared/Contracts/Billing.cs` | `BillingAccountMember(s)Result`, `MemberIdentityRequest/Info/Result`, `GoogleAccountKind`, `AdvancedProtectionStatus` |
 | `src/GChannel.Shared/Contracts/BillingPosture.cs` | `PostureRules`, `BillingPostureMember/Account/Summary/Finding(s)`, `PostureBucket` (Part 3) |
+| `src/GChannel.Shared/Contracts/SellerSpend.cs` | `SellerCategory`, `SellerSpendSummary/Line`, `CustomerSellerSplit`, `MarketplaceOrder(s)` (Part 4) |
 | `src/GChannel.Shared/Contracts/ApiRoutes.cs` | `BillingAccountMembers(id)`, `BillingMemberIdentity`, `BillingPosture*` |
 | `src/GChannel.ApiService/Services/BillingBudgetsService.cs` | `GetBillingAccountMembersAsync` (Part 1) |
 | `src/GChannel.ApiService/Services/WorkspaceUserSecurityService.cs` | Admin SDK Directory + Reports via DWD (Part 2, steps 3–4) |
 | `src/GChannel.ApiService/Services/MemberIdentityResolver.cs` | Shared identity/posture resolution used by the API endpoint and the nightly scan (Part 2 orchestration) |
 | `src/GChannel.ApiService/Endpoints/BillingEndpoints.cs` | `GET …/members`, `POST …/members/identity` |
 | `src/GChannel.ApiService/Endpoints/BillingPostureEndpoints.cs` | `GET /api/billing/posture`, `…/accounts/{id}/members`, `…/findings` (Part 3) |
-| `src/GChannel.ApiService/Data/GChannelDbContext.cs` | `BillingPostureAccountRecord`, `BillingPostureMemberRecord` |
+| `src/GChannel.ApiService/Endpoints/SellerSpendEndpoints.cs` | `GET /api/billing/spend/sellers*`, `…/customers/{id}/spend/sellers`, `…/marketplace/orders` (Part 4) |
+| `src/GChannel.ApiService/Services/MarketplaceOrdersService.cs` | Consumer Procurement API REST client (Part 4 §2) |
+| `src/GChannel.ApiService/Data/GChannelDbContext.cs` | `BillingPostureAccountRecord`, `BillingPostureMemberRecord`, `CustomerSpendBySellerRecord`, `MarketplaceOrderRecord` |
 | `src/GChannel.ApiService/Program.cs` | DI registrations; DDL for `BillingPostureAccounts` / `BillingPostureMembers` |
 | `src/GChannel.ApiService/Configuration/GoogleBillingOptions.cs` | `PostureScanEnabled` / `PostureScanHourUtc` / `PostureScanStaleHours` |
 | `src/GChannel.ApiService/GChannel.ApiService.csproj` | `Google.Apis.Admin.Directory.directory_v1`, `Google.Apis.Admin.Reports.reports_v1` |
-| `src/GChannel.Worker/Services/BillingPostureSyncService.cs` | Nightly scan (Part 3) |
+| `src/GChannel.Worker/Services/BillingPostureSyncService.cs` | Nightly scan (Part 3) + Marketplace orders sweep (Part 4 §2) |
+| `src/GChannel.Worker/Services/BillingSyncService.cs` | Seller / transaction_type aggregation (Part 4 §1) |
 | `src/GChannel.Worker/Program.cs` | DI + hosted service registration |
 | `src/GChannel.Web/Services/GChannelApiClient.cs` | `ListBillingAccountMembersAsync`, `ResolveMemberIdentitiesAsync`, `GetBillingPosture*Async` |
 | `src/GChannel.Web/Components/Pages/Budgets.razor` | Billing permissions section + security columns |
 | `src/GChannel.Web/Components/Pages/BillingPosture.razor` | Security posture page (Part 3) |
+| `src/GChannel.Web/Components/Shared/SellerSplitCard.razor`, `MarketplaceOrdersTable.razor` | Part 4 cards used on Spend trends + customer detail |
+| `src/GChannel.Web/Components/Pages/SpendTrends.razor`, `CustomerDetail.razor` | Part 4 wiring |
 | `src/GChannel.Web/Components/Layout/NavMenu.razor` | Billing → Security posture link |
 | `docs/configuration.md` | DWD scope note; posture scan options |

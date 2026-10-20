@@ -25,6 +25,10 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
     public DbSet<BillingPostureAccountRecord> BillingPostureAccounts => Set<BillingPostureAccountRecord>();
     public DbSet<BillingPostureMemberRecord> BillingPostureMembers => Set<BillingPostureMemberRecord>();
 
+    // Native vs third-party spend split + Marketplace orders
+    public DbSet<CustomerSpendBySellerRecord> CustomerSpendBySeller => Set<CustomerSpendBySellerRecord>();
+    public DbSet<MarketplaceOrderRecord> MarketplaceOrders => Set<MarketplaceOrderRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<IdentityCheckLog>(entity =>
@@ -142,6 +146,40 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
             entity.Property(e => e.RoleDisplayName).HasMaxLength(128);
             entity.Property(e => e.WorkspaceCustomerId).HasMaxLength(64);
             entity.HasIndex(e => e.Email);
+        });
+
+        modelBuilder.Entity<CustomerSpendBySellerRecord>(entity =>
+        {
+            entity.HasKey(e => new { e.BillingSubAccountId, e.InvoiceMonth, e.Currency, e.TransactionType, e.SellerKey, e.ServiceKey });
+            entity.Property(e => e.BillingSubAccountId).HasMaxLength(64);
+            entity.Property(e => e.InvoiceMonth).HasMaxLength(6);
+            entity.Property(e => e.Currency).HasMaxLength(8);
+            entity.Property(e => e.TransactionType).HasMaxLength(32);
+            entity.Property(e => e.SellerKey).HasMaxLength(256);
+            entity.Property(e => e.ServiceKey).HasMaxLength(256);
+            entity.Property(e => e.SellerName).HasMaxLength(256);
+            entity.Property(e => e.ServiceDescription).HasMaxLength(256);
+            entity.Property(e => e.CustomerId).HasMaxLength(128);
+            entity.Property(e => e.OwningLinkId).HasMaxLength(128);
+            entity.Property(e => e.Cost).HasColumnType("decimal(18,6)");
+            entity.Property(e => e.GrossCost).HasColumnType("decimal(18,6)");
+            entity.Property(e => e.Credits).HasColumnType("decimal(18,6)");
+            entity.HasIndex(e => e.CustomerId);
+            entity.HasIndex(e => e.InvoiceMonth);
+        });
+
+        modelBuilder.Entity<MarketplaceOrderRecord>(entity =>
+        {
+            entity.HasKey(e => e.Name);
+            entity.Property(e => e.Name).HasMaxLength(256);
+            entity.Property(e => e.BillingAccountId).HasMaxLength(64);
+            entity.Property(e => e.CustomerId).HasMaxLength(128);
+            entity.Property(e => e.DisplayName).HasMaxLength(256);
+            entity.Property(e => e.Provider).HasMaxLength(128);
+            entity.Property(e => e.ProductsCsv).HasMaxLength(2048);
+            entity.Property(e => e.OffersCsv).HasMaxLength(2048);
+            entity.HasIndex(e => e.BillingAccountId);
+            entity.HasIndex(e => e.CustomerId);
         });
     }
 }
@@ -331,5 +369,47 @@ public sealed class BillingPostureMemberRecord
     public DateOnly? KeysAsOf { get; set; }
     public bool? IsAdmin { get; set; }
     public bool? Suspended { get; set; }
+    public DateTimeOffset LastSyncedUtc { get; set; }
+}
+
+/// <summary>
+/// Billed spend per (sub-account, month, currency, seller, service) from the export's transaction_type /
+/// seller_name / service.description — the native-Google vs Marketplace/partner split.
+/// </summary>
+public sealed class CustomerSpendBySellerRecord
+{
+    public string BillingSubAccountId { get; set; } = string.Empty;
+    public string InvoiceMonth { get; set; } = string.Empty;
+    public string Currency { get; set; } = string.Empty;
+    /// <summary>Export transaction_type: GOOGLE / THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY, or "" when absent.</summary>
+    public string TransactionType { get; set; } = string.Empty;
+    /// <summary>Key-safe seller: lower-cased seller_name, or "" for Google rows.</summary>
+    public string SellerKey { get; set; } = string.Empty;
+    /// <summary>Key-safe service: lower-cased service.description, or "".</summary>
+    public string ServiceKey { get; set; } = string.Empty;
+    public string? SellerName { get; set; }
+    public string? ServiceDescription { get; set; }
+    public string? CustomerId { get; set; }
+    public string? OwningLinkId { get; set; }
+    public decimal Cost { get; set; }
+    public decimal GrossCost { get; set; }
+    public decimal Credits { get; set; }
+    public DateTimeOffset LastSyncedUtc { get; set; }
+}
+
+/// <summary>A Marketplace order on a billing account, from the Consumer Procurement API (nightly scan).</summary>
+public sealed class MarketplaceOrderRecord
+{
+    /// <summary>billingAccounts/{id}/orders/{orderId}</summary>
+    public string Name { get; set; } = string.Empty;
+    public string BillingAccountId { get; set; } = string.Empty;
+    public string? CustomerId { get; set; }
+    public string? DisplayName { get; set; }
+    public string? Provider { get; set; }
+    public string? ProductsCsv { get; set; }
+    public string? OffersCsv { get; set; }
+    public DateTimeOffset? CreateTime { get; set; }
+    public DateTimeOffset? UpdateTime { get; set; }
+    public bool Active { get; set; }
     public DateTimeOffset LastSyncedUtc { get; set; }
 }

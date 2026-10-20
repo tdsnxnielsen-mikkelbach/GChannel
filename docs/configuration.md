@@ -61,6 +61,7 @@ optional too and enable [Pub/Sub notifications](#pubsub-notifications-7).
 | `GoogleBilling:PostureScanEnabled` | `true` | Worker runs the nightly billing IAM security-posture scan (consumer admins, 2SV / Advanced Protection / key compliance per member) into the `BillingPosture*` read-model. Needs the service-account key + `ImpersonateUser`. See [billing-permissions.md](billing-permissions.md) Part 3. |
 | `GoogleBilling:PostureScanHourUtc` | `2` | UTC hour (0–23) the nightly posture scan starts. |
 | `GoogleBilling:PostureScanStaleHours` | `26` | On worker start, scan immediately if the last completed scan is older than this (first deploy / outage catch-up). |
+| `GoogleBilling:MarketplaceOrdersEnabled` | `true` | With the nightly posture scan, list each billing account's Marketplace orders via the Consumer Procurement API into `MarketplaceOrders`. Needs the API enabled + `consumerprocurement.orders.list` on the billing accounts. See [billing-permissions.md](billing-permissions.md) Part 4. |
 
 ### Background dashboard refresh (optional)
 

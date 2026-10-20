@@ -174,6 +174,50 @@
     </MudItem>
 </MudGrid>
 
+<MudGrid Class="mt-2">
+    <MudItem xs="12" md="5">
+        <SellerSplitCard Summary="_sellers" Loading="_sellersLoading" Subtitle="Estate-wide, last invoice month" />
+    </MudItem>
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2">Third-party share by customer</MudText>
+            @if (_splitsLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+            }
+            else if (_splits is { Count: > 0 })
+            {
+                <MudTable Items="_splits" Dense="true" Hover="true" Elevation="0" T="CustomerSellerSplit" Breakpoint="Breakpoint.None" RowsPerPage="15">
+                    <HeaderContent>
+                        <MudTh>Customer</MudTh>
+                        <MudTh><MudTableSortLabel T="CustomerSellerSplit" SortBy="@(c => c.GoogleCost)">Google Cloud</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel T="CustomerSellerSplit" SortBy="@(c => c.ThirdPartyCost)" InitialDirection="SortDirection.Descending">Third-party</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel T="CustomerSellerSplit" SortBy="@(c => c.ThirdPartyPercent)">Share</MudTableSortLabel></MudTh>
+                        <MudTh>Sellers</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Customer"><MudLink Href="@($"/customers/{context.CustomerId}")">@CustomerLabel(context.CustomerId)</MudLink></MudTd>
+                        <MudTd DataLabel="Google Cloud" Style="text-align:right">@context.GoogleCost.ToString("N0") <MudText Typo="Typo.caption" Color="Color.Secondary" Style="display:inline">@context.Currency</MudText></MudTd>
+                        <MudTd DataLabel="Third-party" Style="text-align:right">@context.ThirdPartyCost.ToString("N0")</MudTd>
+                        <MudTd DataLabel="Share">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(context.ThirdPartyPercent >= 50 ? Color.Secondary : Color.Default)">@context.ThirdPartyPercent.ToString("0.#")%</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Sellers"><MudText Typo="Typo.caption">@string.Join(", ", context.Sellers)</MudText></MudTd>
+                    </RowTemplate>
+                    <PagerContent><MudTablePager PageSizeOptions="new[] { 15, 50 }" /></PagerContent>
+                </MudTable>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No seller breakdown yet.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12">
+        <MarketplaceOrdersTable Result="_orders" Loading="_ordersLoading" />
+    </MudItem>
+</MudGrid>
+
 @code {
     [SupplyParameterFromQuery]
     public string? CustomerId { get; set; }
@@ -205,6 +249,13 @@
 
     private IReadOnlyList<ResellerSpend> _resellers = [];
     private bool _resellersLoading = true;
+
+    private SellerSpendSummary? _sellers;
+    private bool _sellersLoading = true;
+    private IReadOnlyList<CustomerSellerSplit> _splits = [];
+    private bool _splitsLoading = true;
+    private MarketplaceOrdersResult? _orders;
+    private bool _ordersLoading = true;
 
     private IReadOnlyList<Customer> _customers = [];
     private readonly Dictionary<string, string> _customerNames = new(StringComparer.Ordinal);
@@ -258,6 +309,10 @@
         {
             _resellersLoading = false;
         }
+
+        try { _sellers = await Api.GetSellerSpendAsync(months: 1); } catch { _sellers = null; } finally { _sellersLoading = false; }
+        try { _splits = (await Api.GetCustomerSellerSplitsAsync(months: 1))?.Customers ?? []; } catch { _splits = []; } finally { _splitsLoading = false; }
+        try { _orders = await Api.GetMarketplaceOrdersAsync(); } catch { _orders = null; } finally { _ordersLoading = false; }
     }
 
     protected override async Task OnParametersSetAsync()

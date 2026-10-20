@@ -88,6 +88,13 @@ public sealed class GoogleBillingOptions
     public int PostureScanStaleHours { get; set; } = 26;
 
     /// <summary>
+    /// Nightly Marketplace-orders scan via the Cloud Commerce Consumer Procurement API (lists each billing
+    /// account's Marketplace subscriptions / plans). Runs with the posture scan. Needs the API enabled in the
+    /// service account's project and <c>consumerprocurement.orders.list</c> on the billing accounts.
+    /// </summary>
+    public bool MarketplaceOrdersEnabled { get; set; } = true;
+
+    /// <summary>
     /// Manual sub-account → customer-domain overrides for spend attribution, for sub-accounts the export
     /// can't auto-resolve: no GCP organization (projects billed directly, e.g. Søstrene Grene), or an org
     /// domain that doesn't match the customer's Channel domain (a TLD mismatch, e.g. <c>formuepleje.dev</c>

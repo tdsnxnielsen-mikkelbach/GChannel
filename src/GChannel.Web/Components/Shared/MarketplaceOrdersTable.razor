@@ -1,0 +1,84 @@
+@* Marketplace orders (subscriptions / plans) from the Consumer Procurement API — entitlement-level view
+   of third-party products, independent of whether they generated spend this month. *@
+
+<MudPaper Class="pa-4" Elevation="2">
+    <div class="d-flex justify-space-between align-center mb-1">
+        <div>
+            <MudText Typo="Typo.h6">Marketplace orders</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Third-party subscriptions and plans on the billing account(s), from the Cloud Commerce Consumer Procurement API.
+            </MudText>
+        </div>
+        @if (Result?.AsOf is { } asOf)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary">scanned @asOf.LocalDateTime.ToString("g")</MudText>
+        }
+    </div>
+
+    @if (Loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+    }
+    else if (Result is null || Result.Unconfigured)
+    {
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Marketplace order scan isn't configured (<code>GoogleBilling:MarketplaceOrdersEnabled</code> + service account).
+        </MudText>
+    }
+    else
+    {
+        @if (Result.Errors.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
+                Orders couldn't be read for @Result.Errors.Count billing account(s) — typically the Consumer Procurement API isn't
+                enabled or the service account lacks <code>consumerprocurement.orders.list</code>.
+                <MudTooltip Text="@string.Join("\n", Result.Errors.Select(e => $"{e.Key}: {e.Value}"))"><MudLink Typo="Typo.caption">details</MudLink></MudTooltip>
+            </MudAlert>
+        }
+
+        @if (Result.Orders.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @(Result.AsOf is null ? "No scan has completed yet." : "No Marketplace orders found.")
+            </MudText>
+        }
+        else
+        {
+            <MudTable Items="Result.Orders" Dense="true" Hover="true" Elevation="0" T="MarketplaceOrder" Breakpoint="Breakpoint.None" RowsPerPage="25">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel T="MarketplaceOrder" SortBy="@(o => o.Provider ?? "")">Provider</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel T="MarketplaceOrder" SortBy="@(o => o.DisplayName ?? "")">Order</MudTableSortLabel></MudTh>
+                    <MudTh>Product</MudTh>
+                    @if (ShowAccount) { <MudTh>Billing account</MudTh> }
+                    <MudTh><MudTableSortLabel T="MarketplaceOrder" SortBy="@(o => (object)(o.Active ? 0 : 1))">State</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel T="MarketplaceOrder" SortBy="@(o => o.CreateTime ?? DateTimeOffset.MinValue)">Created</MudTableSortLabel></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Provider">@(context.Provider ?? "—")</MudTd>
+                    <MudTd DataLabel="Order">@(context.DisplayName ?? context.Name.Split('/').Last())</MudTd>
+                    <MudTd DataLabel="Product">
+                        @foreach (var p in context.Products) { <MudText Typo="Typo.caption" Class="d-block">@p</MudText> }
+                    </MudTd>
+                    @if (ShowAccount)
+                    {
+                        <MudTd DataLabel="Billing account">
+                            <MudText Typo="Typo.caption">@context.BillingAccountId</MudText>
+                            @if (context.CustomerId is not null) { <MudLink Href="@($"/customers/{context.CustomerId}")" Typo="Typo.caption" Class="d-block">customer</MudLink> }
+                        </MudTd>
+                    }
+                    <MudTd DataLabel="State">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(context.Active ? Color.Success : Color.Default)">@(context.Active ? "active" : "cancelled")</MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Created">@(context.CreateTime?.LocalDateTime.ToString("d") ?? "—")</MudTd>
+                </RowTemplate>
+                <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50 }" /></PagerContent>
+            </MudTable>
+        }
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public MarketplaceOrdersResult? Result { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public bool ShowAccount { get; set; } = true;
+}

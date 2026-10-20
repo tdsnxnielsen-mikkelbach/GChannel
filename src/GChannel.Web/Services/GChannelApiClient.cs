@@ -351,6 +351,22 @@ public sealed class GChannelApiClient(
     public Task<BillingPostureFindingsResult?> GetBillingPostureFindingsAsync(string scope = "all", CancellationToken cancellationToken = default) =>
         GetAsync<BillingPostureFindingsResult>(ApiRoutes.BillingPostureFindings(scope), cancellationToken);
 
+    /// <summary>Estate-wide native Google vs third-party spend split with per-seller / per-product breakdown.</summary>
+    public Task<SellerSpendSummary?> GetSellerSpendAsync(int months = 1, CancellationToken cancellationToken = default) =>
+        GetAsync<SellerSpendSummary>(ApiRoutes.SellerSpend(months), cancellationToken);
+
+    /// <summary>One customer's native Google vs third-party spend split.</summary>
+    public Task<SellerSpendSummary?> GetCustomerSellerSpendAsync(string customerId, int months = 3, CancellationToken cancellationToken = default) =>
+        GetAsync<SellerSpendSummary>(ApiRoutes.CustomerSellerSpend(customerId, months), cancellationToken);
+
+    /// <summary>Per-customer Google vs third-party split table.</summary>
+    public Task<CustomerSellerSplitResult?> GetCustomerSellerSplitsAsync(int months = 1, CancellationToken cancellationToken = default) =>
+        GetAsync<CustomerSellerSplitResult>(ApiRoutes.CustomerSellerSplits(months), cancellationToken);
+
+    /// <summary>Marketplace orders across billing accounts, or one customer's.</summary>
+    public Task<MarketplaceOrdersResult?> GetMarketplaceOrdersAsync(string? customerId = null, CancellationToken cancellationToken = default) =>
+        GetAsync<MarketplaceOrdersResult>(ApiRoutes.MarketplaceOrders(customerId), cancellationToken);
+
     /// <summary>Creates (no budget id) or updates (budget id set) a budget.</summary>
     public Task<BudgetInfo?> SaveBudgetAsync(SaveBudgetRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<BudgetInfo>(HttpMethod.Post, ApiRoutes.BillingBudgetSave, request, cancellationToken);

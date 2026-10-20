@@ -176,6 +176,70 @@ public sealed class BillingSyncService(
             await dbc.SaveChangesAsync(ct);
         });
 
+        // --- Native Google vs third-party split: monthly spend by seller + service. transaction_type is
+        // GOOGLE / THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY (only on regular cost rows), seller_name is the
+        // ISV / partner legal name on Marketplace rows. Rows for the window are replaced wholesale. ---
+        var sellerSql = $"""
+            SELECT
+              billing_account_id AS sub_account,
+              invoice.month AS invoice_month,
+              currency,
+              IFNULL(transaction_type, '') AS transaction_type,
+              IFNULL(seller_name, '') AS seller_name,
+              IFNULL(service.description, '') AS service_description,
+              SUM(cost) AS gross_cost,
+              SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) AS c), 0)) AS credits
+            FROM {table}
+            WHERE invoice.month >= @minMonth
+            GROUP BY sub_account, invoice_month, currency, transaction_type, seller_name, service_description
+            """;
+        var sellerRows = await bq.ExecuteQueryAsync(sellerSql,
+            [new BigQueryParameter("minMonth", BigQueryDbType.String, minMonth)], queryOptions, cancellationToken: ct);
+
+        var sellerUpserts = 0;
+        await WithDbAsync(async dbc =>
+        {
+            await dbc.CustomerSpendBySeller.Where(r => string.Compare(r.InvoiceMonth, minMonth) >= 0).ExecuteDeleteAsync(ct);
+            var seen = new HashSet<(string, string, string, string, string, string)>();
+            foreach (var row in sellerRows)
+            {
+                var sub = Normalize(row["sub_account"] as string);
+                if (sub.Length == 0 || excluded.Contains(sub)) { continue; }
+                var month = row["invoice_month"] as string ?? "";
+                var currency = row["currency"] as string ?? "";
+                if (month.Length == 0 || currency.Length == 0) { continue; }
+                var txType = (row["transaction_type"] as string ?? "").Trim().ToUpperInvariant();
+                var seller = (row["seller_name"] as string ?? "").Trim();
+                var service = (row["service_description"] as string ?? "").Trim();
+                var sellerKey = Truncate(seller.ToLowerInvariant(), 256);
+                var serviceKey = Truncate(service.ToLowerInvariant(), 256);
+                if (!seen.Add((sub, month, currency, txType, sellerKey, serviceKey))) { continue; }
+
+                var gross = Dec(row["gross_cost"]);
+                var credits = Dec(row["credits"]);
+                var owner = Resolve(sub, accountMap, subToDomain, domainMap, sldMap);
+                dbc.CustomerSpendBySeller.Add(new CustomerSpendBySellerRecord
+                {
+                    BillingSubAccountId = sub,
+                    InvoiceMonth = month,
+                    Currency = currency,
+                    TransactionType = Truncate(txType, 32),
+                    SellerKey = sellerKey,
+                    ServiceKey = serviceKey,
+                    SellerName = seller.Length == 0 ? null : Truncate(seller, 256),
+                    ServiceDescription = service.Length == 0 ? null : Truncate(service, 256),
+                    CustomerId = owner.CustomerId,
+                    OwningLinkId = owner.OwningLinkId,
+                    GrossCost = gross,
+                    Credits = credits,
+                    Cost = gross + credits,
+                    LastSyncedUtc = now
+                });
+                sellerUpserts++;
+            }
+            await dbc.SaveChangesAsync(ct);
+        });
+
         // --- Daily spend by sub-account (trailing trend window). Prune older rows first. ---
         var minDay = now.UtcDateTime.Date.AddDays(-Math.Max(1, opts.TrendDays));
         var minDayOnly = DateOnly.FromDateTime(minDay);
@@ -224,8 +288,8 @@ public sealed class BillingSyncService(
         });
 
         logger.LogInformation(
-            "Billing-export cycle: {Monthly} monthly + {Daily} daily spend rows upserted ({Unmapped} monthly rows unattributed to a customer).",
-            monthlyUpserts, dailyUpserts, monthlyUnmapped);
+            "Billing-export cycle: {Monthly} monthly + {Daily} daily + {Seller} seller/service spend rows upserted ({Unmapped} monthly rows unattributed to a customer).",
+            monthlyUpserts, dailyUpserts, sellerUpserts, monthlyUnmapped);
     }
 
     // Resolves a sub-account to a customer: the entitlement billing-account map first (precise), else the
@@ -350,4 +414,6 @@ public sealed class BillingSyncService(
 
     private static decimal Dec(object? value) =>
         value is null ? 0m : Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+
+    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }

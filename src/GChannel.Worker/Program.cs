@@ -56,6 +56,8 @@ builder.Services.AddSingleton<ReadModelProjector>();
 builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
 builder.Services.AddSingleton<IWorkspaceUserSecurityService, WorkspaceUserSecurityService>();
 builder.Services.AddSingleton<MemberIdentityResolver>();
+builder.Services.AddHttpClient(MarketplaceOrdersService.HttpClientName);
+builder.Services.AddSingleton<IMarketplaceOrdersService, MarketplaceOrdersService>();
 
 // The estate/dashboard background workers, extracted from the API container so they scale on their
 // own axis (fixed single replica) instead of with HTTP traffic. Each is a no-op unless the relevant

@@ -69,6 +69,8 @@ builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
 // billing IAM members in our own Workspace tenant. Stateless clients, cached credential: singleton.
 builder.Services.AddSingleton<IWorkspaceUserSecurityService, WorkspaceUserSecurityService>();
 builder.Services.AddSingleton<MemberIdentityResolver>();
+builder.Services.AddHttpClient(MarketplaceOrdersService.HttpClientName);
+builder.Services.AddSingleton<IMarketplaceOrdersService, MarketplaceOrdersService>();
 
 // §10 read-model write-through: mutation endpoints upsert the one changed customer row into the
 // read-model immediately after a successful Channel API call, so the estate/customers lists reflect a
@@ -111,6 +113,7 @@ app.MapDashboardEndpoints();
 app.MapEstateEndpoints();
 app.MapBillingEndpoints();
 app.MapBillingPostureEndpoints();
+app.MapSellerSpendEndpoints();
 
 app.Run();
 
@@ -310,6 +313,49 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         );
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_BillingPostureMembers_Email')
         CREATE INDEX IX_BillingPostureMembers_Email ON BillingPostureMembers(Email);
+        -- Native Google vs third-party (Marketplace / partner) spend split from the export.
+        IF OBJECT_ID('CustomerSpendBySeller', 'U') IS NULL
+        CREATE TABLE CustomerSpendBySeller (
+            BillingSubAccountId nvarchar(64) NOT NULL,
+            InvoiceMonth nvarchar(6) NOT NULL,
+            Currency nvarchar(8) NOT NULL,
+            TransactionType nvarchar(32) NOT NULL,
+            SellerKey nvarchar(256) NOT NULL,
+            ServiceKey nvarchar(256) NOT NULL,
+            SellerName nvarchar(256) NULL,
+            ServiceDescription nvarchar(256) NULL,
+            CustomerId nvarchar(128) NULL,
+            OwningLinkId nvarchar(128) NULL,
+            Cost decimal(18,6) NOT NULL,
+            GrossCost decimal(18,6) NOT NULL,
+            Credits decimal(18,6) NOT NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            CONSTRAINT PK_CustomerSpendBySeller PRIMARY KEY (BillingSubAccountId, InvoiceMonth, Currency, TransactionType, SellerKey, ServiceKey)
+        );
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerSpendBySeller_CustomerId')
+        CREATE INDEX IX_CustomerSpendBySeller_CustomerId ON CustomerSpendBySeller(CustomerId);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_CustomerSpendBySeller_InvoiceMonth')
+        CREATE INDEX IX_CustomerSpendBySeller_InvoiceMonth ON CustomerSpendBySeller(InvoiceMonth);
+        -- Marketplace orders (Consumer Procurement API), scanned nightly.
+        IF OBJECT_ID('MarketplaceOrders', 'U') IS NULL
+        CREATE TABLE MarketplaceOrders (
+            Name nvarchar(256) NOT NULL,
+            BillingAccountId nvarchar(64) NOT NULL,
+            CustomerId nvarchar(128) NULL,
+            DisplayName nvarchar(256) NULL,
+            Provider nvarchar(128) NULL,
+            ProductsCsv nvarchar(2048) NULL,
+            OffersCsv nvarchar(2048) NULL,
+            CreateTime datetimeoffset NULL,
+            UpdateTime datetimeoffset NULL,
+            Active bit NOT NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            CONSTRAINT PK_MarketplaceOrders PRIMARY KEY (Name)
+        );
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_MarketplaceOrders_BillingAccountId')
+        CREATE INDEX IX_MarketplaceOrders_BillingAccountId ON MarketplaceOrders(BillingAccountId);
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_MarketplaceOrders_CustomerId')
+        CREATE INDEX IX_MarketplaceOrders_CustomerId ON MarketplaceOrders(CustomerId);
         -- One-time backfill so estate value shows immediately after the BillableSeats column is added,
         -- instead of reading 0 everywhere until every entitlement has been re-synced. For COMMITTED
         -- entitlements the stored Seats already equals num_units (SeatsOf only falls back to a flexible

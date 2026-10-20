@@ -22,6 +22,7 @@ public sealed class BillingPostureSyncService(
     IOptions<GoogleBillingOptions> billingOptions,
     IBillingBudgetsService billing,
     MemberIdentityResolver resolver,
+    IMarketplaceOrdersService marketplace,
     IServiceScopeFactory scopeFactory,
     IConnectionMultiplexer redis,
     ILoggerFactory loggerFactory,
@@ -29,6 +30,7 @@ public sealed class BillingPostureSyncService(
 {
     private const string LockKey = "billing:posture:lock";
     private const string CursorScope = "billing-posture";
+    private const string OrdersCursorScope = "marketplace-orders";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -204,6 +206,79 @@ public sealed class BillingPostureSyncService(
         logger.LogInformation(
             "Posture scan complete in {Elapsed:0}s: {Accounts} accounts, {Members} member grants, {Identities} distinct identities resolved.",
             (DateTimeOffset.UtcNow - started).TotalSeconds, memberRows.Count, totalMembers, identities.Count);
+
+        // Marketplace orders ride along on the same nightly account enumeration. Failures are per
+        // account (permission / API not enabled) and never fail the posture scan.
+        if (billingOptions.Value.MarketplaceOrdersEnabled && marketplace.IsConfigured)
+        {
+            await SyncMarketplaceOrdersAsync(open, customerBySub, ct);
+        }
+    }
+
+    private async Task SyncMarketplaceOrdersAsync(
+        IReadOnlyList<BillingAccountInfo> accounts,
+        IReadOnlyDictionary<string, string> customerBySub,
+        CancellationToken ct)
+    {
+        var started = DateTimeOffset.UtcNow;
+        var all = new List<MarketplaceOrder>();
+        var errors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var scanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var account in accounts)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var orders = await marketplace.ListOrdersAsync(account.Id, ct);
+                all.AddRange(orders.Select(o => o with { CustomerId = customerBySub.GetValueOrDefault(account.Id) }));
+                scanned.Add(account.Id);
+            }
+            catch (Exception ex)
+            {
+                // Keep the first ~150 chars so the cursor Notes (512) can hold a few accounts' errors.
+                var msg = ex.Message.Length > 150 ? ex.Message[..150] : ex.Message;
+                errors[account.Id] = msg;
+                logger.LogWarning("Marketplace orders unavailable for {Account}: {Error}", account.Id, msg);
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await WithDbAsync(async db =>
+        {
+            // Replace orders only for accounts we successfully listed; keep the previous snapshot otherwise.
+            var stale = await db.MarketplaceOrders.Where(o => scanned.Contains(o.BillingAccountId)).ToListAsync(ct);
+            db.MarketplaceOrders.RemoveRange(stale);
+            foreach (var o in all)
+            {
+                db.MarketplaceOrders.Add(new MarketplaceOrderRecord
+                {
+                    Name = o.Name,
+                    BillingAccountId = o.BillingAccountId,
+                    CustomerId = o.CustomerId,
+                    DisplayName = o.DisplayName,
+                    Provider = o.Provider,
+                    ProductsCsv = string.Join('|', o.Products),
+                    OffersCsv = string.Join('|', o.Offers),
+                    CreateTime = o.CreateTime,
+                    UpdateTime = o.UpdateTime,
+                    Active = o.Active,
+                    LastSyncedUtc = now
+                });
+            }
+
+            var cursor = await db.SyncCursors.FirstOrDefaultAsync(c => c.Scope == OrdersCursorScope, ct);
+            if (cursor is null) { cursor = new SyncCursor { Scope = OrdersCursorScope }; db.SyncCursors.Add(cursor); }
+            cursor.LastCycleUtc = now;
+            if (scanned.Count > 0) { cursor.LastFullPassUtc = now; }
+            var notes = string.Join('\n', errors.Select(kv => $"{kv.Key}={kv.Value}"));
+            cursor.Notes = notes.Length == 0 ? null : notes.Length > 512 ? notes[..512] : notes;
+            await db.SaveChangesAsync(ct);
+        });
+
+        logger.LogInformation(
+            "Marketplace orders scan complete in {Elapsed:0}s: {Orders} orders across {Accounts} accounts ({Errors} accounts unreadable).",
+            (DateTimeOffset.UtcNow - started).TotalSeconds, all.Count, scanned.Count, errors.Count);
     }
 
     private static BillingPostureMemberRecord ToRecord(string accountId, BillingAccountMember m, MemberIdentityInfo? id, DateTimeOffset now) => new()
