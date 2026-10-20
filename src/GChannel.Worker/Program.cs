@@ -51,6 +51,12 @@ builder.Services.AddSingleton<IIonGatewayClient, IonGatewayClient>();
 // so every path denormalises identical fields. Stateless (takes the DbContext/client per call).
 builder.Services.AddSingleton<ReadModelProjector>();
 
+// Billing IAM security posture: Cloud Billing IAM + Admin SDK (DWD) identity/security resolution shared
+// with the API, used by the nightly BillingPostureSyncService.
+builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
+builder.Services.AddSingleton<IWorkspaceUserSecurityService, WorkspaceUserSecurityService>();
+builder.Services.AddSingleton<MemberIdentityResolver>();
+
 // The estate/dashboard background workers, extracted from the API container so they scale on their
 // own axis (fixed single replica) instead of with HTTP traffic. Each is a no-op unless the relevant
 // GoogleChannel options + service-account credential are configured, and each takes a Redis lock so
@@ -63,6 +69,10 @@ builder.Services.AddHostedService<ReadModelSyncService>();
 // export into the CustomerSpend/SpendDaily read-model. No-op unless GoogleBilling:BigQueryEnabled + the
 // service-account credential are configured.
 builder.Services.AddHostedService<BillingSyncService>();
+
+// Nightly billing IAM security-posture scan (direct consumer admins, 2SV / Advanced Protection / key
+// compliance per member) into the BillingPosture read-model for the Security posture page.
+builder.Services.AddHostedService<BillingPostureSyncService>();
 
 var host = builder.Build();
 host.Run();

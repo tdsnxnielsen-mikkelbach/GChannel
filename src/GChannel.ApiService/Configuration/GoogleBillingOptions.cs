@@ -72,6 +72,22 @@ public sealed class GoogleBillingOptions
         ExcludeBillingAccountIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     /// <summary>
+    /// Nightly billing IAM security-posture scan. When true, the worker reads every billing (sub-)account's
+    /// IAM policy and resolves each member's identity / 2SV / Advanced Protection / key counts into the
+    /// BillingPosture read-model. Needs the service-account key + <c>GoogleChannel:ImpersonateUser</c>.
+    /// </summary>
+    public bool PostureScanEnabled { get; set; } = true;
+
+    /// <summary>UTC hour (0–23) the nightly posture scan runs at. Default 02:00 UTC.</summary>
+    public int PostureScanHourUtc { get; set; } = 2;
+
+    /// <summary>
+    /// If the last completed scan is older than this many hours when the worker starts, run immediately
+    /// instead of waiting for the next scheduled hour (covers first deploy and long outages).
+    /// </summary>
+    public int PostureScanStaleHours { get; set; } = 26;
+
+    /// <summary>
     /// Manual sub-account → customer-domain overrides for spend attribution, for sub-accounts the export
     /// can't auto-resolve: no GCP organization (projects billed directly, e.g. Søstrene Grene), or an org
     /// domain that doesn't match the customer's Channel domain (a TLD mismatch, e.g. <c>formuepleje.dev</c>

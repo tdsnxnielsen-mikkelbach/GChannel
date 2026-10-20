@@ -68,6 +68,7 @@ builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
 // Admin SDK (Directory + Reports) via domain-wide delegation — per-user 2SV / Advanced Protection for
 // billing IAM members in our own Workspace tenant. Stateless clients, cached credential: singleton.
 builder.Services.AddSingleton<IWorkspaceUserSecurityService, WorkspaceUserSecurityService>();
+builder.Services.AddSingleton<MemberIdentityResolver>();
 
 // §10 read-model write-through: mutation endpoints upsert the one changed customer row into the
 // read-model immediately after a successful Channel API call, so the estate/customers lists reflect a
@@ -109,6 +110,7 @@ app.MapNotificationsEndpoints();
 app.MapDashboardEndpoints();
 app.MapEstateEndpoints();
 app.MapBillingEndpoints();
+app.MapBillingPostureEndpoints();
 
 app.Run();
 
@@ -271,6 +273,43 @@ static async Task EnsureReadModelTablesAsync(GChannelDbContext db)
         CREATE INDEX IX_SpendDaily_CustomerId ON SpendDaily(CustomerId);
         IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_SpendDaily_Day')
         CREATE INDEX IX_SpendDaily_Day ON SpendDaily(Day);
+        -- Billing IAM security posture (nightly scan by the worker's BillingPostureSyncService).
+        IF OBJECT_ID('BillingPostureAccounts', 'U') IS NULL
+        CREATE TABLE BillingPostureAccounts (
+            BillingAccountId nvarchar(64) NOT NULL,
+            DisplayName nvarchar(256) NULL,
+            MasterBillingAccountId nvarchar(64) NULL,
+            [Open] bit NOT NULL,
+            CustomerId nvarchar(128) NULL,
+            Error nvarchar(1024) NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            CONSTRAINT PK_BillingPostureAccounts PRIMARY KEY (BillingAccountId)
+        );
+        IF OBJECT_ID('BillingPostureMembers', 'U') IS NULL
+        CREATE TABLE BillingPostureMembers (
+            BillingAccountId nvarchar(64) NOT NULL,
+            Email nvarchar(320) NOT NULL,
+            Role nvarchar(128) NOT NULL,
+            Inherited bit NOT NULL,
+            MemberType nvarchar(32) NOT NULL,
+            RoleDisplayName nvarchar(128) NOT NULL,
+            AccountKind int NOT NULL,
+            WorkspaceCustomerId nvarchar(64) NULL,
+            SecurityVisible bit NOT NULL,
+            TwoSvEnrolled bit NULL,
+            TwoSvEnforced bit NULL,
+            AdvancedProtection int NOT NULL,
+            AdvancedProtectionAsOf datetimeoffset NULL,
+            SecurityKeys int NULL,
+            Passkeys int NULL,
+            KeysAsOf date NULL,
+            IsAdmin bit NULL,
+            Suspended bit NULL,
+            LastSyncedUtc datetimeoffset NOT NULL,
+            CONSTRAINT PK_BillingPostureMembers PRIMARY KEY (BillingAccountId, Email, Role, Inherited)
+        );
+        IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_BillingPostureMembers_Email')
+        CREATE INDEX IX_BillingPostureMembers_Email ON BillingPostureMembers(Email);
         -- One-time backfill so estate value shows immediately after the BillableSeats column is added,
         -- instead of reading 0 everywhere until every entitlement has been re-synced. For COMMITTED
         -- entitlements the stored Seats already equals num_units (SeatsOf only falls back to a flexible

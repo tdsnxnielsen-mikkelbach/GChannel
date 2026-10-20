@@ -339,6 +339,18 @@ public sealed class GChannelApiClient(
     public Task<MemberIdentityResult?> ResolveMemberIdentitiesAsync(IEnumerable<string> emails, bool refresh = false, CancellationToken cancellationToken = default) =>
         SendAsync<MemberIdentityResult>(HttpMethod.Post, ApiRoutes.BillingMemberIdentity, new MemberIdentityRequest { Emails = emails.ToList(), Refresh = refresh }, cancellationToken);
 
+    /// <summary>Estate-wide billing IAM security posture KPIs + per-account roll-up (nightly scan).</summary>
+    public Task<BillingPostureSummary?> GetBillingPostureAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<BillingPostureSummary>(ApiRoutes.BillingPosture, cancellationToken);
+
+    /// <summary>Scanned members with posture for one billing account.</summary>
+    public Task<BillingPostureMembersResult?> GetBillingPostureMembersAsync(string billingAccountId, CancellationToken cancellationToken = default) =>
+        GetAsync<BillingPostureMembersResult>(ApiRoutes.BillingPostureMembers(billingAccountId), cancellationToken);
+
+    /// <summary>Flat action list of non-compliant members + consumer admins. scope = all|direct|inherited.</summary>
+    public Task<BillingPostureFindingsResult?> GetBillingPostureFindingsAsync(string scope = "all", CancellationToken cancellationToken = default) =>
+        GetAsync<BillingPostureFindingsResult>(ApiRoutes.BillingPostureFindings(scope), cancellationToken);
+
     /// <summary>Creates (no budget id) or updates (budget id set) a budget.</summary>
     public Task<BudgetInfo?> SaveBudgetAsync(SaveBudgetRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<BudgetInfo>(HttpMethod.Post, ApiRoutes.BillingBudgetSave, request, cancellationToken);

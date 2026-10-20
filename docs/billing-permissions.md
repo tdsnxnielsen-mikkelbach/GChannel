@@ -324,17 +324,112 @@ label, so an ascending sort puts the members to act on first:
 
 ---
 
+## Part 3 — Nightly security-posture scan and KPIs
+
+The GCP budgets page shows posture for **one** account on demand. The **Security posture** page
+(`/billing/posture`) shows it for the **whole estate**, from a scan the worker runs every night.
+
+### What the scan does
+
+Implemented in `BillingPostureSyncService`
+([src/GChannel.Worker/Services/BillingPostureSyncService.cs](../src/GChannel.Worker/Services/BillingPostureSyncService.cs)).
+
+1. **Schedule.** Runs daily at `GoogleBilling:PostureScanHourUtc` (default 02:00 UTC). On worker start,
+   if the last completed scan is older than `PostureScanStaleHours` (default 26) — or there has never
+   been one — it runs immediately. A Redis lock (`billing:posture:lock`, 23 h) keeps a second replica
+   from scanning the same night. Disable with `GoogleBilling:PostureScanEnabled=false`.
+2. **Enumerate accounts** with the same discovery the budgets page uses (`ListBillingAccountsAsync`):
+   master accounts plus every sub-account under them; closed accounts are skipped.
+3. **Read members** for each account exactly as Part 1 describes (direct = the account's own policy,
+   inherited = the master's policy). Calls are paced by the billing service's read pacer.
+4. **Resolve identities once per distinct email** through the shared `MemberIdentityResolver`
+   (the same code path as Part 2, now a service used by both the API endpoint and the worker), with
+   `refresh=true` so the nightly scan always reads live rather than inheriting the day's UI cache.
+5. **Persist** into two read-model tables:
+   - `BillingPostureAccounts` — one row per account (display name, master, Channel customer via the §15
+     spend mapping, last error, scan time).
+   - `BillingPostureMembers` — one row per *(account, email, role, inherited)* grant with the member's
+     account kind, 2SV, Advanced Protection, key counts, admin/suspended flags.
+
+   Members are replaced per account each night. An account whose policy was unreadable keeps its
+   previous members and records the error. Accounts that disappeared are removed.
+6. **Bookkeeping** in `SyncCursors` (scope `billing-posture`): `LastFullPassUtc` = last successful
+   scan (the page's "Scanned …" stamp), `Notes` = last failure message if any.
+
+### Best-practice rules
+
+Defined once in `PostureRules`
+([src/GChannel.Shared/Contracts/BillingPosture.cs](../src/GChannel.Shared/Contracts/BillingPosture.cs))
+so the worker, API and page agree:
+
+| Rule | Passes when | Source |
+|---|---|---|
+| 2SV | `isEnrolledIn2Sv == true` | Directory API |
+| Advanced Protection | latest audit event is `titanium_enroll` | Reports API (activities) |
+| Keys | `num_security_keys + num_passkeys_enrolled ≥ 1` | Reports API (usage) |
+
+A member is **assessable** only when it is a managed account in a tenant we can read (our own, or a
+resold customer with reseller admin access). **Compliant** = assessable and all three rules pass;
+**non-compliant** = assessable and any rule fails. Consumer accounts and unreadable tenants are never
+counted as compliant — they appear in their own buckets. A **consumer admin** is a consumer Google
+Account (gmail / no tenant) holding `roles/billing.admin`.
+
+### Endpoints
+
+| Route | Returns |
+|---|---|
+| `GET /api/billing/posture` | `BillingPostureSummary`: scan time, headline counts, a `PostureBucket` each for **direct** and **inherited** (distinct email+role across the estate), and the per-account table |
+| `GET /api/billing/posture/accounts/{id}/members` | the scanned member rows for one account |
+| `GET /api/billing/posture/findings?scope=all\|direct\|inherited` | distinct members that are non-compliant or consumer admins, each with the list of billing accounts the grant appears on |
+
+Inherited members are stored once per sub-account (so per-account views are self-contained), but the
+estate-wide buckets de-duplicate by *(email, role)* so a 65-member master policy counts as 65 people,
+not 65 × the number of sub-accounts.
+
+### The page
+
+- **Headline KPIs:** accounts scanned · accounts with a **direct consumer admin** · accounts with
+  non-compliant **direct** members · accounts with non-compliant **inherited** members.
+- **Direct / Inherited cards:** compliance %, and counts for 2SV off, no Advanced Protection, no keys,
+  failing any rule, consumer accounts (with how many are billing admins), and unreadable tenants.
+- **Accounts tab:** sortable table (consumer admin first), "only accounts with findings" switch, search,
+  and a per-account members drill-down.
+- **Action list tab:** the flat findings list, scoped to direct / inherited / both, sortable by 2SV,
+  Advanced Protection and keys, with the number of billing accounts each grant is on.
+
+### Configuration
+
+| Key | Default | Meaning |
+|---|---|---|
+| `GoogleBilling:PostureScanEnabled` | `true` | Run the nightly scan |
+| `GoogleBilling:PostureScanHourUtc` | `2` | UTC hour the scan starts |
+| `GoogleBilling:PostureScanStaleHours` | `26` | On startup, scan immediately if the last one is older than this |
+
+No new Google permissions: the scan reuses the Cloud Billing viewer role (Part 1) and the DWD scopes
+(Part 2) already granted.
+
+---
+
 ## Files touched
 
 | File | Purpose |
 |---|---|
 | `src/GChannel.Shared/Contracts/Billing.cs` | `BillingAccountMember(s)Result`, `MemberIdentityRequest/Info/Result`, `GoogleAccountKind`, `AdvancedProtectionStatus` |
-| `src/GChannel.Shared/Contracts/ApiRoutes.cs` | `BillingAccountMembers(id)`, `BillingMemberIdentity` |
+| `src/GChannel.Shared/Contracts/BillingPosture.cs` | `PostureRules`, `BillingPostureMember/Account/Summary/Finding(s)`, `PostureBucket` (Part 3) |
+| `src/GChannel.Shared/Contracts/ApiRoutes.cs` | `BillingAccountMembers(id)`, `BillingMemberIdentity`, `BillingPosture*` |
 | `src/GChannel.ApiService/Services/BillingBudgetsService.cs` | `GetBillingAccountMembersAsync` (Part 1) |
 | `src/GChannel.ApiService/Services/WorkspaceUserSecurityService.cs` | Admin SDK Directory + Reports via DWD (Part 2, steps 3–4) |
-| `src/GChannel.ApiService/Endpoints/BillingEndpoints.cs` | `GET …/members`, `POST …/members/identity` (Part 2 orchestration) |
-| `src/GChannel.ApiService/Program.cs` | DI registration of `IWorkspaceUserSecurityService` |
+| `src/GChannel.ApiService/Services/MemberIdentityResolver.cs` | Shared identity/posture resolution used by the API endpoint and the nightly scan (Part 2 orchestration) |
+| `src/GChannel.ApiService/Endpoints/BillingEndpoints.cs` | `GET …/members`, `POST …/members/identity` |
+| `src/GChannel.ApiService/Endpoints/BillingPostureEndpoints.cs` | `GET /api/billing/posture`, `…/accounts/{id}/members`, `…/findings` (Part 3) |
+| `src/GChannel.ApiService/Data/GChannelDbContext.cs` | `BillingPostureAccountRecord`, `BillingPostureMemberRecord` |
+| `src/GChannel.ApiService/Program.cs` | DI registrations; DDL for `BillingPostureAccounts` / `BillingPostureMembers` |
+| `src/GChannel.ApiService/Configuration/GoogleBillingOptions.cs` | `PostureScanEnabled` / `PostureScanHourUtc` / `PostureScanStaleHours` |
 | `src/GChannel.ApiService/GChannel.ApiService.csproj` | `Google.Apis.Admin.Directory.directory_v1`, `Google.Apis.Admin.Reports.reports_v1` |
-| `src/GChannel.Web/Services/GChannelApiClient.cs` | `ListBillingAccountMembersAsync`, `ResolveMemberIdentitiesAsync` |
+| `src/GChannel.Worker/Services/BillingPostureSyncService.cs` | Nightly scan (Part 3) |
+| `src/GChannel.Worker/Program.cs` | DI + hosted service registration |
+| `src/GChannel.Web/Services/GChannelApiClient.cs` | `ListBillingAccountMembersAsync`, `ResolveMemberIdentitiesAsync`, `GetBillingPosture*Async` |
 | `src/GChannel.Web/Components/Pages/Budgets.razor` | Billing permissions section + security columns |
-| `docs/configuration.md` | DWD scope note |
+| `src/GChannel.Web/Components/Pages/BillingPosture.razor` | Security posture page (Part 3) |
+| `src/GChannel.Web/Components/Layout/NavMenu.razor` | Billing → Security posture link |
+| `docs/configuration.md` | DWD scope note; posture scan options |

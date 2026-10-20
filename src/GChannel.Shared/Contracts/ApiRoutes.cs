@@ -227,6 +227,20 @@ public static class ApiRoutes
     /// <summary>Classify + security-check the Google Accounts behind a batch of member emails (POST).</summary>
     public const string BillingMemberIdentity = "/api/billing/members/identity";
 
+    // Billing IAM security posture — nightly scan of every billing (sub-)account's members, served from
+    // the BillingPostureAccounts / BillingPostureMembers read-model the worker populates.
+
+    /// <summary>Estate-wide posture KPIs + per-account table.</summary>
+    public const string BillingPosture = "/api/billing/posture";
+
+    /// <summary>Scanned members (with posture) for one billing account.</summary>
+    public static string BillingPostureMembers(string billingAccountId) =>
+        $"/api/billing/posture/accounts/{billingAccountId}/members";
+
+    /// <summary>Flat action list: non-compliant assessable members + consumer admins. scope = all|direct|inherited.</summary>
+    public static string BillingPostureFindings(string scope) =>
+        $"/api/billing/posture/findings?scope={scope}";
+
     /// <summary>Create/update a budget (create when no budget id in the payload, else update).</summary>
     public const string BillingBudgetSave = "/api/billing/budgets";
 

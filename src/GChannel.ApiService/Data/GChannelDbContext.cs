@@ -21,6 +21,10 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
     public DbSet<CustomerSpendRecord> CustomerSpend => Set<CustomerSpendRecord>();
     public DbSet<SpendDailyRecord> SpendDaily => Set<SpendDailyRecord>();
 
+    // Billing IAM security posture (nightly scan)
+    public DbSet<BillingPostureAccountRecord> BillingPostureAccounts => Set<BillingPostureAccountRecord>();
+    public DbSet<BillingPostureMemberRecord> BillingPostureMembers => Set<BillingPostureMemberRecord>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<IdentityCheckLog>(entity =>
@@ -116,6 +120,28 @@ public sealed class GChannelDbContext(DbContextOptions<GChannelDbContext> option
             entity.Property(e => e.Cost).HasColumnType("decimal(18,6)");
             entity.HasIndex(e => e.CustomerId);
             entity.HasIndex(e => e.Day);
+        });
+
+        modelBuilder.Entity<BillingPostureAccountRecord>(entity =>
+        {
+            entity.HasKey(e => e.BillingAccountId);
+            entity.Property(e => e.BillingAccountId).HasMaxLength(64);
+            entity.Property(e => e.DisplayName).HasMaxLength(256);
+            entity.Property(e => e.MasterBillingAccountId).HasMaxLength(64);
+            entity.Property(e => e.CustomerId).HasMaxLength(128);
+            entity.Property(e => e.Error).HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<BillingPostureMemberRecord>(entity =>
+        {
+            entity.HasKey(e => new { e.BillingAccountId, e.Email, e.Role, e.Inherited });
+            entity.Property(e => e.BillingAccountId).HasMaxLength(64);
+            entity.Property(e => e.Email).HasMaxLength(320);
+            entity.Property(e => e.Role).HasMaxLength(128);
+            entity.Property(e => e.MemberType).HasMaxLength(32);
+            entity.Property(e => e.RoleDisplayName).HasMaxLength(128);
+            entity.Property(e => e.WorkspaceCustomerId).HasMaxLength(64);
+            entity.HasIndex(e => e.Email);
         });
     }
 }
@@ -263,5 +289,47 @@ public sealed class SpendDailyRecord
     public string? OwningLinkId { get; set; }
     /// <summary>Net cost after credits for the day.</summary>
     public decimal Cost { get; set; }
+    public DateTimeOffset LastSyncedUtc { get; set; }
+}
+
+/// <summary>Billing IAM posture read-model: one row per billing (sub-)account scanned by the nightly job.</summary>
+public sealed class BillingPostureAccountRecord
+{
+    public string BillingAccountId { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? MasterBillingAccountId { get; set; }
+    public bool Open { get; set; }
+    /// <summary>Channel customer id resolved via the §15 CustomerSpend mapping for this sub-account, when known.</summary>
+    public string? CustomerId { get; set; }
+    /// <summary>Set when the IAM policy couldn't be read in the last scan; members from the previous scan are kept.</summary>
+    public string? Error { get; set; }
+    public DateTimeOffset LastSyncedUtc { get; set; }
+}
+
+/// <summary>Billing IAM posture read-model: one (account, email, role, inherited) grant with the member's security posture.</summary>
+public sealed class BillingPostureMemberRecord
+{
+    public string BillingAccountId { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public bool Inherited { get; set; }
+
+    public string MemberType { get; set; } = string.Empty;
+    public string RoleDisplayName { get; set; } = string.Empty;
+
+    /// <summary><see cref="GChannel.Shared.Contracts.GoogleAccountKind"/> as int.</summary>
+    public int AccountKind { get; set; }
+    public string? WorkspaceCustomerId { get; set; }
+    public bool SecurityVisible { get; set; }
+    public bool? TwoSvEnrolled { get; set; }
+    public bool? TwoSvEnforced { get; set; }
+    /// <summary><see cref="GChannel.Shared.Contracts.AdvancedProtectionStatus"/> as int.</summary>
+    public int AdvancedProtection { get; set; }
+    public DateTimeOffset? AdvancedProtectionAsOf { get; set; }
+    public int? SecurityKeys { get; set; }
+    public int? Passkeys { get; set; }
+    public DateOnly? KeysAsOf { get; set; }
+    public bool? IsAdmin { get; set; }
+    public bool? Suspended { get; set; }
     public DateTimeOffset LastSyncedUtc { get; set; }
 }

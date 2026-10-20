@@ -58,6 +58,9 @@ optional too and enable [Pub/Sub notifications](#pubsub-notifications-7).
 | `GoogleChannel:WorkloadIdentityCredentialJson` | _empty_ | Workload Identity Federation credential config (`external_account` JSON) for **key-less** Pub/Sub auth. When set, takes precedence over the service-account key for the subscriber. Not a secret (no private key). Does not apply to the dashboard refresh (domain-wide delegation needs a key). |
 | `GoogleChannel:WorkloadIdentityCredentialPath` | _empty_ | Alternative to `WorkloadIdentityCredentialJson`: path to the WIF credential config file. |
 | `GoogleChannel:PubSubMaxNotifications` | `200` | Maximum recent notifications retained in the rolling Redis feed (`channel:notifications`). Minimum 1. |
+| `GoogleBilling:PostureScanEnabled` | `true` | Worker runs the nightly billing IAM security-posture scan (consumer admins, 2SV / Advanced Protection / key compliance per member) into the `BillingPosture*` read-model. Needs the service-account key + `ImpersonateUser`. See [billing-permissions.md](billing-permissions.md) Part 3. |
+| `GoogleBilling:PostureScanHourUtc` | `2` | UTC hour (0–23) the nightly posture scan starts. |
+| `GoogleBilling:PostureScanStaleHours` | `26` | On worker start, scan immediately if the last completed scan is older than this (first deploy / outage catch-up). |
 
 ### Background dashboard refresh (optional)
 
