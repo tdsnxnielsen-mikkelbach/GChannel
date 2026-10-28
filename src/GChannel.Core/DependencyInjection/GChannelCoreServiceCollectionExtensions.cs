@@ -1,4 +1,5 @@
 using GChannel.Core.Configuration;
+using GChannel.Core.Estate;
 using GChannel.Core.GoogleApis;
 using GChannel.Core.Ion;
 using Microsoft.Extensions.Configuration;
@@ -38,6 +39,13 @@ public static class GChannelCoreServiceCollectionExtensions
         // Cloud Commerce Marketplace orders (REST over IHttpClientFactory).
         services.AddHttpClient(MarketplaceOrdersService.HttpClientName);
         services.AddSingleton<IMarketplaceOrdersService, MarketplaceOrdersService>();
+
+        // Billing IAM member identity / security posture resolution (API on-demand + worker nightly scan).
+        services.AddSingleton<MemberIdentityResolver>();
+
+        // The estate observer: diffs live Channel API state into Marten events. Stateless (takes the session
+        // per call) over singleton dependencies.
+        services.AddSingleton<EstateObserver>();
 
         return services;
     }

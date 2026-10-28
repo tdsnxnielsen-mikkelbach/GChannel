@@ -1,21 +1,20 @@
-using GChannel.ApiService.Data;
 using GChannel.Core.Configuration;
-using GChannel.Core.GoogleApis;
-using GChannel.Core.Ion;
 using GChannel.Shared.Contracts;
-using Microsoft.EntityFrameworkCore;
+using GChannel.Core.Estate.ReadModels;
+using Marten;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Core.GoogleApis;
 
 /// <summary>
 /// Classifies the Google Accounts behind billing IAM member emails (consumer vs managed) and reads their
 /// security posture (2SV, Advanced Protection, passkeys / security keys) where Google lets us. Shared by
 /// the on-demand <c>POST /api/billing/members/identity</c> endpoint and the worker's nightly posture
-/// scan. Stateless apart from the per-call memo caches; takes the Channel client + DbContext per call
+/// scan. Stateless apart from the per-call memo caches; takes the Channel client + Marten query session per call
 /// because the API uses a per-request user token while the worker uses the service account.
 /// </summary>
 public sealed class MemberIdentityResolver(
@@ -48,7 +47,7 @@ public sealed class MemberIdentityResolver(
     public async Task<MemberIdentityResult> ResolveAsync(
         IEnumerable<string> emails,
         IGoogleChannelClient channel,
-        GChannelDbContext db,
+        IQuerySession session,
         bool refresh,
         CancellationToken cancellationToken,
         int concurrency = DefaultConcurrency)
@@ -93,7 +92,7 @@ public sealed class MemberIdentityResolver(
 
         // Workspace customer id ("C01aihlmh") for a managed domain: prefer the id the Channel API just
         // returned for the DOMAIN-type account; fall back to our read-model customer row for the domain.
-        // The DbContext isn't thread-safe, so the fallback query is serialised behind a gate.
+        // The Marten session isn't thread-safe, so the fallback query is serialised behind a gate.
         var dbGate = new SemaphoreSlim(1, 1);
         var customerIdCache = new ConcurrentDictionary<string, Lazy<Task<string?>>>(StringComparer.OrdinalIgnoreCase);
         Task<string?> ResolveCustomerIdAsync(string domain, CheckCloudIdentityResult? cid) =>
@@ -105,10 +104,10 @@ public sealed class MemberIdentityResolver(
                 await dbGate.WaitAsync(cancellationToken);
                 try
                 {
-                    return await db.CustomerRecords.AsNoTracking()
-                        .Where(c => c.CloudIdentityId != null && (c.Domain == d || c.CloudIdentityDomain == d))
-                        .Select(c => c.CloudIdentityId)
+                    var match = await session.Query<CustomerRecord>()
+                        .Where(c => !c.IsDeleted && c.CloudIdentityId != null && (c.Domain == d || c.CloudIdentityDomain == d))
                         .FirstOrDefaultAsync(cancellationToken);
+                    return match?.CloudIdentityId;
                 }
                 finally
                 {

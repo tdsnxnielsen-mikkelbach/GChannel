@@ -1,160 +1,109 @@
-using GChannel.ApiService.Data;
-using GChannel.ApiService.Services;
+using GChannel.ApiService.Caching;
 using GChannel.Core.Configuration;
+using GChannel.Core.Estate;
 using GChannel.Core.GoogleApis;
-using GChannel.Core.Ion;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
-using Microsoft.EntityFrameworkCore;
+using Marten;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
-using System.Globalization;
 using System.Text.Json;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
-/// Maps the derived home-dashboard endpoint. There is no single Channel API reporting endpoint
-/// (the legacy <c>accounts.reports.*</c> API is deprecated in v1), so the figures are aggregated
-/// from the customer and entitlement read paths and cached in Redis like the other reads.
+/// The derived home-dashboard endpoints. With the read model on, the figures are aggregated from the
+/// projected Marten documents (cheap, no Channel API fan-out) on a short Redis cache; otherwise the live
+/// aggregation runs on demand (long Redis cache, warmed by the worker's background refresh) with a
+/// last-known-good fallback so a quota outage never blanks the page.
 /// </summary>
 public static class DashboardEndpoints
 {
-    /// <summary>Redis key the dashboard summary is cached under (shared with the background refresher).</summary>
+    /// <summary>Redis key the live-path dashboard summary is cached under (shared with the worker's background refresh).</summary>
     public const string CacheKey = "dashboard:summary";
-
-    /// <summary>Redis key the cheap dashboard overview (count + onboarding) is cached under.</summary>
     public const string OverviewCacheKey = "dashboard:overview";
 
-    /// <summary>
-    /// Redis keys the §10 read-model dashboard summary/overview are cached under. Distinct from
-    /// <see cref="CacheKey"/> / <see cref="OverviewCacheKey"/> (which the background worker warms with a
-    /// long TTL for the live fan-out path) so the read-model endpoints serve a short-lived, always-current
-    /// SQL aggregation — reflecting the full durably-synced estate — rather than the worker's older snapshot.
-    /// </summary>
+    /// <summary>Redis keys of the short-lived read-model aggregation (distinct from the live-path keys).</summary>
     public const string LiveCacheKey = "dashboard:summary:live";
     public const string LiveOverviewCacheKey = "dashboard:overview:live";
 
-    /// <summary>Redis key the background refresher's run status (last run + in-progress flag) is stored under.</summary>
-    public const string StatusKey = "dashboard:refresh:status";
-
-    /// <summary>
-    /// How long the "last known good" fallback copy is kept. Far longer than the live TTL so a
-    /// sustained quota outage still has a result to serve.
-    /// </summary>
+    /// <summary>How long the "last known good" fallback copy is kept — far longer than the live TTL.</summary>
     public static readonly TimeSpan StaleTtl = TimeSpan.FromHours(24);
 
-    /// <summary>Derives the "last known good" key for a given live cache key.</summary>
     public static string StaleKey(string cacheKey) => cacheKey + ":last";
 
-    public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
+    [WolverineGet("/api/dashboard/summary")]
+    public static async Task<IResult> GetSummary(
+        IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, IQuerySession session,
+        CancellationToken cancellationToken)
     {
-        var group = app.MapGroup("/api/dashboard").WithTags("Dashboard");
-
-        group.MapGet("/summary", async (
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                GChannelDbContext db,
-                CancellationToken cancellationToken) =>
+        try
+        {
+            if (options.Value.UseReadModel)
             {
-                try
-                {
-                    // §10 read-model: aggregate straight from the durably-synced SQL tables (cheap,
-                    // indexed, no Channel API fan-out) on a SHORT cache under a distinct "live" key, so
-                    // the dashboard always reflects the FULL persisted estate — including immediately
-                    // after a redeploy — instead of the background worker's older long-lived snapshot.
-                    // The live/fan-out path (read-model off) keeps its long worker-warmed cache to avoid
-                    // the expensive per-request aggregation.
-                    if (options.Value.UseReadModel)
-                    {
-                        return await CachedAsync(cache, LiveCacheKey,
-                            Math.Max(1, options.Value.ReadModelDashboardCacheSeconds),
-                            () => BuildReadModelSummaryAsync(db, cancellationToken), cancellationToken);
-                    }
+                return await CachedAsync(cache, LiveCacheKey, Math.Max(1, options.Value.ReadModelDashboardCacheSeconds),
+                    () => DashboardReadModel.BuildSummaryAsync(session, cancellationToken), cancellationToken);
+            }
 
-                    return await CachedAsync(cache, CacheKey, options.Value.CacheSeconds,
-                        () => channel.GetDashboardSummaryAsync(cancellationToken), cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Benign: the caller (Blazor circuit) went away mid-aggregation. Caught here in
-                    // user code so the debugger doesn't flag it as user-unhandled; nothing to return.
-                    return Results.StatusCode(499);
-                }
-            })
-            .WithName("GetDashboardSummary")
-            .WithSummary("Aggregated reseller figures derived from customers and entitlements.");
+            // Live fan-out path; when the live run skipped customers (429s) back-fill the direct KPIs from
+            // whatever the read model holds so the headline figures don't under-report.
+            return await CachedAsync(cache, CacheKey, options.Value.CacheSeconds,
+                () => channel.GetDashboardSummaryAsync(cancellationToken), cancellationToken,
+                summary => DashboardReadModel.BackfillFromReadModelAsync(summary, session, cancellationToken));
+        }
+        catch (OperationCanceledException)
+        {
+            // Benign: the caller (Blazor circuit) went away mid-aggregation.
+            return Results.StatusCode(499);
+        }
+    }
 
-        group.MapGet("/overview", async (
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                GChannelDbContext db,
-                CancellationToken cancellationToken) =>
+    [WolverineGet("/api/dashboard/overview")]
+    public static async Task<IResult> GetOverview(
+        IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, IQuerySession session,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (options.Value.UseReadModel)
             {
-                try
-                {
-                    if (options.Value.UseReadModel)
-                    {
-                        return await CachedAsync(cache, LiveOverviewCacheKey,
-                            Math.Max(1, options.Value.ReadModelDashboardCacheSeconds),
-                            () => BuildReadModelOverviewAsync(db, cancellationToken), cancellationToken);
-                    }
+                return await CachedAsync(cache, LiveOverviewCacheKey, Math.Max(1, options.Value.ReadModelDashboardCacheSeconds),
+                    () => DashboardReadModel.BuildOverviewAsync(session, cancellationToken), cancellationToken);
+            }
 
-                    return await CachedAsync(cache, OverviewCacheKey, options.Value.CacheSeconds,
-                        () => channel.GetDashboardOverviewAsync(cancellationToken), cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    return Results.StatusCode(499);
-                }
-            })
-            .WithName("GetDashboardOverview")
-            .WithSummary("Cheap first-phase dashboard figures (customer count + onboarded-over-time).");
+            return await CachedAsync(cache, OverviewCacheKey, options.Value.CacheSeconds,
+                () => channel.GetDashboardOverviewAsync(cancellationToken), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return Results.StatusCode(499);
+        }
+    }
 
-        group.MapGet("/status", async (
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-            {
-                var stored = await cache.GetStringAsync(StatusKey, cancellationToken);
-                var status = stored is not null
-                    ? JsonSerializer.Deserialize<DashboardRefreshStatus>(stored)
-                    : null;
-
-                // No status yet (refresher hasn't ticked, or it's disabled): report configuration only.
-                return Results.Ok(status ?? new DashboardRefreshStatus
-                {
-                    Enabled = options.Value.BackgroundRefreshEnabled
-                });
-            })
-            .WithName("GetDashboardStatus")
-            .WithSummary("Freshness/health of the background dashboard refresher (last run + in-progress flag).");
-
-        return app;
+    [WolverineGet("/api/dashboard/status")]
+    public static async Task<DashboardRefreshStatus> GetStatus(
+        IQuerySession session, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+    {
+        var state = await session.LoadAsync<DashboardRefreshState>(DashboardRefreshState.SingletonId, cancellationToken);
+        // No status yet (refresher hasn't ticked, or it's disabled): report configuration only.
+        return state?.Status ?? new DashboardRefreshStatus { Enabled = options.Value.BackgroundRefreshEnabled };
     }
 
     /// <summary>
-    /// Returns a cached JSON payload when present, otherwise invokes <paramref name="factory"/> and
-    /// caches it. A separate long-lived "last known good" copy is also kept: if a live recompute fails
-    /// (e.g. the Channel API per-minute quota is exhausted), the most recent successful result is served
-    /// instead of failing the whole dashboard.
+    /// Read-through cache with a separate long-lived "last known good" copy: if a live recompute fails (e.g.
+    /// the Channel API per-minute quota is exhausted) the most recent successful result is served instead.
     /// </summary>
     private static async Task<IResult> CachedAsync<T>(
-        IDistributedCache cache,
-        string cacheKey,
-        int cacheSeconds,
-        Func<Task<T>> factory,
-        CancellationToken cancellationToken,
-        Func<T, Task<T>>? overlay = null)
+        IDistributedCache cache, string cacheKey, int cacheSeconds, Func<Task<T>> factory, CancellationToken cancellationToken,
+        Func<T, Task<T>>? overlay = null) where T : class
     {
         var staleKey = StaleKey(cacheKey);
 
-        var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
-        if (cached is not null)
+        var hit = await GoogleReadCache.GetAsync<T>(cache, cacheKey, cancellationToken);
+        if (hit is not null)
         {
-            var hit = JsonSerializer.Deserialize<T>(cached);
-            if (hit is not null && overlay is not null) { hit = await overlay(hit); }
+            if (overlay is not null) { hit = await overlay(hit); }
             return Results.Ok(hit);
         }
 
@@ -165,441 +114,20 @@ public static class DashboardEndpoints
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Live recompute failed (commonly a 429 quota error). Serve the last known good result if
-            // we have one so a transient quota blip doesn't break the page; otherwise surface the error.
-            var stale = await cache.GetStringAsync(staleKey, cancellationToken);
+            var stale = await GoogleReadCache.GetAsync<T>(cache, staleKey, cancellationToken);
             if (stale is not null)
             {
-                var staleHit = JsonSerializer.Deserialize<T>(stale);
-                if (staleHit is not null && overlay is not null) { staleHit = await overlay(staleHit); }
-                return Results.Ok(staleHit);
+                if (overlay is not null) { stale = await overlay(stale); }
+                return Results.Ok(stale);
             }
-
             throw;
         }
 
-        var json = JsonSerializer.Serialize(result);
-        await cache.SetStringAsync(
-            cacheKey,
-            json,
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(cacheSeconds)
-            },
-            cancellationToken);
-
-        // Refresh the long-lived fallback copy (survives well past the live TTL).
-        await cache.SetStringAsync(
-            staleKey,
-            json,
-            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = StaleTtl },
-            cancellationToken);
+        await GoogleReadCache.SetAsync(cache, cacheKey, result, cacheSeconds, cancellationToken);
+        await cache.SetStringAsync(staleKey, JsonSerializer.Serialize(result, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = StaleTtl }, cancellationToken);
 
         if (overlay is not null) { result = await overlay(result); }
         return Results.Ok(result);
-    }
-
-    /// <summary>
-    /// §10 read path: builds the entire dashboard summary from the durably synced SQL read-model
-    /// (direct customer/entitlement aggregates + product mix + onboarding), then overlays the indirect
-    /// estate and §11 estate value. Used when <see cref="GoogleChannelOptions.UseReadModel"/> is on so
-    /// the dashboard never fans out live Channel API entitlement/customer calls — the read-model sync is
-    /// the single quota consumer. Also called by the background refresher to warm the cache.
-    /// </summary>
-    public static async Task<DashboardSummary> BuildReadModelSummaryAsync(
-        GChannelDbContext db, CancellationToken cancellationToken)
-    {
-        // §11 Phase 9: the entitlement KPIs (active/trial/suspended/seats/product mix) span the WHOLE
-        // estate — direct (reseller self-purchase) plus reseller end customers (indirect) — so they line up
-        // with the estate-value panel, which is also whole-estate. "Direct" here means a reseller buying
-        // for its OWN use (IsResellerSelf); reseller end customers are indirect (IndirectCustomerCount).
-        var entitlements = db.EntitlementRecords.Where(e => !e.IsDeleted);
-
-        var customerCount = await db.CustomerRecords
-            .CountAsync(c => !c.IsDeleted && c.IsResellerSelf, cancellationToken);
-        var active = await entitlements.CountAsync(e => e.State == "ACTIVE" && !e.IsTrial, cancellationToken);
-        var trials = await entitlements.CountAsync(e => e.IsTrial, cancellationToken);
-        var suspended = await entitlements.CountAsync(e => e.State == "SUSPENDED", cancellationToken);
-        var seats = await entitlements.Where(e => e.State == "ACTIVE").SumAsync(e => e.Seats, cancellationToken);
-
-        // Product mix: pull the active entitlements' product id/name/source into memory (a small set —
-        // one row per active entitlement) so we can (a) split the mix into direct vs indirect and
-        // (b) back-fill friendly names. A product's name resolves only while one of its offers is
-        // still listed, so a churned-offer entitlement can carry a null name while a sibling on the
-        // same product resolved one; reuse any resolved name across all entitlements of that product.
-        var activeMix = await entitlements.Where(e => e.State == "ACTIVE")
-            .Select(e => new { e.ProductId, e.ProductName, e.IsResellerSelf })
-            .ToListAsync(cancellationToken);
-
-        var nameByProductId = activeMix
-            .Where(e => e.ProductId != null && !string.IsNullOrWhiteSpace(e.ProductName))
-            .GroupBy(e => e.ProductId!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().ProductName!, StringComparer.OrdinalIgnoreCase);
-
-        string Label(string? productId, string? productName) =>
-            !string.IsNullOrWhiteSpace(productName) ? productName!
-            : productId != null && nameByProductId.TryGetValue(productId, out var resolved) ? resolved
-            : productId ?? "Other";
-
-        static List<DashboardProductSlice> BuildMix(IEnumerable<(string Label, int _)> labelled) =>
-            labelled
-                .GroupBy(x => x.Label)
-                .Select(g => new DashboardProductSlice { Product = g.Key, Count = g.Count() })
-                .OrderByDescending(s => s.Count)
-                .Take(8)
-                .ToList();
-
-        var labelledAll = activeMix
-            .Select(e => (Label: Label(e.ProductId, e.ProductName), IsDirect: e.IsResellerSelf))
-            .ToList();
-        var mix = BuildMix(labelledAll.Select(x => (x.Label, 0)));
-        var directMix = BuildMix(labelledAll.Where(x => x.IsDirect).Select(x => (x.Label, 0)));
-        var indirectMix = BuildMix(labelledAll.Where(x => !x.IsDirect).Select(x => (x.Label, 0)));
-
-        var onboardDates = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && c.IsResellerSelf)
-            .Select(c => c.CreateTime)
-            .ToListAsync(cancellationToken);
-        var indirectOnboardDates = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && !c.IsResellerSelf)
-            .Select(c => c.CreateTime)
-            .ToListAsync(cancellationToken);
-
-        // Reseller-name lookup (link id -> friendly label) shared by the onboarding-by-reseller and
-        // established-links views below.
-        var links = await db.ResellerLinks
-            .Select(l => new { l.LinkId, l.PrimaryDomain, l.ResellerCloudId, l.CreateTime, l.LinkState })
-            .ToListAsync(cancellationToken);
-        var linkNameById = links.ToDictionary(
-            l => l.LinkId,
-            l => l.PrimaryDomain ?? l.ResellerCloudId ?? l.LinkId,
-            StringComparer.OrdinalIgnoreCase);
-
-        // Onboarding-by-reseller: every held customer with its onboarding month + owning reseller (or
-        // "Direct" when account-owned). Small set (one row per customer); the UI filters it by month.
-        var onboardedByReseller = (await db.CustomerRecords
-                .Where(c => !c.IsDeleted && c.CreateTime != null)
-                .Select(c => new { c.CustomerId, c.OrgName, c.OwningLinkId, c.CreateTime })
-                .ToListAsync(cancellationToken))
-            .Where(c => c.CreateTime!.Value.Year >= 2000)
-            .Select(c => new DashboardOnboardedCustomer
-            {
-                MonthKey = c.CreateTime!.Value.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-                CustomerName = c.OrgName ?? c.CustomerId,
-                ResellerLinkId = c.OwningLinkId,
-                Reseller = c.OwningLinkId != null && linkNameById.TryGetValue(c.OwningLinkId, out var rn)
-                    ? rn
-                    : c.OwningLinkId ?? "Direct",
-            })
-            .ToList();
-
-        // Established partner links: each channel partner link with the month it was created + reseller.
-        var establishedLinks = links
-            .Where(l => l.CreateTime is { Year: >= 2000 })
-            .Select(l => new DashboardEstablishedLink
-            {
-                MonthKey = l.CreateTime!.Value.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-                LinkId = l.LinkId,
-                Reseller = l.PrimaryDomain ?? l.ResellerCloudId ?? l.LinkId,
-                LinkState = l.LinkState,
-            })
-            .ToList();
-
-        var summary = new DashboardSummary
-        {
-            CustomerCount = customerCount,
-            ActiveEntitlementCount = active,
-            TrialEntitlementCount = trials,
-            SuspendedEntitlementCount = suspended,
-            ActiveSeats = seats,
-            SkippedCustomerCount = 0,
-            IncompleteReason = null,
-            CustomersOnboarded = BuildMonthlySeries(onboardDates, indirectOnboardDates),
-            ProductMix = mix,
-            DirectProductMix = directMix,
-            IndirectProductMix = indirectMix,
-            OnboardedByReseller = onboardedByReseller,
-            EstablishedLinks = establishedLinks,
-            // Set here so a direct-only estate (no indirect rows yet) still shows the value panel; the
-            // overlay recomputes the identical figure when indirect rows exist.
-            EstateValue = await ComputeEstateValueAsync(db, cancellationToken)
-        };
-
-        return await OverlayReadModelAsync(summary, db, cancellationToken);
-    }
-
-    /// <summary>
-    /// §10 read path: builds the cheap dashboard overview (direct customer count, channel-link states
-    /// and onboarding) from the SQL read-model instead of a live customers.list + links.list.
-    /// </summary>
-    public static async Task<DashboardOverview> BuildReadModelOverviewAsync(
-        GChannelDbContext db, CancellationToken cancellationToken)
-    {
-        var customerCount = await db.CustomerRecords
-            .CountAsync(c => !c.IsDeleted && c.IsResellerSelf, cancellationToken);
-
-        var linkStates = await db.ResellerLinks
-            .GroupBy(l => l.LinkState)
-            .Select(g => new { State = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
-
-        var onboardDates = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && c.IsResellerSelf)
-            .Select(c => c.CreateTime)
-            .ToListAsync(cancellationToken);
-        var indirectOnboardDates = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && !c.IsResellerSelf)
-            .Select(c => c.CreateTime)
-            .ToListAsync(cancellationToken);
-
-        return new DashboardOverview
-        {
-            CustomerCount = customerCount,
-            ChannelLinkCount = linkStates.Sum(s => s.Count),
-            ChannelLinkStates = linkStates
-                .OrderByDescending(s => s.Count)
-                .Select(s => new DashboardChannelLinkState { State = s.State, Count = s.Count })
-                .ToList(),
-            CustomersOnboarded = BuildMonthlySeries(onboardDates, indirectOnboardDates)
-        };
-    }
-
-    // Buckets customer create-times across the FULL available history (earliest customer month -> now,
-    // oldest first), split into direct (account-owned) and indirect (reseller-owned) buckets so the
-    // chart can render a line per source. Matches the live path's BuildMonthlyOnboarded shape. The UI
-    // can show the whole period or a selectable sub-range.
-    private static List<DashboardMonthlyPoint> BuildMonthlySeries(
-        IEnumerable<DateTimeOffset?> directDates,
-        IEnumerable<DateTimeOffset?> indirectDates)
-    {
-        // Ignore implausible dates (e.g. a corrupt DateTimeOffset.MinValue) so one bad row can't blow the
-        // range out to thousands of months; Google Cloud customers can't predate ~2015.
-        static List<DateTimeOffset> Clean(IEnumerable<DateTimeOffset?> dates) =>
-            dates.Where(t => t is { Year: >= 2000 }).Select(t => t!.Value).ToList();
-
-        var direct = Clean(directDates);
-        var indirect = Clean(indirectDates);
-        var all = direct.Concat(indirect).ToList();
-
-        var now = DateTimeOffset.UtcNow;
-        var lastMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
-
-        DateTimeOffset firstMonth;
-        if (all.Count > 0)
-        {
-            var earliest = all.Min();
-            firstMonth = new DateTimeOffset(earliest.Year, earliest.Month, 1, 0, 0, 0, TimeSpan.Zero);
-        }
-        else
-        {
-            firstMonth = lastMonth.AddMonths(-5);
-        }
-
-        var points = new List<DashboardMonthlyPoint>();
-        for (var m = firstMonth; m <= lastMonth; m = m.AddMonths(1))
-        {
-            var monthEnd = m.AddMonths(1);
-            var d = direct.Count(v => v >= m && v < monthEnd);
-            var i = indirect.Count(v => v >= m && v < monthEnd);
-            points.Add(new DashboardMonthlyPoint
-            {
-                MonthKey = m.ToString("yyyy-MM", CultureInfo.InvariantCulture),
-                Month = m.ToString("MMM", CultureInfo.InvariantCulture),
-                Year = m.Year,
-                DirectCustomers = d,
-                IndirectCustomers = i,
-                Customers = d + i
-            });
-        }
-
-        return points;
-    }
-
-    /// <summary>
-    /// §10 read path: replaces the indirect estate (count + top resellers ranked by active seats) on a
-    /// summary with values aggregated from the SQL read-model, so the dashboard reflects the durably
-    /// synced estate instead of waiting for the live per-reseller fan-out. No-op if no rows synced yet.
-    /// </summary>
-    private static async Task<DashboardSummary> OverlayReadModelAsync(
-        DashboardSummary summary, GChannelDbContext db, CancellationToken cancellationToken)
-    {
-        var indirectCount = await db.CustomerRecords
-            .CountAsync(c => !c.IsDeleted && !c.IsResellerSelf, cancellationToken);
-
-        // Direct-estate backfill: when the live aggregation skipped customers (typically 429s), serve the
-        // last-synced direct figures from EntitlementRecords so the headline KPIs fill in from the DB
-        // instead of showing partial numbers. Only kicks in when something was skipped and the read-model
-        // has direct entitlement rows synced.
-        if (summary.SkippedCustomerCount > 0)
-        {
-            summary = await BackfillDirectEstateAsync(summary, db, cancellationToken);
-        }
-
-        if (indirectCount == 0)
-        {
-            return summary; // Nothing synced yet — keep the live values.
-        }
-
-        // §11 per-reseller cost/margin: aggregate active, priced entitlements by owning link.
-        var resellerPricing = await db.EntitlementRecords
-            .Where(e => !e.IsDeleted && e.State == "ACTIVE" && e.OwningLinkId != null && e.UnitPrice > 0)
-            .GroupBy(e => e.OwningLinkId!)
-            .Select(g => new
-            {
-                LinkId = g.Key,
-                Wholesale = g.Sum(e => (e.IonCostPerSeat ?? e.UnitPrice) * e.BillableSeats),
-                Revenue = g.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m)))
-            })
-            .ToListAsync(cancellationToken);
-        var pricingByLink = resellerPricing.ToDictionary(x => x.LinkId, StringComparer.OrdinalIgnoreCase);
-
-        var resellers = await db.CustomerRecords
-            .Where(c => !c.IsDeleted && c.OwningLinkId != null)
-            .GroupBy(c => c.OwningLinkId!)
-            .Select(g => new { LinkId = g.Key, Customers = g.Count(), Seats = g.Sum(c => c.SeatCount) })
-            .Join(db.ResellerLinks, g => g.LinkId, l => l.LinkId,
-                (g, l) => new { l.PrimaryDomain, l.ResellerCloudId, g.LinkId, g.Customers, g.Seats })
-            .OrderByDescending(x => x.Seats)
-            .ThenByDescending(x => x.Customers)
-            .Take(15)
-            .ToListAsync(cancellationToken);
-
-        return summary with
-        {
-            IndirectCustomerCount = indirectCount,
-            EstateValue = await ComputeEstateValueAsync(db, cancellationToken),
-            TopIndirectResellers = resellers
-                .Select(r =>
-                {
-                    pricingByLink.TryGetValue(r.LinkId, out var p);
-                    return new DashboardResellerCustomers
-                    {
-                        Reseller = r.PrimaryDomain ?? r.ResellerCloudId ?? r.LinkId,
-                        CustomerCount = r.Customers,
-                        SeatCount = r.Seats,
-                        WholesaleMonthly = p is null ? 0m : decimal.Round(p.Wholesale, 2),
-                        MarginMonthly = p is null ? 0m : decimal.Round(p.Revenue - p.Wholesale, 2)
-                    };
-                })
-                .ToList()
-        };
-    }
-
-    // §11: estimated monthly estate value across all active, priced entitlements (direct + indirect),
-    // reported in the estate's dominant currency. Returns null when nothing has a resolved price yet.
-    private static async Task<DashboardEstateValue?> ComputeEstateValueAsync(
-        GChannelDbContext db, CancellationToken cancellationToken)
-    {
-        var active = db.EntitlementRecords.Where(e => !e.IsDeleted && e.State == "ACTIVE");
-
-        // Group by currency AND source (direct = a reseller buying for its own use, indirect = a
-        // reseller's end customer) so the estate value can be split into direct vs indirect business.
-        var byCurrencyScope = await active
-            .Where(e => e.UnitPrice > 0 && e.Currency != null)
-            .GroupBy(e => new { Currency = e.Currency!, IsDirect = e.IsResellerSelf })
-            .Select(g => new
-            {
-                g.Key.Currency,
-                g.Key.IsDirect,
-                Wholesale = g.Sum(e => (e.IonCostPerSeat ?? e.UnitPrice) * e.BillableSeats),
-                Revenue = g.Sum(e => e.UnitPrice * e.BillableSeats * (1 + (e.RepricingPercent / 100m))),
-                Count = g.Count()
-            })
-            .ToListAsync(cancellationToken);
-
-        if (byCurrencyScope.Count == 0)
-        {
-            return null; // No entitlement has a resolved offer price yet.
-        }
-
-        static DashboardEstateValueScope Scope(IEnumerable<(decimal Wholesale, decimal Revenue, int Count)> rows)
-        {
-            var wholesale = rows.Sum(r => r.Wholesale);
-            var revenue = rows.Sum(r => r.Revenue);
-            return new DashboardEstateValueScope
-            {
-                WholesaleMonthly = decimal.Round(wholesale, 2),
-                RevenueMonthly = decimal.Round(revenue, 2),
-                MarginMonthly = decimal.Round(revenue - wholesale, 2),
-                PricedEntitlementCount = rows.Sum(r => r.Count)
-            };
-        }
-
-        var currencies = byCurrencyScope
-            .GroupBy(x => x.Currency)
-            .Select(g =>
-            {
-                var direct = g.Where(x => x.IsDirect).Select(x => (x.Wholesale, x.Revenue, x.Count));
-                var indirect = g.Where(x => !x.IsDirect).Select(x => (x.Wholesale, x.Revenue, x.Count));
-                var wholesale = g.Sum(x => x.Wholesale);
-                var revenue = g.Sum(x => x.Revenue);
-                return new DashboardEstateValueCurrency
-                {
-                    Currency = g.Key,
-                    WholesaleMonthly = decimal.Round(wholesale, 2),
-                    RevenueMonthly = decimal.Round(revenue, 2),
-                    MarginMonthly = decimal.Round(revenue - wholesale, 2),
-                    PricedEntitlementCount = g.Sum(x => x.Count),
-                    Direct = Scope(direct),
-                    Indirect = Scope(indirect)
-                };
-            })
-            .OrderByDescending(x => x.WholesaleMonthly)
-            .ToList();
-
-        var dominant = currencies[0];
-        var unpriced = await active.CountAsync(e => e.UnitPrice <= 0, cancellationToken);
-
-        return new DashboardEstateValue
-        {
-            Currency = dominant.Currency,
-            WholesaleMonthly = dominant.WholesaleMonthly,
-            RevenueMonthly = dominant.RevenueMonthly,
-            MarginMonthly = dominant.MarginMonthly,
-            MixedCurrencies = currencies.Count > 1,
-            PricedEntitlementCount = currencies.Sum(c => c.PricedEntitlementCount),
-            UnpricedEntitlementCount = unpriced,
-            Direct = dominant.Direct,
-            Indirect = dominant.Indirect,
-            Currencies = currencies
-        };
-    }
-
-    // Replaces the partial live direct figures with read-model totals for direct customers (OwningLinkId
-    // null) when the live run skipped some, so the dashboard fills from SQL rather than under-reporting.
-    private static async Task<DashboardSummary> BackfillDirectEstateAsync(
-        DashboardSummary summary, GChannelDbContext db, CancellationToken cancellationToken)
-    {
-        var rows = db.EntitlementRecords.Where(e => !e.IsDeleted && e.OwningLinkId == null);
-        var hasData = await rows.AnyAsync(cancellationToken);
-        if (!hasData)
-        {
-            return summary; // Read-model hasn't synced direct entitlements yet — keep live partials.
-        }
-
-        var active = await rows.CountAsync(e => e.State == "ACTIVE" && !e.IsTrial, cancellationToken);
-        var trials = await rows.CountAsync(e => e.IsTrial, cancellationToken);
-        var suspended = await rows.CountAsync(e => e.State == "SUSPENDED", cancellationToken);
-        var seats = await rows.Where(e => e.State == "ACTIVE").SumAsync(e => e.Seats, cancellationToken);
-
-        var mix = await rows.Where(e => e.State == "ACTIVE")
-            .GroupBy(e => e.ProductName ?? e.ProductId ?? "Other")
-            .Select(g => new { Product = g.Key, Count = g.Count() })
-            .OrderByDescending(g => g.Count)
-            .Take(8)
-            .ToListAsync(cancellationToken);
-
-        return summary with
-        {
-            ActiveEntitlementCount = Math.Max(summary.ActiveEntitlementCount, active),
-            TrialEntitlementCount = Math.Max(summary.TrialEntitlementCount, trials),
-            SuspendedEntitlementCount = Math.Max(summary.SuspendedEntitlementCount, suspended),
-            ActiveSeats = Math.Max(summary.ActiveSeats, seats),
-            SkippedCustomerCount = 0,
-            IncompleteReason = null,
-            ProductMix = summary.ProductMix is { Count: > 0 }
-                ? summary.ProductMix
-                : mix.Select(m => new DashboardProductSlice { Product = m.Product, Count = m.Count }).ToList()
-        };
     }
 }

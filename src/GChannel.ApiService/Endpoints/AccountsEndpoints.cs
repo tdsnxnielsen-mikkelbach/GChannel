@@ -1,44 +1,30 @@
-using GChannel.ApiService.Data;
-using GChannel.ApiService.Services;
+using GChannel.ApiService.Caching;
+using GChannel.ApiService.Http;
 using GChannel.Core.Configuration;
 using GChannel.Core.GoogleApis;
-using GChannel.Core.Ion;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
-using Microsoft.EntityFrameworkCore;
+using Marten;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
-using System.Text.Json;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
-/// <summary>Maps the Accounts-related Channel API endpoints exposed to the front end.</summary>
+/// <summary>Accounts-related Channel API endpoints: the Cloud Identity existence check and its audit history.</summary>
 public static class AccountsEndpoints
 {
-    public static IEndpointRouteBuilder MapAccountsEndpoints(this IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/accounts").WithTags("Accounts");
-
-        group.MapPost("/check-cloud-identity", CheckCloudIdentityAsync)
-            .WithName("CheckCloudIdentity")
-            .WithSummary("Checks whether a Cloud Identity account already exists for a domain.");
-
-        group.MapGet("/check-cloud-identity/history", GetHistoryAsync)
-            .WithName("CloudIdentityHistory")
-            .WithSummary("Lists recently checked domains (latest result per domain).");
-
-        return app;
-    }
-
-    private static async Task<IResult> CheckCloudIdentityAsync(
+    [WolverinePost("/api/accounts/check-cloud-identity")]
+    public static async Task<IResult> CheckCloudIdentity(
         CheckCloudIdentityRequest request,
+        bool refresh,
         IGoogleChannelClient channel,
         IDistributedCache cache,
-        GChannelDbContext db,
+        IDocumentSession session,
         IOptions<GoogleChannelOptions> options,
-        ILoggerFactory loggerFactory,
+        ILogger<CheckCloudIdentityRequest> logger,
         HttpContext http,
-        bool refresh = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Domain))
         {
@@ -50,69 +36,62 @@ public static class AccountsEndpoints
 
         var cacheKey = $"cid:{request.Domain.ToLowerInvariant()}:{request.PrimaryAdminEmail?.ToLowerInvariant()}";
 
-        // A forced recheck (refresh=true) bypasses the cached result and re-queries Google, then
-        // refreshes the cache. Normal checks reuse the cached result while it is still warm.
+        // A forced recheck (refresh=true) bypasses the cached result and re-queries Google, then refreshes
+        // the cache. Normal checks reuse the cached result while it is still warm.
         if (!refresh)
         {
-            var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
+            var cached = await GoogleReadCache.GetAsync<CheckCloudIdentityResult>(cache, cacheKey, cancellationToken);
             if (cached is not null)
             {
-                return Results.Ok(JsonSerializer.Deserialize<CheckCloudIdentityResult>(cached));
+                return Results.Ok(cached);
             }
         }
 
         var result = await channel.CheckCloudIdentityAsync(request, cancellationToken);
 
-        // Cross-correlate against our channel partner links: if a link's Cloud Identity domain
-        // matches this domain, surface it (e.g. a still-pending INVITED invitation we already sent).
+        // Cross-correlate against our channel partner links: if a link's Cloud Identity domain matches this
+        // domain, surface it (e.g. a still-pending INVITED invitation we already sent).
         result = result with
         {
-            PartnerLink = await FindPartnerLinkForDomainAsync(channel, cache, result, loggerFactory, cancellationToken)
+            PartnerLink = await FindPartnerLinkForDomainAsync(channel, cache, result, logger, cancellationToken)
         };
 
-        await cache.SetStringAsync(
-            cacheKey,
-            JsonSerializer.Serialize(result),
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(options.Value.CacheSeconds)
-            },
-            cancellationToken);
+        await GoogleReadCache.SetAsync(cache, cacheKey, result, options.Value.CacheSeconds, cancellationToken);
 
-        db.IdentityCheckLogs.Add(new IdentityCheckLog
+        session.Store(new IdentityCheckLog
         {
+            Id = Guid.CreateVersion7(),
             Domain = result.Domain,
             Exists = result.Exists,
             AccountsFound = result.Accounts.Count,
-            PerformedBy = http.User.Identity?.Name ?? http.Request.Headers["X-User-Email"].ToString()
+            PerformedBy = RequestUser.NameOf(http),
+            PerformedAt = DateTimeOffset.UtcNow,
         });
 
-        // The audit write is best-effort: a paused/warming serverless database must not fail the
-        // user's check, which has already succeeded against Google at this point.
+        // The audit write is best-effort: a database hiccup must not fail the user's check, which has already
+        // succeeded against Google at this point.
         try
         {
-            await db.SaveChangesAsync(cancellationToken);
+            await session.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
-            loggerFactory.CreateLogger("AccountsEndpoints")
-                .LogWarning(ex, "Failed to persist Cloud Identity audit log for {Domain}.", result.Domain);
+            logger.LogWarning(ex, "Failed to persist Cloud Identity audit log for {Domain}.", result.Domain);
         }
 
         return Results.Ok(result);
     }
 
     /// <summary>
-    /// Finds a channel partner link that corresponds to <paramref name="result"/>'s domain, trying,
-    /// in order: (1) the link's Cloud Identity primary domain, (2) the reseller Cloud Identity ID
-    /// found by the check, and (3) the domain we recorded when we sent the invitation. Best-effort:
-    /// partner-link discovery must never fail the Cloud Identity check itself.
+    /// Finds a channel partner link that corresponds to the result's domain, trying, in order: (1) the link's
+    /// Cloud Identity primary domain, (2) the reseller Cloud Identity ID found by the check, and (3) the domain
+    /// we recorded when we sent the invitation. Best-effort: partner-link discovery must never fail the check.
     /// </summary>
     private static async Task<ChannelPartnerLink?> FindPartnerLinkForDomainAsync(
         IGoogleChannelClient channel,
         IDistributedCache cache,
         CheckCloudIdentityResult result,
-        ILoggerFactory loggerFactory,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         try
@@ -125,7 +104,6 @@ public static class AccountsEndpoints
 
             var domain = result.Domain;
 
-            // 1) Authoritative: the partner link's Cloud Identity primary domain matches.
             var match = links.FirstOrDefault(l =>
                 string.Equals(l.ChannelPartner?.PrimaryDomain, domain, StringComparison.OrdinalIgnoreCase));
             if (match is not null)
@@ -133,8 +111,6 @@ public static class AccountsEndpoints
                 return match;
             }
 
-            // 2) Fallback: match a reseller Cloud Identity ID found by the check against a link's
-            //    ResellerCloudIdentityId (covers fresh INVITED links with no primary domain yet).
             var checkedIds = result.Accounts
                 .Select(a => a.CustomerCloudIdentityId)
                 .Where(id => !string.IsNullOrWhiteSpace(id))
@@ -150,8 +126,6 @@ public static class AccountsEndpoints
                 }
             }
 
-            // 3) Fallback: the domain we recorded when sending the invitation (stored at create time),
-            //    keyed by the reseller Cloud Identity ID.
             foreach (var link in links)
             {
                 if (string.IsNullOrWhiteSpace(link.ResellerCloudIdentityId))
@@ -160,8 +134,7 @@ public static class AccountsEndpoints
                 }
 
                 var invitedDomain = await cache.GetStringAsync(
-                    ChannelPartnerLinksEndpoints.InvitedDomainCacheKey(link.ResellerCloudIdentityId!),
-                    cancellationToken);
+                    GoogleReadCache.InvitedDomainKey(link.ResellerCloudIdentityId!), cancellationToken);
                 if (string.Equals(invitedDomain, domain, StringComparison.OrdinalIgnoreCase))
                 {
                     return link;
@@ -172,19 +145,17 @@ public static class AccountsEndpoints
         }
         catch (Exception ex)
         {
-            loggerFactory.CreateLogger("AccountsEndpoints")
-                .LogWarning(ex, "Failed to cross-correlate channel partner links for {Domain}.", result.Domain);
+            logger.LogWarning(ex, "Failed to cross-correlate channel partner links for {Domain}.", result.Domain);
             return null;
         }
     }
 
-    private static async Task<IResult> GetHistoryAsync(
-        GChannelDbContext db,
-        CancellationToken cancellationToken)
+    [WolverineGet("/api/accounts/check-cloud-identity/history")]
+    public static async Task<IdentityCheckHistoryResult> GetHistory(IQuerySession session, CancellationToken cancellationToken)
     {
-        // Pull the most recent audit rows, then keep the latest entry per domain so the UI can
-        // surface a short "recently checked" list with one-click recheck.
-        var recent = await db.IdentityCheckLogs
+        // Pull the most recent audit rows, then keep the latest entry per domain so the UI can surface a
+        // short "recently checked" list with one-click recheck.
+        var recent = await session.Query<IdentityCheckLog>()
             .OrderByDescending(l => l.PerformedAt)
             .Take(100)
             .ToListAsync(cancellationToken);
@@ -203,6 +174,6 @@ public static class AccountsEndpoints
             })
             .ToList();
 
-        return Results.Ok(new IdentityCheckHistoryResult { Items = items });
+        return new IdentityCheckHistoryResult { Items = items };
     }
 }

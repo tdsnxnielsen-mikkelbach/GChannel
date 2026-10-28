@@ -8,15 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Microsoft.EntityFrameworkCore.SqlServer" Version="13.5.0" />
     <PackageReference Include="Aspire.Microsoft.Azure.StackExchangeRedis" Version="13.5.0" />
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.5.0" />
     <PackageReference Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.5.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.4" />
     <!-- Pin over the vulnerable <=2.7.4 pulled transitively by Microsoft.AspNetCore.OpenApi (NU1903 / GHSA-v5pm-xwqc-g5wc). -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
-    <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" Version="7.0.2" />
+    <PackageReference Include="WolverineFx.Http" Version="6.56.0" />
   </ItemGroup>
 
   <ItemGroup>

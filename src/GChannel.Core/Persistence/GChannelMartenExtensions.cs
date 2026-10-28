@@ -140,6 +140,5 @@ public static class GChannelMartenExtensions
         opts.Schema.For<RecurringJobState>();
         opts.Schema.For<SyncCursor>();
         opts.Schema.For<DashboardRefreshState>();
-        opts.Schema.For<DashboardSnapshot>();
     }
 }

@@ -65,25 +65,6 @@ public sealed class DashboardRefreshState
     public DashboardRefreshStatus Status { get; set; } = new();
 }
 
-/// <summary>
-/// Persisted dashboard figures (replaces the former Redis <c>dashboard:summary</c> / <c>dashboard:overview</c>
-/// keys and their <c>:last</c> last-known-good copies).
-/// </summary>
-public sealed class DashboardSnapshot
-{
-    public const string SummaryId = "summary";
-    public const string SummaryLastGoodId = "summary:last";
-    public const string OverviewId = "overview";
-    public const string OverviewLastGoodId = "overview:last";
-
-    public string Id { get; set; } = string.Empty;
-    public DashboardSummary? Summary { get; set; }
-    public DashboardOverview? Overview { get; set; }
-    public DateTimeOffset ComputedUtc { get; set; }
-    /// <summary>Absolute expiry for cache-like semantics (null = never expires, e.g. the last-known-good copies).</summary>
-    public DateTimeOffset? ExpiresUtc { get; set; }
-}
-
 /// <summary>Audit record written each time a Cloud Identity existence check runs.</summary>
 public sealed class IdentityCheckLog
 {

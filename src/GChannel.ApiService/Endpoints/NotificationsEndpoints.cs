@@ -1,78 +1,47 @@
-using GChannel.ApiService.Services;
 using GChannel.Core.Configuration;
 using GChannel.Core.GoogleApis;
-using GChannel.Core.Ion;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
+using Marten;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
-using System.Text.Json;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
-/// Maps the eventing endpoints (§7): the live feed of Channel change notifications received from
-/// Pub/Sub (read from the capped Redis list written by the worker's <c>ChannelNotificationsService</c>),
-/// plus management of the Pub/Sub subscriber registration
-/// (<c>accounts.register</c> / <c>unregister</c> / <c>listSubscribers</c>).
+/// Eventing endpoints: the feed of Channel change notifications received from Pub/Sub (persisted by the
+/// worker as <see cref="ChannelNotificationRecord"/> documents), plus management of the Pub/Sub subscriber
+/// registration (<c>accounts.register</c> / <c>unregister</c> / <c>listSubscribers</c>).
 /// </summary>
 public static class NotificationsEndpoints
 {
-    public static IEndpointRouteBuilder MapNotificationsEndpoints(this IEndpointRouteBuilder app)
+    [WolverineGet("/api/notifications")]
+    public static async Task<ChannelNotificationsResult> ListNotifications(
+        IQuerySession session, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
     {
-        var group = app.MapGroup("/api/notifications").WithTags("Notifications");
+        var records = await session.Query<ChannelNotificationRecord>()
+            .OrderByDescending(n => n.ReceivedAt)
+            .Take(Math.Max(1, options.Value.PubSubMaxNotifications))
+            .ToListAsync(cancellationToken);
 
-        group.MapGet("/", async (
-                IConnectionMultiplexer redis,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-            {
-                var db = redis.GetDatabase();
-                var entries = await db.ListRangeAsync(ChannelNotificationFeed.RedisKey, 0, -1);
-                var notifications = entries
-                    .Where(entry => entry.HasValue)
-                    .Select(entry => JsonSerializer.Deserialize<ChannelNotification>((string)entry!))
-                    .Where(notification => notification is not null)
-                    .Select(notification => notification!)
-                    .ToList();
-
-                return Results.Ok(new ChannelNotificationsResult
-                {
-                    Notifications = notifications,
-                    SubscriberEnabled = options.Value.PubSubEnabled
-                });
-            })
-            .WithName("ListNotifications")
-            .WithSummary("Lists recent Channel change notifications received from Pub/Sub.");
-
-        group.MapGet("/subscribers", (
-                IGoogleChannelClient channel,
-                CancellationToken cancellationToken) =>
-                channel.ListSubscribersAsync(cancellationToken))
-            .WithName("ListSubscribers")
-            .WithSummary("Lists the account's Pub/Sub subscriber registration (topic + service accounts).");
-
-        group.MapPost("/subscribers", async (
-                RegisterSubscriberRequest request,
-                IGoogleChannelClient channel,
-                CancellationToken cancellationToken) =>
-            {
-                var registration = await channel.RegisterSubscriberAsync(request.ServiceAccount, cancellationToken);
-                return Results.Ok(registration);
-            })
-            .WithName("RegisterSubscriber")
-            .WithSummary("Registers a service account as a Pub/Sub subscriber.");
-
-        group.MapDelete("/subscribers/{serviceAccount}", async (
-                string serviceAccount,
-                IGoogleChannelClient channel,
-                CancellationToken cancellationToken) =>
-            {
-                var registration = await channel.UnregisterSubscriberAsync(serviceAccount, cancellationToken);
-                return Results.Ok(registration);
-            })
-            .WithName("UnregisterSubscriber")
-            .WithSummary("Unregisters a Pub/Sub subscriber service account.");
-
-        return app;
+        return new ChannelNotificationsResult
+        {
+            Notifications = records.Select(r => r.Notification).ToList(),
+            SubscriberEnabled = options.Value.PubSubEnabled
+        };
     }
+
+    [WolverineGet("/api/notifications/subscribers")]
+    public static Task<SubscriberRegistration> ListSubscribers(IGoogleChannelClient channel, CancellationToken cancellationToken)
+        => channel.ListSubscribersAsync(cancellationToken);
+
+    [WolverinePost("/api/notifications/subscribers")]
+    public static Task<SubscriberRegistration> RegisterSubscriber(
+        RegisterSubscriberRequest request, IGoogleChannelClient channel, CancellationToken cancellationToken)
+        => channel.RegisterSubscriberAsync(request.ServiceAccount, cancellationToken);
+
+    [WolverineDelete("/api/notifications/subscribers/{serviceAccount}")]
+    public static Task<SubscriberRegistration> UnregisterSubscriber(
+        string serviceAccount, IGoogleChannelClient channel, CancellationToken cancellationToken)
+        => channel.UnregisterSubscriberAsync(serviceAccount, cancellationToken);
 }
