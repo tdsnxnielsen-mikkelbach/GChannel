@@ -1,4 +1,5 @@
 using JasperFx.Core;
+using System.Reflection;
 using Wolverine;
 using Wolverine.AzureServiceBus;
 using Wolverine.ErrorHandling;
@@ -21,9 +22,17 @@ public static class GChannelWolverineExtensions
     /// store, automatic Marten transactions around handlers, message routing to the declared topology and
     /// the retry / dead-letter policies for Channel API throttling.
     /// </summary>
-    public static WolverineOptions ConfigureGChannelMessaging(this WolverineOptions opts, string serviceName, MessagingRole role)
+    public static WolverineOptions ConfigureGChannelMessaging(this WolverineOptions opts, string serviceName, MessagingRole role, Assembly applicationAssembly)
     {
         opts.ServiceName = serviceName;
+
+        // Handler / endpoint discovery is pinned to the host's own assembly (Wolverine otherwise adopts the
+        // process-wide entry assembly, which differs under test harnesses).
+        opts.ApplicationAssembly = applicationAssembly;
+        opts.Discovery.IncludeAssembly(applicationAssembly);
+
+        // Handlers and HTTP endpoints are compiled at startup (WolverineFx.RuntimeCompilation).
+        opts.UseRuntimeCompilation();
 
         // The topology is declared in the AppHost (the emulator has no management plane), so no AutoProvision.
         opts.UseAzureServiceBusUsingNamedConnection(MessagingTopology.ConnectionName);

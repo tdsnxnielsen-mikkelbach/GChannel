@@ -15,7 +15,7 @@ public sealed class ServiceAccountChannelClientProvider(
     ILoggerFactory loggerFactory,
     ILogger<ServiceAccountChannelClientProvider> logger)
 {
-    private readonly Lazy<GoogleChannelClient?> _client = new(() =>
+    private readonly Lazy<IGoogleChannelClient?> _client = new(() =>
     {
         var opts = options.Value;
         if (!opts.HasServiceAccountCredential || string.IsNullOrWhiteSpace(opts.ImpersonateUser))
@@ -26,7 +26,7 @@ public sealed class ServiceAccountChannelClientProvider(
         return new GoogleChannelClient(new ServiceAccountCredentialSource(opts), options, loggerFactory.CreateLogger<GoogleChannelClient>());
     });
 
-    public GoogleChannelClient? Client => _client.Value;
+    public IGoogleChannelClient? Client => _client.Value;
 
     public bool IsConfigured => options.Value.HasServiceAccountCredential && !string.IsNullOrWhiteSpace(options.Value.ImpersonateUser);
 }

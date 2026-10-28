@@ -22,6 +22,7 @@
     <PackageReference Include="Marten" Version="9.54.2" />
     <PackageReference Include="WolverineFx.AzureServiceBus" Version="6.56.0" />
     <PackageReference Include="WolverineFx.Marten" Version="6.56.0" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" Version="6.56.0" />
   </ItemGroup>
 
   <ItemGroup>

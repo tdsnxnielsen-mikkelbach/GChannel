@@ -27,7 +27,7 @@ public sealed class ChannelOperationSaga : Saga
     public DateTimeOffset SubmittedAt { get; set; }
     public int Attempts { get; set; }
 
-    public static (ChannelOperationSaga, OutgoingMessages) Start(OperationSubmitted message)
+    public static (ChannelOperationSaga, CheckChannelOperation) Start(OperationSubmitted message)
     {
         var saga = new ChannelOperationSaga
         {
@@ -38,9 +38,7 @@ public sealed class ChannelOperationSaga : Saga
             RequestedBy = message.RequestedBy,
             SubmittedAt = message.SubmittedAt,
         };
-        var outgoing = new OutgoingMessages();
-        outgoing.Delay(new CheckChannelOperation(message.OperationName), TimeSpan.FromSeconds(5));
-        return (saga, outgoing);
+        return (saga, new CheckChannelOperation(message.OperationName, TimeSpan.FromSeconds(5)));
     }
 
     public async Task<OutgoingMessages> Handle(
@@ -81,7 +79,7 @@ public sealed class ChannelOperationSaga : Saga
                 return outgoing;
             }
             logger.LogDebug(ex, "Polling operation {Operation} failed (attempt {Attempts}); retrying.", Id, Attempts);
-            outgoing.Delay(message, Backoff());
+            outgoing.Add(new CheckChannelOperation(Id, Backoff()));
             return outgoing;
         }
 
@@ -93,7 +91,7 @@ public sealed class ChannelOperationSaga : Saga
                 MarkCompleted();
                 return outgoing;
             }
-            outgoing.Delay(message, Backoff());
+            outgoing.Add(new CheckChannelOperation(Id, Backoff()));
             return outgoing;
         }
 

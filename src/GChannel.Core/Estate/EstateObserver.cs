@@ -124,15 +124,25 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
         session.Store(state);
     }
 
-    /// <summary>Records a mutation the app issued for a customer (audit trail); no-op for unknown customers.</summary>
+    /// <summary>Records a mutation the app issued for a customer (audit trail); no-op for customers never observed.</summary>
     public async Task RecordCustomerMutationAsync(
         IDocumentSession session, string customerId, string action, string? requestedBy, string? operationName, CancellationToken ct)
     {
-        var record = await session.LoadAsync<CustomerRecord>(EstateStreams.Customer(customerId), ct);
-        if (record is not null)
+        var key = EstateStreams.Customer(customerId);
+        if (await StreamExistsAsync<CustomerRecord>(session, key, ct))
         {
-            session.Events.Append(record.Id, new CustomerMutationRequested(customerId, action, requestedBy, operationName));
+            session.Events.Append(key, new CustomerMutationRequested(customerId, action, requestedBy, operationName));
         }
+    }
+
+    /// <summary>True when the stream has been persisted or was started/appended earlier in this same session (not yet saved).</summary>
+    private static async Task<bool> StreamExistsAsync<TRecord>(IDocumentSession session, string key, CancellationToken ct) where TRecord : class
+    {
+        if (session.PendingChanges.Streams().Any(s => string.Equals(s.Key, key, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+        return await session.LoadAsync<TRecord>(key, ct) is not null;
     }
 
     private async Task<bool> ObserveCustomerCoreAsync(
@@ -230,13 +240,13 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
         }
     }
 
-    /// <summary>Records a mutation the app issued for a link (audit trail); no-op for unknown links.</summary>
+    /// <summary>Records a mutation the app issued for a link (audit trail); no-op for links never observed.</summary>
     public async Task RecordLinkMutationAsync(IDocumentSession session, string linkId, string action, string? requestedBy, CancellationToken ct)
     {
-        var record = await session.LoadAsync<ResellerLinkRecord>(EstateStreams.Link(linkId), ct);
-        if (record is not null)
+        var key = EstateStreams.Link(linkId);
+        if (await StreamExistsAsync<ResellerLinkRecord>(session, key, ct))
         {
-            session.Events.Append(record.Id, new LinkMutationRequested(linkId, action, requestedBy));
+            session.Events.Append(key, new LinkMutationRequested(linkId, action, requestedBy));
         }
     }
 
@@ -336,7 +346,7 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
     /// Deletions are NOT inferred from a metadata fetch miss (a transient 404 must never remove a customer).
     /// </summary>
     public async Task ProjectCustomerAsync(
-        IDocumentSession session, GoogleChannelClient client, string customerId, ObservationSource source,
+        IDocumentSession session, IGoogleChannelClient client, string customerId, ObservationSource source,
         DateTimeOffset now, CancellationToken ct)
     {
         var existing = await session.LoadAsync<CustomerRecord>(EstateStreams.Customer(customerId), ct);
@@ -374,7 +384,7 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
     /// stop the cycle; any other failure stamps the customer as visited so one bad customer can't stall the queue.
     /// </summary>
     public async Task SyncCustomerEntitlementsAsync(
-        IDocumentSession session, GoogleChannelClient client, string customerId, string? owningLinkId,
+        IDocumentSession session, IGoogleChannelClient client, string customerId, string? owningLinkId,
         OfferCatalog offerCatalog, IReadOnlyDictionary<string, string> productNames, decimal linkFallbackPercent,
         PricingDiagnostics diag, ObservationSource source, DateTimeOffset now, CancellationToken ct)
     {
@@ -647,9 +657,8 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
         string? operationName, string? details, CancellationToken ct)
     {
         var key = EstateStreams.Entitlement(entitlementId);
-        var record = await session.LoadAsync<EntitlementRecord>(key, ct);
         var evt = new EntitlementChangeRequested(entitlementId, customerId, action, requestedBy, operationName, details);
-        if (record is null)
+        if (!await StreamExistsAsync<EntitlementRecord>(session, key, ct))
         {
             // Not yet observed by the sync: a targeted projection will fill in the facts; keep the audit trail now.
             logger.LogDebug("Change requested for not-yet-observed entitlement {Entitlement}; recording on the customer stream only.", entitlementId);
@@ -825,7 +834,7 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
     }
 
     private async Task<IReadOnlyDictionary<string, decimal>> ResolveCustomerEntitlementPercentsAsync(
-        GoogleChannelClient client, string customerId, DateTimeOffset now, CancellationToken ct)
+        IGoogleChannelClient client, string customerId, DateTimeOffset now, CancellationToken ct)
     {
         var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         try
@@ -851,7 +860,7 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
 
     /// <summary>The reseller-wide (channel-partner granularity) mark-up for a link, or 0 when none applies.</summary>
     public async Task<decimal> ResolveChannelPartnerPercentAsync(
-        GoogleChannelClient client, string linkId, DateTimeOffset now, CancellationToken ct)
+        IGoogleChannelClient client, string linkId, DateTimeOffset now, CancellationToken ct)
     {
         try
         {

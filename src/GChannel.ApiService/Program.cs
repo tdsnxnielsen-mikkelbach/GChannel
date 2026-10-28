@@ -36,7 +36,7 @@ builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
 
 // Wolverine: HTTP endpoints, the Service Bus transport (publishing CustomerChanged / OperationSubmitted /
 // … through the Marten outbox) and the api-cache subscription (Redis eviction on read-model updates).
-builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-api", MessagingRole.Api));
+builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-api", MessagingRole.Api, typeof(ApiAssemblyMarker).Assembly));
 builder.Services.AddWolverineHttp();
 
 var app = builder.Build();

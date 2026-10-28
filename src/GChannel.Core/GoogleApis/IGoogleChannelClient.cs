@@ -70,6 +70,12 @@ public interface IGoogleChannelClient
     /// <summary>Lists a customer's entitlements (<c>entitlements.list</c>).</summary>
     Task<EntitlementsResult> ListEntitlementsAsync(string customerId, CancellationToken cancellationToken);
 
+    /// <summary>Read-model sync helper: lists a customer's entitlements WITHOUT resolving catalog display names (the sync denormalises them itself).</summary>
+    Task<EntitlementsResult> ListEntitlementsForSyncAsync(string customerId, CancellationToken cancellationToken);
+
+    /// <summary>Read-model sync helper: fetches only the auto-renew flag for one entitlement (null when it has no renewal settings).</summary>
+    Task<bool?> GetEntitlementRenewalEnabledAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
+
     /// <summary>Gets a single entitlement (<c>entitlements.get</c>).</summary>
     Task<Entitlement> GetEntitlementAsync(string customerId, string entitlementId, CancellationToken cancellationToken);
 

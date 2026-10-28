@@ -8,4 +8,7 @@
     <Project Path="src/GChannel.Web/GChannel.Web.csproj" />
     <Project Path="src/GChannel.Worker/GChannel.Worker.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GChannel.Tests/GChannel.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -1,4 +1,5 @@
 using GChannel.Shared.Contracts;
+using Wolverine;
 using Wolverine.Persistence.Sagas;
 
 namespace GChannel.Core.Messaging;
@@ -63,5 +64,8 @@ public sealed record RunBillingPostureScan(Guid RunId) : IRecurringJobTick;
 // Operation tracking saga — Service Bus queue "operations".
 // ---------------------------------------------------------------------------------------------------
 
-/// <summary>Timeout message: poll the Google long-running operation again.</summary>
-public sealed record CheckChannelOperation([property: SagaIdentity] string OperationName);
+/// <summary>
+/// Saga timeout: poll the Google long-running operation again after <paramref name="Delay"/>. Returning one
+/// from the saga schedules it through Wolverine's durable scheduled messaging.
+/// </summary>
+public sealed record CheckChannelOperation([property: SagaIdentity] string OperationName, TimeSpan Delay) : TimeoutMessage(Delay);

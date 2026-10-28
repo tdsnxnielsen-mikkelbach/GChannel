@@ -303,7 +303,7 @@ public sealed class EstateSyncHandler(
     }
 
     /// <summary>offerId → (effective unit price, currency) + offer/SKU/product display names + plans from the sellable offer list. Best-effort.</summary>
-    private async Task<EstateObserver.OfferCatalog> BuildOfferCatalogAsync(GoogleChannelClient client, CancellationToken ct)
+    private async Task<EstateObserver.OfferCatalog> BuildOfferCatalogAsync(IGoogleChannelClient client, CancellationToken ct)
     {
         var pricing = new Dictionary<string, (decimal, string)>(StringComparer.OrdinalIgnoreCase);
         var offerNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -356,7 +356,7 @@ public sealed class EstateSyncHandler(
         return new EstateObserver.OfferCatalog(pricing, offerNames, skuNames, plans, productNames);
     }
 
-    private async Task<IReadOnlyDictionary<string, string>> BuildProductNamesAsync(GoogleChannelClient client, CancellationToken ct)
+    private async Task<IReadOnlyDictionary<string, string>> BuildProductNamesAsync(IGoogleChannelClient client, CancellationToken ct)
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
