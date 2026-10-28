@@ -1,35 +1,37 @@
 @page "/billing/posture"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
+@using Blazorise.DataGrid
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Security posture · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
-    <div>
-        <MudText Typo="Typo.h4">Billing security posture</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+    <Div>
+        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Billing security posture</Heading>
+        <Small TextColor="TextColor.Secondary">
             Nightly scan of every billing (sub-)account's IAM members — consumer admins, 2-Step Verification,
             Advanced Protection and passkeys / security keys.
-        </MudText>
-    </div>
-    <div class="d-flex align-center gap-3">
+        </Small>
+    </Div>
+    <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is3">
         @if (_summary?.AsOf is { } asOf)
         {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">Scanned @asOf.ToLocalTime().ToString("g")</MudText>
+            <Small TextColor="TextColor.Secondary" Class="text-nowrap">Scanned @asOf.ToLocalTime().ToString("g")</Small>
         }
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Disabled="_loading">Reload</MudButton>
-    </div>
-</div>
+        <Button Color="Color.Secondary" Outline Clicked="LoadAsync" Disabled="_loading">
+            <Icon Name="@AppIcons.Refresh" Class="me-1" /> Reload
+        </Button>
+    </Div>
+</Div>
 
-<MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
     <strong>Best practice</strong> for every assessable member: 2SV on, Advanced Protection enrolled, and at
     least one passkey or security key. Members are <em>assessable</em> when their tenant is readable — our own
     Workspace, or a resold customer we hold reseller admin access to. Consumer Google Accounts and unreadable
     tenants are reported separately, never counted as compliant.
-</MudText>
+</Paragraph>
 
 @if (_loading && _summary is null)
 {
@@ -37,191 +39,237 @@
 }
 else if (_summary is null)
 {
-    <MudAlert Severity="Severity.Error">Couldn't load the posture summary.</MudAlert>
+    <Alert Color="Color.Danger" Visible>Couldn't load the posture summary.</Alert>
 }
 else
 {
     @if (_summary.Unconfigured)
     {
-        <MudAlert Severity="Severity.Warning" Class="mb-4">
+        <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
             The nightly posture scan isn't configured. It needs <code>GoogleChannel:ServiceAccountKeyJson</code>,
             <code>GoogleChannel:ImpersonateUser</code> and <code>GoogleBilling:PostureScanEnabled</code>.
-        </MudAlert>
+        </Alert>
     }
     else if (_summary.AsOf is null)
     {
-        <MudAlert Severity="Severity.Info" Class="mb-4">
+        <Alert Color="Color.Info" Visible Margin="Margin.Is4.FromBottom">
             The first nightly scan hasn't completed yet (it runs at the configured UTC hour, or shortly after the
             worker starts when no scan exists). @(_summary.LastRunError is null ? "" : $"Last attempt failed: {_summary.LastRunError}")
-        </MudAlert>
+        </Alert>
     }
     else if (_summary.LastRunError is not null)
     {
-        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+        <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
             The most recent scan attempt failed (@_summary.LastRunError); showing the last successful scan.
-        </MudAlert>
+        </Alert>
     }
 
     @* ---- Headline KPIs ---- *@
-    <MudGrid Class="mb-2">
-        <MudItem xs="6" md="3">
-            @Kpi("Billing accounts scanned", _summary.AccountsScanned.ToString(), Color.Default,
+    <Row Margin="Margin.Is2.FromBottom">
+        <Column ColumnSize="ColumnSize.Is6.Is3.OnDesktop">
+            @Kpi("Billing accounts scanned", _summary.AccountsScanned.ToString(), TextColor.Default,
                  _summary.AccountsWithErrors > 0 ? $"{_summary.AccountsWithErrors} with unreadable IAM policy" : "all policies readable")
-        </MudItem>
-        <MudItem xs="6" md="3">
+        </Column>
+        <Column ColumnSize="ColumnSize.Is6.Is3.OnDesktop">
             @Kpi("Accounts with a direct consumer admin", _summary.AccountsWithDirectConsumerAdmin.ToString(),
-                 _summary.AccountsWithDirectConsumerAdmin > 0 ? Color.Error : Color.Success,
+                 _summary.AccountsWithDirectConsumerAdmin > 0 ? TextColor.Danger : TextColor.Success,
                  "gmail / unmanaged account holding Billing Account Administrator directly")
-        </MudItem>
-        <MudItem xs="6" md="3">
+        </Column>
+        <Column ColumnSize="ColumnSize.Is6.Is3.OnDesktop">
             @Kpi("Accounts with non-compliant direct members", _summary.AccountsWithNonCompliantDirect.ToString(),
-                 _summary.AccountsWithNonCompliantDirect > 0 ? Color.Warning : Color.Success,
+                 _summary.AccountsWithNonCompliantDirect > 0 ? TextColor.Warning : TextColor.Success,
                  "at least one assessable direct member failing a rule")
-        </MudItem>
-        <MudItem xs="6" md="3">
+        </Column>
+        <Column ColumnSize="ColumnSize.Is6.Is3.OnDesktop">
             @Kpi("Accounts with non-compliant inherited members", _summary.AccountsWithNonCompliantInherited.ToString(),
-                 _summary.AccountsWithNonCompliantInherited > 0 ? Color.Warning : Color.Success,
+                 _summary.AccountsWithNonCompliantInherited > 0 ? TextColor.Warning : TextColor.Success,
                  "inherited from the master billing account")
-        </MudItem>
-    </MudGrid>
+        </Column>
+    </Row>
 
     @* ---- Member compliance, direct vs inherited ---- *@
-    <MudGrid Class="mb-4">
-        <MudItem xs="12" md="6">@BucketCard("Direct members", "Granted on individual sub-accounts (distinct email + role)", _summary.Direct)</MudItem>
-        <MudItem xs="12" md="6">@BucketCard("Inherited members", "Granted on master billing accounts — apply to every sub-account (distinct email + role)", _summary.Inherited)</MudItem>
-    </MudGrid>
+    <Row Margin="Margin.Is4.FromBottom">
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">@BucketCard("Direct members", "Granted on individual sub-accounts (distinct email + role)", _summary.Direct)</Column>
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">@BucketCard("Inherited members", "Granted on master billing accounts — apply to every sub-account (distinct email + role)", _summary.Inherited)</Column>
+    </Row>
 
-    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
-        <MudTabPanel Text="Accounts" Icon="@Icons.Material.Filled.AccountBalance">
-            <div class="d-flex align-center gap-4 mb-2">
-                <MudSwitch T="bool" @bind-Value="_onlyProblems" Label="Only accounts with findings" Color="Color.Primary" Dense="true" />
-                <MudTextField T="string" @bind-Value="_accountSearch" Placeholder="Filter by name / id / customer" Immediate="true"
-                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Margin="Margin.Dense" Variant="Variant.Outlined" Class="flex-grow-1" />
-            </div>
-            <MudTable Items="FilteredAccounts" Dense="true" Hover="true" Elevation="0" T="BillingPostureAccount" Breakpoint="Breakpoint.None"
-                      SortLabel="Sort" RowsPerPage="25">
-                <HeaderContent>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => a.DisplayName ?? a.BillingAccountId)">Billing account</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)(a.HasDirectConsumerAdmin ? 0 : 1))">Consumer admin</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)a.Direct.Members)">Direct</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)(-a.Direct.NonCompliant))">Direct non-compliant</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)a.Inherited.Members)">Inherited</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)(-a.Inherited.NonCompliant))">Inherited non-compliant</MudTableSortLabel></MudTh>
-                    <MudTh></MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Billing account">
-                        <div class="d-flex flex-column">
-                            <span>@(context.DisplayName ?? context.BillingAccountId)</span>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                @context.BillingAccountId
-                                @if (!context.IsSubaccount) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-1">master</MudChip> }
-                                @if (context.CustomerId is not null) { <span> · </span><MudLink Href="@($"/customers/{context.CustomerId}")" Typo="Typo.caption">customer</MudLink> }
-                            </MudText>
-                            @if (context.Error is not null)
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Error">IAM policy unreadable: @context.Error</MudText>
-                            }
-                        </div>
-                    </MudTd>
-                    <MudTd DataLabel="Consumer admin">
-                        @if (context.HasDirectConsumerAdmin)
-                        {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Warning">@context.Direct.ConsumerAdmins</MudChip>
-                        }
-                        else { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> }
-                    </MudTd>
-                    <MudTd DataLabel="Direct">@context.Direct.Members</MudTd>
-                    <MudTd DataLabel="Direct non-compliant">@NonCompliantCell(context.Direct)</MudTd>
-                    <MudTd DataLabel="Inherited">@context.Inherited.Members</MudTd>
-                    <MudTd DataLabel="Inherited non-compliant">@NonCompliantCell(context.Inherited)</MudTd>
-                    <MudTd Style="text-align:right">
-                        <MudButton Size="Size.Small" Variant="Variant.Text" EndIcon="@Icons.Material.Filled.ChevronRight"
-                                   OnClick="@(() => OpenAccountAsync(context))">Members</MudButton>
-                    </MudTd>
-                </RowTemplate>
-                <NoRecordsContent><MudText>No accounts match.</MudText></NoRecordsContent>
-                <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" /></PagerContent>
-            </MudTable>
+    <Card Shadow="Shadow.Small">
+        <Tabs @bind-SelectedTab="_selectedTab" RenderMode="TabsRenderMode.LazyLoad" Class="card-header-tabs px-3 pt-3">
+            <Items>
+                <Tab Name="accounts"><Icon Name="@AppIcons.AccountBalance" Class="me-1" /> Accounts</Tab>
+                <Tab Name="findings"><Icon Name="@AppIcons.Checklist" Class="me-1" /> Action list</Tab>
+            </Items>
+            <Content>
+                <TabPanel Name="accounts" Padding="Padding.Is4">
+                    <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is4" Margin="Margin.Is2.FromBottom">
+                        <Switch TValue="bool" @bind-Value="_onlyProblems" Color="Color.Primary" Class="text-nowrap">Only accounts with findings</Switch>
+                        <Addons Class="flex-grow-1">
+                            <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Search" /></AddonLabel></Addon>
+                            <Addon AddonType="AddonType.Body">
+                                <TextInput @bind-Value="_accountSearch" Placeholder="Filter by name / id / customer" />
+                            </Addon>
+                        </Addons>
+                    </Div>
+                    <DataGrid TItem="BillingPostureAccount" Data="FilteredAccounts" Narrow Hoverable Responsive Sortable
+                              ShowPager ShowPageSizes PageSize="25" PageSizes="_accountPageSizes">
+                        <DataGridColumns>
+                            <DataGridColumn TItem="BillingPostureAccount" Field="@nameof(BillingPostureAccount.BillingAccountId)" Caption="Billing account" SortComparer="@_accountNameComparer">
+                                <DisplayTemplate>
+                                    <Div Flex="Flex.Column">
+                                        <span>@(context.Item.DisplayName ?? context.Item.BillingAccountId)</span>
+                                        <Small TextColor="TextColor.Secondary">
+                                            @context.Item.BillingAccountId
+                                            @if (!context.Item.IsSubaccount) { <Badge Color="Color.Light" Class="border text-body ms-1">master</Badge> }
+                                            @if (context.Item.CustomerId is not null) { <span> · </span><Anchor To="@($"/customers/{context.Item.CustomerId}")">customer</Anchor> }
+                                        </Small>
+                                        @if (context.Item.Error is not null)
+                                        {
+                                            <Small TextColor="TextColor.Danger">IAM policy unreadable: @context.Item.Error</Small>
+                                        }
+                                    </Div>
+                                </DisplayTemplate>
+                            </DataGridColumn>
+                            <DataGridColumn TItem="BillingPostureAccount" Field="@nameof(BillingPostureAccount.HasDirectConsumerAdmin)" Caption="Consumer admin" SortComparer="@_consumerAdminComparer">
+                                <DisplayTemplate>
+                                    @if (context.Item.HasDirectConsumerAdmin)
+                                    {
+                                        <Badge Color="Color.Danger"><Icon Name="@AppIcons.Warning" Class="me-1" />@context.Item.Direct.ConsumerAdmins</Badge>
+                                    }
+                                    else { <Small TextColor="TextColor.Secondary">—</Small> }
+                                </DisplayTemplate>
+                            </DataGridColumn>
+                            <DataGridColumn TItem="BillingPostureAccount" Field="@nameof(BillingPostureAccount.Direct)" Caption="Direct" SortComparer="@(Compare(a => a.Direct.Members))">
+                                <DisplayTemplate>@context.Item.Direct.Members</DisplayTemplate>
+                            </DataGridColumn>
+                            <DataGridColumn TItem="BillingPostureAccount" Field="@nameof(BillingPostureAccount.Direct)" Caption="Direct non-compliant" SortComparer="@(Compare(a => -a.Direct.NonCompliant))">
+                                <DisplayTemplate>@NonCompliantCell(context.Item.Direct)</DisplayTemplate>
+                            </DataGridColumn>
+                            <DataGridColumn TItem="BillingPostureAccount" Field="@nameof(BillingPostureAccount.Inherited)" Caption="Inherited" SortComparer="@(Compare(a => a.Inherited.Members))">
+                                <DisplayTemplate>@context.Item.Inherited.Members</DisplayTemplate>
+                            </DataGridColumn>
+                            <DataGridColumn TItem="BillingPostureAccount" Field="@nameof(BillingPostureAccount.Inherited)" Caption="Inherited non-compliant" SortComparer="@(Compare(a => -a.Inherited.NonCompliant))">
+                                <DisplayTemplate>@NonCompliantCell(context.Item.Inherited)</DisplayTemplate>
+                            </DataGridColumn>
+                            <DataGridColumn TItem="BillingPostureAccount" Field="@nameof(BillingPostureAccount.BillingAccountId)" Caption=" " Sortable="false" TextAlignment="TextAlignment.End">
+                                <DisplayTemplate>
+                                    <Button Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none text-nowrap" Clicked="@(() => OpenAccountAsync(context.Item))">
+                                        Members <Icon Name="@AppIcons.ChevronRight" Class="ms-1" />
+                                    </Button>
+                                </DisplayTemplate>
+                            </DataGridColumn>
+                        </DataGridColumns>
+                        <EmptyTemplate><Paragraph Margin="Margin.Is0">No accounts match.</Paragraph></EmptyTemplate>
+                    </DataGrid>
 
-            @if (_openAccount is not null)
-            {
-                <MudPaper Class="pa-3 mt-4" Elevation="1">
-                    <div class="d-flex justify-space-between align-center mb-2">
-                        <MudText Typo="Typo.subtitle1">@(_openAccount.DisplayName ?? _openAccount.BillingAccountId) — members</MudText>
-                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => { _openAccount = null; _openMembers = null; })" />
-                    </div>
-                    @if (_openMembers is null)
+                    @if (_openAccount is not null)
                     {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                        <Card Margin="Margin.Is4.FromTop">
+                            <CardBody Padding="Padding.Is3">
+                                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+                                    <Strong>@(_openAccount.DisplayName ?? _openAccount.BillingAccountId) — members</Strong>
+                                    <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => { _openAccount = null; _openMembers = null; })" aria-label="Close">
+                                        <Icon Name="@AppIcons.Close" />
+                                    </Button>
+                                </Div>
+                                @if (_openMembers is null)
+                                {
+                                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" />
+                                }
+                                else
+                                {
+                                    @MemberTable(_openMembers.Members)
+                                }
+                            </CardBody>
+                        </Card>
+                    }
+                </TabPanel>
+
+                <TabPanel Name="findings" Padding="Padding.Is4">
+                    <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is4" Margin="Margin.Is2.FromBottom">
+                        <Select TValue="string" Value="@_findingsScope" ValueChanged="OnScopeChangedAsync" Style="max-width: 220px;" aria-label="Scope">
+                            <SelectItem TValue="string" Value="@("all")">Direct + inherited</SelectItem>
+                            <SelectItem TValue="string" Value="@("direct")">Direct only</SelectItem>
+                            <SelectItem TValue="string" Value="@("inherited")">Inherited only</SelectItem>
+                        </Select>
+                        <Small TextColor="TextColor.Secondary">
+                            Distinct members that are consumer admins or fail at least one best-practice rule, with the accounts they hold a role on.
+                        </Small>
+                    </Div>
+                    @if (_findings is null)
+                    {
+                        <Progress Indeterminate Color="Color.Primary" Size="Size.Small" />
                     }
                     else
                     {
-                        @MemberTable(_openMembers.Members, showAccount: false)
+                        <DataGrid TItem="BillingPostureFinding" Data="_findings.Findings" Narrow Hoverable Responsive Sortable
+                                  ShowPager ShowPageSizes PageSize="50" PageSizes="_findingPageSizes">
+                            <DataGridColumns>
+                                <DataGridColumn TItem="BillingPostureFinding" Field="@nameof(BillingPostureFinding.Member)" Caption="Member" SortComparer="@(CompareFinding(f => f.Member.Email))">
+                                    <DisplayTemplate>@MemberCell(context.Item.Member)</DisplayTemplate>
+                                </DataGridColumn>
+                                <DataGridColumn TItem="BillingPostureFinding" Field="@nameof(BillingPostureFinding.Member)" Caption="Role" Sortable="false">
+                                    <DisplayTemplate><span class="text-nowrap">@context.Item.Member.RoleDisplayName</span></DisplayTemplate>
+                                </DataGridColumn>
+                                <DataGridColumn TItem="BillingPostureFinding" Field="@nameof(BillingPostureFinding.Member)" Caption="Grant" SortComparer="@(CompareFinding(f => f.Member.Inherited ? 1 : 0))">
+                                    <DisplayTemplate>@(context.Item.Member.Inherited ? "inherited" : "direct")</DisplayTemplate>
+                                </DataGridColumn>
+                                <DataGridColumn TItem="BillingPostureFinding" Field="@nameof(BillingPostureFinding.Member)" Caption="Account" Sortable="false">
+                                    <DisplayTemplate>@AccountKindChip(context.Item.Member)</DisplayTemplate>
+                                </DataGridColumn>
+                                <DataGridColumn TItem="BillingPostureFinding" Field="@nameof(BillingPostureFinding.Member)" Caption="2SV" SortComparer="@(CompareFinding(f => TwoSvRank(f.Member)))">
+                                    <DisplayTemplate>@TwoSvChip(context.Item.Member)</DisplayTemplate>
+                                </DataGridColumn>
+                                <DataGridColumn TItem="BillingPostureFinding" Field="@nameof(BillingPostureFinding.Member)" Caption="Adv. Protection" SortComparer="@(CompareFinding(f => AppRank(f.Member)))">
+                                    <DisplayTemplate>@AppChip(context.Item.Member)</DisplayTemplate>
+                                </DataGridColumn>
+                                <DataGridColumn TItem="BillingPostureFinding" Field="@nameof(BillingPostureFinding.Member)" Caption="Keys" SortComparer="@(CompareFinding(f => KeysRank(f.Member)))">
+                                    <DisplayTemplate>@KeysChip(context.Item.Member)</DisplayTemplate>
+                                </DataGridColumn>
+                                <DataGridColumn TItem="BillingPostureFinding" Field="@nameof(BillingPostureFinding.BillingAccountIds)" Caption="Billing accounts" SortComparer="@(CompareFinding(f => -f.BillingAccountIds.Count))">
+                                    <DisplayTemplate>
+                                        <Tooltip Text="@string.Join(", ", context.Item.BillingAccountIds)" Multiline Inline>
+                                            <span>@context.Item.BillingAccountIds.Count</span>
+                                        </Tooltip>
+                                    </DisplayTemplate>
+                                </DataGridColumn>
+                            </DataGridColumns>
+                            <EmptyTemplate><Paragraph Margin="Margin.Is0">No findings — every assessable member in this scope is compliant.</Paragraph></EmptyTemplate>
+                        </DataGrid>
                     }
-                </MudPaper>
-            }
-        </MudTabPanel>
-
-        <MudTabPanel Text="Action list" Icon="@Icons.Material.Filled.Checklist">
-            <div class="d-flex align-center gap-4 mb-2">
-                <MudSelect T="string" Value="_findingsScope" ValueChanged="OnScopeChangedAsync" Label="Scope" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 220px;">
-                    <MudSelectItem Value="@("all")">Direct + inherited</MudSelectItem>
-                    <MudSelectItem Value="@("direct")">Direct only</MudSelectItem>
-                    <MudSelectItem Value="@("inherited")">Inherited only</MudSelectItem>
-                </MudSelect>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Distinct members that are consumer admins or fail at least one best-practice rule, with the accounts they hold a role on.
-                </MudText>
-            </div>
-            @if (_findings is null)
-            {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
-            }
-            else
-            {
-                <MudTable Items="_findings.Findings" Dense="true" Hover="true" Elevation="0" T="BillingPostureFinding" Breakpoint="Breakpoint.None" RowsPerPage="50">
-                    <HeaderContent>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => f.Member.Email)">Member</MudTableSortLabel></MudTh>
-                        <MudTh>Role</MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)(f.Member.Inherited ? 1 : 0))">Grant</MudTableSortLabel></MudTh>
-                        <MudTh>Account</MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)TwoSvRank(f.Member))">2SV</MudTableSortLabel></MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)AppRank(f.Member))">Adv. Protection</MudTableSortLabel></MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)KeysRank(f.Member))">Keys</MudTableSortLabel></MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)(-f.BillingAccountIds.Count))">Billing accounts</MudTableSortLabel></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Member">@MemberCell(context.Member)</MudTd>
-                        <MudTd DataLabel="Role" Style="white-space: nowrap;">@context.Member.RoleDisplayName</MudTd>
-                        <MudTd DataLabel="Grant">@(context.Member.Inherited ? "inherited" : "direct")</MudTd>
-                        <MudTd DataLabel="Account">@AccountKindChip(context.Member)</MudTd>
-                        <MudTd DataLabel="2SV">@TwoSvChip(context.Member)</MudTd>
-                        <MudTd DataLabel="Adv. Protection">@AppChip(context.Member)</MudTd>
-                        <MudTd DataLabel="Keys">@KeysChip(context.Member)</MudTd>
-                        <MudTd DataLabel="Billing accounts">
-                            <MudTooltip Text="@string.Join(", ", context.BillingAccountIds)">
-                                <span>@context.BillingAccountIds.Count</span>
-                            </MudTooltip>
-                        </MudTd>
-                    </RowTemplate>
-                    <NoRecordsContent><MudText>No findings — every assessable member in this scope is compliant.</MudText></NoRecordsContent>
-                    <PagerContent><MudTablePager PageSizeOptions="new[] { 50, 100, 200 }" /></PagerContent>
-                </MudTable>
-            }
-        </MudTabPanel>
-    </MudTabs>
+                </TabPanel>
+            </Content>
+        </Tabs>
+    </Card>
 }
 
 @code {
+    private static readonly int[] _accountPageSizes = [25, 50, 100];
+    private static readonly int[] _findingPageSizes = [50, 100, 200];
+
     private bool _loading = true;
     private BillingPostureSummary? _summary;
     private BillingPostureFindingsResult? _findings;
     private string _findingsScope = "all";
+    private string _selectedTab = "accounts";
     private bool _onlyProblems = true;
     private string _accountSearch = "";
     private BillingPostureAccount? _openAccount;
     private BillingPostureMembersResult? _openMembers;
+
+    // In-memory DataGrid sorting over computed values (the grid can only sort declared fields on its own).
+    private static IComparer<BillingPostureAccount> Compare<TKey>(Func<BillingPostureAccount, TKey> key) where TKey : IComparable<TKey> =>
+        Comparer<BillingPostureAccount>.Create((a, b) => key(a).CompareTo(key(b)));
+
+    private static IComparer<BillingPostureFinding> CompareFinding<TKey>(Func<BillingPostureFinding, TKey> key) where TKey : IComparable<TKey> =>
+        Comparer<BillingPostureFinding>.Create((a, b) => key(a).CompareTo(key(b)));
+
+    private static IComparer<BillingPostureMember> CompareMember<TKey>(Func<BillingPostureMember, TKey> key) where TKey : IComparable<TKey> =>
+        Comparer<BillingPostureMember>.Create((a, b) => key(a).CompareTo(key(b)));
+
+    private static readonly IComparer<BillingPostureAccount> _accountNameComparer =
+        Comparer<BillingPostureAccount>.Create((a, b) => string.Compare(a.DisplayName ?? a.BillingAccountId, b.DisplayName ?? b.BillingAccountId, StringComparison.OrdinalIgnoreCase));
+
+    private static readonly IComparer<BillingPostureAccount> _consumerAdminComparer = Compare(a => a.HasDirectConsumerAdmin ? 0 : 1);
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -246,7 +294,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load posture: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load posture: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -259,7 +307,7 @@ else
         _findingsScope = scope;
         _findings = null;
         try { _findings = await Api.GetBillingPostureFindingsAsync(scope); }
-        catch (Exception ex) { Snackbar.Add($"Failed to load findings: {ex.Message}", Severity.Error); _findings = new(); }
+        catch (Exception ex) { await Snackbar.Add($"Failed to load findings: {ex.Message}", Severity.Error); _findings = new(); }
     }
 
     private async Task OpenAccountAsync(BillingPostureAccount account)
@@ -267,146 +315,150 @@ else
         _openAccount = account;
         _openMembers = null;
         try { _openMembers = await Api.GetBillingPostureMembersAsync(account.BillingAccountId); }
-        catch (Exception ex) { Snackbar.Add($"Failed to load members: {ex.Message}", Severity.Error); _openMembers = new() { BillingAccountId = account.BillingAccountId }; }
+        catch (Exception ex) { await Snackbar.Add($"Failed to load members: {ex.Message}", Severity.Error); _openMembers = new() { BillingAccountId = account.BillingAccountId }; }
     }
 
     // ---- render helpers ----
 
-    private RenderFragment Kpi(string label, string value, Color color, string? hint) => __builder =>
+    private RenderFragment Kpi(string label, string value, TextColor color, string? hint) => __builder =>
     {
-        <MudPaper Class="pa-3" Elevation="2">
-            <MudText Typo="Typo.caption" Color="Color.Secondary">@label</MudText>
-            <MudText Typo="Typo.h4" Color="color">@value</MudText>
-            @if (hint is not null) { <MudText Typo="Typo.caption" Color="Color.Secondary">@hint</MudText> }
-        </MudPaper>
+        <Card Shadow="Shadow.Small" Class="h-100">
+            <CardBody Padding="Padding.Is3">
+                <Small TextColor="TextColor.Secondary" Display="Display.Block">@label</Small>
+                <Heading Size="HeadingSize.Is3" Margin="Margin.Is0" TextColor="@color">@value</Heading>
+                @if (hint is not null) { <Small TextColor="TextColor.Secondary">@hint</Small> }
+            </CardBody>
+        </Card>
     };
 
     private RenderFragment BucketCard(string title, string subtitle, PostureBucket b) => __builder =>
     {
-        <MudPaper Class="pa-3" Elevation="2">
-            <MudText Typo="Typo.h6">@title</MudText>
-            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">@subtitle</MudText>
-            <div class="d-flex align-baseline gap-2 mb-1">
-                <MudText Typo="Typo.h4" Color="@(b.Assessable == 0 ? Color.Default : b.CompliancePercent >= 90 ? Color.Success : b.CompliancePercent >= 60 ? Color.Warning : Color.Error)">
-                    @(b.Assessable == 0 ? "—" : $"{b.CompliancePercent:0}%")
-                </MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">compliant · @b.Compliant of @b.Assessable assessable (@b.Members total)</MudText>
-            </div>
-            <MudProgressLinear Value="@b.CompliancePercent" Color="Color.Success" Class="mb-3" Rounded="true" Size="Size.Small" />
-            <MudSimpleTable Dense="true" Elevation="0" Hover="true">
-                <tbody>
-                    <tr><td>2SV off</td><td class="text-right">@Count(b.TwoSvOff)</td></tr>
-                    <tr><td>Not enrolled in Advanced Protection</td><td class="text-right">@Count(b.NoAdvancedProtection)</td></tr>
-                    <tr><td>No passkey or security key</td><td class="text-right">@Count(b.NoKeys)</td></tr>
-                    <tr><td>Failing any rule</td><td class="text-right"><strong>@Count(b.NonCompliant)</strong></td></tr>
-                    <tr><td>Consumer Google Accounts</td><td class="text-right">@Count(b.ConsumerAccounts, b.ConsumerAdmins > 0 ? $"{b.ConsumerAdmins} as billing admin" : null)</td></tr>
-                    <tr><td>Managed, tenant not readable</td><td class="text-right"><MudText Typo="Typo.body2" Color="Color.Secondary">@b.Unassessable</MudText></td></tr>
-                </tbody>
-            </MudSimpleTable>
-        </MudPaper>
+        <Card Shadow="Shadow.Small" Class="h-100">
+            <CardBody Padding="Padding.Is3">
+                <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">@title</Heading>
+                <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromBottom">@subtitle</Small>
+                <Div Flex="Flex.AlignItems.Baseline" Gap="Gap.Is2" Margin="Margin.Is1.FromBottom">
+                    <Heading Size="HeadingSize.Is3" Margin="Margin.Is0" TextColor="@(b.Assessable == 0 ? TextColor.Secondary : b.CompliancePercent >= 90 ? TextColor.Success : b.CompliancePercent >= 60 ? TextColor.Warning : TextColor.Danger)">
+                        @(b.Assessable == 0 ? "—" : $"{b.CompliancePercent:0}%")
+                    </Heading>
+                    <Small TextColor="TextColor.Secondary">compliant · @b.Compliant of @b.Assessable assessable (@b.Members total)</Small>
+                </Div>
+                <Progress Value="@((int)Math.Round(b.CompliancePercent))" Color="Color.Success" Size="Size.Small" Margin="Margin.Is3.FromBottom" />
+                <Table Narrow Borderless Hoverable Margin="Margin.Is0">
+                    <TableBody>
+                        <TableRow><TableRowCell>2SV off</TableRowCell><TableRowCell TextAlignment="TextAlignment.End">@Count(b.TwoSvOff)</TableRowCell></TableRow>
+                        <TableRow><TableRowCell>Not enrolled in Advanced Protection</TableRowCell><TableRowCell TextAlignment="TextAlignment.End">@Count(b.NoAdvancedProtection)</TableRowCell></TableRow>
+                        <TableRow><TableRowCell>No passkey or security key</TableRowCell><TableRowCell TextAlignment="TextAlignment.End">@Count(b.NoKeys)</TableRowCell></TableRow>
+                        <TableRow><TableRowCell>Failing any rule</TableRowCell><TableRowCell TextAlignment="TextAlignment.End"><strong>@Count(b.NonCompliant)</strong></TableRowCell></TableRow>
+                        <TableRow><TableRowCell>Consumer Google Accounts</TableRowCell><TableRowCell TextAlignment="TextAlignment.End">@Count(b.ConsumerAccounts, b.ConsumerAdmins > 0 ? $"{b.ConsumerAdmins} as billing admin" : null)</TableRowCell></TableRow>
+                        <TableRow><TableRowCell>Managed, tenant not readable</TableRowCell><TableRowCell TextAlignment="TextAlignment.End"><span class="text-body-secondary">@b.Unassessable</span></TableRowCell></TableRow>
+                    </TableBody>
+                </Table>
+            </CardBody>
+        </Card>
     };
 
     private static RenderFragment Count(int n, string? note = null) => __builder =>
     {
-        <MudText Typo="Typo.body2" Color="@(n == 0 ? Color.Success : Color.Error)" Style="font-weight:600; display:inline">@n</MudText>
-        @if (note is not null) { <MudText Typo="Typo.caption" Color="Color.Secondary" Style="display:inline"> (@note)</MudText> }
+        <span class="@(n == 0 ? "text-success" : "text-danger")" style="font-weight:600">@n</span>
+        @if (note is not null) { <small class="text-body-secondary"> (@note)</small> }
     };
 
     private static RenderFragment NonCompliantCell(PostureBucket b) => __builder =>
     {
-        if (b.Assessable == 0) { <MudText Typo="Typo.caption" Color="Color.Secondary">n/a</MudText> return; }
-        <MudTooltip Text="@($"2SV off: {b.TwoSvOff} · no Adv. Protection: {b.NoAdvancedProtection} · no keys: {b.NoKeys} · of {b.Assessable} assessable")">
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(b.NonCompliant == 0 ? Color.Success : Color.Warning)">
-                @b.NonCompliant / @b.Assessable
-            </MudChip>
-        </MudTooltip>
+        if (b.Assessable == 0) { <Small TextColor="TextColor.Secondary">n/a</Small> return; }
+        <Tooltip Text="@($"2SV off: {b.TwoSvOff} · no Adv. Protection: {b.NoAdvancedProtection} · no keys: {b.NoKeys} · of {b.Assessable} assessable")" Multiline Inline>
+            <Badge Color="@(b.NonCompliant == 0 ? Color.Success : Color.Warning)">@b.NonCompliant / @b.Assessable</Badge>
+        </Tooltip>
     };
 
-    private RenderFragment MemberTable(IReadOnlyList<BillingPostureMember> rows, bool showAccount) => __builder =>
+    private RenderFragment MemberTable(IReadOnlyList<BillingPostureMember> rows) => __builder =>
     {
-        <MudTable Items="rows" Dense="true" Hover="true" Elevation="0" T="BillingPostureMember" Breakpoint="Breakpoint.None">
-            <HeaderContent>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => m.Email)">Member</MudTableSortLabel></MudTh>
-                <MudTh>Role</MudTh>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => (object)(m.Inherited ? 1 : 0))">Grant</MudTableSortLabel></MudTh>
-                <MudTh>Account</MudTh>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => (object)TwoSvRank(m))">2SV</MudTableSortLabel></MudTh>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => (object)AppRank(m))">Adv. Protection</MudTableSortLabel></MudTh>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => (object)KeysRank(m))">Keys</MudTableSortLabel></MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Member">@MemberCell(context)</MudTd>
-                <MudTd DataLabel="Role" Style="white-space: nowrap;">@context.RoleDisplayName</MudTd>
-                <MudTd DataLabel="Grant">@(context.Inherited ? "inherited" : "direct")</MudTd>
-                <MudTd DataLabel="Account">@AccountKindChip(context)</MudTd>
-                <MudTd DataLabel="2SV">@TwoSvChip(context)</MudTd>
-                <MudTd DataLabel="Adv. Protection">@AppChip(context)</MudTd>
-                <MudTd DataLabel="Keys">@KeysChip(context)</MudTd>
-            </RowTemplate>
-            <NoRecordsContent><MudText Typo="Typo.body2">No members.</MudText></NoRecordsContent>
-        </MudTable>
+        <DataGrid TItem="BillingPostureMember" Data="rows" Narrow Hoverable Responsive Sortable>
+            <DataGridColumns>
+                <DataGridColumn TItem="BillingPostureMember" Field="@nameof(BillingPostureMember.Email)" Caption="Member">
+                    <DisplayTemplate>@MemberCell(context.Item)</DisplayTemplate>
+                </DataGridColumn>
+                <DataGridColumn TItem="BillingPostureMember" Field="@nameof(BillingPostureMember.RoleDisplayName)" Caption="Role" Sortable="false">
+                    <DisplayTemplate><span class="text-nowrap">@context.Item.RoleDisplayName</span></DisplayTemplate>
+                </DataGridColumn>
+                <DataGridColumn TItem="BillingPostureMember" Field="@nameof(BillingPostureMember.Inherited)" Caption="Grant">
+                    <DisplayTemplate>@(context.Item.Inherited ? "inherited" : "direct")</DisplayTemplate>
+                </DataGridColumn>
+                <DataGridColumn TItem="BillingPostureMember" Field="@nameof(BillingPostureMember.AccountKind)" Caption="Account" Sortable="false">
+                    <DisplayTemplate>@AccountKindChip(context.Item)</DisplayTemplate>
+                </DataGridColumn>
+                <DataGridColumn TItem="BillingPostureMember" Field="@nameof(BillingPostureMember.TwoSvOk)" Caption="2SV" SortComparer="@(CompareMember(TwoSvRank))">
+                    <DisplayTemplate>@TwoSvChip(context.Item)</DisplayTemplate>
+                </DataGridColumn>
+                <DataGridColumn TItem="BillingPostureMember" Field="@nameof(BillingPostureMember.AdvancedProtection)" Caption="Adv. Protection" SortComparer="@(CompareMember(AppRank))">
+                    <DisplayTemplate>@AppChip(context.Item)</DisplayTemplate>
+                </DataGridColumn>
+                <DataGridColumn TItem="BillingPostureMember" Field="@nameof(BillingPostureMember.KeysOk)" Caption="Keys" SortComparer="@(CompareMember(KeysRank))">
+                    <DisplayTemplate>@KeysChip(context.Item)</DisplayTemplate>
+                </DataGridColumn>
+            </DataGridColumns>
+            <EmptyTemplate><Paragraph Margin="Margin.Is0">No members.</Paragraph></EmptyTemplate>
+        </DataGrid>
     };
 
     private static RenderFragment MemberCell(BillingPostureMember m) => __builder =>
     {
-        <div class="d-flex align-center gap-1">
-            <MudIcon Icon="@(m.MemberType switch { "user" => Icons.Material.Filled.Person, "group" => Icons.Material.Filled.Groups, "serviceAccount" => Icons.Material.Filled.SmartToy, _ => Icons.Material.Filled.HelpOutline })" Size="Size.Small" />
+        <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is1">
+            <Icon Name="@(m.MemberType switch { "user" => AppIcons.Person, "group" => AppIcons.Groups, "serviceAccount" => AppIcons.SmartToy, _ => AppIcons.HelpOutline })" TextColor="TextColor.Secondary" />
             <span>@m.Email</span>
-            @if (m.IsConsumerAdmin) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled" Class="ml-1">consumer admin</MudChip> }
-            @if (m.IsAdmin == true) { <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined" Class="ml-1">ws admin</MudChip> }
-            @if (m.Suspended == true) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" Class="ml-1">suspended</MudChip> }
-        </div>
+            @if (m.IsConsumerAdmin) { <Badge Color="Color.Danger" Margin="Margin.Is1.FromStart">consumer admin</Badge> }
+            @if (m.IsAdmin == true) { <Badge Color="Color.Info" Margin="Margin.Is1.FromStart">ws admin</Badge> }
+            @if (m.Suspended == true) { <Badge Color="Color.Danger" Margin="Margin.Is1.FromStart">suspended</Badge> }
+        </Div>
     };
 
     private static RenderFragment AccountKindChip(BillingPostureMember m) => __builder =>
     {
         var (label, color) = m.AccountKind switch
         {
-            GoogleAccountKind.Managed => (m.SecurityVisible ? "Managed" : "Managed · unreadable", m.SecurityVisible ? Color.Success : Color.Default),
+            GoogleAccountKind.Managed => (m.SecurityVisible ? "Managed" : "Managed · unreadable", m.SecurityVisible ? Color.Success : Color.Secondary),
             GoogleAccountKind.ManagedTeam => ("Managed (team)", Color.Warning),
-            GoogleAccountKind.Consumer => ("Consumer", Color.Error),
-            _ => ("Unknown", Color.Default)
+            GoogleAccountKind.Consumer => ("Consumer", Color.Danger),
+            _ => ("Unknown", Color.Secondary)
         };
-        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="color">@label</MudChip>
+        <Badge Color="@color">@label</Badge>
     };
 
     private static RenderFragment TwoSvChip(BillingPostureMember m) => __builder =>
     {
-        if (!m.Assessable) { <MudText Typo="Typo.caption" Color="Color.Secondary">n/a</MudText> return; }
+        if (!m.Assessable) { <Small TextColor="TextColor.Secondary">n/a</Small> return; }
         var on = m.TwoSvOk;
-        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(on ? Color.Success : Color.Error)"
-                 Icon="@(on ? Icons.Material.Filled.VerifiedUser : Icons.Material.Filled.GppBad)">
-            @(on ? (m.TwoStepVerificationEnforced == true ? "On · enforced" : "On") : "Off")
-        </MudChip>
+        <Badge Color="@(on ? Color.Success : Color.Danger)">
+            <Icon Name="@(on ? AppIcons.VerifiedUser : AppIcons.GppBad)" Class="me-1" />@(on ? (m.TwoStepVerificationEnforced == true ? "On · enforced" : "On") : "Off")
+        </Badge>
     };
 
     private static RenderFragment AppChip(BillingPostureMember m) => __builder =>
     {
-        if (!m.Assessable) { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> return; }
+        if (!m.Assessable) { <Small TextColor="TextColor.Secondary">—</Small> return; }
         switch (m.AdvancedProtection)
         {
             case AdvancedProtectionStatus.Enrolled:
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Icon="@Icons.Material.Filled.Shield">Enrolled</MudChip>
+                <Badge Color="Color.Success"><Icon Name="@AppIcons.Shield" Class="me-1" />Enrolled</Badge>
                 break;
             case AdvancedProtectionStatus.Unavailable:
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">Unavailable</MudChip>
+                <Badge Color="Color.Secondary">Unavailable</Badge>
                 break;
             default:
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled</MudChip>
+                <Badge Color="Color.Warning">Not enrolled</Badge>
                 break;
         }
     };
 
     private static RenderFragment KeysChip(BillingPostureMember m) => __builder =>
     {
-        if (!m.Assessable) { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> return; }
-        if (m.SecurityKeys is null && m.Passkeys is null) { <MudText Typo="Typo.caption" Color="Color.Secondary">unknown</MudText> return; }
+        if (!m.Assessable) { <Small TextColor="TextColor.Secondary">—</Small> return; }
+        if (m.SecurityKeys is null && m.Passkeys is null) { <Small TextColor="TextColor.Secondary">unknown</Small> return; }
         var parts = new List<string>();
         if (m.SecurityKeys is > 0) parts.Add($"{m.SecurityKeys} key{(m.SecurityKeys == 1 ? "" : "s")}");
         if (m.Passkeys is > 0) parts.Add($"{m.Passkeys} passkey{(m.Passkeys == 1 ? "" : "s")}");
-        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(m.KeysOk ? Color.Success : Color.Error)" Icon="@Icons.Material.Filled.Key">
-            @(m.KeysOk ? string.Join(" · ", parts) : "none")
-        </MudChip>
+        <Badge Color="@(m.KeysOk ? Color.Success : Color.Danger)"><Icon Name="@AppIcons.Key" Class="me-1" />@(m.KeysOk ? string.Join(" · ", parts) : "none")</Badge>
     };
 
     // Sort ranks: ascending = weakest first.
