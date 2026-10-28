@@ -1,15 +1,16 @@
-using GChannel.ApiService.Configuration;
+using GChannel.Core.Configuration;
 using GChannel.Shared.Contracts;
 using Google.Apis.Cloudchannel.v1;
 using Google.Apis.Cloudchannel.v1.Data;
 using Google.Apis.Http;
 using Google.Apis.Services;
 using Google.Apis.Util;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Net;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Core.GoogleApis;
 
 // Resource mapping & name helpers — see IGoogleChannelClient for the contract documentation.
 public sealed partial class GoogleChannelClient

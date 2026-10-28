@@ -1,6 +1,9 @@
-using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
 using GChannel.ApiService.Services;
+using GChannel.Core.Configuration;
+using GChannel.Core.DependencyInjection;
+using GChannel.Core.GoogleApis;
+using GChannel.Core.Ion;
 using GChannel.Worker.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -32,32 +35,16 @@ builder.AddRedisClientBuilder("cache")
     .WithAzureAuthentication()
     .WithDistributedCache();
 
-builder.Services
-    .AddOptions<GoogleChannelOptions>()
-    .Bind(builder.Configuration.GetSection(GoogleChannelOptions.SectionName));
-
-builder.Services
-    .AddOptions<GoogleBillingOptions>()
-    .Bind(builder.Configuration.GetSection(GoogleBillingOptions.SectionName));
-
-// Ion Gateway enrichment (used by the shared ReadModelProjector during entitlement sync).
-builder.Services
-    .AddOptions<IonGatewayOptions>()
-    .Bind(builder.Configuration.GetSection(IonGatewayOptions.SectionName));
-builder.Services.AddHttpClient(IonGatewayClient.HttpClientName);
-builder.Services.AddSingleton<IIonGatewayClient, IonGatewayClient>();
+// Shared options + Google/Ion integration services (also registered by the API).
+builder.Services.AddGChannelCore(builder.Configuration);
 
 // §10 read-model projection helper — shared by the bulk sync and the Pub/Sub event-driven projection
 // so every path denormalises identical fields. Stateless (takes the DbContext/client per call).
 builder.Services.AddSingleton<ReadModelProjector>();
 
-// Billing IAM security posture: Cloud Billing IAM + Admin SDK (DWD) identity/security resolution shared
-// with the API, used by the nightly BillingPostureSyncService.
-builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
-builder.Services.AddSingleton<IWorkspaceUserSecurityService, WorkspaceUserSecurityService>();
+// Billing IAM security posture identity resolution shared with the API, used by the nightly
+// BillingPostureSyncService.
 builder.Services.AddSingleton<MemberIdentityResolver>();
-builder.Services.AddHttpClient(MarketplaceOrdersService.HttpClientName);
-builder.Services.AddSingleton<IMarketplaceOrdersService, MarketplaceOrdersService>();
 
 // The estate/dashboard background workers, extracted from the API container so they scale on their
 // own axis (fixed single replica) instead of with HTTP traffic. Each is a no-op unless the relevant

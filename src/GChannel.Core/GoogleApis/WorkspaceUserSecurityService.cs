@@ -1,4 +1,4 @@
-using GChannel.ApiService.Configuration;
+using GChannel.Core.Configuration;
 using GChannel.Shared.Contracts;
 using Google;
 using Google.Apis.Admin.Directory.directory_v1;
@@ -6,10 +6,11 @@ using Google.Apis.Admin.Reports.reports_v1;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Core.GoogleApis;
 
 /// <summary>
 /// Reads per-user security posture from the reseller's own Google Workspace tenant via the Admin SDK:

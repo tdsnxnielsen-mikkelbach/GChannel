@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\GChannel.Core\GChannel.Core.csproj" />
     <ProjectReference Include="..\GChannel.ServiceDefaults\GChannel.ServiceDefaults.csproj" />
     <ProjectReference Include="..\GChannel.ApiService\GChannel.ApiService.csproj" />
   </ItemGroup>

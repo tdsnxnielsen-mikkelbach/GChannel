@@ -1,4 +1,4 @@
-using GChannel.ApiService.Configuration;
+using GChannel.Core.Configuration;
 using GChannel.Shared.Contracts;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.Billing.Budgets.V1;
@@ -8,7 +8,7 @@ using Google.Protobuf.WellKnownTypes;
 using Microsoft.Extensions.Options;
 using Money = Google.Type.Money;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Core.GoogleApis;
 
 /// <summary>
 /// Reads and writes Cloud Billing budgets (billingbudgets.googleapis.com) on the reseller's billing

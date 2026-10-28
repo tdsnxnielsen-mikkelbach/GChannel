@@ -1,7 +1,10 @@
-using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
 using GChannel.ApiService.Endpoints;
 using GChannel.ApiService.Services;
+using GChannel.Core.Configuration;
+using GChannel.Core.DependencyInjection;
+using GChannel.Core.GoogleApis;
+using GChannel.Core.Ion;
 using GChannel.Shared.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -42,35 +45,13 @@ builder.AddRedisClientBuilder("cache")
     .WithAzureAuthentication()
     .WithDistributedCache();
 
-builder.Services
-    .AddOptions<GoogleChannelOptions>()
-    .Bind(builder.Configuration.GetSection(GoogleChannelOptions.SectionName));
-
-builder.Services
-    .AddOptions<GoogleBillingOptions>()
-    .Bind(builder.Configuration.GetSection(GoogleBillingOptions.SectionName));
-
-// Ion Gateway (TD SYNNEX StreamOne) enrichment — adds real cost/margin to Google entitlements. Singleton
-// over IHttpClientFactory so it is safe to inject into the singleton ReadModelProjector.
-builder.Services
-    .AddOptions<IonGatewayOptions>()
-    .Bind(builder.Configuration.GetSection(IonGatewayOptions.SectionName));
-builder.Services.AddHttpClient(IonGatewayClient.HttpClientName);
-builder.Services.AddSingleton<IIonGatewayClient, IonGatewayClient>();
+// Shared options + Google/Ion integration services (also registered by the worker).
+builder.Services.AddGChannelCore(builder.Configuration);
 
 builder.Services.AddScoped<IGoogleChannelCredentialSource, RequestTokenCredentialSource>();
 builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
 
-// Cloud Billing budgets (billingbudgets.googleapis.com) — reuses the reseller service-account key; the
-// gRPC clients it builds are thread-safe and cached, so a singleton is appropriate.
-builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
-
-// Admin SDK (Directory + Reports) via domain-wide delegation — per-user 2SV / Advanced Protection for
-// billing IAM members in our own Workspace tenant. Stateless clients, cached credential: singleton.
-builder.Services.AddSingleton<IWorkspaceUserSecurityService, WorkspaceUserSecurityService>();
 builder.Services.AddSingleton<MemberIdentityResolver>();
-builder.Services.AddHttpClient(MarketplaceOrdersService.HttpClientName);
-builder.Services.AddSingleton<IMarketplaceOrdersService, MarketplaceOrdersService>();
 
 // §10 read-model write-through: mutation endpoints upsert the one changed customer row into the
 // read-model immediately after a successful Channel API call, so the estate/customers lists reflect a

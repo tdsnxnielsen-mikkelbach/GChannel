@@ -1,13 +1,15 @@
-using System.Text.Json;
-using GChannel.ApiService.Configuration;
 using GChannel.ApiService.Data;
 using GChannel.ApiService.Services;
+using GChannel.Core.Configuration;
+using GChannel.Core.GoogleApis;
+using GChannel.Core.Ion;
 using GChannel.Shared.Contracts;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.PubSub.V1;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using System.Text.Json;
 
 namespace GChannel.Worker.Services;
 

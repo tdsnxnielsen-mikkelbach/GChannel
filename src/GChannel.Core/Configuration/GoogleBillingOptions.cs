@@ -1,4 +1,4 @@
-namespace GChannel.ApiService.Configuration;
+namespace GChannel.Core.Configuration;
 
 /// <summary>
 /// Configuration for the Cloud Billing Budget integration (billingbudgets.googleapis.com). This is a

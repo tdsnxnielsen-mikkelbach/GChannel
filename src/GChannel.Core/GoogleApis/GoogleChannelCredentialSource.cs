@@ -1,13 +1,13 @@
-using GChannel.ApiService.Configuration;
+using GChannel.Core.Configuration;
 using Google.Apis.Auth.OAuth2;
-using Microsoft.Net.Http.Headers;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Core.GoogleApis;
 
 /// <summary>
 /// Supplies the <see cref="GoogleCredential"/> the <see cref="GoogleChannelClient"/> uses to call the
 /// Channel API. Abstracted so the same client can run either against the signed-in user's forwarded
-/// token (normal requests) or a service-account credential (the background dashboard refresher).
+/// token (normal requests — see <c>RequestTokenCredentialSource</c> in the API host) or a
+/// service-account credential (the background worker).
 /// </summary>
 public interface IGoogleChannelCredentialSource
 {
@@ -15,26 +15,7 @@ public interface IGoogleChannelCredentialSource
 }
 
 /// <summary>
-/// Default source: uses the Google OAuth access token the Blazor front end forwards as a Bearer
-/// header on the inbound request.
-/// </summary>
-public sealed class RequestTokenCredentialSource(IHttpContextAccessor httpContextAccessor)
-    : IGoogleChannelCredentialSource
-{
-    public GoogleCredential GetCredential()
-    {
-        var header = httpContextAccessor.HttpContext?.Request.Headers[HeaderNames.Authorization].ToString();
-        if (string.IsNullOrWhiteSpace(header) || !header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new MissingGoogleTokenException();
-        }
-
-        return GoogleCredential.FromAccessToken(header["Bearer ".Length..].Trim());
-    }
-}
-
-/// <summary>
-/// Service-account source used off the request path (e.g. the background refresher). The Channel API
+/// Service-account source used off the request path (the background worker). The Channel API
 /// has no service-account identity of its own, so the key impersonates a reseller admin user via
 /// domain-wide delegation. The credential is built once and reused; tokens are fetched lazily on first
 /// use and refreshed by the Google client library.

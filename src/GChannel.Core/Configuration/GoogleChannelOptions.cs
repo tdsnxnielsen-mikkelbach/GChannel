@@ -1,4 +1,4 @@
-namespace GChannel.ApiService.Configuration;
+namespace GChannel.Core.Configuration;
 
 /// <summary>Strongly-typed configuration for the Google Cloud Channel integration.</summary>
 public sealed class GoogleChannelOptions

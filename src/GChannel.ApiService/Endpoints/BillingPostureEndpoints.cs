@@ -1,4 +1,4 @@
-using GChannel.ApiService.Configuration;
+using GChannel.Core.Configuration;
 using GChannel.ApiService.Data;
 using GChannel.Shared.Contracts;
 using Microsoft.EntityFrameworkCore;

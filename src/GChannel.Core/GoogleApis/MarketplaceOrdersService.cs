@@ -1,13 +1,14 @@
-using GChannel.ApiService.Configuration;
+using GChannel.Core.Configuration;
 using GChannel.Shared.Contracts;
 using Google.Apis.Auth.OAuth2;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Core.GoogleApis;
 
 /// <summary>
 /// Lists Marketplace orders per billing account via the Cloud Commerce Consumer Procurement API

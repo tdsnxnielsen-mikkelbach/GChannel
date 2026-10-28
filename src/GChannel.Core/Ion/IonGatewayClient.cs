@@ -1,10 +1,11 @@
+using GChannel.Core.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text.Json;
-using GChannel.ApiService.Configuration;
-using Microsoft.Extensions.Options;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Core.Ion;
 
 /// <summary>
 /// Client for the Ion Gateway (TD SYNNEX StreamOne). GChannel is a distributor selling through indirect

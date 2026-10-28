@@ -1,4 +1,4 @@
-using GChannel.ApiService.Configuration;
+using GChannel.Core.Configuration;
 using GChannel.Shared.Contracts;
 using Google.Apis.Cloudchannel.v1;
 using Google.Apis.Cloudchannel.v1.Data;
@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Net;
 
-namespace GChannel.ApiService.Services;
+namespace GChannel.Core.GoogleApis;
 
 // HTTP retry / pacing infrastructure — see IGoogleChannelClient for the contract documentation.
 public sealed partial class GoogleChannelClient

@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using GChannel.ApiService.Configuration;
+using GChannel.Core.Configuration;
 using GChannel.ApiService.Data;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.BigQuery.V2;

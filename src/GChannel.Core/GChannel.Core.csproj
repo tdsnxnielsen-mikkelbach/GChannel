@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Shared by the API (web) and the worker; the framework reference supplies the
+         Microsoft.Extensions.* abstractions without per-package version pinning. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+
+    <PackageReference Include="Google.Apis.Admin.Directory.directory_v1" Version="1.76.0.4274" />
+    <PackageReference Include="Google.Apis.Admin.Reports.reports_v1" Version="1.77.0.4289" />
+    <PackageReference Include="Google.Apis.Cloudchannel.v1" Version="1.75.0.4176" />
+    <PackageReference Include="Google.Cloud.BigQuery.V2" Version="3.12.0" />
+    <PackageReference Include="Google.Cloud.Billing.Budgets.V1" Version="2.7.0" />
+    <PackageReference Include="Google.Cloud.Billing.V1" Version="3.10.0" />
+    <PackageReference Include="Google.Cloud.PubSub.V1" Version="3.36.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GChannel.Shared\GChannel.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

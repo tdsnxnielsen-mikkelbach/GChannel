@@ -1,4 +1,4 @@
-namespace GChannel.ApiService.Configuration;
+namespace GChannel.Core.Configuration;
 
 /// <summary>
 /// Configuration for the Ion Gateway (TD SYNNEX StreamOne enrichment hub). GChannel already holds Google
