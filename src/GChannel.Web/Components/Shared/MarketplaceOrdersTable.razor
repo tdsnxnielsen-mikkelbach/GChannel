@@ -48,7 +48,7 @@
             else
             {
                 <DataGrid TItem="MarketplaceOrder" Data="Result.Orders" Hoverable Narrow Sortable Responsive
-                          ShowPager PageSize="25" ShowPageSizes PageSizes="new[] { 25, 50 }" PagerPosition="DataGridPagerPosition.Bottom">
+                          ShowPager PageSize="25" ShowPageSizes PageSizes="_pageSizes" PagerPosition="DataGridPagerPosition.Bottom">
                     <DataGridColumns>
                         <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.Provider)" Caption="Provider">
                             <DisplayTemplate>@(context.Item.Provider ?? "—")</DisplayTemplate>
@@ -86,6 +86,7 @@
 </Card>
 
 @code {
+    private static readonly int[] _pageSizes = [25, 50];
     [Parameter] public MarketplaceOrdersResult? Result { get; set; }
     [Parameter] public bool Loading { get; set; }
     [Parameter] public bool ShowAccount { get; set; } = true;

@@ -1,21 +1,20 @@
 @page "/customers/new"
 @page "/customers/edit/{Id}"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>@(IsEdit ? "Edit customer" : "New customer") · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center">
-    <MudText Typo="Typo.h4" GutterBottom="true">@(IsEdit ? "Edit customer" : "New customer")</MudText>
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+    <Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">@(IsEdit ? "Edit customer" : "New customer")</Heading>
     @if (!IsEdit)
     {
         <GuidedWalkthrough Id="customer-new" Steps="_walkthrough" AutoStart="true" />
     }
-</div>
+</Div>
 
 @if (_loading)
 {
@@ -24,87 +23,96 @@
 }
 else
 {
-    <MudForm @ref="_form">
-        <MudCard Elevation="2" Class="mb-4">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Organization</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudTextField @bind-Value="_model.OrgDisplayName" Label="Organization name" Required="true"
-                              RequiredError="Organization name is required." Class="mb-3" data-walkthrough="cf-org" />
-                <MudTextField @bind-Value="_model.Domain" Label="Primary domain" Required="true"
-                              RequiredError="Domain is required." Disabled="IsEdit"
-                              HelperText="@(IsEdit ? "Domain cannot be changed after creation." : "e.g. contoso.com")"
-                              Class="mb-3" data-walkthrough="cf-domain" />
-                <MudTextField @bind-Value="_model.LanguageCode" Label="Language code"
-                              HelperText="e.g. en-US" />
-            </MudCardContent>
-        </MudCard>
+    <Validations @ref="_validations" Mode="ValidationMode.Manual">
+        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+            <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Organization</CardTitle></CardHeader>
+            <CardBody>
+                <Validation Validator="ValidationRule.IsNotEmpty">
+                    <Field data-walkthrough="cf-org">
+                        <FieldLabel>Organization name</FieldLabel>
+                        <TextInput @bind-Value="_model.OrgDisplayName">
+                            <Feedback><ValidationError>Organization name is required.</ValidationError></Feedback>
+                        </TextInput>
+                    </Field>
+                </Validation>
+                <Validation Validator="ValidationRule.IsNotEmpty">
+                    <Field data-walkthrough="cf-domain">
+                        <FieldLabel>Primary domain</FieldLabel>
+                        <TextInput @bind-Value="_model.Domain" Disabled="IsEdit">
+                            <Feedback><ValidationError>Domain is required.</ValidationError></Feedback>
+                        </TextInput>
+                        <FieldHelp>@(IsEdit ? "Domain cannot be changed after creation." : "e.g. contoso.com")</FieldHelp>
+                    </Field>
+                </Validation>
+                <Field>
+                    <FieldLabel>Language code</FieldLabel>
+                    <TextInput @bind-Value="_model.LanguageCode" />
+                    <FieldHelp>e.g. en-US</FieldHelp>
+                </Field>
+            </CardBody>
+        </Card>
 
-        <MudCard Elevation="2" Class="mb-4" data-walkthrough="cf-contact">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Primary contact</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudGrid>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_model.FirstName" Label="First name" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_model.LastName" Label="Last name" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_model.Email" Label="Email" InputType="InputType.Email" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_model.Phone" Label="Phone" />
-                    </MudItem>
-                    <MudItem xs="12">
-                        <MudTextField @bind-Value="_model.Title" Label="Title" />
-                    </MudItem>
-                </MudGrid>
-            </MudCardContent>
-        </MudCard>
+        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom" data-walkthrough="cf-contact">
+            <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Primary contact</CardTitle></CardHeader>
+            <CardBody>
+                <Row>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
+                        <Field><FieldLabel>First name</FieldLabel><TextInput @bind-Value="_model.FirstName" /></Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
+                        <Field><FieldLabel>Last name</FieldLabel><TextInput @bind-Value="_model.LastName" /></Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
+                        <Field><FieldLabel>Email</FieldLabel><TextInput @bind-Value="_model.Email" Role="TextRole.Email" /></Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
+                        <Field><FieldLabel>Phone</FieldLabel><TextInput @bind-Value="_model.Phone" Role="TextRole.Telephone" /></Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12">
+                        <Field><FieldLabel>Title</FieldLabel><TextInput @bind-Value="_model.Title" /></Field>
+                    </Column>
+                </Row>
+            </CardBody>
+        </Card>
 
-        <MudCard Elevation="2" Class="mb-4" data-walkthrough="cf-address">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Address</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudGrid>
-                    <MudItem xs="12" sm="4">
-                        <MudTextField @bind-Value="_model.RegionCode" Label="Region code" Required="true"
-                                      RequiredError="Region code is required." HelperText="e.g. US" />
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudTextField @bind-Value="_model.PostalCode" Label="Postal code" />
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudTextField @bind-Value="_model.AdministrativeArea" Label="State / province" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_model.Locality" Label="City" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_model.AddressLine" Label="Address line" />
-                    </MudItem>
-                </MudGrid>
-            </MudCardContent>
-        </MudCard>
+        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom" data-walkthrough="cf-address">
+            <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Address</CardTitle></CardHeader>
+            <CardBody>
+                <Row>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Validation Validator="ValidationRule.IsNotEmpty">
+                            <Field>
+                                <FieldLabel>Region code</FieldLabel>
+                                <TextInput @bind-Value="_model.RegionCode">
+                                    <Feedback><ValidationError>Region code is required.</ValidationError></Feedback>
+                                </TextInput>
+                                <FieldHelp>e.g. US</FieldHelp>
+                            </Field>
+                        </Validation>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Field><FieldLabel>Postal code</FieldLabel><TextInput @bind-Value="_model.PostalCode" /></Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Field><FieldLabel>State / province</FieldLabel><TextInput @bind-Value="_model.AdministrativeArea" /></Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
+                        <Field><FieldLabel>City</FieldLabel><TextInput @bind-Value="_model.Locality" /></Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
+                        <Field><FieldLabel>Address line</FieldLabel><TextInput @bind-Value="_model.AddressLine" /></Field>
+                    </Column>
+                </Row>
+            </CardBody>
+        </Card>
 
-        <div class="d-flex gap-3">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving" data-walkthrough="cf-save">
+        <Div Flex="Flex.Default" Gap="Gap.Is3">
+            <Button Color="Color.Primary" Clicked="SaveAsync" Disabled="_saving" Loading="_saving" data-walkthrough="cf-save">
                 @(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create customer"))
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" OnClick="Cancel" Disabled="_saving">Cancel</MudButton>
-        </div>
-    </MudForm>
+            </Button>
+            <Button Color="Color.Secondary" Outline Clicked="Cancel" Disabled="_saving">Cancel</Button>
+        </Div>
+    </Validations>
 }
 
 @code {
@@ -122,7 +130,7 @@ else
 
     private bool IsPartner => !string.IsNullOrEmpty(LinkId);
 
-    private MudForm _form = null!;
+    private Validations? _validations;
     private readonly CustomerEditModel _model = new();
     private bool _loading;
     private bool _saving;
@@ -175,7 +183,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -185,8 +193,7 @@ else
 
     private async Task SaveAsync()
     {
-        await _form.ValidateAsync();
-        if (!_form.IsValid)
+        if (_validations is not null && !await _validations.ValidateAll())
         {
             return;
         }
@@ -203,12 +210,12 @@ else
                     ? await Api.UpdateCustomerAsync(Id!, request)
                     : await Api.CreateCustomerAsync(request));
 
-            Snackbar.Add(IsEdit ? "Customer updated." : "Customer created.", Severity.Success);
+            await Snackbar.Add(IsEdit ? "Customer updated." : "Customer created.", Severity.Success);
             Nav.NavigateTo(IsPartner ? $"/channel-partner-links/{LinkId}" : (saved is not null ? $"/customers/{saved.Id}" : "/customers"));
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to save customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to save customer: {ex.Message}", Severity.Error);
         }
         finally
         {

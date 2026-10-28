@@ -1,11 +1,9 @@
 @page "/customers/{Id}"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
-@inject IDialogService DialogService
 
 <PageTitle>@(_customer?.OrgDisplayName ?? "Customer") · GChannel</PageTitle>
 
@@ -16,519 +14,556 @@
 }
 else if (_customer is null)
 {
-    <MudAlert Severity="Severity.Error">Customer not found.</MudAlert>
-    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="/customers" StartIcon="@Icons.Material.Filled.ArrowBack">
-        Back to customers
-    </MudButton>
+    <Alert Color="Color.Danger" Visible>Customer not found.</Alert>
+    <Button Type="ButtonType.Link" To="/customers" Color="Color.Secondary" Outline Margin="Margin.Is4.FromTop">
+        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to customers
+    </Button>
 }
 else
 {
-    <div class="d-flex justify-space-between align-center mb-4">
-        <div>
-            <MudText Typo="Typo.h4">@(_customer.OrgDisplayName ?? _customer.Id)</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">@_customer.Domain</MudText>
-        </div>
-        <div class="d-flex gap-2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Subscriptions"
-                       Href="@($"/customers/{_customer.Id}/entitlements")">Entitlements</MudButton>
-            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.SwapHoriz"
-                       Href="@($"/customers/{_customer.Id}/transfer")">Transfer</MudButton>
-            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Percent"
-                       Href="@($"/customers/{_customer.Id}/repricing")">Repricing</MudButton>
+    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
+        <Div>
+            <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">@(_customer.OrgDisplayName ?? _customer.Id)</Heading>
+            <Small TextColor="TextColor.Secondary">@_customer.Domain</Small>
+        </Div>
+        <Div Flex="Flex.Default" Gap="Gap.Is2" Class="flex-wrap justify-content-end">
+            <Button Type="ButtonType.Link" To="@($"/customers/{_customer.Id}/entitlements")" Color="Color.Primary">
+                <Icon Name="@AppIcons.Subscriptions" Class="me-1" /> Entitlements
+            </Button>
+            <Button Type="ButtonType.Link" To="@($"/customers/{_customer.Id}/transfer")" Color="Color.Secondary" Outline>
+                <Icon Name="@AppIcons.SwapHoriz" Class="me-1" /> Transfer
+            </Button>
+            <Button Type="ButtonType.Link" To="@($"/customers/{_customer.Id}/repricing")" Color="Color.Secondary" Outline>
+                <Icon Name="@AppIcons.Percent" Class="me-1" /> Repricing
+            </Button>
             @if (string.IsNullOrEmpty(_customer.CloudIdentityId))
             {
                 <div style="position:relative; display:inline-flex">
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddBusiness"
-                               OnClick="OpenProvisionDialog">Provision Cloud Identity</MudButton>
+                    <Button Color="Color.Primary" Outline Clicked="OpenProvisionDialog">
+                        <Icon Name="@AppIcons.AddBusiness" Class="me-1" /> Provision Cloud Identity
+                    </Button>
                     <FeatureBeacon Id="provision-cloud-identity-v1" Tooltip="New: create a Cloud Identity for this customer" />
                 </div>
             }
-            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
-                       Href="@($"/customers/edit/{_customer.Id}")">Edit</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete"
-                       OnClick="DeleteAsync">Delete</MudButton>
-        </div>
-    </div>
+            <Button Type="ButtonType.Link" To="@($"/customers/edit/{_customer.Id}")" Color="Color.Secondary" Outline>
+                <Icon Name="@AppIcons.Edit" Class="me-1" /> Edit
+            </Button>
+            <Button Color="Color.Danger" Outline Clicked="DeleteAsync">
+                <Icon Name="@AppIcons.Delete" Class="me-1" /> Delete
+            </Button>
+        </Div>
+    </Div>
 
-    <MudPaper Elevation="2" Class="pa-4 mb-4">
-        <div class="d-flex justify-space-between align-center mb-1">
-            <MudText Typo="Typo.overline" Color="Color.Secondary">Estimated monthly value</MudText>
-            @if (_value is { MixedCurrencies: false, Currency: { Length: > 0 } cur })
+    <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+        <CardBody>
+            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromBottom">
+                <Small TextColor="TextColor.Secondary" Class="text-uppercase fw-semibold">Estimated monthly value</Small>
+                @if (_value is { MixedCurrencies: false, Currency: { Length: > 0 } cur })
+                {
+                    <Badge Color="Color.Light" Class="border text-body">@cur</Badge>
+                }
+            </Div>
+            @if (_valueLoading)
             {
-                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">@cur</MudChip>
+                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
             }
-        </div>
-        @if (_valueLoading)
-        {
-            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
-        }
-        else if (_value is { PricedEntitlementCount: > 0 } v)
-        {
-            <MudGrid>
-                <MudItem xs="12" sm="4">
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Wholesale cost</MudText>
-                    <MudText Typo="Typo.h5">@FormatMoney(v.WholesaleMonthly, v.Currency)</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">What you pay Google — actual (Ion) where available, else estimated from list</MudText>
-                </MudItem>
-                <MudItem xs="12" sm="4">
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Repriced revenue</MudText>
-                    <MudText Typo="Typo.h5">@FormatMoney(v.RevenueMonthly, v.Currency)</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">What this customer is billed</MudText>
-                </MudItem>
-                <MudItem xs="12" sm="4">
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Margin</MudText>
-                    <MudText Typo="Typo.h5" Color="@(v.MarginMonthly >= 0 ? Color.Success : Color.Error)">@FormatMoney(v.MarginMonthly, v.Currency)</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Revenue − wholesale</MudText>
-                </MudItem>
-            </MudGrid>
-            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
-                Across @v.PricedEntitlementCount active entitlement(s) · @v.ActiveSeats seat(s)@(v.UnpricedEntitlementCount > 0 ? $"; {v.UnpricedEntitlementCount} unpriced (excluded)" : ""), estimated from offer
-                list pricing with repricing applied; wholesale uses actual Ion cost where available. Not an invoiced figure.@(v.MixedCurrencies ? $" Headline shows the dominant currency ({v.Currency}); every currency is broken out below." : "")
-            </MudText>
-            @if (v.MixedCurrencies)
+            else if (_value is { PricedEntitlementCount: > 0 } v)
             {
-                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-2">
-                    <thead>
-                        <tr>
-                            <th>Currency</th>
-                            <th style="text-align:right">Wholesale cost</th>
-                            <th style="text-align:right">Repriced revenue</th>
-                            <th style="text-align:right">Margin</th>
-                            <th style="text-align:right">Seats</th>
-                            <th style="text-align:right">Subscriptions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var line in v.Currencies)
-                        {
-                            <tr>
-                                <td>@line.Currency</td>
-                                <td style="text-align:right">@line.WholesaleMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@line.RevenueMonthly.ToString("N2")</td>
-                                <td style="text-align:right" class="@(line.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@line.MarginMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@line.ActiveSeats</td>
-                                <td style="text-align:right">@line.PricedEntitlementCount</td>
-                            </tr>
-                        }
-                    </tbody>
-                </MudSimpleTable>
+                <Row>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block">Wholesale cost</Small>
+                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@FormatMoney(v.WholesaleMonthly, v.Currency)</Heading>
+                        <Small TextColor="TextColor.Secondary">What you pay Google — actual (Ion) where available, else estimated from list</Small>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block">Repriced revenue</Small>
+                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@FormatMoney(v.RevenueMonthly, v.Currency)</Heading>
+                        <Small TextColor="TextColor.Secondary">What this customer is billed</Small>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block">Margin</Small>
+                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0" TextColor="@(v.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@FormatMoney(v.MarginMonthly, v.Currency)</Heading>
+                        <Small TextColor="TextColor.Secondary">Revenue − wholesale</Small>
+                    </Column>
+                </Row>
+                <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
+                    Across @v.PricedEntitlementCount active entitlement(s) · @v.ActiveSeats seat(s)@(v.UnpricedEntitlementCount > 0 ? $"; {v.UnpricedEntitlementCount} unpriced (excluded)" : ""), estimated from offer
+                    list pricing with repricing applied; wholesale uses actual Ion cost where available. Not an invoiced figure.@(v.MixedCurrencies ? $" Headline shows the dominant currency ({v.Currency}); every currency is broken out below." : "")
+                </Small>
+                @if (v.MixedCurrencies)
+                {
+                    <Table Narrow Hoverable Borderless Margin="Margin.Is2.FromTop">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHeaderCell>Currency</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Wholesale cost</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Repriced revenue</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Margin</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Seats</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Subscriptions</TableHeaderCell>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            @foreach (var line in v.Currencies)
+                            {
+                                <TableRow>
+                                    <TableRowCell>@line.Currency</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@line.WholesaleMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@line.RevenueMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(line.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@line.MarginMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@line.ActiveSeats</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@line.PricedEntitlementCount</TableRowCell>
+                                </TableRow>
+                            }
+                        </TableBody>
+                    </Table>
+                }
             }
-        }
-        else
-        {
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
-                No priced subscriptions for this customer yet@(_value is { UnpricedEntitlementCount: > 0 } u ? $" ({u.UnpricedEntitlementCount} unpriced)" : "") — values appear once the background read-model has priced this customer's entitlements.
-            </MudText>
-        }
-    </MudPaper>
+            else
+            {
+                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is1.FromTop.Is0.FromBottom">
+                    No priced subscriptions for this customer yet@(_value is { UnpricedEntitlementCount: > 0 } u ? $" ({u.UnpricedEntitlementCount} unpriced)" : "") — values appear once the background read-model has priced this customer's entitlements.
+                </Paragraph>
+            }
+        </CardBody>
+    </Card>
 
     @if (_spend is { Unconfigured: false })
     {
-        <MudPaper Elevation="2" Class="pa-4 mb-4">
-            <div class="d-flex justify-space-between align-center mb-1">
-                <MudText Typo="Typo.overline" Color="Color.Secondary">Billed spend (actual)</MudText>
-                @if (_spend.AsOf is { } asOf)
+        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+            <CardBody>
+                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromBottom">
+                    <Small TextColor="TextColor.Secondary" Class="text-uppercase fw-semibold">Billed spend (actual)</Small>
+                    @if (_spend.AsOf is { } asOf)
+                    {
+                        <Small TextColor="TextColor.Secondary">as of @asOf.LocalDateTime.ToString("g")</Small>
+                    }
+                </Div>
+                @if (_spendLoading)
                 {
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">as of @asOf.LocalDateTime.ToString("g")</MudText>
+                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
                 }
-            </div>
-            @if (_spendLoading)
-            {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
-            }
-            else if (_spend.Months is { Count: > 0 })
-            {
-                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
-                    <thead>
-                        <tr>
-                            <th>Invoice month</th>
-                            <th style="text-align:right">Net cost</th>
-                            <th style="text-align:right">Gross</th>
-                            <th style="text-align:right">Credits</th>
-                            <th>Currency</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var m in _spend.Months.OrderByDescending(m => m.InvoiceMonth))
-                        {
-                            <tr>
-                                <td>@FormatMonth(m.InvoiceMonth)</td>
-                                <td style="text-align:right">@m.Cost.ToString("N2")</td>
-                                <td style="text-align:right">@m.GrossCost.ToString("N2")</td>
-                                <td style="text-align:right">@m.Credits.ToString("N2")</td>
-                                <td>@m.Currency</td>
-                            </tr>
-                        }
-                    </tbody>
-                </MudSimpleTable>
-                <div class="d-flex justify-space-between align-center mt-2">
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        Actual amounts from the GCP/Marketplace billing export — real billed figures, not the list-price estimate above.
-                    </MudText>
-                    <MudButton Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ShowChart"
-                               Href="@($"/billing/spend?customerId={_customer.Id}")">Trend</MudButton>
-                </div>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
-                    No billed spend recorded for this customer yet — the export sync attributes spend once the customer's entitlements carry a billing account.
-                </MudText>
-            }
-        </MudPaper>
+                else if (_spend.Months is { Count: > 0 })
+                {
+                    <Table Narrow Hoverable Borderless Margin="Margin.Is1.FromTop">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHeaderCell>Invoice month</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Net cost</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Gross</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Credits</TableHeaderCell>
+                                <TableHeaderCell>Currency</TableHeaderCell>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            @foreach (var m in _spend.Months.OrderByDescending(m => m.InvoiceMonth))
+                            {
+                                <TableRow>
+                                    <TableRowCell>@FormatMonth(m.InvoiceMonth)</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@m.Cost.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@m.GrossCost.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@m.Credits.ToString("N2")</TableRowCell>
+                                    <TableRowCell>@m.Currency</TableRowCell>
+                                </TableRow>
+                            }
+                        </TableBody>
+                    </Table>
+                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromTop">
+                        <Small TextColor="TextColor.Secondary">
+                            Actual amounts from the GCP/Marketplace billing export — real billed figures, not the list-price estimate above.
+                        </Small>
+                        <Button Type="ButtonType.Link" To="@($"/billing/spend?customerId={_customer.Id}")" Color="Color.Primary" Class="btn-link text-decoration-none text-nowrap">
+                            Trend <Icon Name="@AppIcons.ShowChart" Class="ms-1" />
+                        </Button>
+                    </Div>
+                }
+                else
+                {
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is1.FromTop.Is0.FromBottom">
+                        No billed spend recorded for this customer yet — the export sync attributes spend once the customer's entitlements carry a billing account.
+                    </Paragraph>
+                }
+            </CardBody>
+        </Card>
 
         @if (_sellerSpend is { Unconfigured: false, ByCategory.Count: > 0 } || _marketplace is { Orders.Count: > 0 })
         {
-            <MudGrid Class="mb-4">
-                <MudItem xs="12" md="6">
+            <Row Margin="Margin.Is4.FromBottom">
+                <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
                     <SellerSplitCard Summary="_sellerSpend" Loading="_spendLoading" Subtitle="This customer, last 3 invoice months" MaxRows="6" />
-                </MudItem>
-                <MudItem xs="12" md="6">
+                </Column>
+                <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
                     <MarketplaceOrdersTable Result="_marketplace" Loading="_spendLoading" ShowAccount="false" />
-                </MudItem>
-            </MudGrid>
+                </Column>
+            </Row>
         }
     }
 
-    <MudCard Elevation="2" Class="mb-4">
-        <MudCardHeader>
-            <CardHeaderContent>
-                <div class="d-flex justify-space-between align-center">
-                    <div>
-                        <MudText Typo="Typo.h6">Entitlements</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
-                            The subscriptions this customer holds, with seats, estimated monthly cost, renewal date and auto-renew status.
-                        </MudText>
-                    </div>
-                    <MudButton Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward"
-                               Href="@($"/customers/{_customer.Id}/entitlements")">Manage</MudButton>
-                </div>
-            </CardHeaderContent>
-        </MudCardHeader>
-        <MudCardContent>
+    <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+        <CardHeader>
+            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                <Div>
+                    <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Entitlements</CardTitle>
+                    <Small TextColor="TextColor.Secondary">
+                        The subscriptions this customer holds, with seats, estimated monthly cost, renewal date and auto-renew status.
+                    </Small>
+                </Div>
+                <Button Type="ButtonType.Link" To="@($"/customers/{_customer.Id}/entitlements")" Color="Color.Primary" Class="btn-link text-decoration-none text-nowrap">
+                    Manage <Icon Name="@AppIcons.ArrowForward" Class="ms-1" />
+                </Button>
+            </Div>
+        </CardHeader>
+        <CardBody>
             @if (_entitlementsLoading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
             }
             else if (_entitlements is { Count: > 0 })
             {
-                <MudTable Items="_entitlements" Hover="true" Dense="true" Elevation="0">
-                    <HeaderContent>
-                        <MudTh>Offer / SKU</MudTh>
-                        <MudTh>State</MudTh>
-                        <MudTh Style="text-align:right">Seats</MudTh>
-                        <MudTh Style="text-align:right">Est. monthly</MudTh>
-                        <MudTh Style="text-align:right">Ion cost / margin</MudTh>
-                        <MudTh>Renewal</MudTh>
-                        <MudTh>Auto-renew</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Offer / SKU">
-                            <MudLink Href="@($"/customers/{_customer!.Id}/entitlements/{context.Id}")">@OfferLabel(context)</MudLink>
-                            @if (!string.IsNullOrEmpty(context.ProductDisplayName ?? context.ProductId))
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@(context.ProductDisplayName ?? context.ProductId)</MudText>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="State">
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.ProvisioningState)">
-                                @(context.ProvisioningState ?? "—")
-                            </MudChip>
-                            @if (context.IsTrial)
-                            {
-                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">Trial</MudChip>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Seats" Style="text-align:right">@(Seats(context) ?? "—")</MudTd>
-                        <MudTd DataLabel="Est. monthly" Style="text-align:right">
-                            @if (MonthlyEstimate(context) is { } v)
-                            {
-                                <MudTooltip Text="@EstimateBreakdown(context)"><span>@FormatMoney(v, context.PriceCurrency)</span></MudTooltip>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Ion cost / margin" Style="text-align:right">
-                            @if (context.IonCostPerSeat is { } ionCost)
-                            {
-                                <MudTooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)">
-                                    <span>@FormatMoney(ionCost, context.IonCurrency)</span>
-                                </MudTooltip>
-                                @if (context.IonMarginPercent is { } mp)
-                                {
-                                    <MudText Typo="Typo.caption" Color="@(mp >= 0 ? Color.Success : Color.Error)" Class="d-block">@mp.ToString("0.0")% margin</MudText>
-                                }
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Renewal">
-                            @if (context.Commitment?.EndTime is { } end)
-                            {
-                                <MudTooltip Text="@(context.PlanDescription ?? context.Commitment?.PaymentPlan)"><span>@end.ToString("yyyy-MM-dd")</span></MudTooltip>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Auto-renew">
-                            @if (context.Commitment?.RenewalEnabled is { } renew)
-                            {
-                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(renew ? Color.Success : Color.Warning)">@(renew ? "On" : "Off")</MudChip>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
+                <Table Narrow Hoverable Responsive>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHeaderCell>Offer / SKU</TableHeaderCell>
+                            <TableHeaderCell>State</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Seats</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Est. monthly</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Ion cost / margin</TableHeaderCell>
+                            <TableHeaderCell>Renewal</TableHeaderCell>
+                            <TableHeaderCell>Auto-renew</TableHeaderCell>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        @foreach (var e in _entitlements)
+                        {
+                            <TableRow>
+                                <TableRowCell>
+                                    <Anchor To="@($"/customers/{_customer!.Id}/entitlements/{e.Id}")">@OfferLabel(e)</Anchor>
+                                    @if (!string.IsNullOrEmpty(e.ProductDisplayName ?? e.ProductId))
+                                    {
+                                        <Small TextColor="TextColor.Secondary" Display="Display.Block">@(e.ProductDisplayName ?? e.ProductId)</Small>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell>
+                                    <Badge Color="@StateColor(e.ProvisioningState)">@(e.ProvisioningState ?? "—")</Badge>
+                                    @if (e.IsTrial)
+                                    {
+                                        <Badge Color="Color.Info" Margin="Margin.Is1.FromStart">Trial</Badge>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">@(Seats(e) ?? "—")</TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">
+                                    @if (MonthlyEstimate(e) is { } v)
+                                    {
+                                        <Tooltip Text="@EstimateBreakdown(e)" Inline><span>@FormatMoney(v, e.PriceCurrency)</span></Tooltip>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">
+                                    @if (e.IonCostPerSeat is { } ionCost)
+                                    {
+                                        <Tooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)" Inline>
+                                            <span>@FormatMoney(ionCost, e.IonCurrency)</span>
+                                        </Tooltip>
+                                        @if (e.IonMarginPercent is { } mp)
+                                        {
+                                            <Small TextColor="@(mp >= 0 ? TextColor.Success : TextColor.Danger)" Display="Display.Block">@mp.ToString("0.0")% margin</Small>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell>
+                                    @if (e.Commitment?.EndTime is { } end)
+                                    {
+                                        <Tooltip Text="@(e.PlanDescription ?? e.Commitment?.PaymentPlan)" Inline><span>@end.ToString("yyyy-MM-dd")</span></Tooltip>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell>
+                                    @if (e.Commitment?.RenewalEnabled is { } renew)
+                                    {
+                                        <Badge Color="@(renew ? Color.Success : Color.Warning)">@(renew ? "On" : "Off")</Badge>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                            </TableRow>
+                        }
+                    </TableBody>
+                </Table>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    No entitlements yet. Use <MudLink Href="@($"/customers/{_customer.Id}/entitlements/new")">Purchase</MudLink> to sell this customer their first SKU.
-                </MudText>
+                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
+                    No entitlements yet. Use <Anchor To="@($"/customers/{_customer.Id}/entitlements/new")">Purchase</Anchor> to sell this customer their first SKU.
+                </Paragraph>
             }
-        </MudCardContent>
-    </MudCard>
+        </CardBody>
+    </Card>
 
-    <MudGrid>
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Details</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
-                    <MudSimpleTable Dense="true" Elevation="0">
-                        <tbody>
-                            <tr><td><strong>Customer id</strong></td><td>@_customer.Id</td></tr>
-                            <tr><td><strong>Domain</strong></td><td>@_customer.Domain</td></tr>
-                            <tr><td><strong>Language</strong></td><td>@(_customer.LanguageCode ?? "—")</td></tr>
-                            <tr><td><strong>Cloud Identity id</strong></td><td>@(_customer.CloudIdentityId ?? "—")</td></tr>
-                            <tr><td><strong>Created</strong></td><td>@(_customer.CreateTime?.ToString("u") ?? "—")</td></tr>
-                            <tr>
-                                <td><strong>Channel partner</strong></td>
-                                <td>
+    <Row>
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Details</CardTitle></CardHeader>
+                <CardBody>
+                    <Table Narrow Borderless Margin="Margin.Is0">
+                        <TableBody>
+                            <TableRow><TableRowCell><strong>Customer id</strong></TableRowCell><TableRowCell>@_customer.Id</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>Domain</strong></TableRowCell><TableRowCell>@_customer.Domain</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>Language</strong></TableRowCell><TableRowCell>@(_customer.LanguageCode ?? "—")</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>Cloud Identity id</strong></TableRowCell><TableRowCell>@(_customer.CloudIdentityId ?? "—")</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>Created</strong></TableRowCell><TableRowCell>@(_customer.CreateTime?.ToString("u") ?? "—")</TableRowCell></TableRow>
+                            <TableRow>
+                                <TableRowCell><strong>Channel partner</strong></TableRowCell>
+                                <TableRowCell>
                                     @if (!string.IsNullOrEmpty(_customer.ChannelPartnerId))
                                     {
-                                        <MudLink Href="@($"/channel-partner-links/{_customer.ChannelPartnerId}")">
-                                            @_customer.ChannelPartnerId
-                                        </MudLink>
+                                        <Anchor To="@($"/channel-partner-links/{_customer.ChannelPartnerId}")">@_customer.ChannelPartnerId</Anchor>
                                     }
                                     else
                                     {
                                         <span>Direct (no partner)</span>
                                     }
-                                </td>
-                            </tr>
-                        </tbody>
-                    </MudSimpleTable>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
+                                </TableRowCell>
+                            </TableRow>
+                        </TableBody>
+                    </Table>
+                </CardBody>
+            </Card>
+        </Column>
 
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Cloud Identity</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Cloud Identity</CardTitle></CardHeader>
+                <CardBody>
                     @if (_customer.CloudIdentity is { } ci)
                     {
-                        <MudSimpleTable Dense="true" Elevation="0">
-                            <tbody>
-                                <tr><td><strong>Type</strong></td><td>@(ci.CustomerType ?? "—")</td></tr>
-                                <tr><td><strong>Primary domain</strong></td><td>@(ci.PrimaryDomain ?? "—")</td></tr>
-                                <tr>
-                                    <td><strong>Domain verified</strong></td>
-                                    <td>
-                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                                 Color="@(ci.IsDomainVerified ? Color.Success : Color.Warning)">
-                                            @(ci.IsDomainVerified ? "Verified" : "Unverified")
-                                        </MudChip>
-                                    </td>
-                                </tr>
-                                <tr><td><strong>Alternate email</strong></td><td>@(ci.AlternateEmail ?? "—")</td></tr>
+                        <Table Narrow Borderless Margin="Margin.Is0">
+                            <TableBody>
+                                <TableRow><TableRowCell><strong>Type</strong></TableRowCell><TableRowCell>@(ci.CustomerType ?? "—")</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>Primary domain</strong></TableRowCell><TableRowCell>@(ci.PrimaryDomain ?? "—")</TableRowCell></TableRow>
+                                <TableRow>
+                                    <TableRowCell><strong>Domain verified</strong></TableRowCell>
+                                    <TableRowCell>
+                                        <Badge Color="@(ci.IsDomainVerified ? Color.Success : Color.Warning)">@(ci.IsDomainVerified ? "Verified" : "Unverified")</Badge>
+                                    </TableRowCell>
+                                </TableRow>
+                                <TableRow><TableRowCell><strong>Alternate email</strong></TableRowCell><TableRowCell>@(ci.AlternateEmail ?? "—")</TableRowCell></TableRow>
                                 @if (!string.IsNullOrEmpty(ci.AdminConsoleUri))
                                 {
-                                    <tr><td><strong>Admin console</strong></td><td><MudLink Href="@ci.AdminConsoleUri" Target="_blank">Open</MudLink></td></tr>
+                                    <TableRow><TableRowCell><strong>Admin console</strong></TableRowCell><TableRowCell><Anchor To="@ci.AdminConsoleUri" Target="Target.Blank">Open</Anchor></TableRowCell></TableRow>
                                 }
-                            </tbody>
-                        </MudSimpleTable>
+                            </TableBody>
+                        </Table>
                     }
                     else
                     {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">No Cloud Identity linked.</MudText>
+                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No Cloud Identity linked.</Paragraph>
                     }
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
+                </CardBody>
+            </Card>
+        </Column>
 
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Primary contact</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Primary contact</CardTitle></CardHeader>
+                <CardBody>
                     @if (_customer.PrimaryContact is { } c)
                     {
-                        <MudSimpleTable Dense="true" Elevation="0">
-                            <tbody>
-                                <tr><td><strong>Name</strong></td><td>@($"{c.FirstName} {c.LastName}".Trim())</td></tr>
-                                <tr><td><strong>Email</strong></td><td>@(c.Email ?? "—")</td></tr>
-                                <tr><td><strong>Phone</strong></td><td>@(c.Phone ?? "—")</td></tr>
-                                <tr><td><strong>Title</strong></td><td>@(c.Title ?? "—")</td></tr>
-                            </tbody>
-                        </MudSimpleTable>
+                        <Table Narrow Borderless Margin="Margin.Is0">
+                            <TableBody>
+                                <TableRow><TableRowCell><strong>Name</strong></TableRowCell><TableRowCell>@($"{c.FirstName} {c.LastName}".Trim())</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>Email</strong></TableRowCell><TableRowCell>@(c.Email ?? "—")</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>Phone</strong></TableRowCell><TableRowCell>@(c.Phone ?? "—")</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>Title</strong></TableRowCell><TableRowCell>@(c.Title ?? "—")</TableRowCell></TableRow>
+                            </TableBody>
+                        </Table>
                     }
                     else
                     {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">No contact on file.</MudText>
+                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No contact on file.</Paragraph>
                     }
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
+                </CardBody>
+            </Card>
+        </Column>
 
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Address</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Address</CardTitle></CardHeader>
+                <CardBody>
                     @if (_customer.Address is { } a)
                     {
-                        <MudSimpleTable Dense="true" Elevation="0">
-                            <tbody>
-                                <tr><td><strong>Street</strong></td><td>@(string.Join(", ", a.AddressLines) is { Length: > 0 } s ? s : "—")</td></tr>
-                                <tr><td><strong>City</strong></td><td>@(a.Locality ?? "—")</td></tr>
-                                <tr><td><strong>State / province</strong></td><td>@(a.AdministrativeArea ?? "—")</td></tr>
-                                <tr><td><strong>Postal code</strong></td><td>@(a.PostalCode ?? "—")</td></tr>
-                                <tr><td><strong>Region</strong></td><td>@(a.RegionCode ?? "—")</td></tr>
-                            </tbody>
-                        </MudSimpleTable>
+                        <Table Narrow Borderless Margin="Margin.Is0">
+                            <TableBody>
+                                <TableRow><TableRowCell><strong>Street</strong></TableRowCell><TableRowCell>@(string.Join(", ", a.AddressLines) is { Length: > 0 } s ? s : "—")</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>City</strong></TableRowCell><TableRowCell>@(a.Locality ?? "—")</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>State / province</strong></TableRowCell><TableRowCell>@(a.AdministrativeArea ?? "—")</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>Postal code</strong></TableRowCell><TableRowCell>@(a.PostalCode ?? "—")</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>Region</strong></TableRowCell><TableRowCell>@(a.RegionCode ?? "—")</TableRowCell></TableRow>
+                            </TableBody>
+                        </Table>
                     }
                     else
                     {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">No address on file.</MudText>
+                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No address on file.</Paragraph>
                     }
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-    </MudGrid>
+                </CardBody>
+            </Card>
+        </Column>
+    </Row>
 
-    <MudCard Elevation="2" Class="mt-2">
-        <MudCardHeader>
-            <CardHeaderContent>
-                <MudText Typo="Typo.h6">Purchasable catalog</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    SKUs this customer is eligible to purchase. Pick a product to load its SKUs, then
-                    expand a SKU for its purchasable offers or jump to the catalog.
-                </MudText>
-            </CardHeaderContent>
-        </MudCardHeader>
-        <MudCardContent>
+    <Card Shadow="Shadow.Small" Margin="Margin.Is2.FromTop">
+        <CardHeader>
+            <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Purchasable catalog</CardTitle>
+            <Small TextColor="TextColor.Secondary">
+                SKUs this customer is eligible to purchase. Pick a product to load its SKUs, then
+                expand a SKU for its purchasable offers or jump to the catalog.
+            </Small>
+        </CardHeader>
+        <CardBody>
             @if (_products is null)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
             }
             else
             {
-                <MudSelect T="string" Label="Product" Value="_selectedProductId" ValueChanged="OnProductSelected"
-                           Dense="true" Class="mb-4" Style="max-width:480px">
-                    @foreach (var product in _products)
-                    {
-                        <MudSelectItem Value="@product.Id">@(product.DisplayName ?? product.Id)</MudSelectItem>
-                    }
-                </MudSelect>
+                <Field Style="max-width:480px">
+                    <FieldLabel>Product</FieldLabel>
+                    <Select TValue="string" Value="@_selectedProductId" ValueChanged="OnProductSelected">
+                        <SelectItem TValue="string" Value="@((string?)null)">Choose a product…</SelectItem>
+                        @foreach (var product in _products)
+                        {
+                            <SelectItem TValue="string" Value="@product.Id">@(product.DisplayName ?? product.Id)</SelectItem>
+                        }
+                    </Select>
+                </Field>
 
                 @if (_skusLoading)
                 {
-                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
                 }
                 else if (_purchasableSkus is { Count: > 0 })
                 {
-                    <MudExpansionPanels MultiExpansion="true" Elevation="0">
+                    <Accordion>
                         @foreach (var sku in _purchasableSkus)
                         {
-                            <MudExpansionPanel Text="@(sku.DisplayName ?? sku.SkuId)"
-                                               Expanded="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
-                                               ExpandedChanged="expanded => OnSkuExpanded(sku, expanded)">
-                                <div class="d-flex justify-space-between align-center mb-2">
-                                    <MudText Typo="Typo.body2" Color="Color.Secondary">SKU id: @sku.SkuId</MudText>
-                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.OpenInNew"
-                                               Href="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")">
-                                        View in catalog
-                                    </MudButton>
-                                </div>
+                            <AccordionItem Visible="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
+                                           VisibleChanged="expanded => OnSkuExpanded(sku, expanded)">
+                                <AccordionHeader>
+                                    <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
+                                        <AccordionToggle>@(sku.DisplayName ?? sku.SkuId)</AccordionToggle>
+                                    </Heading>
+                                </AccordionHeader>
+                                <AccordionBody>
+                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+                                        <Small TextColor="TextColor.Secondary">SKU id: @sku.SkuId</Small>
+                                        <Button Type="ButtonType.Link" To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")"
+                                                Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
+                                            <Icon Name="@AppIcons.OpenInNew" Class="me-1" /> View in catalog
+                                        </Button>
+                                    </Div>
 
-                                @if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
-                                {
-                                    @if (offers is null)
+                                    @if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
                                     {
-                                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                                        @if (offers is null)
+                                        {
+                                            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                                        }
+                                        else if (offers.Count == 0)
+                                        {
+                                            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No purchasable offers.</Paragraph>
+                                        }
+                                        else
+                                        {
+                                            <Table Narrow Hoverable Responsive Margin="Margin.Is0">
+                                                <TableHeader>
+                                                    <TableRow>
+                                                        <TableHeaderCell>Offer</TableHeaderCell>
+                                                        <TableHeaderCell>Price reference</TableHeaderCell>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    @foreach (var offer in offers)
+                                                    {
+                                                        <TableRow>
+                                                            <TableRowCell>@(offer.DisplayName ?? offer.OfferName)</TableRowCell>
+                                                            <TableRowCell>@(offer.PriceReferenceId ?? "—")</TableRowCell>
+                                                        </TableRow>
+                                                    }
+                                                </TableBody>
+                                            </Table>
+                                        }
                                     }
-                                    else if (offers.Count == 0)
-                                    {
-                                        <MudText Typo="Typo.body2" Color="Color.Secondary">No purchasable offers.</MudText>
-                                    }
-                                    else
-                                    {
-                                        <MudTable Items="offers" Dense="true" Hover="true" Elevation="0">
-                                            <HeaderContent>
-                                                <MudTh>Offer</MudTh>
-                                                <MudTh>Price reference</MudTh>
-                                            </HeaderContent>
-                                            <RowTemplate>
-                                                <MudTd DataLabel="Offer">@(context.DisplayName ?? context.OfferName)</MudTd>
-                                                <MudTd DataLabel="Price reference">@(context.PriceReferenceId ?? "—")</MudTd>
-                                            </RowTemplate>
-                                        </MudTable>
-                                    }
-                                }
-                            </MudExpansionPanel>
+                                </AccordionBody>
+                            </AccordionItem>
                         }
-                    </MudExpansionPanels>
+                    </Accordion>
                 }
                 else if (_purchasableSkus is not null)
                 {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
                         No purchasable SKUs for this product.
-                    </MudText>
+                    </Paragraph>
                 }
             }
-        </MudCardContent>
-    </MudCard>
+        </CardBody>
+    </Card>
 
-    <MudButton Class="mt-4" Variant="Variant.Text" Href="/customers" StartIcon="@Icons.Material.Filled.ArrowBack">
-        Back to customers
-    </MudButton>
+    <Button Type="ButtonType.Link" To="/customers" Color="Color.Secondary" Margin="Margin.Is4.FromTop" Class="btn-link text-decoration-none">
+        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to customers
+    </Button>
 
-    <MudDialog @bind-Visible="_provisionOpen" Options="_provisionDialogOptions">
-        <TitleContent>
-            <MudText Typo="Typo.h6">Provision Cloud Identity</MudText>
-        </TitleContent>
-        <DialogContent>
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-                Create a brand-new Cloud Identity for <b>@(_customer.OrgDisplayName ?? _customer.Domain)</b>.
-                This is a long-running operation — you'll be taken to the Operations page to watch it finish.
-            </MudText>
-            <MudTextField @bind-Value="_provision.GivenName" Label="Admin first name" Class="mb-3" />
-            <MudTextField @bind-Value="_provision.FamilyName" Label="Admin last name" Class="mb-3" />
-            <MudTextField @bind-Value="_provision.AdminEmail" Label="Admin email"
-                          HelperText="@($"Within {_customer.Domain}, e.g. admin@{_customer.Domain}")"
-                          InputType="InputType.Email" Class="mb-3" />
-            <MudTextField @bind-Value="_provision.AlternateEmail" Label="Alternate (recovery) email"
-                          HelperText="Outside the customer's domain" InputType="InputType.Email" Class="mb-3" />
-            <MudTextField @bind-Value="_provision.PhoneNumber" Label="Contact phone (optional)" Class="mb-3" />
-            <MudTextField @bind-Value="_provision.LanguageCode" Label="Language code (optional)" HelperText="e.g. en-US" Class="mb-3" />
-            <MudCheckBox @bind-Value="_provision.ValidateOnly" Label="Validate only (don't provision yet)" />
-        </DialogContent>
-        <DialogActions>
-            <MudButton OnClick="@(() => _provisionOpen = false)" Disabled="@_provisioning">Cancel</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ProvisionAsync" Disabled="@_provisioning">
-                @(_provisioning ? "Submitting…" : (_provision.ValidateOnly ? "Validate" : "Provision"))
-            </MudButton>
-        </DialogActions>
-    </MudDialog>
+    <Modal @bind-Visible="_provisionOpen">
+        <ModalContent Centered>
+            <ModalHeader>
+                <ModalTitle>Provision Cloud Identity</ModalTitle>
+                <CloseButton />
+            </ModalHeader>
+            <ModalBody>
+                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
+                    Create a brand-new Cloud Identity for <b>@(_customer.OrgDisplayName ?? _customer.Domain)</b>.
+                    This is a long-running operation — you'll be taken to the Operations page to watch it finish.
+                </Paragraph>
+                <Field><FieldLabel>Admin first name</FieldLabel><TextInput @bind-Value="_provision.GivenName" /></Field>
+                <Field><FieldLabel>Admin last name</FieldLabel><TextInput @bind-Value="_provision.FamilyName" /></Field>
+                <Field>
+                    <FieldLabel>Admin email</FieldLabel>
+                    <TextInput @bind-Value="_provision.AdminEmail" Role="TextRole.Email" />
+                    <FieldHelp>@($"Within {_customer.Domain}, e.g. admin@{_customer.Domain}")</FieldHelp>
+                </Field>
+                <Field>
+                    <FieldLabel>Alternate (recovery) email</FieldLabel>
+                    <TextInput @bind-Value="_provision.AlternateEmail" Role="TextRole.Email" />
+                    <FieldHelp>Outside the customer's domain</FieldHelp>
+                </Field>
+                <Field><FieldLabel>Contact phone (optional)</FieldLabel><TextInput @bind-Value="_provision.PhoneNumber" Role="TextRole.Telephone" /></Field>
+                <Field>
+                    <FieldLabel>Language code (optional)</FieldLabel>
+                    <TextInput @bind-Value="_provision.LanguageCode" />
+                    <FieldHelp>e.g. en-US</FieldHelp>
+                </Field>
+                <Field>
+                    <Check TValue="bool" @bind-Value="_provision.ValidateOnly">Validate only (don't provision yet)</Check>
+                </Field>
+            </ModalBody>
+            <ModalFooter>
+                <Button Color="Color.Secondary" Clicked="@(() => _provisionOpen = false)" Disabled="@_provisioning">Cancel</Button>
+                <Button Color="Color.Primary" Clicked="ProvisionAsync" Disabled="@_provisioning" Loading="@_provisioning">
+                    @(_provisioning ? "Submitting…" : (_provision.ValidateOnly ? "Validate" : "Provision"))
+                </Button>
+            </ModalFooter>
+        </ModalContent>
+    </Modal>
 }
 
 @code {
@@ -559,7 +594,6 @@ else
     private bool _provisionOpen;
     private bool _provisioning;
     private readonly ProvisionModel _provision = new();
-    private static readonly DialogOptions _provisionDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
 
     protected override async Task OnParametersSetAsync()
     {
@@ -582,7 +616,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
             _customer = null;
         }
         finally
@@ -599,7 +633,7 @@ else
             }
             catch (Exception ex)
             {
-                Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
+                await Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
                 _products = [];
             }
 
@@ -624,7 +658,7 @@ else
             }
             catch (Exception ex)
             {
-                Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
+                await Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
                 _entitlements = [];
             }
             finally
@@ -671,9 +705,9 @@ else
     {
         "ACTIVE" => Color.Success,
         "SUSPENDED" => Color.Warning,
-        "CANCELLED" or "CANCELED" => Color.Error,
+        "CANCELLED" or "CANCELED" => Color.Danger,
         "PENDING" => Color.Info,
-        _ => Color.Default
+        _ => Color.Secondary
     };
 
     private static string? Seats(Entitlement e) =>
@@ -707,12 +741,17 @@ else
             ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
             : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
 
-    private async Task OnProductSelected(string productId)
+    private async Task OnProductSelected(string? productId)
     {
         _selectedProductId = productId;
         _purchasableSkus = null;
         _offersBySku.Clear();
         _expandedSkus.Clear();
+        if (string.IsNullOrEmpty(productId))
+        {
+            return;
+        }
+
         _skusLoading = true;
         try
         {
@@ -721,7 +760,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load purchasable SKUs: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load purchasable SKUs: {ex.Message}", Severity.Error);
             _purchasableSkus = [];
         }
         finally
@@ -756,7 +795,7 @@ else
         catch (Exception ex)
         {
             _offersBySku.Remove(skuId);
-            Snackbar.Add($"Failed to load purchasable offers: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load purchasable offers: {ex.Message}", Severity.Error);
         }
     }
 
@@ -796,11 +835,11 @@ else
             _provisionOpen = false;
             if (_provision.ValidateOnly)
             {
-                Snackbar.Add("Validation succeeded — no Cloud Identity was created.", Severity.Success);
+                await Snackbar.Add("Validation succeeded — no Cloud Identity was created.", Severity.Success);
             }
             else
             {
-                Snackbar.Add("Provisioning started. Tracking the operation…", Severity.Success);
+                await Snackbar.Add("Provisioning started. Tracking the operation…", Severity.Success);
                 if (operation is not null)
                 {
                     Nav.NavigateTo($"/operations?operation={Uri.EscapeDataString(operation.Id)}");
@@ -809,7 +848,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to provision Cloud Identity: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to provision Cloud Identity: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -824,13 +863,13 @@ else
             return;
         }
 
-        var confirmed = await DialogService.ShowMessageBoxAsync(
+        var confirmed = await Snackbar.ConfirmAsync(
             "Delete customer",
             $"Delete '{_customer.OrgDisplayName ?? _customer.Id}'? This cannot be undone.",
             yesText: "Delete",
             cancelText: "Cancel");
 
-        if (confirmed != true)
+        if (!confirmed)
         {
             return;
         }
@@ -838,12 +877,12 @@ else
         try
         {
             await Api.DeleteCustomerAsync(_customer.Id);
-            Snackbar.Add("Customer deleted.", Severity.Success);
+            await Snackbar.Add("Customer deleted.", Severity.Success);
             Nav.NavigateTo("/customers");
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to delete customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to delete customer: {ex.Message}", Severity.Error);
         }
     }
 
@@ -869,3 +908,4 @@ else
         }
     }
 }
+

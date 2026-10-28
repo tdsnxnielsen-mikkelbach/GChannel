@@ -1,34 +1,35 @@
 @page "/customers/{CustomerId}/entitlements"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
-@inject IDialogService DialogService
+@inject UiNotifier Snackbar
 
 <PageTitle>Entitlements · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
-    <div>
-        <MudText Typo="Typo.h4">Entitlements</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+    <Div>
+        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Entitlements</Heading>
+        <Small TextColor="TextColor.Secondary">
             @(_customer?.OrgDisplayName ?? CustomerId)@(string.IsNullOrEmpty(_customer?.Domain) ? "" : $" · {_customer!.Domain}")
-        </MudText>
-    </div>
-    <div class="d-flex gap-2">
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
-                   Href="@($"/customers/{CustomerId}")">Customer</MudButton>
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.SwapHoriz"
-                   Href="@($"/customers/{CustomerId}/transfer")">Transfer in</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddShoppingCart"
-                   Href="@($"/customers/{CustomerId}/entitlements/new")">Purchase</MudButton>
-    </div>
-</div>
+        </Small>
+    </Div>
+    <Div Flex="Flex.Default" Gap="Gap.Is2">
+        <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}")" Color="Color.Secondary" Outline>
+            <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Customer
+        </Button>
+        <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/transfer")" Color="Color.Secondary" Outline>
+            <Icon Name="@AppIcons.SwapHoriz" Class="me-1" /> Transfer in
+        </Button>
+        <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/entitlements/new")" Color="Color.Primary">
+            <Icon Name="@AppIcons.AddShoppingCart" Class="me-1" /> Purchase
+        </Button>
+    </Div>
+</Div>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
     The subscriptions this customer holds. Each entitlement maps to a Catalog SKU/Offer; use the
     actions menu to modify or change its lifecycle state.
-</MudText>
+</Paragraph>
 
 @if (_loading)
 {
@@ -37,112 +38,127 @@
 }
 else if (_entitlements is { Count: > 0 })
 {
-    <MudTable Items="_entitlements" Hover="true" Elevation="2" Dense="false">
-        <HeaderContent>
-            <MudTh>Offer / SKU</MudTh>
-            <MudTh>Product</MudTh>
-            <MudTh>State</MudTh>
-            <MudTh>Seats</MudTh>
-            <MudTh>Est. monthly</MudTh>
-            <MudTh>Ion cost / margin</MudTh>
-            <MudTh>Created</MudTh>
-            <MudTh Style="text-align:right">Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Offer / SKU">
-                @if (!string.IsNullOrEmpty(context.SkuId))
+    <Card Shadow="Shadow.Small">
+        <Table Hoverable Responsive Margin="Margin.Is0">
+            <TableHeader>
+                <TableRow>
+                    <TableHeaderCell>Offer / SKU</TableHeaderCell>
+                    <TableHeaderCell>Product</TableHeaderCell>
+                    <TableHeaderCell>State</TableHeaderCell>
+                    <TableHeaderCell>Seats</TableHeaderCell>
+                    <TableHeaderCell>Est. monthly</TableHeaderCell>
+                    <TableHeaderCell>Ion cost / margin</TableHeaderCell>
+                    <TableHeaderCell>Created</TableHeaderCell>
+                    <TableHeaderCell TextAlignment="TextAlignment.End">Actions</TableHeaderCell>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                @foreach (var e in _entitlements)
                 {
-                    <MudTooltip Text="@(context.OfferId ?? context.Id)">
-                        <MudLink Href="@($"/catalog/offers?sku={context.SkuId}")">@OfferLabel(context)</MudLink>
-                    </MudTooltip>
+                    <TableRow>
+                        <TableRowCell>
+                            @if (!string.IsNullOrEmpty(e.SkuId))
+                            {
+                                <Tooltip Text="@(e.OfferId ?? e.Id)" Inline>
+                                    <Anchor To="@($"/catalog/offers?sku={e.SkuId}")">@OfferLabel(e)</Anchor>
+                                </Tooltip>
+                            }
+                            else
+                            {
+                                @OfferLabel(e)
+                            }
+                        </TableRowCell>
+                        <TableRowCell>
+                            @if (!string.IsNullOrEmpty(e.ProductId))
+                            {
+                                <Tooltip Text="@e.ProductId" Inline>
+                                    <Anchor To="@($"/catalog/products?product={e.ProductId}&sku={e.SkuId}")">
+                                        @(e.ProductDisplayName ?? e.ProductId)
+                                    </Anchor>
+                                </Tooltip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </TableRowCell>
+                        <TableRowCell>
+                            <Badge Color="@StateColor(e.ProvisioningState)">@(e.ProvisioningState ?? "—")</Badge>
+                            @if (e.IsTrial)
+                            {
+                                <Badge Color="Color.Info" Margin="Margin.Is1.FromStart">Trial</Badge>
+                            }
+                        </TableRowCell>
+                        <TableRowCell>@(Seats(e) ?? "—")</TableRowCell>
+                        <TableRowCell>
+                            @if (MonthlyEstimate(e) is { } v)
+                            {
+                                <Tooltip Text="@EstimateBreakdown(e)" Inline>
+                                    <span>@FormatMoney(v, e.PriceCurrency)</span>
+                                </Tooltip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </TableRowCell>
+                        <TableRowCell>
+                            @if (e.IonCostPerSeat is { } ionCost)
+                            {
+                                <Tooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)" Inline>
+                                    <span>@FormatMoney(ionCost, e.IonCurrency)</span>
+                                </Tooltip>
+                                @if (e.IonMarginPercent is { } mp)
+                                {
+                                    <Small TextColor="@(mp >= 0 ? TextColor.Success : TextColor.Danger)" Display="Display.Block">@mp.ToString("0.0")% margin</Small>
+                                }
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </TableRowCell>
+                        <TableRowCell>@(e.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</TableRowCell>
+                        <TableRowCell TextAlignment="TextAlignment.End">
+                            <Div Flex="Flex.JustifyContent.End.AlignItems.Center" Gap="Gap.Is1" Class="text-nowrap">
+                                <Tooltip Text="View" Inline>
+                                    <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/entitlements/{e.Id}")" Size="Size.Small" Color="Color.Light" aria-label="View">
+                                        <Icon Name="@AppIcons.Visibility" />
+                                    </Button>
+                                </Tooltip>
+                                <Dropdown EndAligned>
+                                    <DropdownToggle Size="Size.Small" Color="Color.Light" ShowToggleIcon="false" aria-label="Actions">
+                                        <Icon Name="@AppIcons.MoreVert" />
+                                    </DropdownToggle>
+                                    <DropdownMenu>
+                                        @if (IsSuspended(e))
+                                        {
+                                            <DropdownItem Clicked="@(() => ActivateAsync(e))"><Icon Name="@AppIcons.PlayArrow" Class="me-2" />Activate</DropdownItem>
+                                        }
+                                        else
+                                        {
+                                            <DropdownItem Clicked="@(() => SuspendAsync(e))"><Icon Name="@AppIcons.Pause" Class="me-2" />Suspend</DropdownItem>
+                                        }
+                                        @if (e.IsTrial)
+                                        {
+                                            <DropdownItem Clicked="@(() => StartPaidAsync(e))"><Icon Name="@AppIcons.Paid" Class="me-2" />Start paid service</DropdownItem>
+                                        }
+                                        <DropdownItem Clicked="@(() => CancelAsync(e))"><Icon Name="@AppIcons.Cancel" TextColor="TextColor.Danger" Class="me-2" />Cancel</DropdownItem>
+                                    </DropdownMenu>
+                                </Dropdown>
+                            </Div>
+                        </TableRowCell>
+                    </TableRow>
                 }
-                else
-                {
-                    @OfferLabel(context)
-                }
-            </MudTd>
-            <MudTd DataLabel="Product">
-                @if (!string.IsNullOrEmpty(context.ProductId))
-                {
-                    <MudTooltip Text="@context.ProductId">
-                        <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
-                            @(context.ProductDisplayName ?? context.ProductId)
-                        </MudLink>
-                    </MudTooltip>
-                }
-                else
-                {
-                    <span>—</span>
-                }
-            </MudTd>
-            <MudTd DataLabel="State">
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.ProvisioningState)">
-                    @(context.ProvisioningState ?? "—")
-                </MudChip>
-                @if (context.IsTrial)
-                {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">Trial</MudChip>
-                }
-            </MudTd>
-            <MudTd DataLabel="Seats">@(Seats(context) ?? "—")</MudTd>
-            <MudTd DataLabel="Est. monthly">
-                @if (MonthlyEstimate(context) is { } v)
-                {
-                    <MudTooltip Text="@EstimateBreakdown(context)">
-                        <span>@FormatMoney(v, context.PriceCurrency)</span>
-                    </MudTooltip>
-                }
-                else
-                {
-                    <span>—</span>
-                }
-            </MudTd>
-            <MudTd DataLabel="Ion cost / margin">
-                @if (context.IonCostPerSeat is { } ionCost)
-                {
-                    <MudTooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)">
-                        <span>@FormatMoney(ionCost, context.IonCurrency)</span>
-                    </MudTooltip>
-                    @if (context.IonMarginPercent is { } mp)
-                    {
-                        <MudText Typo="Typo.caption" Color="@(mp >= 0 ? Color.Success : Color.Error)" Class="d-block">@mp.ToString("0.0")% margin</MudText>
-                    }
-                }
-                else
-                {
-                    <span>—</span>
-                }
-            </MudTd>
-            <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-            <MudTd DataLabel="Actions" Style="text-align:right">
-                <MudTooltip Text="View">
-                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                                   Href="@($"/customers/{CustomerId}/entitlements/{context.Id}")" />
-                </MudTooltip>
-                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
-                    @if (IsSuspended(context))
-                    {
-                        <MudMenuItem Icon="@Icons.Material.Filled.PlayArrow" OnClick="@(() => ActivateAsync(context))">Activate</MudMenuItem>
-                    }
-                    else
-                    {
-                        <MudMenuItem Icon="@Icons.Material.Filled.Pause" OnClick="@(() => SuspendAsync(context))">Suspend</MudMenuItem>
-                    }
-                    @if (context.IsTrial)
-                    {
-                        <MudMenuItem Icon="@Icons.Material.Filled.Paid" OnClick="@(() => StartPaidAsync(context))">Start paid service</MudMenuItem>
-                    }
-                    <MudMenuItem Icon="@Icons.Material.Filled.Cancel" IconColor="Color.Error" OnClick="@(() => CancelAsync(context))">Cancel</MudMenuItem>
-                </MudMenu>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
+            </TableBody>
+        </Table>
+    </Card>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">
+    <Alert Color="Color.Info" Visible>
         No entitlements yet. Use <strong>Purchase</strong> to sell this customer their first SKU.
-    </MudAlert>
+    </Alert>
 }
 
 @code {
@@ -173,7 +189,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
             _entitlements = [];
         }
         finally
@@ -193,9 +209,9 @@ else
     {
         "ACTIVE" => Color.Success,
         "SUSPENDED" => Color.Warning,
-        "CANCELLED" or "CANCELED" => Color.Error,
+        "CANCELLED" or "CANCELED" => Color.Danger,
         "PENDING" => Color.Info,
-        _ => Color.Default
+        _ => Color.Secondary
     };
 
     private static string? Seats(Entitlement e) =>
@@ -247,13 +263,13 @@ else
 
     private async Task RunAsync(Entitlement e, string action, string confirm, Func<Task<EntitlementOperation?>> call, bool destructive = false)
     {
-        var confirmed = await DialogService.ShowMessageBoxAsync(
+        var confirmed = await Snackbar.ConfirmAsync(
             $"{action} entitlement",
             confirm,
             yesText: action,
             cancelText: "Cancel");
 
-        if (confirmed != true)
+        if (!confirmed)
         {
             return;
         }
@@ -261,12 +277,12 @@ else
         try
         {
             var op = await call();
-            Snackbar.Add(OperationMessage(action, op), op?.Done == true ? Severity.Success : Severity.Info);
+            await Snackbar.Add(OperationMessage(action, op), op?.Done == true ? Severity.Success : Severity.Info);
             await LoadAsync();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"{action} failed: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"{action} failed: {ex.Message}", Severity.Error);
         }
     }
 
@@ -287,3 +303,4 @@ else
             : $"{action} submitted — Google is processing it, this may take a moment.";
     }
 }
+
