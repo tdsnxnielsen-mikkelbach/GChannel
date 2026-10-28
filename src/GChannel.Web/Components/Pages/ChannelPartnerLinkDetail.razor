@@ -1,10 +1,8 @@
 @page "/channel-partner-links/{Id}"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
-@inject IDialogService DialogService
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>@(_link?.PublicId ?? "Channel partner link") · GChannel</PageTitle>
@@ -16,384 +14,397 @@
 }
 else if (_link is null)
 {
-    <MudAlert Severity="Severity.Error">Channel partner link not found.</MudAlert>
-    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="/channel-partner-links" StartIcon="@Icons.Material.Filled.ArrowBack">
-        Back to links
-    </MudButton>
+    <Alert Color="Color.Danger" Visible>Channel partner link not found.</Alert>
+    <Button Type="ButtonType.Link" To="/channel-partner-links" Color="Color.Secondary" Outline Margin="Margin.Is4.FromTop">
+        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to links
+    </Button>
 }
 else
 {
-    <div class="d-flex justify-space-between align-center mb-4">
-        <div class="d-flex align-center" style="gap: 8px;">
-            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/channel-partner-links" />
-            <div>
-                <MudText Typo="Typo.h4">@(_link.ChannelPartner?.PrimaryDomain ?? _link.ResellerCloudIdentityId ?? _link.Id)</MudText>
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(_link.LinkState)">
-                    @(_link.LinkState ?? "—")
-                </MudChip>
-            </div>
-        </div>
-        <div class="d-flex gap-2">
-            <MudButton Variant="Variant.Outlined" Color="Color.Success"
-                       StartIcon="@Icons.Material.Filled.PlayArrow"
-                       OnClick="@(() => ChangeStateAsync("ACTIVE"))"
-                       Disabled="@(_busy || IsState("ACTIVE"))">Activate</MudButton>
-            <MudButton Variant="Variant.Outlined" Color="Color.Warning"
-                       StartIcon="@Icons.Material.Filled.PauseCircle"
-                       OnClick="@(() => ChangeStateAsync("SUSPENDED"))"
-                       Disabled="@(_busy || IsState("SUSPENDED"))">Suspend</MudButton>
-            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Percent"
-                       Href="@($"/channel-partner-links/{_link.Id}/repricing")">Repricing</MudButton>
-        </div>
-    </div>
+    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
+        <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2">
+            <Button Type="ButtonType.Link" To="/channel-partner-links" Color="Color.Light" aria-label="Back to links">
+                <Icon Name="@AppIcons.ArrowBack" />
+            </Button>
+            <Div>
+                <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">@(_link.ChannelPartner?.PrimaryDomain ?? _link.ResellerCloudIdentityId ?? _link.Id)</Heading>
+                <Badge Color="@StateColor(_link.LinkState)">@(_link.LinkState ?? "—")</Badge>
+            </Div>
+        </Div>
+        <Div Flex="Flex.Default" Gap="Gap.Is2">
+            <Button Color="Color.Success" Outline Clicked="@(() => ChangeStateAsync("ACTIVE"))" Disabled="@(_busy || IsState("ACTIVE"))">
+                <Icon Name="@AppIcons.PlayArrow" Class="me-1" /> Activate
+            </Button>
+            <Button Color="Color.Warning" Outline Clicked="@(() => ChangeStateAsync("SUSPENDED"))" Disabled="@(_busy || IsState("SUSPENDED"))">
+                <Icon Name="@AppIcons.PauseCircle" Class="me-1" /> Suspend
+            </Button>
+            <Button Type="ButtonType.Link" To="@($"/channel-partner-links/{_link.Id}/repricing")" Color="Color.Secondary" Outline>
+                <Icon Name="@AppIcons.Percent" Class="me-1" /> Repricing
+            </Button>
+        </Div>
+    </Div>
 
-    <MudGrid>
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Details</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
-                    <MudSimpleTable Dense="true" Elevation="0">
-                        <tbody>
-                            <tr><td><strong>Link id</strong></td><td>@_link.Id</td></tr>
-                            <tr><td><strong>Reseller Cloud Identity</strong></td><td>@(_link.ResellerCloudIdentityId ?? "—")</td></tr>
-                            <tr><td><strong>Public id</strong></td><td>@(_link.PublicId ?? "—")</td></tr>
-                            <tr><td><strong>State</strong></td><td>@(_link.LinkState ?? "—")</td></tr>
-                            <tr><td><strong>Created</strong></td><td>@(_link.CreateTime?.ToString("u") ?? "—")</td></tr>
-                            <tr><td><strong>Updated</strong></td><td>@(_link.UpdateTime?.ToString("u") ?? "—")</td></tr>
-                            <tr>
-                                <td><strong>Invitation</strong></td>
-                                <td>
+    <Row>
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Details</CardTitle></CardHeader>
+                <CardBody>
+                    <Table Narrow Borderless Margin="Margin.Is0">
+                        <TableBody>
+                            <TableRow><TableRowCell><strong>Link id</strong></TableRowCell><TableRowCell>@_link.Id</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>Reseller Cloud Identity</strong></TableRowCell><TableRowCell>@(_link.ResellerCloudIdentityId ?? "—")</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>Public id</strong></TableRowCell><TableRowCell>@(_link.PublicId ?? "—")</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>State</strong></TableRowCell><TableRowCell>@(_link.LinkState ?? "—")</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>Created</strong></TableRowCell><TableRowCell>@(_link.CreateTime?.ToString("u") ?? "—")</TableRowCell></TableRow>
+                            <TableRow><TableRowCell><strong>Updated</strong></TableRowCell><TableRowCell>@(_link.UpdateTime?.ToString("u") ?? "—")</TableRowCell></TableRow>
+                            <TableRow>
+                                <TableRowCell><strong>Invitation</strong></TableRowCell>
+                                <TableRowCell>
                                     @if (!string.IsNullOrEmpty(_link.InviteLinkUri))
                                     {
-                                        <MudLink Href="@_link.InviteLinkUri" Target="_blank">Open invitation</MudLink>
+                                        <Anchor To="@_link.InviteLinkUri" Target="Target.Blank">Open invitation</Anchor>
                                     }
                                     else
                                     {
                                         <span>—</span>
                                     }
-                                </td>
-                            </tr>
-                        </tbody>
-                    </MudSimpleTable>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
+                                </TableRowCell>
+                            </TableRow>
+                        </TableBody>
+                    </Table>
+                </CardBody>
+            </Card>
+        </Column>
 
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Partner Cloud Identity</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Partner Cloud Identity</CardTitle></CardHeader>
+                <CardBody>
                     @if (_link.ChannelPartner is { } ci)
                     {
-                        <MudSimpleTable Dense="true" Elevation="0">
-                            <tbody>
-                                <tr><td><strong>Type</strong></td><td>@(ci.CustomerType ?? "—")</td></tr>
-                                <tr><td><strong>Primary domain</strong></td><td>@(ci.PrimaryDomain ?? "—")</td></tr>
-                                <tr>
-                                    <td><strong>Domain verified</strong></td>
-                                    <td>
-                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                                 Color="@(ci.IsDomainVerified ? Color.Success : Color.Warning)">
-                                            @(ci.IsDomainVerified ? "Verified" : "Unverified")
-                                        </MudChip>
-                                    </td>
-                                </tr>
-                                <tr><td><strong>Alternate email</strong></td><td>@(ci.AlternateEmail ?? "—")</td></tr>
-                            </tbody>
-                        </MudSimpleTable>
+                        <Table Narrow Borderless Margin="Margin.Is0">
+                            <TableBody>
+                                <TableRow><TableRowCell><strong>Type</strong></TableRowCell><TableRowCell>@(ci.CustomerType ?? "—")</TableRowCell></TableRow>
+                                <TableRow><TableRowCell><strong>Primary domain</strong></TableRowCell><TableRowCell>@(ci.PrimaryDomain ?? "—")</TableRowCell></TableRow>
+                                <TableRow>
+                                    <TableRowCell><strong>Domain verified</strong></TableRowCell>
+                                    <TableRowCell>
+                                        <Badge Color="@(ci.IsDomainVerified ? Color.Success : Color.Warning)">@(ci.IsDomainVerified ? "Verified" : "Unverified")</Badge>
+                                    </TableRowCell>
+                                </TableRow>
+                                <TableRow><TableRowCell><strong>Alternate email</strong></TableRowCell><TableRowCell>@(ci.AlternateEmail ?? "—")</TableRowCell></TableRow>
+                            </TableBody>
+                        </Table>
                     }
                     else
                     {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
                             No Cloud Identity info yet (the partner may not have accepted the invitation).
-                        </MudText>
+                        </Paragraph>
                     }
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-    </MudGrid>
+                </CardBody>
+            </Card>
+        </Column>
+    </Row>
 
-    <MudCard Elevation="2" Class="mt-2 mb-2">
-        <MudCardHeader>
-            <CardHeaderContent>
-                <MudText Typo="Typo.h6">Estimated business value (monthly)</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Wholesale cost, repriced revenue and your margin across all of this reseller's
-                    customers' active subscriptions — estimated from list pricing, not invoiced amounts.
-                </MudText>
-            </CardHeaderContent>
-        </MudCardHeader>
-        <MudCardContent>
+    <Card Shadow="Shadow.Small" Margin="Margin.Is2.OnY">
+        <CardHeader>
+            <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Estimated business value (monthly)</CardTitle>
+            <Small TextColor="TextColor.Secondary">
+                Wholesale cost, repriced revenue and your margin across all of this reseller's
+                customers' active subscriptions — estimated from list pricing, not invoiced amounts.
+            </Small>
+        </CardHeader>
+        <CardBody>
             @if (_valueLoading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
             }
             else if (_value is { PricedEntitlementCount: > 0 } v)
             {
-                <MudGrid>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.overline" Color="Color.Secondary">Wholesale cost</MudText>
-                        <MudText Typo="Typo.h5">@FormatMoney(v.WholesaleMonthly, v.Currency)</MudText>
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.overline" Color="Color.Secondary">Repriced revenue</MudText>
-                        <MudText Typo="Typo.h5">@FormatMoney(v.RevenueMonthly, v.Currency)</MudText>
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.overline" Color="Color.Secondary">Margin</MudText>
-                        <MudText Typo="Typo.h5" Class="@(v.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@FormatMoney(v.MarginMonthly, v.Currency)</MudText>
-                    </MudItem>
-                </MudGrid>
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1 d-block">
+                <Row>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="text-uppercase">Wholesale cost</Small>
+                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@FormatMoney(v.WholesaleMonthly, v.Currency)</Heading>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="text-uppercase">Repriced revenue</Small>
+                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@FormatMoney(v.RevenueMonthly, v.Currency)</Heading>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="text-uppercase">Margin</Small>
+                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0" TextColor="@(v.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@FormatMoney(v.MarginMonthly, v.Currency)</Heading>
+                    </Column>
+                </Row>
+                <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is1.FromTop">
                     @v.CustomerCount customer(s) · @v.ActiveSeats active seat(s) · @v.PricedEntitlementCount priced subscription(s)@(v.UnpricedEntitlementCount > 0 ? $"; {v.UnpricedEntitlementCount} unpriced (excluded)" : "").@(v.MixedCurrencies ? $" Headline shows the dominant currency ({v.Currency}); every currency is broken out below." : "")
-                </MudText>
+                </Small>
                 @if (v.MixedCurrencies)
                 {
-                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-2">
-                        <thead>
-                            <tr>
-                                <th>Currency</th>
-                                <th style="text-align:right">Wholesale cost</th>
-                                <th style="text-align:right">Repriced revenue</th>
-                                <th style="text-align:right">Margin</th>
-                                <th style="text-align:right">Seats</th>
-                                <th style="text-align:right">Subscriptions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <Table Narrow Hoverable Borderless Margin="Margin.Is2.FromTop">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHeaderCell>Currency</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Wholesale cost</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Repriced revenue</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Margin</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Seats</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Subscriptions</TableHeaderCell>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
                             @foreach (var cur in v.Currencies)
                             {
-                                <tr>
-                                    <td>@cur.Currency</td>
-                                    <td style="text-align:right">@cur.WholesaleMonthly.ToString("N2")</td>
-                                    <td style="text-align:right">@cur.RevenueMonthly.ToString("N2")</td>
-                                    <td style="text-align:right" class="@(cur.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.MarginMonthly.ToString("N2")</td>
-                                    <td style="text-align:right">@cur.ActiveSeats</td>
-                                    <td style="text-align:right">@cur.PricedEntitlementCount</td>
-                                </tr>
+                                <TableRow>
+                                    <TableRowCell>@cur.Currency</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.WholesaleMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.RevenueMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(cur.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.MarginMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.ActiveSeats</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.PricedEntitlementCount</TableRowCell>
+                                </TableRow>
                             }
-                        </tbody>
-                    </MudSimpleTable>
+                        </TableBody>
+                    </Table>
                 }
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
                     No priced subscriptions for this reseller yet@(_value is { UnpricedEntitlementCount: > 0 } u ? $" ({u.UnpricedEntitlementCount} unpriced)" : "") — values appear once the background read-model has priced this reseller's entitlements.
-                </MudText>
+                </Paragraph>
             }
-        </MudCardContent>
-    </MudCard>
+        </CardBody>
+    </Card>
 
     @if (_spend is { Unconfigured: false })
     {
-        <MudCard Elevation="2" Class="mt-2">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Billed spend (actual)</MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Actual GCP/Marketplace spend across this partner's customers from the Cloud Billing → BigQuery
-                        cost export — real billed figures, not the list-price estimate above.
-                    </MudText>
-                </CardHeaderContent>
-                <CardHeaderActions>
+        <Card Shadow="Shadow.Small" Margin="Margin.Is2.FromTop">
+            <CardHeader>
+                <Div Flex="Flex.JustifyContent.Between.AlignItems.Start">
+                    <Div>
+                        <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Billed spend (actual)</CardTitle>
+                        <Small TextColor="TextColor.Secondary">
+                            Actual GCP/Marketplace spend across this partner's customers from the Cloud Billing → BigQuery
+                            cost export — real billed figures, not the list-price estimate above.
+                        </Small>
+                    </Div>
                     @if (_spend.AsOf is { } asOf)
                     {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mr-2">as of @asOf.LocalDateTime.ToString("g")</MudText>
+                        <Small TextColor="TextColor.Secondary" Class="text-nowrap">as of @asOf.LocalDateTime.ToString("g")</Small>
                     }
-                </CardHeaderActions>
-            </MudCardHeader>
-            <MudCardContent>
+                </Div>
+            </CardHeader>
+            <CardBody>
                 @if (_spendLoading)
                 {
-                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
                 }
                 else if (_spend.Months is { Count: > 0 })
                 {
-                    <MudSimpleTable Dense="true" Hover="true" Elevation="0">
-                        <thead>
-                            <tr>
-                                <th>Invoice month</th>
-                                <th style="text-align:right">Net cost</th>
-                                <th style="text-align:right">Gross</th>
-                                <th style="text-align:right">Credits</th>
-                                <th>Currency</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <Table Narrow Hoverable Borderless Margin="Margin.Is0">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHeaderCell>Invoice month</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Net cost</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Gross</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Credits</TableHeaderCell>
+                                <TableHeaderCell>Currency</TableHeaderCell>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
                             @foreach (var m in _spend.Months.OrderByDescending(m => m.InvoiceMonth).ThenBy(m => m.Currency))
                             {
-                                <tr>
-                                    <td>@FormatMonth(m.InvoiceMonth)</td>
-                                    <td style="text-align:right">@m.Cost.ToString("N2")</td>
-                                    <td style="text-align:right">@m.GrossCost.ToString("N2")</td>
-                                    <td style="text-align:right">@m.Credits.ToString("N2")</td>
-                                    <td>@m.Currency</td>
-                                </tr>
+                                <TableRow>
+                                    <TableRowCell>@FormatMonth(m.InvoiceMonth)</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@m.Cost.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@m.GrossCost.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@m.Credits.ToString("N2")</TableRowCell>
+                                    <TableRowCell>@m.Currency</TableRowCell>
+                                </TableRow>
                             }
-                        </tbody>
-                    </MudSimpleTable>
+                        </TableBody>
+                    </Table>
                 }
                 else
                 {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
                         No billed spend recorded for this partner's customers yet.
-                    </MudText>
+                    </Paragraph>
                 }
-            </MudCardContent>
-        </MudCard>
+            </CardBody>
+        </Card>
     }
 
-    <MudCard Elevation="2" Class="mt-2">
-        <MudCardHeader>
-            <CardHeaderContent>
-                <MudText Typo="Typo.h6">Customers owned by this partner</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Customers whose <code>ChannelPartnerId</code> resolves to this link.
-                </MudText>
-            </CardHeaderContent>
-            <CardHeaderActions>
-                <GuidedWalkthrough Id="partner-customers" Steps="_walkthrough" Class="mr-2" />
-                <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="mr-2"
-                           StartIcon="@Icons.Material.Filled.CloudDownload"
-                           OnClick="OpenImportDialog" Disabled="@_busy" data-walkthrough="pc-import">Import customer</MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.PersonAdd"
-                           OnClick="AddCustomer" Disabled="@_busy" data-walkthrough="pc-add">Add customer</MudButton>
-            </CardHeaderActions>
-        </MudCardHeader>
-        <MudCardContent>
+    <Card Shadow="Shadow.Small" Margin="Margin.Is2.FromTop">
+        <CardHeader>
+            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Gap="Gap.Is2" Class="flex-wrap">
+                <Div>
+                    <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Customers owned by this partner</CardTitle>
+                    <Small TextColor="TextColor.Secondary">Customers whose <code>ChannelPartnerId</code> resolves to this link.</Small>
+                </Div>
+                <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2">
+                    <GuidedWalkthrough Id="partner-customers" Steps="_walkthrough" />
+                    <Button Color="Color.Secondary" Outline Size="Size.Small" Clicked="OpenImportDialog" Disabled="@_busy" data-walkthrough="pc-import">
+                        <Icon Name="@AppIcons.CloudDownload" Class="me-1" /> Import customer
+                    </Button>
+                    <Button Color="Color.Primary" Size="Size.Small" Clicked="AddCustomer" Disabled="@_busy" data-walkthrough="pc-add">
+                        <Icon Name="@AppIcons.PersonAdd" Class="me-1" /> Add customer
+                    </Button>
+                </Div>
+            </Div>
+        </CardHeader>
+        <CardBody>
             @if (_customersLoading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
             }
             else if (_customers is { Count: > 0 })
             {
-                <MudTable Items="_customers" Hover="true" Elevation="0" Dense="true" data-walkthrough="pc-table">
-                    <HeaderContent>
-                        <MudTh>Organization</MudTh>
-                        <MudTh>Domain</MudTh>
-                        <MudTh>Subscriptions</MudTh>
-                        <MudTh>Renewal</MudTh>
-                        <MudTh>Auto-renew</MudTh>
-                        <MudTh Style="text-align:right">Est. monthly</MudTh>
-                        <MudTh>Created</MudTh>
-                        <MudTh Style="text-align:right">Actions</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        @{ var est = EstateFor(context.Id); }
-                        <MudTd DataLabel="Organization">@(context.OrgDisplayName ?? context.Id)</MudTd>
-                        <MudTd DataLabel="Domain">@context.Domain</MudTd>
-                        <MudTd DataLabel="Subscriptions">
-                            @if (est is not null)
-                            {
-                                <span>@est.ActiveSubscriptions Active</span>
-                                @if (est.SuspendedSubscriptions > 0)
-                                {
-                                    <span class="mud-text-secondary"> · @est.SuspendedSubscriptions Suspended</span>
-                                }
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Renewal">
-                            @if (est?.NextRenewalUtc is { } r)
-                            {
-                                <MudTooltip Text="@(est.NextRenewalOfferName ?? "Next commitment renewal")">
-                                    <div>
-                                        <div>@r.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)</div>
-                                        @if (!string.IsNullOrEmpty(est.NextRenewalOfferName))
+                <Table Narrow Hoverable Responsive Margin="Margin.Is0" data-walkthrough="pc-table">
+                    <TableHeader>
+                        <TableRow>
+                            <TableHeaderCell>Organization</TableHeaderCell>
+                            <TableHeaderCell>Domain</TableHeaderCell>
+                            <TableHeaderCell>Subscriptions</TableHeaderCell>
+                            <TableHeaderCell>Renewal</TableHeaderCell>
+                            <TableHeaderCell>Auto-renew</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Est. monthly</TableHeaderCell>
+                            <TableHeaderCell>Created</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Actions</TableHeaderCell>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        @foreach (var customer in _customers)
+                        {
+                            var est = EstateFor(customer.Id);
+                            <TableRow>
+                                <TableRowCell>@(customer.OrgDisplayName ?? customer.Id)</TableRowCell>
+                                <TableRowCell>@customer.Domain</TableRowCell>
+                                <TableRowCell>
+                                    @if (est is not null)
+                                    {
+                                        <span>@est.ActiveSubscriptions Active</span>
+                                        @if (est.SuspendedSubscriptions > 0)
                                         {
-                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@est.NextRenewalOfferName</MudText>
+                                            <span class="text-body-secondary"> · @est.SuspendedSubscriptions Suspended</span>
                                         }
-                                    </div>
-                                </MudTooltip>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Auto-renew">
-                            @if (est?.NextRenewalAutoRenew is true)
-                            {
-                                <MudTooltip Text="Auto-renewal is on for the next renewing subscription.">
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text"
-                                             Icon="@Icons.Material.Filled.Autorenew">On</MudChip>
-                                </MudTooltip>
-                            }
-                            else if (est?.NextRenewalAutoRenew is false)
-                            {
-                                <MudTooltip Text="Auto-renewal is off — the next renewing subscription will not renew automatically.">
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text"
-                                             Icon="@Icons.Material.Filled.Block">Off</MudChip>
-                                </MudTooltip>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Est. monthly" Style="text-align:right">
-                            @if (est?.EstimatedMonthlyTotal is { } v)
-                            {
-                                <MudTooltip Text="Estimated from offer list pricing with repricing applied — not invoiced.">
-                                    <span>@FormatMoney(v, est.Currency)</span>
-                                </MudTooltip>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-                        <MudTd DataLabel="Actions" Style="text-align:right">
-                            <MudTooltip Text="View customer">
-                                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                                               Href="@($"/customers/{context.Id}")" />
-                            </MudTooltip>
-                            <MudTooltip Text="Edit customer">
-                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                               Href="@($"/customers/edit/{context.Id}?linkId={Id}")" />
-                            </MudTooltip>
-                            <MudTooltip Text="Delete customer">
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
-                                               OnClick="@(() => DeleteCustomerAsync(context))" Disabled="@_busy" />
-                            </MudTooltip>
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell>
+                                    @if (est?.NextRenewalUtc is { } r)
+                                    {
+                                        <Tooltip Text="@(est.NextRenewalOfferName ?? "Next commitment renewal")" Inline>
+                                            <div>
+                                                <div>@r.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)</div>
+                                                @if (!string.IsNullOrEmpty(est.NextRenewalOfferName))
+                                                {
+                                                    <Small TextColor="TextColor.Secondary">@est.NextRenewalOfferName</Small>
+                                                }
+                                            </div>
+                                        </Tooltip>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell>
+                                    @if (est?.NextRenewalAutoRenew is true)
+                                    {
+                                        <Tooltip Text="Auto-renewal is on for the next renewing subscription." Inline>
+                                            <Badge Color="Color.Success"><Icon Name="@AppIcons.Autorenew" Class="me-1" />On</Badge>
+                                        </Tooltip>
+                                    }
+                                    else if (est?.NextRenewalAutoRenew is false)
+                                    {
+                                        <Tooltip Text="Auto-renewal is off — the next renewing subscription will not renew automatically." Inline>
+                                            <Badge Color="Color.Warning"><Icon Name="@AppIcons.Block" Class="me-1" />Off</Badge>
+                                        </Tooltip>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">
+                                    @if (est?.EstimatedMonthlyTotal is { } v)
+                                    {
+                                        <Tooltip Text="Estimated from offer list pricing with repricing applied — not invoiced." Inline>
+                                            <span>@FormatMoney(v, est.Currency)</span>
+                                        </Tooltip>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell>@(customer.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">
+                                    <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is1" Class="text-nowrap">
+                                        <Tooltip Text="View customer" Inline>
+                                            <Button Type="ButtonType.Link" To="@($"/customers/{customer.Id}")" Size="Size.Small" Color="Color.Light" aria-label="View customer"><Icon Name="@AppIcons.Visibility" /></Button>
+                                        </Tooltip>
+                                        <Tooltip Text="Edit customer" Inline>
+                                            <Button Type="ButtonType.Link" To="@($"/customers/edit/{customer.Id}?linkId={Id}")" Size="Size.Small" Color="Color.Light" aria-label="Edit customer"><Icon Name="@AppIcons.Edit" /></Button>
+                                        </Tooltip>
+                                        <Tooltip Text="Delete customer" Inline>
+                                            <Button Size="Size.Small" Color="Color.Danger" Outline Clicked="@(() => DeleteCustomerAsync(customer))" Disabled="@_busy" aria-label="Delete customer"><Icon Name="@AppIcons.Delete" /></Button>
+                                        </Tooltip>
+                                    </Div>
+                                </TableRowCell>
+                            </TableRow>
+                        }
+                    </TableBody>
+                </Table>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No customers owned by this partner.</MudText>
+                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No customers owned by this partner.</Paragraph>
             }
-        </MudCardContent>
-    </MudCard>
+        </CardBody>
+    </Card>
 
-    <MudDialog @bind-Visible="_importOpen" Options="_importDialogOptions">
-        <TitleContent>
-            <MudText Typo="Typo.h6">Import existing customer</MudText>
-        </TitleContent>
-        <DialogContent>
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-                Import a customer that already has a Cloud Identity into this partner. Provide one
-                identifier (domain, Cloud Identity id, or primary admin email).
-            </MudText>
-            <MudTextField @bind-Value="_import.Domain" Label="Primary domain" HelperText="e.g. contoso.com" Class="mb-3" />
-            <MudTextField @bind-Value="_import.CloudIdentityId" Label="Cloud Identity id" Class="mb-3" />
-            <MudTextField @bind-Value="_import.PrimaryAdminEmail" Label="Primary admin email" InputType="InputType.Email" Class="mb-3" />
-            <MudCheckBox @bind-Value="_import.OverwriteIfExists" Label="Overwrite if the customer is already imported" />
-        </DialogContent>
-        <DialogActions>
-            <MudButton OnClick="@(() => _importOpen = false)" Disabled="@_busy">Cancel</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ImportAsync" Disabled="@_busy">
-                @(_busy ? "Importing…" : "Import")
-            </MudButton>
-        </DialogActions>
-    </MudDialog>
+    <Modal @bind-Visible="_importOpen">
+        <ModalContent Centered>
+            <ModalHeader>
+                <ModalTitle>Import existing customer</ModalTitle>
+                <CloseButton />
+            </ModalHeader>
+            <ModalBody>
+                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
+                    Import a customer that already has a Cloud Identity into this partner. Provide one
+                    identifier (domain, Cloud Identity id, or primary admin email).
+                </Paragraph>
+                <Field>
+                    <FieldLabel>Primary domain</FieldLabel>
+                    <TextInput @bind-Value="_import.Domain" />
+                    <FieldHelp>e.g. contoso.com</FieldHelp>
+                </Field>
+                <Field>
+                    <FieldLabel>Cloud Identity id</FieldLabel>
+                    <TextInput @bind-Value="_import.CloudIdentityId" />
+                </Field>
+                <Field>
+                    <FieldLabel>Primary admin email</FieldLabel>
+                    <TextInput @bind-Value="_import.PrimaryAdminEmail" Role="TextRole.Email" />
+                </Field>
+                <Field>
+                    <Check TValue="bool" @bind-Value="_import.OverwriteIfExists">Overwrite if the customer is already imported</Check>
+                </Field>
+            </ModalBody>
+            <ModalFooter>
+                <Button Color="Color.Secondary" Clicked="@(() => _importOpen = false)" Disabled="@_busy">Cancel</Button>
+                <Button Color="Color.Primary" Clicked="ImportAsync" Disabled="@_busy" Loading="@_busy">
+                    @(_busy ? "Importing…" : "Import")
+                </Button>
+            </ModalFooter>
+        </ModalContent>
+    </Modal>
 }
 
 @code {
@@ -420,7 +431,6 @@ else
 
     private bool _importOpen;
     private readonly ImportCustomerModel _import = new();
-    private static readonly DialogOptions _importDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -440,7 +450,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load channel partner link: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load channel partner link: {ex.Message}", Severity.Error);
             _link = null;
         }
         finally
@@ -483,7 +493,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load reseller value: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load reseller value: {ex.Message}", Severity.Error);
             _value = null;
         }
         finally
@@ -503,7 +513,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load partner customers: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load partner customers: {ex.Message}", Severity.Error);
             _customers = [];
         }
         finally
@@ -577,7 +587,7 @@ else
             && string.IsNullOrWhiteSpace(_import.CloudIdentityId)
             && string.IsNullOrWhiteSpace(_import.PrimaryAdminEmail))
         {
-            Snackbar.Add("Provide a domain, Cloud Identity id, or primary admin email to import.", Severity.Warning);
+            await Snackbar.Add("Provide a domain, Cloud Identity id, or primary admin email to import.", Severity.Warning);
             return;
         }
 
@@ -592,13 +602,13 @@ else
                 OverwriteIfExists = _import.OverwriteIfExists
             });
 
-            Snackbar.Add($"Imported {imported?.OrgDisplayName ?? imported?.Domain ?? "customer"}.", Severity.Success);
+            await Snackbar.Add($"Imported {imported?.OrgDisplayName ?? imported?.Domain ?? "customer"}.", Severity.Success);
             _importOpen = false;
             await LoadCustomersAsync();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to import customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to import customer: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -608,11 +618,11 @@ else
 
     private async Task DeleteCustomerAsync(Customer customer)
     {
-        var confirmed = await DialogService.ShowMessageBoxAsync(
+        var confirmed = await Snackbar.ConfirmAsync(
             "Delete customer",
             $"Delete {customer.OrgDisplayName ?? customer.Domain ?? customer.Id}? This cannot be undone.",
             yesText: "Delete", cancelText: "Cancel");
-        if (confirmed != true)
+        if (!confirmed)
         {
             return;
         }
@@ -621,12 +631,12 @@ else
         try
         {
             await Api.DeleteChannelPartnerCustomerAsync(Id, customer.Id);
-            Snackbar.Add("Customer deleted.", Severity.Success);
+            await Snackbar.Add("Customer deleted.", Severity.Success);
             await LoadCustomersAsync();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to delete customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to delete customer: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -664,11 +674,11 @@ else
             {
                 _link = updated;
             }
-            Snackbar.Add($"Link set to {state}.", Severity.Success);
+            await Snackbar.Add($"Link set to {state}.", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to update link state: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to update link state: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -681,8 +691,8 @@ else
         "ACTIVE" => Color.Success,
         "INVITED" => Color.Info,
         "SUSPENDED" => Color.Warning,
-        "REVOKED" => Color.Error,
-        _ => Color.Default
+        "REVOKED" => Color.Danger,
+        _ => Color.Secondary
     };
 
     private static string FormatMonth(string invoiceMonth) =>
@@ -691,3 +701,4 @@ else
             ? d.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)
             : invoiceMonth;
 }
+

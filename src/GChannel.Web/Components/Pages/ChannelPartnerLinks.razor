@@ -1,112 +1,127 @@
 @page "/channel-partner-links"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
+@using Blazorise.DataGrid
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Channel partner links · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-4">
-    <MudText Typo="Typo.h4">Channel partner links</MudText>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.AddLink"
-               Href="/channel-partner-links/new">
-        Invite partner
-    </MudButton>
-</div>
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
+    <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Channel partner links</Heading>
+    <Button Type="ButtonType.Link" To="/channel-partner-links/new" Color="Color.Primary">
+        <Icon Name="@AppIcons.AddLink" Class="me-1" /> Invite partner
+    </Button>
+</Div>
 
-<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
     Downstream resellers (channel partners) linked to your distributor account. Paging, sorting and
     search run server-side against the synced read-model. Open a link to view its details and customers.
-</MudText>
+</Paragraph>
 
-<div class="d-flex justify-space-between align-center mb-2">
-    <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
-                  OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search domain, cloud id, link id…"
-                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                  Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:360px" />
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+    <Addons Style="max-width:360px">
+        <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Search" /></AddonLabel></Addon>
+        <Addon AddonType="AddonType.Body">
+            <TextInput Value="@_search" ValueChanged="OnSearchChanged" Debounce="true" DebounceInterval="400"
+                       Placeholder="Search domain, cloud id, link id…" />
+        </Addon>
+    </Addons>
     <AsOfBadge AsOf="_asOf" />
-</div>
+</Div>
 
-<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="false" RowsPerPage="25">
-    <HeaderContent>
-        <MudTh><MudTableSortLabel SortLabel="domain" T="EstateReseller">Reseller Cloud Identity</MudTableSortLabel></MudTh>
-        <MudTh>Customers</MudTh>
-        <MudTh>Billed (last month)</MudTh>
-        <MudTh><MudTableSortLabel SortLabel="state" T="EstateReseller">State</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel SortLabel="created" T="EstateReseller">Created</MudTableSortLabel></MudTh>
-        <MudTh Style="text-align:right">Actions</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Reseller Cloud Identity">@(context.PrimaryDomain ?? context.ResellerCloudId ?? context.LinkId)</MudTd>
-        <MudTd DataLabel="Customers">@context.CustomerCount</MudTd>
-        <MudTd DataLabel="Billed (last month)">
-            @if (BilledLabel(context.LinkId) is { } billed)
-            {
-                <MudTooltip Text="Actual billed GCP/Marketplace spend across this reseller's customers (BigQuery cost export).">
-                    <span>@billed</span>
-                </MudTooltip>
-            }
-            else
-            {
-                <span>—</span>
-            }
-        </MudTd>
-        <MudTd DataLabel="State">
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.LinkState)">
-                @(string.IsNullOrEmpty(context.LinkState) ? "—" : context.LinkState)
-            </MudChip>
-            @if (!string.IsNullOrEmpty(context.SyncError))
-            {
-                <MudTooltip Text="@context.SyncError">
-                    <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
-                </MudTooltip>
-            }
-        </MudTd>
-        <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-        <MudTd DataLabel="Actions" Style="text-align:right">
-            <MudTooltip Text="Refresh now">
-                <MudIconButton Icon="@Icons.Material.Filled.Sync" Size="Size.Small"
-                               OnClick="@(() => ResyncAsync(context))" />
-            </MudTooltip>
-            <MudTooltip Text="View">
-                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                               Href="@($"/channel-partner-links/{context.LinkId}")" />
-            </MudTooltip>
-        </MudTd>
-    </RowTemplate>
-    <NoRecordsContent>
-        <MudAlert Severity="Severity.Info">No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.</MudAlert>
-    </NoRecordsContent>
-    <PagerContent>
-        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" />
-    </PagerContent>
-</MudTable>
+<Card Shadow="Shadow.Small">
+    <DataGrid @ref="_grid" TItem="EstateReseller" Data="_items" ReadData="OnReadData" TotalItems="_total"
+              ShowPager ShowPageSizes PageSize="25" PageSizes="_pageSizes" Hoverable Responsive Sortable SortMode="DataGridSortMode.Single">
+        <DataGridColumns>
+            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.PrimaryDomain)" SortField="domain" Caption="Reseller Cloud Identity">
+                <DisplayTemplate>@(context.Item.PrimaryDomain ?? context.Item.ResellerCloudId ?? context.Item.LinkId)</DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.CustomerCount)" Caption="Customers" Sortable="false" />
+            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.LinkId)" Caption="Billed (last month)" Sortable="false">
+                <DisplayTemplate>
+                    @if (BilledLabel(context.Item.LinkId) is { } billed)
+                    {
+                        <Tooltip Text="Actual billed GCP/Marketplace spend across this reseller's customers (BigQuery cost export)." Inline>
+                            <span>@billed</span>
+                        </Tooltip>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.LinkState)" SortField="state" Caption="State">
+                <DisplayTemplate>
+                    <Badge Color="@StateColor(context.Item.LinkState)">@(string.IsNullOrEmpty(context.Item.LinkState) ? "—" : context.Item.LinkState)</Badge>
+                    @if (!string.IsNullOrEmpty(context.Item.SyncError))
+                    {
+                        <Tooltip Text="@context.Item.SyncError" Multiline Inline>
+                            <Icon Name="@AppIcons.Warning" TextColor="TextColor.Warning" Class="ms-1" />
+                        </Tooltip>
+                    }
+                </DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.CreateTime)" SortField="created" Caption="Created">
+                <DisplayTemplate>@(context.Item.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.ResellerCloudId)" Caption="Actions" Sortable="false" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End">
+                <DisplayTemplate>
+                    <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is1" Class="text-nowrap">
+                        <Tooltip Text="Refresh now" Inline>
+                            <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => ResyncAsync(context.Item))" aria-label="Refresh now"><Icon Name="@AppIcons.Sync" /></Button>
+                        </Tooltip>
+                        <Tooltip Text="View" Inline>
+                            <Button Type="ButtonType.Link" To="@($"/channel-partner-links/{context.Item.LinkId}")" Size="Size.Small" Color="Color.Light" aria-label="View"><Icon Name="@AppIcons.Visibility" /></Button>
+                        </Tooltip>
+                    </Div>
+                </DisplayTemplate>
+            </DataGridColumn>
+        </DataGridColumns>
+        <EmptyTemplate>
+            <Alert Color="Color.Info" Visible Margin="Margin.Is0">No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.</Alert>
+        </EmptyTemplate>
+        <LoadingTemplate>
+            <LoadingPanel Title="Loading channel partner links…" Hint="Querying the synced read-model." />
+        </LoadingTemplate>
+    </DataGrid>
+</Card>
 
 @code {
-    private MudTable<EstateReseller>? _table;
+    private static readonly int[] _pageSizes = [25, 50, 100];
+    private DataGrid<EstateReseller>? _grid;
+    private List<EstateReseller> _items = [];
+    private int _total;
     private string? _search;
     private DateTimeOffset? _asOf;
 
-    private async Task<TableData<EstateReseller>> LoadServerData(TableState state, CancellationToken token)
+    // Server-side read: Blazorise pages are 1-based, the API's are 0-based; sort keys come from SortField.
+    private async Task OnReadData(DataGridReadDataEventArgs<EstateReseller> e)
     {
+        if (e.CancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var sortColumn = e.Columns.FirstOrDefault(c => c.SortDirection != SortDirection.Default);
         try
         {
-            await EnsureBilledAsync(token);
+            await EnsureBilledAsync(e.CancellationToken);
             var result = await Api.ListEstateResellersAsync(
-                state.Page, state.PageSize, state.SortLabel,
-                state.SortDirection == SortDirection.Descending,
-                _search, state: null, token);
+                e.Page - 1, e.PageSize, sortColumn?.SortField,
+                sortColumn?.SortDirection == SortDirection.Descending,
+                _search, state: null, e.CancellationToken);
 
+            _items = result?.Items?.ToList() ?? [];
+            _total = result?.Total ?? 0;
             _asOf = result?.AsOf;
-            await InvokeAsync(StateHasChanged); // re-render the parent so the As-of badge reflects the loaded data
-            return new TableData<EstateReseller> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load channel partner links: {ex.Message}", Severity.Error);
-            return new TableData<EstateReseller> { Items = [], TotalItems = 0 };
+            await Snackbar.Add($"Failed to load channel partner links: {ex.Message}", Severity.Error);
+            _items = [];
+            _total = 0;
         }
     }
 
@@ -140,18 +155,22 @@
             ? $"{v.Currency} {v.Cost.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}"
             : null;
 
-    private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
+    private async Task OnSearchChanged(string value)
+    {
+        _search = value;
+        await (_grid?.Reload() ?? Task.CompletedTask);
+    }
 
     private async Task ResyncAsync(EstateReseller link)
     {
         try
         {
             await Api.ResyncLinkAsync(link.LinkId);
-            Snackbar.Add("Queued for refresh — data updates on the next sync cycle.", Severity.Info);
+            await Snackbar.Add("Queued for refresh — data updates on the next sync cycle.", Severity.Info);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to queue refresh: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to queue refresh: {ex.Message}", Severity.Error);
         }
     }
 
@@ -160,7 +179,7 @@
         "ACTIVE" => Color.Success,
         "INVITED" => Color.Info,
         "SUSPENDED" => Color.Warning,
-        "REVOKED" => Color.Error,
-        _ => Color.Default
+        "REVOKED" => Color.Danger,
+        _ => Color.Secondary
     };
 }

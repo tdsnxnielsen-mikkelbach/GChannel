@@ -1,70 +1,72 @@
 @page "/channel-partner-links/new"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Invite channel partner · GChannel</PageTitle>
 
-<div class="d-flex align-center mb-4" style="gap: 8px;">
-    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/channel-partner-links" />
-    <MudText Typo="Typo.h4">Invite channel partner</MudText>
-</div>
+<Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Margin="Margin.Is4.FromBottom">
+    <Button Type="ButtonType.Link" To="/channel-partner-links" Color="Color.Light" aria-label="Back to channel partner links">
+        <Icon Name="@AppIcons.ArrowBack" />
+    </Button>
+    <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Invite channel partner</Heading>
+</Div>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
     Link a downstream reseller to your distributor account. Enter the reseller's Cloud Identity ID;
     the link starts in the <strong>INVITED</strong> state and the partner accepts it via the
     invitation link shown afterwards.
-</MudText>
+</Paragraph>
 
-<MudPaper Class="pa-6" Elevation="2" Style="max-width: 640px;">
-    <MudForm @ref="_form">
-        <MudTextField @bind-Value="_resellerCloudIdentityId"
-                      Label="Reseller Cloud Identity ID"
-                      Required="true" RequiredError="A reseller Cloud Identity ID is required."
-                      HelperText="The downstream reseller's Cloud Identity customer ID."
-                      Variant="Variant.Outlined" Class="mb-4" />
+<Card Shadow="Shadow.Small" Style="max-width: 640px;">
+    <CardBody Padding="Padding.Is4">
+        <Validations @ref="_validations" Mode="ValidationMode.Manual">
+            <Validation Validator="ValidationRule.IsNotEmpty">
+                <Field>
+                    <FieldLabel>Reseller Cloud Identity ID</FieldLabel>
+                    <TextInput @bind-Value="_resellerCloudIdentityId">
+                        <Feedback><ValidationError>A reseller Cloud Identity ID is required.</ValidationError></Feedback>
+                    </TextInput>
+                    <FieldHelp>The downstream reseller's Cloud Identity customer ID.</FieldHelp>
+                </Field>
+            </Validation>
 
-        <MudTextField @bind-Value="_resellerDomain"
-                      Label="Reseller domain (optional)"
-                      HelperText="Recorded so a later Cloud Identity check on this domain can find this invitation."
-                      Variant="Variant.Outlined" Class="mb-4" />
+            <Field>
+                <FieldLabel>Reseller domain (optional)</FieldLabel>
+                <TextInput @bind-Value="_resellerDomain" />
+                <FieldHelp>Recorded so a later Cloud Identity check on this domain can find this invitation.</FieldHelp>
+            </Field>
 
-        <div class="d-flex gap-2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.AddLink"
-                       OnClick="SubmitAsync" Disabled="_submitting">
-                @(_submitting ? "Inviting…" : "Invite partner")
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" Href="/channel-partner-links" Disabled="_submitting">
-                Cancel
-            </MudButton>
-        </div>
-    </MudForm>
-</MudPaper>
+            <Div Flex="Flex.Default" Gap="Gap.Is2">
+                <Button Color="Color.Primary" Clicked="SubmitAsync" Disabled="_submitting" Loading="_submitting">
+                    <Icon Name="@AppIcons.AddLink" Class="me-1" /> @(_submitting ? "Inviting…" : "Invite partner")
+                </Button>
+                <Button Type="ButtonType.Link" To="/channel-partner-links" Color="Color.Secondary" Outline Disabled="_submitting">
+                    Cancel
+                </Button>
+            </Div>
+        </Validations>
+    </CardBody>
+</Card>
 
 @code {
-    private MudForm? _form;
+    private Validations? _validations;
     private string _resellerCloudIdentityId = string.Empty;
     private string _resellerDomain = string.Empty;
     private bool _submitting;
 
     private async Task SubmitAsync()
     {
-        if (_form is not null)
+        if (_validations is not null && !await _validations.ValidateAll())
         {
-            await _form.ValidateAsync();
-            if (!_form.IsValid)
-            {
-                return;
-            }
+            return;
         }
 
         if (string.IsNullOrWhiteSpace(_resellerCloudIdentityId))
         {
-            Snackbar.Add("A reseller Cloud Identity ID is required.", Severity.Warning);
+            await Snackbar.Add("A reseller Cloud Identity ID is required.", Severity.Warning);
             return;
         }
 
@@ -77,7 +79,7 @@
                 Domain = string.IsNullOrWhiteSpace(_resellerDomain) ? null : _resellerDomain.Trim()
             });
 
-            Snackbar.Add("Channel partner link created.", Severity.Success);
+            await Snackbar.Add("Channel partner link created.", Severity.Success);
             if (created is not null)
             {
                 Nav.NavigateTo($"/channel-partner-links/{created.Id}");
@@ -89,7 +91,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to create channel partner link: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to create channel partner link: {ex.Message}", Severity.Error);
         }
         finally
         {
