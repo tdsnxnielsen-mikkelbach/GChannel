@@ -11,6 +11,7 @@
          Microsoft.Extensions.* abstractions without per-package version pinning. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
 
+    <PackageReference Include="Aspire.Azure.Npgsql" Version="13.5.0" />
     <PackageReference Include="Google.Apis.Admin.Directory.directory_v1" Version="1.76.0.4274" />
     <PackageReference Include="Google.Apis.Admin.Reports.reports_v1" Version="1.77.0.4289" />
     <PackageReference Include="Google.Apis.Cloudchannel.v1" Version="1.75.0.4176" />
@@ -18,6 +19,9 @@
     <PackageReference Include="Google.Cloud.Billing.Budgets.V1" Version="2.7.0" />
     <PackageReference Include="Google.Cloud.Billing.V1" Version="3.10.0" />
     <PackageReference Include="Google.Cloud.PubSub.V1" Version="3.36.0" />
+    <PackageReference Include="Marten" Version="9.54.2" />
+    <PackageReference Include="WolverineFx.AzureServiceBus" Version="6.56.0" />
+    <PackageReference Include="WolverineFx.Marten" Version="6.56.0" />
   </ItemGroup>
 
   <ItemGroup>

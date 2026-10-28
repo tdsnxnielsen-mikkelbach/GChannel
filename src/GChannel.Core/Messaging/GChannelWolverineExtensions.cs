@@ -1,0 +1,82 @@
+using JasperFx.Core;
+using Wolverine;
+using Wolverine.AzureServiceBus;
+using Wolverine.ErrorHandling;
+
+namespace GChannel.Core.Messaging;
+
+/// <summary>Which host is being configured — decides which Service Bus entities are listened to.</summary>
+public enum MessagingRole
+{
+    Api,
+    Worker,
+}
+
+public static class GChannelWolverineExtensions
+{
+    /// <summary>
+    /// Shared Wolverine configuration for both hosts: the Azure Service Bus transport over the Aspire
+    /// connection (<c>ConnectionStrings:messaging</c> — the emulator's connection string locally, the
+    /// namespace + managed identity in Azure), durable inbox/outbox backed by the Marten/PostgreSQL message
+    /// store, automatic Marten transactions around handlers, message routing to the declared topology and
+    /// the retry / dead-letter policies for Channel API throttling.
+    /// </summary>
+    public static WolverineOptions ConfigureGChannelMessaging(this WolverineOptions opts, string serviceName, MessagingRole role)
+    {
+        opts.ServiceName = serviceName;
+
+        // The topology is declared in the AppHost (the emulator has no management plane), so no AutoProvision.
+        opts.UseAzureServiceBusUsingNamedConnection(MessagingTopology.ConnectionName);
+
+        // Durability: every incoming message is written to the PostgreSQL inbox and acknowledged on the
+        // broker right away (long-running job ticks are not bound by the 5-minute Service Bus lock), and
+        // every outgoing message goes through the outbox so it commits with the handler's Marten session.
+        opts.Policies.UseDurableInboxOnAllListeners();
+        opts.Policies.UseDurableOutboxOnAllSendingEndpoints();
+        opts.Policies.UseDurableLocalQueues();
+        opts.Policies.AutoApplyTransactions();
+
+        // Channel API quota (429) → back off generously before giving up to the dead-letter queue.
+        opts.Policies.OnException<global::Google.GoogleApiException>(ex => ex.HttpStatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            .RetryWithCooldown(30.Seconds(), 60.Seconds(), 120.Seconds())
+            .Then.MoveToErrorQueue();
+        opts.Policies.OnAnyException()
+            .RetryWithCooldown(2.Seconds(), 10.Seconds(), 30.Seconds())
+            .Then.MoveToErrorQueue();
+
+        // ---- Routing -------------------------------------------------------------------------------
+        opts.PublishMessage<CustomerChanged>().ToAzureServiceBusTopic(MessagingTopology.EstateEventsTopic);
+        opts.PublishMessage<EntitlementChanged>().ToAzureServiceBusTopic(MessagingTopology.EstateEventsTopic);
+        opts.PublishMessage<ChannelNotificationArrived>().ToAzureServiceBusTopic(MessagingTopology.EstateEventsTopic);
+        opts.PublishMessage<OperationSubmitted>().ToAzureServiceBusTopic(MessagingTopology.EstateEventsTopic);
+        opts.PublishMessage<CustomerReadModelUpdated>().ToAzureServiceBusTopic(MessagingTopology.EstateEventsTopic);
+
+        opts.PublishMessage<ProjectCustomer>().ToAzureServiceBusQueue(MessagingTopology.EstateSyncQueue);
+
+        opts.PublishMessage<RunEstateSyncCycle>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
+        opts.PublishMessage<RefreshDashboardSnapshot>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
+        opts.PublishMessage<RunBillingSyncCycle>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
+        opts.PublishMessage<RunBillingPostureScan>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
+
+        opts.PublishMessage<CheckChannelOperation>().ToAzureServiceBusQueue(MessagingTopology.OperationsQueue);
+
+        // ---- Listening -----------------------------------------------------------------------------
+        switch (role)
+        {
+            case MessagingRole.Worker:
+                opts.ListenToAzureServiceBusSubscription(MessagingTopology.WorkerEstateSubscription)
+                    .FromTopic(MessagingTopology.EstateEventsTopic);
+                // One message at a time: the targeted projections call the paced Channel API.
+                opts.ListenToAzureServiceBusQueue(MessagingTopology.EstateSyncQueue).Sequential();
+                opts.ListenToAzureServiceBusQueue(MessagingTopology.JobsQueue).Sequential();
+                opts.ListenToAzureServiceBusQueue(MessagingTopology.OperationsQueue);
+                break;
+            case MessagingRole.Api:
+                opts.ListenToAzureServiceBusSubscription(MessagingTopology.ApiCacheSubscription)
+                    .FromTopic(MessagingTopology.EstateEventsTopic);
+                break;
+        }
+
+        return opts;
+    }
+}
