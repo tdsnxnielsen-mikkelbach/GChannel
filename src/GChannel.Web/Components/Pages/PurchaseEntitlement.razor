@@ -1,31 +1,31 @@
 @page "/customers/{CustomerId}/entitlements/new"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Purchase entitlement · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
-    <div>
-        <MudText Typo="Typo.h4">Purchase entitlement</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+    <Div>
+        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Purchase entitlement</Heading>
+        <Small TextColor="TextColor.Secondary">
             @(_customer?.OrgDisplayName ?? CustomerId)@(string.IsNullOrEmpty(_customer?.Domain) ? "" : $" · {_customer!.Domain}")
-        </MudText>
-    </div>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
-               Href="@($"/customers/{CustomerId}/entitlements")">Back</MudButton>
-</div>
+        </Small>
+    </Div>
+    <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/entitlements")" Color="Color.Secondary" Outline>
+        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back
+    </Button>
+</Div>
 
-<div class="d-flex justify-space-between align-center mb-6">
-    <MudText Typo="Typo.body1" Color="Color.Secondary">
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is5.FromBottom">
+    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
         Pick a product, then a SKU and Offer the customer is eligible to purchase, set the seat count
         and submit. The order is provisioned asynchronously by Google.
-    </MudText>
+    </Paragraph>
     <GuidedWalkthrough Id="purchase-entitlement" Steps="_walkthrough" />
-</div>
+</Div>
 
 @if (_loading)
 {
@@ -34,90 +34,107 @@
 }
 else
 {
-    <MudCard Elevation="2" Style="max-width:640px">
-        <MudCardContent>
-            <MudSelect T="string" Label="Product" Value="_productId" ValueChanged="OnProductSelected"
-                       Dense="true" Class="mb-4" Required="true" data-walkthrough="pe-product">
-                @foreach (var product in _products ?? [])
-                {
-                    <MudSelectItem Value="@product.Id">@(product.DisplayName ?? product.Id)</MudSelectItem>
-                }
-            </MudSelect>
+    <Card Shadow="Shadow.Small" Style="max-width:640px">
+        <CardBody>
+            <Field data-walkthrough="pe-product">
+                <FieldLabel>Product</FieldLabel>
+                <Select TValue="string" Value="@_productId" ValueChanged="OnProductSelected">
+                    <SelectItem TValue="string" Value="@((string?)null)">Choose a product…</SelectItem>
+                    @foreach (var product in _products ?? [])
+                    {
+                        <SelectItem TValue="string" Value="@product.Id">@(product.DisplayName ?? product.Id)</SelectItem>
+                    }
+                </Select>
+            </Field>
 
             @if (_skusLoading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
             }
             else if (_skus is not null)
             {
-                <MudSelect T="string" Label="SKU" Value="_skuId" ValueChanged="OnSkuSelected"
-                           Dense="true" Class="mb-4" Required="true" Disabled="_skus.Count == 0">
-                    @foreach (var sku in _skus)
+                <Field>
+                    <FieldLabel>SKU</FieldLabel>
+                    <Select TValue="string" Value="@_skuId" ValueChanged="OnSkuSelected" Disabled="_skus.Count == 0">
+                        <SelectItem TValue="string" Value="@((string?)null)">Choose a SKU…</SelectItem>
+                        @foreach (var sku in _skus)
+                        {
+                            <SelectItem TValue="string" Value="@sku.SkuId">@(sku.DisplayName ?? sku.SkuId)</SelectItem>
+                        }
+                    </Select>
+                    @if (_skus.Count == 0)
                     {
-                        <MudSelectItem Value="@sku.SkuId">@(sku.DisplayName ?? sku.SkuId)</MudSelectItem>
+                        <FieldHelp>No purchasable SKUs for this product.</FieldHelp>
                     }
-                </MudSelect>
-                @if (_skus.Count == 0)
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">No purchasable SKUs for this product.</MudText>
-                }
+                </Field>
             }
 
             @if (_offersLoading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
             }
             else if (_offers is not null)
             {
-                <MudSelect T="string" Label="Offer" @bind-Value="_offerId"
-                           Dense="true" Class="mb-4" Required="true" Disabled="_offers.Count == 0">
-                    @foreach (var offer in _offers)
+                <Field>
+                    <FieldLabel>Offer</FieldLabel>
+                    <Select TValue="string" @bind-Value="_offerId" Disabled="_offers.Count == 0">
+                        <SelectItem TValue="string" Value="@((string?)null)">Choose an offer…</SelectItem>
+                        @foreach (var offer in _offers)
+                        {
+                            <SelectItem TValue="string" Value="@OfferKey(offer)">@(offer.DisplayName ?? OfferKey(offer))</SelectItem>
+                        }
+                    </Select>
+                    @if (_offers.Count == 0)
                     {
-                        <MudSelectItem Value="@OfferKey(offer)">@(offer.DisplayName ?? OfferKey(offer))</MudSelectItem>
+                        <FieldHelp>No purchasable offers for this SKU.</FieldHelp>
                     }
-                </MudSelect>
-                @if (_offers.Count == 0)
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">No purchasable offers for this SKU.</MudText>
-                }
+                </Field>
             }
 
             @if (_billingAccounts is { Count: > 0 })
             {
-                <MudSelect T="string" Label="Billing account" @bind-Value="_billingAccount"
-                           Dense="true" Class="mb-4" Required="true" data-walkthrough="pe-billing"
-                           HelperText="This SKU is billed against a Google Cloud billing account.">
-                    @foreach (var account in _billingAccounts)
-                    {
-                        <MudSelectItem Value="@account.Name">
-                            @(account.DisplayName ?? account.Id)@(string.IsNullOrEmpty(account.CurrencyCode) ? "" : $" · {account.CurrencyCode}")
-                        </MudSelectItem>
-                    }
-                </MudSelect>
+                <Field data-walkthrough="pe-billing">
+                    <FieldLabel>Billing account</FieldLabel>
+                    <Select TValue="string" @bind-Value="_billingAccount">
+                        <SelectItem TValue="string" Value="@((string?)null)">Choose a billing account…</SelectItem>
+                        @foreach (var account in _billingAccounts)
+                        {
+                            <SelectItem TValue="string" Value="@account.Name">
+                                @(account.DisplayName ?? account.Id)@(string.IsNullOrEmpty(account.CurrencyCode) ? "" : $" · {account.CurrencyCode}")
+                            </SelectItem>
+                        }
+                    </Select>
+                    <FieldHelp>This SKU is billed against a Google Cloud billing account.</FieldHelp>
+                </Field>
             }
 
-            <MudNumericField T="int" @bind-Value="_seats" Label="Seats (num_units)" Min="1"
-                             Class="mb-4" HelperText="Number of licensed seats to purchase." data-walkthrough="pe-seats" />
+            <Field data-walkthrough="pe-seats">
+                <FieldLabel>Seats (num_units)</FieldLabel>
+                <NumericPicker TValue="int" @bind-Value="_seats" Min="1" />
+                <FieldHelp>Number of licensed seats to purchase.</FieldHelp>
+            </Field>
 
             @if (SelectedOffer is { } sel && SelectedSeatPrice(sel) is { } seat)
             {
-                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                <Alert Color="Color.Info" Visible Margin="Margin.Is4.FromBottom">
                     Est. list price: @seat.Display / seat@(string.IsNullOrEmpty(sel.PaymentCycle) ? "" : $" · {sel.PaymentCycle.ToLowerInvariant()}")
                     · @_seats seat@(_seats == 1 ? "" : "s") ≈ @($"{seat.CurrencyCode} {(seat.Value * _seats):0.00}")
-                    <MudText Typo="Typo.caption">Estimated wholesale list pricing, not an invoiced amount.</MudText>
-                </MudAlert>
+                    <Small Display="Display.Block">Estimated wholesale list pricing, not an invoiced amount.</Small>
+                </Alert>
             }
 
-            <MudTextField T="string" @bind-Value="_purchaseOrderId" Label="Purchase order id (optional)"
-                          Class="mb-4" />
-        </MudCardContent>
-        <MudCardActions>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ShoppingCartCheckout"
-                       Disabled="@(_submitting || string.IsNullOrEmpty(_offerId) || (_billingAccounts is { Count: > 0 } && string.IsNullOrEmpty(_billingAccount)))" OnClick="SubmitAsync" data-walkthrough="pe-submit">
-                @(_submitting ? "Submitting…" : "Purchase")
-            </MudButton>
-        </MudCardActions>
-    </MudCard>
+            <Field>
+                <FieldLabel>Purchase order id (optional)</FieldLabel>
+                <TextInput @bind-Value="_purchaseOrderId" />
+            </Field>
+        </CardBody>
+        <CardFooter Background="Background.Transparent">
+            <Button Color="Color.Primary" Clicked="SubmitAsync" Loading="_submitting" data-walkthrough="pe-submit"
+                    Disabled="@(_submitting || string.IsNullOrEmpty(_offerId) || (_billingAccounts is { Count: > 0 } && string.IsNullOrEmpty(_billingAccount)))">
+                <Icon Name="@AppIcons.ShoppingCartCheckout" Class="me-1" /> @(_submitting ? "Submitting…" : "Purchase")
+            </Button>
+        </CardFooter>
+    </Card>
 }
 
 @code {
@@ -187,7 +204,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load catalog: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load catalog: {ex.Message}", Severity.Error);
             _products = [];
         }
         finally
@@ -196,7 +213,7 @@ else
         }
     }
 
-    private async Task OnProductSelected(string productId)
+    private async Task OnProductSelected(string? productId)
     {
         _productId = productId;
         _skuId = null;
@@ -205,6 +222,11 @@ else
         _offers = null;
         _billingAccounts = null;
         _billingAccount = null;
+        if (string.IsNullOrEmpty(productId))
+        {
+            return;
+        }
+
         _skusLoading = true;
         try
         {
@@ -213,7 +235,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
             _skus = [];
         }
         finally
@@ -222,13 +244,18 @@ else
         }
     }
 
-    private async Task OnSkuSelected(string skuId)
+    private async Task OnSkuSelected(string? skuId)
     {
         _skuId = skuId;
         _offerId = null;
         _offers = null;
         _billingAccounts = null;
         _billingAccount = null;
+        if (string.IsNullOrEmpty(skuId))
+        {
+            return;
+        }
+
         _offersLoading = true;
         try
         {
@@ -237,7 +264,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
             _offers = [];
         }
         finally
@@ -287,18 +314,18 @@ else
             var op = await Api.PurchaseEntitlementAsync(CustomerId, request);
             if (!string.IsNullOrEmpty(op?.Error))
             {
-                Snackbar.Add($"Purchase failed: {op!.Error}", Severity.Error);
+                await Snackbar.Add($"Purchase failed: {op!.Error}", Severity.Error);
                 return;
             }
 
-            Snackbar.Add(op?.Done == true
+            await Snackbar.Add(op?.Done == true
                 ? "Entitlement purchased."
                 : "Purchase submitted — Google is provisioning it, this may take a moment.", Severity.Success);
             Nav.NavigateTo($"/customers/{CustomerId}/entitlements");
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Purchase failed: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Purchase failed: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -306,3 +333,4 @@ else
         }
     }
 }
+

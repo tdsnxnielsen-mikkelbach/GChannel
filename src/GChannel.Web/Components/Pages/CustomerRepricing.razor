@@ -1,9 +1,8 @@
 @page "/customers/{Id}/repricing"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Repricing · @(_customer?.OrgDisplayName ?? Id) · GChannel</PageTitle>
 
@@ -14,157 +13,182 @@
 }
 else if (_customer is null)
 {
-    <MudAlert Severity="Severity.Error">Customer not found.</MudAlert>
-    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="/customers" StartIcon="@Icons.Material.Filled.ArrowBack">
-        Back to customers
-    </MudButton>
+    <Alert Color="Color.Danger" Visible>Customer not found.</Alert>
+    <Button Type="ButtonType.Link" To="/customers" Color="Color.Secondary" Outline Margin="Margin.Is4.FromTop">
+        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to customers
+    </Button>
 }
 else
 {
-    <div class="d-flex justify-space-between align-center mb-4">
-        <div class="d-flex align-center" style="gap: 8px;">
-            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="@($"/customers/{Id}")" />
-            <div>
-                <MudText Typo="Typo.h4">Repricing margin</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">@(_customer.OrgDisplayName ?? Id) · @_customer.Domain</MudText>
-            </div>
-        </div>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
-                   OnClick="@(() => BeginEdit(null))" Disabled="@(_editing || _entitlements.Count == 0)">
-            New config
-        </MudButton>
-    </div>
+    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
+        <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2">
+            <Button Type="ButtonType.Link" To="@($"/customers/{Id}")" Color="Color.Light" aria-label="Back to customer">
+                <Icon Name="@AppIcons.ArrowBack" />
+            </Button>
+            <Div>
+                <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Repricing margin</Heading>
+                <Small TextColor="TextColor.Secondary">@(_customer.OrgDisplayName ?? Id) · @_customer.Domain</Small>
+            </Div>
+        </Div>
+        <Button Color="Color.Primary" Clicked="@(() => BeginEdit(null))" Disabled="@(_editing || _entitlements.Count == 0)">
+            <Icon Name="@AppIcons.Add" Class="me-1" /> New config
+        </Button>
+    </Div>
 
-    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+    <Alert Color="Color.Info" Visible Margin="Margin.Is4.FromBottom">
         A repricing config marks up (positive %) or discounts (negative %) what this customer is billed
         for a single entitlement, starting from the chosen invoice month. Configs can only be created or
         edited for the current or a future invoice month.
-    </MudAlert>
+    </Alert>
 
     @if (_entitlements.Count == 0)
     {
-        <MudAlert Severity="Severity.Warning" Class="mb-4">
+        <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
             This customer has no entitlements yet, so there is nothing to reprice.
-            <MudLink Href="@($"/customers/{Id}/entitlements")">Manage entitlements</MudLink>.
-        </MudAlert>
+            <Anchor To="@($"/customers/{Id}/entitlements")">Manage entitlements</Anchor>.
+        </Alert>
     }
 
     @if (_editing)
     {
-        <MudCard Elevation="2" Class="mb-4">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">@(_editingId is null ? "New repricing config" : "Edit repricing config")</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudGrid>
-                    <MudItem xs="12" md="6">
-                        <MudSelect T="string" Label="Entitlement" @bind-Value="_form.EntitlementId"
-                                   Disabled="@(_editingId is not null)" Required="true">
-                            @foreach (var entitlement in _entitlements)
-                            {
-                                <MudSelectItem Value="@entitlement.Id">@EntitlementLabel(entitlement)</MudSelectItem>
-                            }
-                        </MudSelect>
-                    </MudItem>
-                    <MudItem xs="12" md="6">
-                        <div class="d-flex align-center">
-                            <MudSelect T="string" Label="Rebilling basis" @bind-Value="_form.RebillingBasis" Required="true" Class="flex-grow-1">
-                                <MudSelectItem Value="@RebillingBases.CostAtList">List price (cost at list)</MudSelectItem>
-                                <MudSelectItem Value="@RebillingBases.DirectCustomerCost">Direct customer cost</MudSelectItem>
-                            </MudSelect>
-                            <MudTooltip Text="The price your adjustment is applied to. List price = Google's published list price; Direct customer cost = what a direct customer would pay.">
-                                <MudIcon Icon="@Icons.Material.Outlined.Info" Color="Color.Default" Class="ml-2" />
-                            </MudTooltip>
-                        </div>
-                    </MudItem>
-                    <MudItem xs="6" md="3">
-                        <MudNumericField T="int" Label="Effective year" @bind-Value="_form.Year" Min="2000" Max="2100" />
-                    </MudItem>
-                    <MudItem xs="6" md="3">
-                        <MudNumericField T="int" Label="Effective month" @bind-Value="_form.Month" Min="1" Max="12" />
-                    </MudItem>
-                    <MudItem xs="12" md="6">
-                        <MudNumericField T="decimal" Label="Adjustment" @bind-Value="_form.Percentage"
-                                         Adornment="Adornment.End" AdornmentText="%" Step="0.5M"
-                                         HelperText="Positive marks up, negative discounts, 0 passes through." />
-                    </MudItem>
-                </MudGrid>
-            </MudCardContent>
-            <MudCardActions>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">
+        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
+            <CardHeader>
+                <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">@(_editingId is null ? "New repricing config" : "Edit repricing config")</CardTitle>
+            </CardHeader>
+            <CardBody>
+                <Row>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+                        <Field>
+                            <FieldLabel>Entitlement</FieldLabel>
+                            <Select TValue="string" @bind-Value="_form.EntitlementId" Disabled="@(_editingId is not null)">
+                                <SelectItem TValue="string" Value="@((string?)null)">Choose an entitlement…</SelectItem>
+                                @foreach (var entitlement in _entitlements)
+                                {
+                                    <SelectItem TValue="string" Value="@entitlement.Id">@EntitlementLabel(entitlement)</SelectItem>
+                                }
+                            </Select>
+                        </Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+                        <Field>
+                            <FieldLabel>
+                                Rebilling basis
+                                <Tooltip Text="The price your adjustment is applied to. List price = Google's published list price; Direct customer cost = what a direct customer would pay." Multiline Inline>
+                                    <Icon Name="@AppIcons.Info" TextColor="TextColor.Secondary" Class="ms-1" />
+                                </Tooltip>
+                            </FieldLabel>
+                            <Select TValue="string" @bind-Value="_form.RebillingBasis">
+                                <SelectItem TValue="string" Value="@RebillingBases.CostAtList">List price (cost at list)</SelectItem>
+                                <SelectItem TValue="string" Value="@RebillingBases.DirectCustomerCost">Direct customer cost</SelectItem>
+                            </Select>
+                        </Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is6.Is3.OnDesktop">
+                        <Field>
+                            <FieldLabel>Effective year</FieldLabel>
+                            <NumericPicker TValue="int" @bind-Value="_form.Year" Min="2000" Max="2100" />
+                        </Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is6.Is3.OnDesktop">
+                        <Field>
+                            <FieldLabel>Effective month</FieldLabel>
+                            <NumericPicker TValue="int" @bind-Value="_form.Month" Min="1" Max="12" />
+                        </Field>
+                    </Column>
+                    <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+                        <Field>
+                            <FieldLabel>Adjustment</FieldLabel>
+                            <Addons>
+                                <Addon AddonType="AddonType.Body">
+                                    <NumericPicker TValue="decimal" @bind-Value="_form.Percentage" Step="0.5M" Decimals="2" />
+                                </Addon>
+                                <Addon AddonType="AddonType.End"><AddonLabel>%</AddonLabel></Addon>
+                            </Addons>
+                            <FieldHelp>Positive marks up, negative discounts, 0 passes through.</FieldHelp>
+                        </Field>
+                    </Column>
+                </Row>
+            </CardBody>
+            <CardFooter Background="Background.Transparent">
+                <Button Color="Color.Primary" Clicked="SaveAsync" Disabled="_busy" Loading="_busy">
                     @(_editingId is null ? "Create" : "Save")
-                </MudButton>
-                <MudButton Variant="Variant.Text" OnClick="CancelEdit" Disabled="_busy" Class="ml-2">Cancel</MudButton>
-            </MudCardActions>
-        </MudCard>
+                </Button>
+                <Button Color="Color.Secondary" Clicked="CancelEdit" Disabled="_busy" Margin="Margin.Is2.FromStart" Class="btn-link text-decoration-none">Cancel</Button>
+            </CardFooter>
+        </Card>
     }
 
-    <MudCard Elevation="2">
-        <MudCardHeader>
-            <CardHeaderContent>
-                <MudText Typo="Typo.h6">Configured margins</MudText>
-            </CardHeaderContent>
-        </MudCardHeader>
-        <MudCardContent>
+    <Card Shadow="Shadow.Small">
+        <CardHeader>
+            <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Configured margins</CardTitle>
+        </CardHeader>
+        <CardBody>
             @if (_configsLoading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
             }
             else if (_configs is { Count: > 0 })
             {
-                <MudTable Items="_configs" Hover="true" Elevation="0" Dense="true">
-                    <HeaderContent>
-                        <MudTh>Entitlement</MudTh>
-                        <MudTh>Effective month</MudTh>
-                        <MudTh Style="text-align:right">Adjustment</MudTh>
-                        <MudTh>Rebilling basis</MudTh>
-                        <MudTh>Overrides</MudTh>
-                        <MudTh>Updated</MudTh>
-                        <MudTh Style="text-align:right">Actions</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Entitlement">
-                            @if (!string.IsNullOrEmpty(context.EntitlementId))
-                            {
-                                <MudLink Href="@($"/customers/{Id}/entitlements/{context.EntitlementId}")">
-                                    @EntitlementLabelById(context.EntitlementId)
-                                </MudLink>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Effective month">@FormatMonth(context.EffectiveInvoiceYear, context.EffectiveInvoiceMonth)</MudTd>
-                        <MudTd DataLabel="Adjustment" Style="text-align:right">
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@AdjustmentColor(context.PercentageAdjustment)">
-                                @FormatPercent(context.PercentageAdjustment)
-                            </MudChip>
-                        </MudTd>
-                        <MudTd DataLabel="Rebilling basis">@RebillingLabel(context.RebillingBasis)</MudTd>
-                        <MudTd DataLabel="Overrides">@context.ConditionalOverrideCount</MudTd>
-                        <MudTd DataLabel="Updated">@(context.UpdateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-                        <MudTd DataLabel="Actions" Style="text-align:right">
-                            <MudTooltip Text="Edit">
-                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                               OnClick="@(() => BeginEdit(context))" Disabled="_editing" />
-                            </MudTooltip>
-                            <MudTooltip Text="Delete">
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
-                                               OnClick="@(() => DeleteAsync(context))" Disabled="_busy" />
-                            </MudTooltip>
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
+                <Table Narrow Hoverable Responsive Margin="Margin.Is0">
+                    <TableHeader>
+                        <TableRow>
+                            <TableHeaderCell>Entitlement</TableHeaderCell>
+                            <TableHeaderCell>Effective month</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Adjustment</TableHeaderCell>
+                            <TableHeaderCell>Rebilling basis</TableHeaderCell>
+                            <TableHeaderCell>Overrides</TableHeaderCell>
+                            <TableHeaderCell>Updated</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Actions</TableHeaderCell>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        @foreach (var config in _configs)
+                        {
+                            <TableRow>
+                                <TableRowCell>
+                                    @if (!string.IsNullOrEmpty(config.EntitlementId))
+                                    {
+                                        <Anchor To="@($"/customers/{Id}/entitlements/{config.EntitlementId}")">
+                                            @EntitlementLabelById(config.EntitlementId)
+                                        </Anchor>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell>@FormatMonth(config.EffectiveInvoiceYear, config.EffectiveInvoiceMonth)</TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">
+                                    <Badge Color="@AdjustmentColor(config.PercentageAdjustment)">@FormatPercent(config.PercentageAdjustment)</Badge>
+                                </TableRowCell>
+                                <TableRowCell>@RebillingLabel(config.RebillingBasis)</TableRowCell>
+                                <TableRowCell>@config.ConditionalOverrideCount</TableRowCell>
+                                <TableRowCell>@(config.UpdateTime?.ToString("yyyy-MM-dd") ?? "—")</TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">
+                                    <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is1" Class="text-nowrap">
+                                        <Tooltip Text="Edit" Inline>
+                                            <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => BeginEdit(config))" Disabled="_busy" aria-label="Edit">
+                                                <Icon Name="@AppIcons.Edit" />
+                                            </Button>
+                                        </Tooltip>
+                                        <Tooltip Text="Delete" Inline>
+                                            <Button Size="Size.Small" Color="Color.Danger" Outline Clicked="@(() => DeleteAsync(config))" Disabled="_busy" aria-label="Delete">
+                                                <Icon Name="@AppIcons.Delete" />
+                                            </Button>
+                                        </Tooltip>
+                                    </Div>
+                                </TableRowCell>
+                            </TableRow>
+                        }
+                    </TableBody>
+                </Table>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No repricing configs for this customer.</MudText>
+                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No repricing configs for this customer.</Paragraph>
             }
-        </MudCardContent>
-    </MudCard>
+        </CardBody>
+    </Card>
 }
 
 @code {
@@ -200,7 +224,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
             _customer = null;
         }
         finally
@@ -225,7 +249,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load repricing configs: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load repricing configs: {ex.Message}", Severity.Error);
             _configs = [];
         }
         finally
@@ -269,7 +293,7 @@ else
     {
         if (string.IsNullOrWhiteSpace(_form.EntitlementId))
         {
-            Snackbar.Add("Select an entitlement to reprice.", Severity.Warning);
+            await Snackbar.Add("Select an entitlement to reprice.", Severity.Warning);
             return;
         }
 
@@ -288,12 +312,12 @@ else
             if (_editingId is null)
             {
                 await Api.CreateCustomerRepricingConfigAsync(Id, request);
-                Snackbar.Add("Repricing config created.", Severity.Success);
+                await Snackbar.Add("Repricing config created.", Severity.Success);
             }
             else
             {
                 await Api.UpdateCustomerRepricingConfigAsync(Id, _editingId, request);
-                Snackbar.Add("Repricing config updated.", Severity.Success);
+                await Snackbar.Add("Repricing config updated.", Severity.Success);
             }
 
             _editing = false;
@@ -302,7 +326,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to save repricing config: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to save repricing config: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -316,12 +340,12 @@ else
         try
         {
             await Api.DeleteCustomerRepricingConfigAsync(Id, config.Id);
-            Snackbar.Add("Repricing config deleted.", Severity.Success);
+            await Snackbar.Add("Repricing config deleted.", Severity.Success);
             await LoadConfigsAsync();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to delete repricing config: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to delete repricing config: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -355,7 +379,7 @@ else
         value > 0 ? $"+{value:0.##}%" : $"{value:0.##}%";
 
     private static Color AdjustmentColor(decimal value) =>
-        value > 0 ? Color.Success : value < 0 ? Color.Warning : Color.Default;
+        value > 0 ? Color.Success : value < 0 ? Color.Warning : Color.Secondary;
 
     private static string RebillingLabel(string? basis) => basis switch
     {
@@ -373,3 +397,4 @@ else
         public string RebillingBasis { get; set; } = RebillingBases.CostAtList;
     }
 }
+

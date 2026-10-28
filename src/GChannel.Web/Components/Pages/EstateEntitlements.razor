@@ -1,103 +1,112 @@
 @page "/entitlements"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
+@using Blazorise.DataGrid
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Entitlements · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-4">
-    <MudText Typo="Typo.h4">Entitlements</MudText>
-</div>
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
+    <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Entitlements</Heading>
+</Div>
 
-<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
     Estate-wide subscriptions from the synced read-model. Filter by lifecycle state to see the
     entitlements behind the dashboard KPIs. Paging, sorting and search run server-side.
-</MudText>
+</Paragraph>
 
-<div class="d-flex flex-wrap justify-space-between align-center mb-2" style="gap:12px">
-    <div class="d-flex flex-wrap align-center" style="gap:12px">
-        <MudSelect T="string" Value="_state" ValueChanged="OnStateChanged" Label="State"
-                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px">
-            <MudSelectItem T="string" Value="@("")">All states</MudSelectItem>
-            <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
-            <MudSelectItem T="string" Value="@("trial")">Trial</MudSelectItem>
-            <MudSelectItem T="string" Value="@("suspended")">Suspended</MudSelectItem>
-        </MudSelect>
-        <MudSelect T="string" Value="_scope" ValueChanged="OnScopeChanged" Label="Scope"
-                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px">
-            <MudSelectItem T="string" Value="@("direct")">Direct</MudSelectItem>
-            <MudSelectItem T="string" Value="@("indirect")">Indirect (resellers)</MudSelectItem>
-            <MudSelectItem T="string" Value="@("all")">All</MudSelectItem>
-        </MudSelect>
-        <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
-                      OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search customer, offer, id…"
-                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                      Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:280px" />
-    </div>
+<Div Flex="Flex.Wrap.JustifyContent.Between.AlignItems.Center" Gap="Gap.Is3" Margin="Margin.Is2.FromBottom">
+    <Div Flex="Flex.Wrap.AlignItems.Center" Gap="Gap.Is3">
+        <Select TValue="string" Value="@_state" ValueChanged="OnStateChanged" Style="min-width:150px" aria-label="State">
+            <SelectItem TValue="string" Value="@("")">All states</SelectItem>
+            <SelectItem TValue="string" Value="@("active")">Active</SelectItem>
+            <SelectItem TValue="string" Value="@("trial")">Trial</SelectItem>
+            <SelectItem TValue="string" Value="@("suspended")">Suspended</SelectItem>
+        </Select>
+        <Select TValue="string" Value="@_scope" ValueChanged="OnScopeChanged" Style="min-width:150px" aria-label="Scope">
+            <SelectItem TValue="string" Value="@("direct")">Direct</SelectItem>
+            <SelectItem TValue="string" Value="@("indirect")">Indirect (resellers)</SelectItem>
+            <SelectItem TValue="string" Value="@("all")">All</SelectItem>
+        </Select>
+        <Addons Style="min-width:280px">
+            <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Search" /></AddonLabel></Addon>
+            <Addon AddonType="AddonType.Body">
+                <TextInput Value="@_search" ValueChanged="OnSearchChanged" Debounce="true" DebounceInterval="400"
+                           Placeholder="Search customer, offer, id…" />
+            </Addon>
+        </Addons>
+    </Div>
     <AsOfBadge AsOf="_asOf" />
-</div>
+</Div>
 
-<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="false" RowsPerPage="25">
-    <HeaderContent>
-        <MudTh><MudTableSortLabel SortLabel="customer" T="EstateEntitlement">Customer</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel SortLabel="product" T="EstateEntitlement">Product / offer</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel SortLabel="state" T="EstateEntitlement">State</MudTableSortLabel></MudTh>
-        <MudTh Style="text-align:right"><MudTableSortLabel SortLabel="seats" T="EstateEntitlement">Seats</MudTableSortLabel></MudTh>
-        <MudTh Style="text-align:right">Est. monthly</MudTh>
-        <MudTh><MudTableSortLabel SortLabel="renewal" T="EstateEntitlement">Renewal</MudTableSortLabel></MudTh>
-        <MudTh Style="text-align:right">Actions</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Customer">
-            <MudLink Href="@($"/customers/{context.CustomerId}")">@(context.CustomerName ?? context.CustomerId)</MudLink>
-            @if (!string.IsNullOrEmpty(context.OwningLinkId))
-            {
-                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text" Class="ml-1">Reseller</MudChip>
-            }
-        </MudTd>
-        <MudTd DataLabel="Product / offer">
-            <div>@(context.OfferName ?? context.SkuName ?? "—")</div>
-            @if (!string.IsNullOrEmpty(context.ProductName))
-            {
-                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ProductName</MudText>
-            }
-        </MudTd>
-        <MudTd DataLabel="State">
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context)">@StateLabel(context)</MudChip>
-        </MudTd>
-        <MudTd DataLabel="Seats" Style="text-align:right">@context.Seats</MudTd>
-        <MudTd DataLabel="Est. monthly" Style="text-align:right">
-            @if (EstimatedMonthly(context) is { } v)
-            {
-                <MudTooltip Text="@($"Wholesale {FormatMoney(context.UnitPrice * context.BillableSeats, context.Currency)} × (1 + {context.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")">
-                    <span>@FormatMoney(v, context.Currency)</span>
-                </MudTooltip>
-            }
-            else
-            {
-                <span>—</span>
-            }
-        </MudTd>
-        <MudTd DataLabel="Renewal">
-            @(context.CommitmentEndTime?.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "—")
-        </MudTd>
-        <MudTd DataLabel="Actions" Style="text-align:right">
-            <MudTooltip Text="View entitlement">
-                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                               Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")" />
-            </MudTooltip>
-        </MudTd>
-    </RowTemplate>
-    <NoRecordsContent>
-        <MudAlert Severity="Severity.Info">No entitlements match the current filters.</MudAlert>
-    </NoRecordsContent>
-    <PagerContent>
-        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" />
-    </PagerContent>
-</MudTable>
+<Card Shadow="Shadow.Small">
+    <DataGrid @ref="_grid" TItem="EstateEntitlement" Data="_items" ReadData="OnReadData" TotalItems="_total"
+              ShowPager ShowPageSizes PageSize="25" PageSizes="_pageSizes" Hoverable Responsive Sortable SortMode="DataGridSortMode.Single">
+        <DataGridColumns>
+            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.CustomerName)" SortField="customer" Caption="Customer">
+                <DisplayTemplate>
+                    <Anchor To="@($"/customers/{context.Item.CustomerId}")">@(context.Item.CustomerName ?? context.Item.CustomerId)</Anchor>
+                    @if (!string.IsNullOrEmpty(context.Item.OwningLinkId))
+                    {
+                        <Badge Color="Color.Secondary" Margin="Margin.Is1.FromStart">Reseller</Badge>
+                    }
+                </DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.OfferName)" SortField="product" Caption="Product / offer">
+                <DisplayTemplate>
+                    <div>@(context.Item.OfferName ?? context.Item.SkuName ?? "—")</div>
+                    @if (!string.IsNullOrEmpty(context.Item.ProductName))
+                    {
+                        <Small TextColor="TextColor.Secondary">@context.Item.ProductName</Small>
+                    }
+                </DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.State)" SortField="state" Caption="State">
+                <DisplayTemplate>
+                    <Badge Color="@StateColor(context.Item)">@StateLabel(context.Item)</Badge>
+                </DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.Seats)" SortField="seats" Caption="Seats" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End" />
+            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.UnitPrice)" Caption="Est. monthly" Sortable="false" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End">
+                <DisplayTemplate>
+                    @if (EstimatedMonthly(context.Item) is { } v)
+                    {
+                        <Tooltip Text="@($"Wholesale {FormatMoney(context.Item.UnitPrice * context.Item.BillableSeats, context.Item.Currency)} × (1 + {context.Item.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")" Multiline Inline>
+                            <span>@FormatMoney(v, context.Item.Currency)</span>
+                        </Tooltip>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.CommitmentEndTime)" SortField="renewal" Caption="Renewal">
+                <DisplayTemplate>
+                    @(context.Item.CommitmentEndTime?.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "—")
+                </DisplayTemplate>
+            </DataGridColumn>
+            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.EntitlementId)" Caption="Actions" Sortable="false" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End">
+                <DisplayTemplate>
+                    <Tooltip Text="View entitlement" Inline>
+                        <Button Type="ButtonType.Link" To="@($"/customers/{context.Item.CustomerId}/entitlements/{context.Item.EntitlementId}")"
+                                Size="Size.Small" Color="Color.Light" aria-label="View entitlement">
+                            <Icon Name="@AppIcons.Visibility" />
+                        </Button>
+                    </Tooltip>
+                </DisplayTemplate>
+            </DataGridColumn>
+        </DataGridColumns>
+        <EmptyTemplate>
+            <Alert Color="Color.Info" Visible Margin="Margin.Is0">No entitlements match the current filters.</Alert>
+        </EmptyTemplate>
+        <LoadingTemplate>
+            <LoadingPanel Title="Loading entitlements…" Hint="Querying the synced read-model." />
+        </LoadingTemplate>
+    </DataGrid>
+</Card>
 
 @code {
     [SupplyParameterFromQuery(Name = "state")]
@@ -106,7 +115,10 @@
     [SupplyParameterFromQuery(Name = "scope")]
     public string? ScopeQuery { get; set; }
 
-    private MudTable<EstateEntitlement>? _table;
+    private static readonly int[] _pageSizes = [25, 50, 100];
+    private DataGrid<EstateEntitlement>? _grid;
+    private List<EstateEntitlement> _items = [];
+    private int _total;
     private string _state = "";
     private string _scope = "direct";
     private string? _search;
@@ -120,7 +132,7 @@
         {
             _state = state;
             _scope = scope;
-            _ = _table?.ReloadServerData();
+            _ = _grid?.Reload();
         }
     }
 
@@ -142,35 +154,47 @@
     private async Task OnStateChanged(string value)
     {
         _state = value ?? "";
-        await (_table?.ReloadServerData() ?? Task.CompletedTask);
+        await (_grid?.Reload() ?? Task.CompletedTask);
     }
 
     private async Task OnScopeChanged(string value)
     {
         _scope = string.IsNullOrEmpty(value) ? "direct" : value;
-        await (_table?.ReloadServerData() ?? Task.CompletedTask);
+        await (_grid?.Reload() ?? Task.CompletedTask);
     }
 
-    private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
-
-    private async Task<TableData<EstateEntitlement>> LoadServerData(TableState state, CancellationToken token)
+    private async Task OnSearchChanged(string value)
     {
+        _search = value;
+        await (_grid?.Reload() ?? Task.CompletedTask);
+    }
+
+    // Server-side read: Blazorise pages are 1-based, the API's are 0-based; sort keys come from SortField.
+    private async Task OnReadData(DataGridReadDataEventArgs<EstateEntitlement> e)
+    {
+        if (e.CancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        var sortColumn = e.Columns.FirstOrDefault(c => c.SortDirection != SortDirection.Default);
         try
         {
             var result = await Api.ListEstateEntitlementsAsync(
-                state.Page, state.PageSize, state.SortLabel,
-                state.SortDirection == SortDirection.Descending,
+                e.Page - 1, e.PageSize, sortColumn?.SortField,
+                sortColumn?.SortDirection == SortDirection.Descending,
                 _search, string.IsNullOrEmpty(_state) ? null : _state,
-                _scope, token);
+                _scope, e.CancellationToken);
 
+            _items = result?.Items?.ToList() ?? [];
+            _total = result?.Total ?? 0;
             _asOf = result?.AsOf;
-            await InvokeAsync(StateHasChanged); // re-render the parent so the As-of badge reflects the loaded data
-            return new TableData<EstateEntitlement> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
-            return new TableData<EstateEntitlement> { Items = [], TotalItems = 0 };
+            await Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
+            _items = [];
+            _total = 0;
         }
     }
 
@@ -195,9 +219,9 @@
         {
             "ACTIVE" => Color.Success,
             "SUSPENDED" => Color.Warning,
-            "CANCELLED" or "CANCELED" => Color.Error,
+            "CANCELLED" or "CANCELED" => Color.Danger,
             "PENDING" => Color.Info,
-            _ => Color.Default,
+            _ => Color.Secondary,
         };
     }
 

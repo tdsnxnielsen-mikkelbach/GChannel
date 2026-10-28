@@ -1,29 +1,29 @@
 @page "/customers/{Id}/transfer"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Transfer entitlements · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
-    <div>
-        <MudText Typo="Typo.h4">Transfer entitlements</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+    <Div>
+        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Transfer entitlements</Heading>
+        <Small TextColor="TextColor.Secondary">
             @(_customer?.OrgDisplayName ?? Id)@(string.IsNullOrEmpty(_customer?.Domain) ? "" : $" · {_customer!.Domain}")
-        </MudText>
-    </div>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
-               Href="@($"/customers/{Id}")">Back to customer</MudButton>
-</div>
+        </Small>
+    </Div>
+    <Button Type="ButtonType.Link" To="@($"/customers/{Id}")" Color="Color.Secondary" Outline>
+        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to customer
+    </Button>
+</Div>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
     Bring this customer's existing subscriptions into your reseller account. Pick the transferable
     SKUs and the Offer to transfer each onto, set the seats, then submit. Google provisions the
     transfer asynchronously.
-</MudText>
+</Paragraph>
 
 @if (_loading)
 {
@@ -32,158 +32,164 @@
 }
 else
 {
-    <MudGrid>
-        <MudItem xs="12" md="7">
-            <MudCard Elevation="2">
-                <MudCardHeader>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Transferable SKUs</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
-                            Expand an eligible SKU to load its transferable offers and add it to the
-                            transfer.
-                        </MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
+    <Row>
+        <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
+            <Card Shadow="Shadow.Small">
+                <CardHeader>
+                    <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Transferable SKUs</CardTitle>
+                    <Small TextColor="TextColor.Secondary">
+                        Expand an eligible SKU to load its transferable offers and add it to the transfer.
+                    </Small>
+                </CardHeader>
+                <CardBody>
                     @if (_skus is { Count: > 0 })
                     {
-                        <MudExpansionPanels MultiExpansion="true" Elevation="0">
+                        <Accordion>
                             @foreach (var sku in _skus)
                             {
-                                <MudExpansionPanel Expanded="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
-                                                   ExpandedChanged="expanded => OnSkuExpanded(sku, expanded)"
-                                                   Disabled="!sku.IsEligible">
-                                    <TitleContent>
-                                        <div class="d-flex align-center justify-space-between" style="width:100%">
-                                            <div>
-                                                <MudText Typo="Typo.body1">@(sku.SkuDisplayName ?? sku.SkuId)</MudText>
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                    @(sku.ProductDisplayName ?? sku.ProductId) · SKU @sku.SkuId
-                                                </MudText>
-                                            </div>
-                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                                     Color="@(sku.IsEligible ? Color.Success : Color.Warning)">
-                                                @(sku.IsEligible ? "Eligible" : "Not eligible")
-                                            </MudChip>
-                                        </div>
-                                    </TitleContent>
-                                    <ChildContent>
+                                <AccordionItem Visible="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
+                                               VisibleChanged="expanded => OnSkuExpanded(sku, expanded)">
+                                    <AccordionHeader>
+                                        <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
+                                            <AccordionToggle>
+                                                <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Width="Width.Is100" Class="pe-3">
+                                                    <Div>
+                                                        <span>@(sku.SkuDisplayName ?? sku.SkuId)</span>
+                                                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-normal">
+                                                            @(sku.ProductDisplayName ?? sku.ProductId) · SKU @sku.SkuId
+                                                        </Small>
+                                                    </Div>
+                                                    <Badge Color="@(sku.IsEligible ? Color.Success : Color.Warning)">
+                                                        @(sku.IsEligible ? "Eligible" : "Not eligible")
+                                                    </Badge>
+                                                </Div>
+                                            </AccordionToggle>
+                                        </Heading>
+                                    </AccordionHeader>
+                                    <AccordionBody>
                                         @if (!sku.IsEligible)
                                         {
-                                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
                                                 @(sku.EligibilityDescription ?? sku.IneligibilityReason ?? "This SKU can't be transferred.")
-                                            </MudText>
+                                            </Paragraph>
                                         }
                                         else
                                         {
-                                            <div class="d-flex justify-space-between align-center mb-2">
-                                                <MudText Typo="Typo.body2" Color="Color.Secondary">SKU id: @sku.SkuId</MudText>
-                                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                                           StartIcon="@Icons.Material.Filled.OpenInNew"
-                                                           Href="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")">
-                                                    View in catalog
-                                                </MudButton>
-                                            </div>
+                                            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+                                                <Small TextColor="TextColor.Secondary">SKU id: @sku.SkuId</Small>
+                                                <Button Type="ButtonType.Link" To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")"
+                                                        Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
+                                                    <Icon Name="@AppIcons.OpenInNew" Class="me-1" /> View in catalog
+                                                </Button>
+                                            </Div>
 
                                             @if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
                                             {
                                                 @if (offers is null)
                                                 {
-                                                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                                                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
                                                 }
                                                 else if (offers.Count == 0)
                                                 {
-                                                    <MudText Typo="Typo.body2" Color="Color.Secondary">No transferable offers.</MudText>
+                                                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No transferable offers.</Paragraph>
                                                 }
                                                 else
                                                 {
-                                                    <MudTable Items="offers" Dense="true" Hover="true" Elevation="0">
-                                                        <HeaderContent>
-                                                            <MudTh>Offer</MudTh>
-                                                            <MudTh Style="text-align:right">Add</MudTh>
-                                                        </HeaderContent>
-                                                        <RowTemplate>
-                                                            <MudTd DataLabel="Offer">@(context.OfferDisplayName ?? context.OfferId)</MudTd>
-                                                            <MudTd DataLabel="Add" Style="text-align:right">
-                                                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                                                           StartIcon="@Icons.Material.Filled.Add"
-                                                                           Disabled="@_basket.Any(b => b.OfferName == context.OfferName)"
-                                                                           OnClick="@(() => AddToBasket(sku, context))">
-                                                                    Add
-                                                                </MudButton>
-                                                            </MudTd>
-                                                        </RowTemplate>
-                                                    </MudTable>
+                                                    <Table Narrow Hoverable Margin="Margin.Is0">
+                                                        <TableHeader>
+                                                            <TableRow>
+                                                                <TableHeaderCell>Offer</TableHeaderCell>
+                                                                <TableHeaderCell TextAlignment="TextAlignment.End">Add</TableHeaderCell>
+                                                            </TableRow>
+                                                        </TableHeader>
+                                                        <TableBody>
+                                                            @foreach (var offer in offers)
+                                                            {
+                                                                <TableRow>
+                                                                    <TableRowCell>@(offer.OfferDisplayName ?? offer.OfferId)</TableRowCell>
+                                                                    <TableRowCell TextAlignment="TextAlignment.End">
+                                                                        <Button Size="Size.Small" Color="Color.Primary"
+                                                                                Disabled="@_basket.Any(b => b.OfferName == offer.OfferName)"
+                                                                                Clicked="@(() => AddToBasket(sku, offer))">
+                                                                            <Icon Name="@AppIcons.Add" Class="me-1" /> Add
+                                                                        </Button>
+                                                                    </TableRowCell>
+                                                                </TableRow>
+                                                            }
+                                                        </TableBody>
+                                                    </Table>
                                                 }
                                             }
                                         }
-                                    </ChildContent>
-                                </MudExpansionPanel>
+                                    </AccordionBody>
+                                </AccordionItem>
                             }
-                        </MudExpansionPanels>
+                        </Accordion>
                     }
                     else
                     {
-                        <MudAlert Severity="Severity.Info" Dense="true">
+                        <Alert Color="Color.Info" Visible Margin="Margin.Is0">
                             This customer has no transferable SKUs. Transfers are available only when the
                             customer already holds subscriptions (with Google directly or another reseller).
-                        </MudAlert>
+                        </Alert>
                     }
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
+                </CardBody>
+            </Card>
+        </Column>
 
-        <MudItem xs="12" md="5">
-            <MudCard Elevation="2">
-                <MudCardHeader>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Transfer</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
-                            Offers to transfer into this account.
-                        </MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
+        <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
+            <Card Shadow="Shadow.Small">
+                <CardHeader>
+                    <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Transfer</CardTitle>
+                    <Small TextColor="TextColor.Secondary">Offers to transfer into this account.</Small>
+                </CardHeader>
+                <CardBody>
                     @if (_basket.Count == 0)
                     {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
                             No offers selected yet. Add one or more from the transferable SKUs.
-                        </MudText>
+                        </Paragraph>
                     }
                     else
                     {
                         @foreach (var line in _basket)
                         {
-                            <div class="mb-4">
-                                <div class="d-flex justify-space-between align-center">
-                                    <MudText Typo="Typo.body1">@line.OfferDisplay</MudText>
-                                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                                                   OnClick="@(() => _basket.Remove(line))" />
-                                </div>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@line.SkuDisplay</MudText>
-                                <div class="d-flex gap-2 mt-1">
-                                    <MudNumericField T="int" @bind-Value="line.Seats" Label="Seats" Min="1"
-                                                     Margin="Margin.Dense" Variant="Variant.Outlined" Style="max-width:120px" />
-                                    <MudTextField T="string" @bind-Value="line.PurchaseOrderId" Label="PO id (optional)"
-                                                  Margin="Margin.Dense" Variant="Variant.Outlined" />
-                                </div>
-                            </div>
+                            <Div Margin="Margin.Is4.FromBottom">
+                                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                                    <span>@line.OfferDisplay</span>
+                                    <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => _basket.Remove(line))" aria-label="Remove">
+                                        <Icon Name="@AppIcons.Close" />
+                                    </Button>
+                                </Div>
+                                <Small TextColor="TextColor.Secondary">@line.SkuDisplay</Small>
+                                <Div Flex="Flex.Default" Gap="Gap.Is2" Margin="Margin.Is1.FromTop">
+                                    <Field Margin="Margin.Is0" Style="max-width:120px">
+                                        <FieldLabel>Seats</FieldLabel>
+                                        <NumericPicker TValue="int" @bind-Value="line.Seats" Min="1" Size="Size.Small" />
+                                    </Field>
+                                    <Field Margin="Margin.Is0" Class="flex-grow-1">
+                                        <FieldLabel>PO id (optional)</FieldLabel>
+                                        <TextInput @bind-Value="line.PurchaseOrderId" Size="Size.Small" />
+                                    </Field>
+                                </Div>
+                            </Div>
                         }
 
-                        <MudTextField T="string" @bind-Value="_authToken" Label="Transfer auth token (optional)"
-                                      HelperText="Required only when transferring from another reseller."
-                                      Margin="Margin.Dense" Variant="Variant.Outlined" Class="mt-2" />
+                        <Field Margin="Margin.Is2.FromTop">
+                            <FieldLabel>Transfer auth token (optional)</FieldLabel>
+                            <TextInput @bind-Value="_authToken" Size="Size.Small" />
+                            <FieldHelp>Required only when transferring from another reseller.</FieldHelp>
+                        </Field>
                     }
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.SwapHoriz"
-                               Disabled="@(_submitting || _basket.Count == 0)" OnClick="SubmitAsync">
-                        @(_submitting ? "Submitting…" : "Transfer to my account")
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
-        </MudItem>
-    </MudGrid>
+                </CardBody>
+                <CardFooter Background="Background.Transparent">
+                    <Button Color="Color.Primary" Disabled="@(_submitting || _basket.Count == 0)" Loading="_submitting" Clicked="SubmitAsync">
+                        <Icon Name="@AppIcons.SwapHoriz" Class="me-1" /> @(_submitting ? "Submitting…" : "Transfer to my account")
+                    </Button>
+                </CardFooter>
+            </Card>
+        </Column>
+    </Row>
 }
 
 @code {
@@ -223,7 +229,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load customer: {ex.Message}", Severity.Error);
             _customer = null;
         }
 
@@ -234,7 +240,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load transferable SKUs: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load transferable SKUs: {ex.Message}", Severity.Error);
             _skus = [];
         }
         finally
@@ -269,7 +275,7 @@ else
         catch (Exception ex)
         {
             _offersBySku.Remove(skuId);
-            Snackbar.Add($"Failed to load transferable offers: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load transferable offers: {ex.Message}", Severity.Error);
         }
     }
 
@@ -314,18 +320,18 @@ else
             var op = await Api.TransferEntitlementsAsync(Id, request);
             if (!string.IsNullOrEmpty(op?.Error))
             {
-                Snackbar.Add($"Transfer failed: {op!.Error}", Severity.Error);
+                await Snackbar.Add($"Transfer failed: {op!.Error}", Severity.Error);
                 return;
             }
 
-            Snackbar.Add(op?.Done == true
+            await Snackbar.Add(op?.Done == true
                 ? "Entitlements transferred."
                 : "Transfer submitted — Google is processing it, this may take a moment.", Severity.Success);
             Nav.NavigateTo($"/customers/{Id}/entitlements");
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Transfer failed: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Transfer failed: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -333,3 +339,4 @@ else
         }
     }
 }
+
