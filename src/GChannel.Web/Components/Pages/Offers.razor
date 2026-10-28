@@ -6,19 +6,17 @@
 
 <PageTitle>Offers · GChannel</PageTitle>
 
-<Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">Offers</Heading>
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-2">Offers</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     The offers you can sell to customers. Prices shown are estimated wholesale list pricing from the
     catalog — not invoiced amounts; per-seat resource shown.
-</Paragraph>
+</RadzenText>
 
 @if (!string.IsNullOrEmpty(SkuFilter))
 {
-    <Div Margin="Margin.Is4.FromBottom">
-        <Badge Color="Color.Primary" Pill Closable CloseClicked="ClearSkuFilter">
-            Filtered by SKU: @FilterLabel
-        </Badge>
-    </Div>
+    <div class="rz-mb-4">
+        <RadzenChip Text="@($"Filtered by SKU: {FilterLabel}")" ChipStyle="BadgeStyle.Primary" Icon="@AppIcons.FilterAlt" Close="ClearSkuFilter" RemoveChipTitle="Clear filter" />
+    </div>
 }
 
 @if (_loading)
@@ -28,58 +26,44 @@
 }
 else if (_offers is { Count: > 0 })
 {
-    <Card Shadow="Shadow.Small">
-        <CardBody>
-            <Addons Margin="Margin.Is3.FromBottom" Style="max-width:28rem">
-                <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Search" /></AddonLabel></Addon>
-                <Addon AddonType="AddonType.Body">
-                    <TextInput @bind-Value="_search" Placeholder="Search offers" />
-                </Addon>
-            </Addons>
-            <Table Narrow Hoverable Responsive>
-                <TableHeader>
-                    <TableRow>
-                        <TableHeaderCell>Offer</TableHeaderCell>
-                        <TableHeaderCell>SKU</TableHeaderCell>
-                        <TableHeaderCell>Price (est. list)</TableHeaderCell>
-                        <TableHeaderCell>Deal code</TableHeaderCell>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    @foreach (var offer in _offers.Where(Matches))
-                    {
-                        <TableRow>
-                            <TableRowCell>
-                                <Tooltip Text="@(offer.OfferId ?? offer.Name)" Inline>
-                                    <span>@(offer.DisplayName ?? offer.OfferId ?? offer.Name)</span>
-                                </Tooltip>
-                            </TableRowCell>
-                            <TableRowCell>
-                                @if (!string.IsNullOrEmpty(offer.ProductId))
-                                {
-                                    <Tooltip Text="@(offer.SkuId ?? offer.SkuName)" Inline>
-                                        <Anchor To="@($"/catalog/products?product={offer.ProductId}&sku={offer.SkuId}")">
-                                            @(offer.SkuDisplayName ?? offer.SkuId ?? offer.SkuName)
-                                        </Anchor>
-                                    </Tooltip>
-                                }
-                                else
-                                {
-                                    @(offer.SkuDisplayName ?? offer.SkuName)
-                                }
-                            </TableRowCell>
-                            <TableRowCell>@PriceLabel(offer)</TableRowCell>
-                            <TableRowCell>@offer.DealCode</TableRowCell>
-                        </TableRow>
-                    }
-                </TableBody>
-            </Table>
-        </CardBody>
-    </Card>
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenFormField Text="Search offers" Variant="Variant.Outlined" Style="width:100%; max-width:28rem" class="rz-mb-3">
+            <Start><RadzenIcon Icon="@AppIcons.Search" /></Start>
+            <ChildContent><RadzenTextBox @bind-Value="_search" Immediate="true" Name="search" /></ChildContent>
+        </RadzenFormField>
+        <RadzenDataGrid TItem="CatalogOffer" Data="_offers.Where(Matches)" AllowSorting="true" AllowPaging="true" PageSize="50" PageSizeOptions="_pageSizes"
+                        ShowPagingSummary="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true" EmptyText="No offers match the search.">
+            <Columns>
+                <RadzenDataGridColumn TItem="CatalogOffer" Property="@nameof(CatalogOffer.DisplayName)" Title="Offer">
+                    <Template Context="offer">
+                        <Tip Text="@(offer.OfferId ?? offer.Name)">@(offer.DisplayName ?? offer.OfferId ?? offer.Name)</Tip>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="CatalogOffer" Property="@nameof(CatalogOffer.SkuDisplayName)" Title="SKU">
+                    <Template Context="offer">
+                        @if (!string.IsNullOrEmpty(offer.ProductId))
+                        {
+                            <Tip Text="@(offer.SkuId ?? offer.SkuName)">
+                                <RadzenLink Path="@($"/catalog/products?product={offer.ProductId}&sku={offer.SkuId}")" Text="@(offer.SkuDisplayName ?? offer.SkuId ?? offer.SkuName)" />
+                            </Tip>
+                        }
+                        else
+                        {
+                            @(offer.SkuDisplayName ?? offer.SkuName)
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="CatalogOffer" Title="Price (est. list)" Sortable="false">
+                    <Template Context="offer">@PriceLabel(offer)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="CatalogOffer" Property="@nameof(CatalogOffer.DealCode)" Title="Deal code" />
+            </Columns>
+        </RadzenDataGrid>
+    </RadzenCard>
 }
 else
 {
-    <Alert Color="Color.Info" Visible>No offers available.</Alert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No offers available.</RadzenAlert>
 }
 
 @code {
@@ -87,6 +71,7 @@ else
     public string? SkuFilter { get; set; }
 
     private IReadOnlyList<CatalogOffer>? _offers;
+    private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
     private bool _loading = true;
     private string _search = string.Empty;
 
@@ -147,3 +132,4 @@ else
             || (offer.DealCode?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false);
     }
 }
+

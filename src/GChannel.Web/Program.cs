@@ -1,14 +1,12 @@
 using System.Security.Claims;
 using ApexCharts;
-using Blazorise;
-using Blazorise.Bootstrap5;
-using Blazorise.Icons.FontAwesome;
 using GChannel.Web.Components;
 using GChannel.Web.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.HttpOverrides;
+using Radzen;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,16 +27,14 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// UI: Blazorise (Bootstrap 5 provider + FontAwesome icons) + ApexCharts.
-builder.Services
-    .AddBlazorise(options =>
-    {
-        options.Immediate = true;
-        // Optional commercial product token (Blazorise licensing); empty = community license.
-        options.ProductToken = builder.Configuration["Blazorise:ProductToken"];
-    })
-    .AddBootstrap5Providers()
-    .AddFontAwesomeIcons();
+// UI: Radzen Blazor components (MIT; dialog/notification/tooltip/context-menu/theme services) + ApexCharts.
+// The chosen light/dark theme is persisted in a cookie so prerendering already uses the right theme.
+builder.Services.AddRadzenComponents();
+builder.Services.AddRadzenCookieThemeService(options =>
+{
+    options.Name = "GChannelTheme";
+    options.Duration = TimeSpan.FromDays(365);
+});
 builder.Services.AddApexCharts();
 
 builder.Services.AddCascadingAuthenticationState();
@@ -107,7 +103,7 @@ builder.Services.AddHttpClient<GChannelApiClient>(client =>
     client.BaseAddress = new Uri("https+http://apiservice");
 });
 
-// Toasts + confirm dialogs façade over the Blazorise notification/message services.
+// Toasts + confirm dialogs façade over the Radzen notification/dialog services.
 builder.Services.AddScoped<UiNotifier>();
 
 // Per-user onboarding progress (§9 phase 1), persisted in the browser's protected local storage.

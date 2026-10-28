@@ -5,11 +5,11 @@
 
 <PageTitle>Products · GChannel</PageTitle>
 
-<Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">Products</Heading>
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-2">Products</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     The products you are authorized to sell. Expand a product to load its SKUs, then jump to the
     offers for any SKU.
-</Paragraph>
+</RadzenText>
 
 @if (_loading)
 {
@@ -18,72 +18,62 @@
 }
 else if (_products is { Count: > 0 })
 {
-    <Accordion>
-        @foreach (var product in _products)
-        {
-            <AccordionItem Visible="_expanded.Contains(product.Id)"
-                           VisibleChanged="expanded => OnProductExpanded(product, expanded)">
-                <AccordionHeader>
-                    <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
-                        <AccordionToggle>@(product.DisplayName ?? product.Id)</AccordionToggle>
-                    </Heading>
-                </AccordionHeader>
-                <AccordionBody>
+    <RadzenAccordion Multiple="true">
+        <Items>
+            @foreach (var product in _products)
+            {
+                <RadzenAccordionItem Text="@(product.DisplayName ?? product.Id)"
+                                     Selected="_expanded.Contains(product.Id)"
+                                     SelectedChanged="expanded => OnProductExpanded(product, expanded)">
                     @if (!string.IsNullOrWhiteSpace(product.Description))
                     {
-                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">@product.Description</Paragraph>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-3">@product.Description</RadzenText>
                     }
 
                     @if (_skusByProduct.TryGetValue(product.Id, out var skus))
                     {
                         @if (skus is null)
                         {
-                            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
                         }
                         else if (skus.Count == 0)
                         {
-                            <Paragraph TextColor="TextColor.Secondary">No SKUs found.</Paragraph>
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">No SKUs found.</RadzenText>
                         }
                         else
                         {
-                            <Table Narrow Hoverable Responsive>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHeaderCell>SKU</TableHeaderCell>
-                                        <TableHeaderCell>Id</TableHeaderCell>
-                                        <TableHeaderCell>Related</TableHeaderCell>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
+                            <table class="gchannel-table gchannel-table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>SKU</th>
+                                        <th>Id</th>
+                                        <th>Related</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
                                     @foreach (var sku in skus)
                                     {
-                                        <TableRow Selected="IsDeepLinkedSku(sku)">
-                                            <TableRowCell>
-                                                <Tooltip Text="@sku.Id" Inline>
-                                                    <span>@(sku.DisplayName ?? sku.Id)</span>
-                                                </Tooltip>
-                                            </TableRowCell>
-                                            <TableRowCell>@sku.Id</TableRowCell>
-                                            <TableRowCell>
-                                                <Button Type="ButtonType.Link" To="@($"/catalog/offers?sku={sku.Id}")"
-                                                        Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
-                                                    <Icon Name="@AppIcons.LocalOffer" Class="me-1" /> Offers
-                                                </Button>
-                                            </TableRowCell>
-                                        </TableRow>
+                                        <tr class="@(IsDeepLinkedSku(sku) ? "selected" : null)">
+                                            <td><Tip Text="@sku.Id">@(sku.DisplayName ?? sku.Id)</Tip></td>
+                                            <td>@sku.Id</td>
+                                            <td>
+                                                <LinkButton To="@($"/catalog/offers?sku={sku.Id}")" Text="Offers" Icon="@AppIcons.LocalOffer"
+                                                            Variant="Variant.Text" Size="ButtonSize.Small" />
+                                            </td>
+                                        </tr>
                                     }
-                                </TableBody>
-                            </Table>
+                                </tbody>
+                            </table>
                         }
                     }
-                </AccordionBody>
-            </AccordionItem>
-        }
-    </Accordion>
+                </RadzenAccordionItem>
+            }
+        </Items>
+    </RadzenAccordion>
 }
 else
 {
-    <Alert Color="Color.Info" Visible>No products available.</Alert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No products available.</RadzenAlert>
 }
 
 @code {
@@ -166,3 +156,4 @@ else
     private bool IsDeepLinkedSku(CatalogSku sku) =>
         !string.IsNullOrEmpty(SkuId) && string.Equals(sku.Id, SkuId, StringComparison.OrdinalIgnoreCase);
 }
+

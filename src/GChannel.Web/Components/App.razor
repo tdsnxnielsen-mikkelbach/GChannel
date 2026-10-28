@@ -7,13 +7,12 @@
     <base href="/" />
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]" />
-    <link rel="stylesheet" href="_content/Blazorise/blazorise.min.css" />
-    <link rel="stylesheet" href="_content/Blazorise.Bootstrap5/blazorise.bootstrap5.min.css" />
-    <link rel="stylesheet" href="_content/Blazorise.Icons.FontAwesome/v6/css/all.min.css" />
+    @* Radzen theme (free "material" family). The cookie theme service restores the user's light/dark choice;
+       RadzenTheme renders the matching stylesheet link and swaps it when the theme changes. *@
+    <RadzenTheme Theme="material" @rendermode="InteractiveServer" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["GChannel.Web.styles.css"]" />
     <link rel="stylesheet" href="@Assets["lib/driver.js/driver.css"]" />
-    <script src="@Assets["js/theme.js"]"></script>
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
     <HeadOutlet />
@@ -23,6 +22,7 @@
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
     <script src="@Assets["lib/driver.js/driver.js.iife.js"]"></script>
 </body>
 

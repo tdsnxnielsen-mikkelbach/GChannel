@@ -2,446 +2,398 @@
 @attribute [Authorize]
 @implements IDisposable
 @using ApexCharts
-@* ApexCharts and Blazorise both export these names; the page uses the Blazorise meaning except for Theme. *@
-@using Color = Blazorise.Color
-@using Size = Blazorise.Size
-@using Padding = Blazorise.Padding
-@using Tooltip = Blazorise.Tooltip
-@using Label = Blazorise.Label
-@using Orientation = Blazorise.Orientation
+@* ApexCharts and Radzen both export these names; the page uses the Radzen meaning except for Theme/Mode. *@
+@using Orientation = Radzen.Orientation
 @using Theme = ApexCharts.Theme
 @inject GChannelApiClient Api
 @inject UiNotifier Snackbar
 
 <PageTitle>Dashboard · GChannel</PageTitle>
 
-<Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">Dashboard</Heading>
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is2.FromBottom">
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-2">Dashboard</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-2">
     Reseller overview for your Google Cloud Channel estate.
-</Paragraph>
+</RadzenText>
 
 @if (_status is not null)
 {
-    <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Margin="Margin.Is5.FromBottom">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-6">
         @if (_status.IsRunning)
         {
-            <Badge Color="Color.Info"><Icon Name="@AppIcons.Sync" Class="me-1 fa-spin" />Refreshing…</Badge>
+            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Refreshing…" />
         }
         else if (!_status.Enabled)
         {
-            <Badge Color="Color.Light" Class="border text-body"><Icon Name="@AppIcons.Bolt" Class="me-1" />On demand</Badge>
+            <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="On demand" />
         }
         @if (_status.LastCompletedUtc is { } completed)
         {
-            <Small TextColor="TextColor.Secondary">
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
                 Updated @FormatAgo(completed)@(_status.LastDurationSeconds is { } secs ? $" · took {secs}s" : "")@(NextRefreshText is { } next ? $" · {next}" : "")
-            </Small>
+            </RadzenText>
         }
         else if (_status is { Enabled: true, IsRunning: false })
         {
-            <Small TextColor="TextColor.Secondary">Awaiting first background refresh…@(NextRefreshText is { } next ? $" ({next})" : "")</Small>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Awaiting first background refresh…@(NextRefreshText is { } next ? $" ({next})" : "")</RadzenText>
         }
-    </Div>
+    </RadzenStack>
 }
 
 @if (_data is { SkippedCustomerCount: > 0 })
 {
-    <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         <div>@_data.SkippedCustomerCount customer@(_data.SkippedCustomerCount == 1 ? "" : "s") couldn't be loaded; figures may be incomplete.</div>
         @if (!string.IsNullOrWhiteSpace(_data.IncompleteReason))
         {
-            <Small Display="Display.Block">@_data.IncompleteReason</Small>
+            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-m-0">@_data.IncompleteReason</RadzenText>
         }
         @if (_status is { Enabled: true })
         {
-            <Small Display="Display.Block">These will be retrieved during the next background refresh; figures will fill in automatically.</Small>
+            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-m-0">These will be retrieved during the next background refresh; figures will fill in automatically.</RadzenText>
         }
-    </Alert>
+    </RadzenAlert>
 }
 
 <OnboardingPanel CustomerCount="@(_overview?.CustomerCount ?? _data?.CustomerCount ?? 0)"
                  EntitlementCount="@EntitlementCount" />
 
-<Row>
+<RadzenRow Gap="1rem" RowGap="1rem">
     @foreach (var card in Cards)
     {
-        <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet.Is3.OnDesktop" Margin="Margin.Is3.FromBottom">
-            <Card Shadow="Shadow.Small" Class="h-100">
-                <CardBody>
-                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                        <Div>
-                            <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">@card.Label</Small>
-                            @if (card.Ready)
-                            {
-                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@card.Value</Heading>
-                            }
-                            else
-                            {
-                                <div class="spinner-border spinner-border-sm text-secondary mt-1" role="status"><span class="visually-hidden">Loading…</span></div>
-                            }
-                        </Div>
-                        <Icon Name="@card.Icon" TextColor="@card.Color" IconSize="IconSize.x2" />
-                    </Div>
+        <RadzenColumn Size="12" SizeMD="6" SizeLG="3">
+            <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <div>
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">@card.Label</RadzenText>
+                        @if (card.Ready)
+                        {
+                            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@card.Value</RadzenText>
+                        }
+                        else
+                        {
+                            <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.ExtraSmall" ShowValue="false" class="rz-mt-1" />
+                        }
+                    </div>
+                    <RadzenIcon Icon="@card.Icon" IconColor="@card.Color" Style="font-size: 2.5rem; width: auto; height: auto" />
+                </RadzenStack>
 
-                    <Button Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none px-1 mt-1"
-                            Disabled="@(!card.Ready)" Clicked="@(() => ToggleDetails(card.Key))">
-                        Details <Icon Name="@(IsExpanded(card.Key) ? AppIcons.ExpandLess : AppIcons.ExpandMore)" Class="ms-1" />
-                    </Button>
+                <RadzenButton Text="Details" Icon="@(IsExpanded(card.Key) ? AppIcons.ExpandLess : AppIcons.ExpandMore)" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text"
+                              Disabled="@(!card.Ready)" Click="@(() => ToggleDetails(card.Key))" class="rz-mt-1" />
 
-                    <Collapse Visible="@IsExpanded(card.Key)">
-                        <Div Margin="Margin.Is2.FromTop">
-                            @switch (card.Key)
-                            {
-                                case "customers":
-                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">
-                                        <b>Direct</b> = a reseller buying from us for their own use (a direct sale).
-                                        <b>Indirect</b> = your resellers' downstream end customers. Together they
-                                        make up your total customer estate.
-                                    </Small>
-                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromTop">
-                                        <span>Direct (reseller own use)</span>
-                                        <b>@DirectEstate</b>
-                                    </Div>
-                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                                        <span>Reseller end customers</span>
-                                        @if (IndirectLoaded)
-                                        {
-                                            <b>@IndirectEstate</b>
-                                        }
-                                        else
-                                        {
-                                            <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
-                                        }
-                                    </Div>
+                @if (IsExpanded(card.Key))
+                {
+                    <div class="rz-mt-2">
+                        @switch (card.Key)
+                        {
+                            case "customers":
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    <b>Direct</b> = a reseller buying from us for their own use (a direct sale).
+                                    <b>Indirect</b> = your resellers' downstream end customers. Together they
+                                    make up your total customer estate.
+                                </RadzenText>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mt-2">
+                                    <span>Direct (reseller own use)</span>
+                                    <b>@DirectEstate</b>
+                                </RadzenStack>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                    <span>Reseller end customers</span>
                                     @if (IndirectLoaded)
                                     {
-                                        <Divider Margin="Margin.Is1.OnY" />
-                                        <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                                            <b>Total estate</b>
-                                            <b>@TotalEstate</b>
-                                        </Div>
-                                    }
-                                    break;
-
-                                case "skus":
-                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">
-                                        Active entitlements (purchased SKUs) currently provisioned across all customers — direct and via resellers (indirect).
-                                    </Small>
-                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromTop">
-                                        <span>Active seats</span>
-                                        <b>@(_data?.ActiveSeats ?? 0)</b>
-                                    </Div>
-                                    @if (_products.Count > 0)
-                                    {
-                                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">Top products</Small>
-                                        @foreach (var slice in _products.Take(4))
-                                        {
-                                            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                                                <span class="text-truncate" style="max-width: 70%;">@slice.Product</span>
-                                                <b>@slice.Count</b>
-                                            </Div>
-                                        }
-                                    }
-                                    break;
-
-                                case "links":
-                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">
-                                        Your linked indirect resellers (channel partners), grouped by link state.
-                                    </Small>
-                                    @if (_overview?.ChannelLinkStates is { Count: > 0 } states)
-                                    {
-                                        @foreach (var state in states)
-                                        {
-                                            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromTop">
-                                                <span>@Humanize(state.State)</span>
-                                                <b>@state.Count</b>
-                                            </Div>
-                                        }
+                                        <b>@IndirectEstate</b>
                                     }
                                     else
                                     {
-                                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is1.FromTop">No channel partner links yet.</Small>
+                                        <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.ExtraSmall" ShowValue="false" />
                                     }
-                                    break;
+                                </RadzenStack>
+                                @if (IndirectLoaded)
+                                {
+                                    <hr class="rz-my-1" />
+                                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                        <b>Total estate</b>
+                                        <b>@TotalEstate</b>
+                                    </RadzenStack>
+                                }
+                                break;
 
-                                case "suspended":
-                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">
-                                        Entitlements that are paused (e.g. billing or admin action) and may need attention.
-                                        Shown alongside the rest of the entitlement lifecycle for context.
-                                        Numbers link to the matching entitlements across your whole estate.
-                                    </Small>
-                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromTop">
-                                        <span>Active</span>
-                                        <Anchor To="/entitlements?state=active&scope=all"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></Anchor>
-                                    </Div>
-                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                                        <span>Trial</span>
-                                        <Anchor To="/entitlements?state=trial&scope=all"><b>@(_data?.TrialEntitlementCount ?? 0)</b></Anchor>
-                                    </Div>
-                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                                        <span>Suspended</span>
-                                        <Anchor To="/entitlements?state=suspended&scope=all"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></Anchor>
-                                    </Div>
-                                    break;
-                            }
-                        </Div>
-                    </Collapse>
-                </CardBody>
-            </Card>
-        </Column>
+                            case "skus":
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    Active entitlements (purchased SKUs) currently provisioned across all customers — direct and via resellers (indirect).
+                                </RadzenText>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mt-2">
+                                    <span>Active seats</span>
+                                    <b>@(_data?.ActiveSeats ?? 0)</b>
+                                </RadzenStack>
+                                @if (_products.Count > 0)
+                                {
+                                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">Top products</RadzenText>
+                                    @foreach (var slice in _products.Take(4))
+                                    {
+                                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                            <span class="rz-text-truncate" style="max-width: 70%;">@slice.Product</span>
+                                            <b>@slice.Count</b>
+                                        </RadzenStack>
+                                    }
+                                }
+                                break;
+
+                            case "links":
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    Your linked indirect resellers (channel partners), grouped by link state.
+                                </RadzenText>
+                                @if (_overview?.ChannelLinkStates is { Count: > 0 } states)
+                                {
+                                    @foreach (var state in states)
+                                    {
+                                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mt-1">
+                                            <span>@Humanize(state.State)</span>
+                                            <b>@state.Count</b>
+                                        </RadzenStack>
+                                    }
+                                }
+                                else
+                                {
+                                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-1 rz-mb-0">No channel partner links yet.</RadzenText>
+                                }
+                                break;
+
+                            case "suspended":
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    Entitlements that are paused (e.g. billing or admin action) and may need attention.
+                                    Shown alongside the rest of the entitlement lifecycle for context.
+                                    Numbers link to the matching entitlements across your whole estate.
+                                </RadzenText>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mt-2">
+                                    <span>Active</span>
+                                    <a href="/entitlements?state=active&scope=all"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></a>
+                                </RadzenStack>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                    <span>Trial</span>
+                                    <a href="/entitlements?state=trial&scope=all"><b>@(_data?.TrialEntitlementCount ?? 0)</b></a>
+                                </RadzenStack>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                    <span>Suspended</span>
+                                    <a href="/entitlements?state=suspended&scope=all"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></a>
+                                </RadzenStack>
+                                break;
+                        }
+                    </div>
+                }
+            </RadzenCard>
+        </RadzenColumn>
     }
 
     @if (_data?.EstateValue is { } estate)
     {
-        <Column ColumnSize="ColumnSize.Is12" Margin="Margin.Is3.FromBottom">
-            <Card Shadow="Shadow.Small">
-                <CardBody>
-                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Estimated estate value (monthly)</Heading>
-                        <Div Flex="Flex.Wrap" Gap="Gap.Is1">
+        <RadzenColumn Size="12">
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Estimated estate value (monthly)</RadzenText>
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.25rem" Wrap="FlexWrap.Wrap">
+                        @foreach (var cur in estate.Currencies)
+                        {
+                            <RadzenBadge BadgeStyle="@(cur.Currency == estate.Currency ? BadgeStyle.Primary : BadgeStyle.Light)" Text="@cur.Currency" />
+                        }
+                    </RadzenStack>
+                </RadzenStack>
+                <RadzenRow Gap="1rem" RowGap="1rem" class="rz-mt-1">
+                    <RadzenColumn Size="12" SizeMD="4">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Wholesale cost</RadzenText>
+                        @if (estate.Currencies.Count > 0)
+                        {
                             @foreach (var cur in estate.Currencies)
                             {
-                                <Badge Color="@(cur.Currency == estate.Currency ? Color.Primary : Color.Light)" Class="@(cur.Currency == estate.Currency ? null : "border text-body")">@cur.Currency</Badge>
+                                <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@cur.Currency @cur.WholesaleMonthly.ToString("N2")</RadzenText>
                             }
-                        </Div>
-                    </Div>
-                    <Row Margin="Margin.Is1.FromTop">
-                        <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                            <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Wholesale cost</Small>
-                            @if (estate.Currencies.Count > 0)
+                        }
+                        else
+                        {
+                            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@estate.Currency @estate.WholesaleMonthly.ToString("N2")</RadzenText>
+                        }
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">What you pay Google</RadzenText>
+                    </RadzenColumn>
+                    <RadzenColumn Size="12" SizeMD="4">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Repriced revenue</RadzenText>
+                        @if (estate.Currencies.Count > 0)
+                        {
+                            @foreach (var cur in estate.Currencies)
                             {
-                                @foreach (var cur in estate.Currencies)
-                                {
-                                    <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@cur.Currency @cur.WholesaleMonthly.ToString("N2")</Heading>
-                                }
+                                <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@cur.Currency @cur.RevenueMonthly.ToString("N2")</RadzenText>
                             }
-                            else
+                        }
+                        else
+                        {
+                            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@estate.Currency @estate.RevenueMonthly.ToString("N2")</RadzenText>
+                        }
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">What end customers are billed</RadzenText>
+                    </RadzenColumn>
+                    <RadzenColumn Size="12" SizeMD="4">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Margin</RadzenText>
+                        @if (estate.Currencies.Count > 0)
+                        {
+                            @foreach (var cur in estate.Currencies)
                             {
-                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@estate.Currency @estate.WholesaleMonthly.ToString("N2")</Heading>
+                                <RadzenText TextStyle="TextStyle.H5" class="@($"rz-m-0 {MarginClass(cur.MarginMonthly)}")">@cur.Currency @cur.MarginMonthly.ToString("N2")</RadzenText>
                             }
-                            <Small TextColor="TextColor.Secondary">What you pay Google</Small>
-                        </Column>
-                        <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                            <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Repriced revenue</Small>
-                            @if (estate.Currencies.Count > 0)
+                        }
+                        else
+                        {
+                            <RadzenText TextStyle="TextStyle.H5" class="@($"rz-m-0 {MarginClass(estate.MarginMonthly)}")">@estate.Currency @estate.MarginMonthly.ToString("N2")</RadzenText>
+                        }
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Revenue − wholesale</RadzenText>
+                    </RadzenColumn>
+                </RadzenRow>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-3 rz-mb-0" Style="font-weight:600">
+                    By source@(estate.MixedCurrencies ? " & currency" : "")
+                </RadzenText>
+                <table class="gchannel-table gchannel-table-hover rz-mt-1">
+                    <thead>
+                        <tr>
+                            @if (estate.MixedCurrencies)
                             {
-                                @foreach (var cur in estate.Currencies)
-                                {
-                                    <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@cur.Currency @cur.RevenueMonthly.ToString("N2")</Heading>
-                                }
+                                <th>Currency</th>
                             }
-                            else
-                            {
-                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@estate.Currency @estate.RevenueMonthly.ToString("N2")</Heading>
-                            }
-                            <Small TextColor="TextColor.Secondary">What end customers are billed</Small>
-                        </Column>
-                        <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                            <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Margin</Small>
-                            @if (estate.Currencies.Count > 0)
-                            {
-                                @foreach (var cur in estate.Currencies)
-                                {
-                                    <Heading Size="HeadingSize.Is4" Margin="Margin.Is0" TextColor="@(cur.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.Currency @cur.MarginMonthly.ToString("N2")</Heading>
-                                }
-                            }
-                            else
-                            {
-                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0" TextColor="@(estate.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@estate.Currency @estate.MarginMonthly.ToString("N2")</Heading>
-                            }
-                            <Small TextColor="TextColor.Secondary">Revenue − wholesale</Small>
-                        </Column>
-                    </Row>
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is3.FromTop" Class="fw-semibold">
-                        By source@(estate.MixedCurrencies ? " & currency" : "")
-                    </Small>
-                    <Table Narrow Hoverable Borderless Margin="Margin.Is1.FromTop">
-                        <TableHeader>
-                            <TableRow>
+                            <th>Source</th>
+                            <th class="num">Wholesale cost</th>
+                            <th class="num">Repriced revenue</th>
+                            <th class="num">Margin</th>
+                            <th class="num">Subscriptions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var cur in estate.Currencies)
+                        {
+                            <tr>
                                 @if (estate.MixedCurrencies)
                                 {
-                                    <TableHeaderCell>Currency</TableHeaderCell>
+                                    <td>@cur.Currency</td>
                                 }
-                                <TableHeaderCell>Source</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Wholesale cost</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Repriced revenue</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Margin</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Subscriptions</TableHeaderCell>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
+                                <td>Direct (reseller own use)</td>
+                                <td class="num">@cur.Direct.WholesaleMonthly.ToString("N2")</td>
+                                <td class="num">@cur.Direct.RevenueMonthly.ToString("N2")</td>
+                                <td class="@($"num {MarginClass(cur.Direct.MarginMonthly)}")">@cur.Direct.MarginMonthly.ToString("N2")</td>
+                                <td class="num">@cur.Direct.PricedEntitlementCount</td>
+                            </tr>
+                            <tr>
+                                @if (estate.MixedCurrencies)
+                                {
+                                    <td></td>
+                                }
+                                <td>Via resellers (indirect)</td>
+                                <td class="num">@cur.Indirect.WholesaleMonthly.ToString("N2")</td>
+                                <td class="num">@cur.Indirect.RevenueMonthly.ToString("N2")</td>
+                                <td class="@($"num {MarginClass(cur.Indirect.MarginMonthly)}")">@cur.Indirect.MarginMonthly.ToString("N2")</td>
+                                <td class="num">@cur.Indirect.PricedEntitlementCount</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (estate.Currencies.Count > 1)
+                {
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-3 rz-mb-0" Style="font-weight:600">By currency (total)</RadzenText>
+                    <table class="gchannel-table gchannel-table-hover rz-mt-1">
+                        <thead>
+                            <tr>
+                                <th>Currency</th>
+                                <th class="num">Wholesale cost</th>
+                                <th class="num">Repriced revenue</th>
+                                <th class="num">Margin</th>
+                                <th class="num">Subscriptions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
                             @foreach (var cur in estate.Currencies)
                             {
-                                <TableRow>
-                                    @if (estate.MixedCurrencies)
-                                    {
-                                        <TableRowCell>@cur.Currency</TableRowCell>
-                                    }
-                                    <TableRowCell>Direct (reseller own use)</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Direct.WholesaleMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Direct.RevenueMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(cur.Direct.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.Direct.MarginMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Direct.PricedEntitlementCount</TableRowCell>
-                                </TableRow>
-                                <TableRow>
-                                    @if (estate.MixedCurrencies)
-                                    {
-                                        <TableRowCell></TableRowCell>
-                                    }
-                                    <TableRowCell>Via resellers (indirect)</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Indirect.WholesaleMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Indirect.RevenueMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(cur.Indirect.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.Indirect.MarginMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Indirect.PricedEntitlementCount</TableRowCell>
-                                </TableRow>
+                                <tr>
+                                    <td>@cur.Currency</td>
+                                    <td class="num">@cur.WholesaleMonthly.ToString("N2")</td>
+                                    <td class="num">@cur.RevenueMonthly.ToString("N2")</td>
+                                    <td class="@($"num {MarginClass(cur.MarginMonthly)}")">@cur.MarginMonthly.ToString("N2")</td>
+                                    <td class="num">@cur.PricedEntitlementCount</td>
+                                </tr>
                             }
-                        </TableBody>
-                    </Table>
-                    @if (estate.Currencies.Count > 1)
-                    {
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is3.FromTop" Class="fw-semibold">By currency (total)</Small>
-                        <Table Narrow Hoverable Borderless Margin="Margin.Is1.FromTop">
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHeaderCell>Currency</TableHeaderCell>
-                                    <TableHeaderCell TextAlignment="TextAlignment.End">Wholesale cost</TableHeaderCell>
-                                    <TableHeaderCell TextAlignment="TextAlignment.End">Repriced revenue</TableHeaderCell>
-                                    <TableHeaderCell TextAlignment="TextAlignment.End">Margin</TableHeaderCell>
-                                    <TableHeaderCell TextAlignment="TextAlignment.End">Subscriptions</TableHeaderCell>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                @foreach (var cur in estate.Currencies)
-                                {
-                                    <TableRow>
-                                        <TableRowCell>@cur.Currency</TableRowCell>
-                                        <TableRowCell TextAlignment="TextAlignment.End">@cur.WholesaleMonthly.ToString("N2")</TableRowCell>
-                                        <TableRowCell TextAlignment="TextAlignment.End">@cur.RevenueMonthly.ToString("N2")</TableRowCell>
-                                        <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(cur.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.MarginMonthly.ToString("N2")</TableRowCell>
-                                        <TableRowCell TextAlignment="TextAlignment.End">@cur.PricedEntitlementCount</TableRowCell>
-                                    </TableRow>
-                                }
-                            </TableBody>
-                        </Table>
-                    }
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
-                        Estimates from offer <b>list</b> pricing × seats and configured repricing mark-ups — not invoiced amounts.
-                        Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} have no resolved offer price and are excluded" : "").@(estate.MixedCurrencies ? " Each currency is listed separately; the source split is broken out below." : "")
-                    </Small>
-                </CardBody>
-            </Card>
-        </Column>
+                        </tbody>
+                    </table>
+                }
+                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.P" class="rz-text-secondary-color rz-mt-2 rz-mb-0">
+                    Estimates from offer <b>list</b> pricing × seats and configured repricing mark-ups — not invoiced amounts.
+                    Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} have no resolved offer price and are excluded" : "").@(estate.MixedCurrencies ? " Each currency is listed separately; the source split is broken out below." : "")
+                </RadzenText>
+            </RadzenCard>
+        </RadzenColumn>
     }
 
-    <Column ColumnSize="ColumnSize.Is12.Is8.OnDesktop" Margin="Margin.Is3.FromBottom">
-        <Card Shadow="Shadow.Small" Class="h-100">
-            <CardBody>
-                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
-                    <Div>
-                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Customers onboarded</Heading>
-                        @if (_monthly.Count > 0 && MonthlyRangeTitle is { Length: > 0 } title)
-                        {
-                            <Small TextColor="TextColor.Secondary">@title</Small>
-                        }
-                    </Div>
-                    @if (_allMonthly.Count > 1)
+    <RadzenColumn Size="12" SizeLG="8">
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+                <div>
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Customers onboarded</RadzenText>
+                    @if (_monthly.Count > 0 && MonthlyRangeTitle is { Length: > 0 } title)
                     {
-                        <Div Flex="Flex.AlignItems.Center.Wrap" Gap="Gap.Is2">
-                            <Select TValue="string" Value="@_rangeFrom" ValueChanged="OnRangeFromChanged" Size="Size.Small" Style="min-width:130px" aria-label="From">
-                                @foreach (var m in _allMonthly)
-                                {
-                                    <SelectItem TValue="string" Value="@m.Key">@m.Label</SelectItem>
-                                }
-                            </Select>
-                            <Select TValue="string" Value="@_rangeTo" ValueChanged="OnRangeToChanged" Size="Size.Small" Style="min-width:130px" aria-label="To">
-                                @foreach (var m in _allMonthly)
-                                {
-                                    <SelectItem TValue="string" Value="@m.Key">@m.Label</SelectItem>
-                                }
-                            </Select>
-                            <Tooltip Text="Show the whole available period" Inline>
-                                <Button Size="Size.Small" Color="Color.Secondary" Outline Clicked="ResetRangeToAll">All</Button>
-                            </Tooltip>
-                        </Div>
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@title</RadzenText>
                     }
-                </Div>
-                @if (_monthly.Count > 0)
+                </div>
+                @if (_allMonthly.Count > 1)
                 {
-                    <ApexChart TItem="MonthlyPoint" Options="_monthlyOptions" @ref="_monthlyChart">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                        <RadzenDropDown TValue="string" Data="_allMonthly" ValueProperty="@nameof(MonthlyPoint.Key)" TextProperty="@nameof(MonthlyPoint.Label)"
+                                        Value="@_rangeFrom" ValueChanged="OnRangeFromChanged" Style="min-width:130px" aria-label="From" Name="rangeFrom" />
+                        <RadzenDropDown TValue="string" Data="_allMonthly" ValueProperty="@nameof(MonthlyPoint.Key)" TextProperty="@nameof(MonthlyPoint.Label)"
+                                        Value="@_rangeTo" ValueChanged="OnRangeToChanged" Style="min-width:130px" aria-label="To" Name="rangeTo" />
+                        <Tip Text="Show the whole available period">
+                            <RadzenButton Text="All" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="ResetRangeToAll" />
+                        </Tip>
+                    </RadzenStack>
+                }
+            </RadzenStack>
+            @if (_monthly.Count > 0)
+            {
+                <ApexChart TItem="MonthlyPoint" Options="_monthlyOptions" @ref="_monthlyChart">
+                    <ApexPointSeries TItem="MonthlyPoint"
+                                     Items="_monthly"
+                                     Name="@(HasIndirectOnboarding ? "Direct" : "Customers")"
+                                     SeriesType="SeriesType.Line"
+                                     XValue="@(p => p.Label)"
+                                     YValue="@(p => p.Direct)" />
+                    @if (HasIndirectOnboarding)
+                    {
                         <ApexPointSeries TItem="MonthlyPoint"
                                          Items="_monthly"
-                                         Name="@(HasIndirectOnboarding ? "Direct" : "Customers")"
+                                         Name="Via resellers (indirect)"
                                          SeriesType="SeriesType.Line"
                                          XValue="@(p => p.Label)"
-                                         YValue="@(p => p.Direct)" />
-                        @if (HasIndirectOnboarding)
-                        {
-                            <ApexPointSeries TItem="MonthlyPoint"
-                                             Items="_monthly"
-                                             Name="Via resellers (indirect)"
-                                             SeriesType="SeriesType.Line"
-                                             XValue="@(p => p.Label)"
-                                             YValue="@(p => p.Indirect)" />
-                        }
-                    </ApexChart>
-                }
-                else if (_overviewLoading)
-                {
-                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 200px;">
-                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-                    </Div>
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No customer history yet.</Paragraph>
-                }
-            </CardBody>
-        </Card>
-    </Column>
+                                         YValue="@(p => p.Indirect)" />
+                    }
+                </ApexChart>
+            }
+            else if (_overviewLoading)
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No customer history yet.</RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
 
-    <Column ColumnSize="ColumnSize.Is12.Is4.OnDesktop" Margin="Margin.Is3.FromBottom">
-        <Card Shadow="Shadow.Small" Class="h-100">
-            <CardBody>
-                <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is1" Margin="Margin.Is2.FromBottom">
-                    <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Product mix</Heading>
-                    <Tooltip Placement="TooltipPlacement.Top" Multiline Inline
-                             Text="Slices are grouped by their catalog product name. A few entries may appear as a raw SKU or product ID when the marketing display name isn't available from the catalog — typically custom/negotiated offers, SKU groups, or products missing from the public catalog.">
-                        <Icon Name="@AppIcons.Info" TextColor="TextColor.Secondary" />
-                    </Tooltip>
-                </Div>
-                @if (_indirectProducts.Count > 0)
+    <RadzenColumn Size="12" SizeLG="4">
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem" class="rz-mb-2">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Product mix</RadzenText>
+                <Tip Text="Slices are grouped by their catalog product name. A few entries may appear as a raw SKU or product ID when the marketing display name isn't available from the catalog — typically custom/negotiated offers, SKU groups, or products missing from the public catalog.">
+                    <RadzenIcon Icon="@AppIcons.Info" class="rz-text-secondary-color" />
+                </Tip>
+            </RadzenStack>
+            @if (_indirectProducts.Count > 0)
+            {
+                @* Both direct and reseller (indirect) business exists — show a donut for each so the
+                   split is clear rather than blending them into one whole-estate chart. *@
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Direct (reseller own use)</RadzenText>
+                @if (_directProducts.Count > 0)
                 {
-                    @* Both direct and reseller (indirect) business exists — show a donut for each so the
-                       split is clear rather than blending them into one whole-estate chart. *@
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Direct (reseller own use)</Small>
-                    @if (_directProducts.Count > 0)
-                    {
-                        <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
-                            <ApexPointSeries TItem="ProductSlice"
-                                             Items="_directProducts"
-                                             Name="SKUs"
-                                             SeriesType="SeriesType.Donut"
-                                             XValue="@(p => p.Product)"
-                                             YValue="@(p => p.Count)" />
-                        </ApexChart>
-                    }
-                    else
-                    {
-                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is2.FromBottom">No direct active entitlements.</Paragraph>
-                    }
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is3.FromTop" Class="fw-semibold">Via resellers (indirect)</Small>
-                    <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_indirectProductOptions" @ref="_indirectProductChart">
-                        <ApexPointSeries TItem="ProductSlice"
-                                         Items="_indirectProducts"
-                                         Name="SKUs"
-                                         SeriesType="SeriesType.Donut"
-                                         XValue="@(p => p.Product)"
-                                         YValue="@(p => p.Count)" />
-                    </ApexChart>
-                }
-                else if (_directProducts.Count > 0)
-                {
-                    @* Direct-only distributor (no reseller estate): the direct mix is the whole estate. *@
                     <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
                         <ApexPointSeries TItem="ProductSlice"
                                          Items="_directProducts"
@@ -451,251 +403,255 @@
                                          YValue="@(p => p.Count)" />
                     </ApexChart>
                 }
-                else if (_entitlementsLoading)
-                {
-                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 200px;">
-                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-                    </Div>
-                }
                 else
                 {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No active entitlements yet.</Paragraph>
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-2">No direct active entitlements.</RadzenText>
                 }
-            </CardBody>
-        </Card>
-    </Column>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-3 rz-mb-0" Style="font-weight:600">Via resellers (indirect)</RadzenText>
+                <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_indirectProductOptions" @ref="_indirectProductChart">
+                    <ApexPointSeries TItem="ProductSlice"
+                                     Items="_indirectProducts"
+                                     Name="SKUs"
+                                     SeriesType="SeriesType.Donut"
+                                     XValue="@(p => p.Product)"
+                                     YValue="@(p => p.Count)" />
+                </ApexChart>
+            }
+            else if (_directProducts.Count > 0)
+            {
+                @* Direct-only distributor (no reseller estate): the direct mix is the whole estate. *@
+                <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
+                    <ApexPointSeries TItem="ProductSlice"
+                                     Items="_directProducts"
+                                     Name="SKUs"
+                                     SeriesType="SeriesType.Donut"
+                                     XValue="@(p => p.Product)"
+                                     YValue="@(p => p.Count)" />
+                </ApexChart>
+            }
+            else if (_entitlementsLoading)
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No active entitlements yet.</RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
 
-    <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop" Margin="Margin.Is3.FromBottom">
-        <Card Shadow="Shadow.Small" Class="h-100">
-            <CardBody>
-                <Div Flex="Flex.JustifyContent.Between.AlignItems.Start.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
-                    <Div>
-                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Onboarding by reseller</Heading>
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block">
-                            Which reseller onboarded which customers in the selected month. "Direct" = account-owned.
-                        </Small>
-                    </Div>
-                    @if (_onboardMonths.Count > 0)
+    <RadzenColumn Size="12" SizeLG="6">
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+                <div>
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Onboarding by reseller</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                        Which reseller onboarded which customers in the selected month. "Direct" = account-owned.
+                    </RadzenText>
+                </div>
+                @if (_onboardMonths.Count > 0)
+                {
+                    <RadzenDropDown TValue="string" Data="MonthOptions(_onboardMonths)" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                                    Value="@_onboardMonth" ValueChanged="OnOnboardMonthChanged" Style="max-width:170px" aria-label="Month" Name="onboardMonth" />
+                }
+            </RadzenStack>
+            @if (_onboardBars.Count > 0)
+            {
+                <ApexChart TItem="OnboardBar" Options="_onboardOptions" @ref="_onboardChart">
+                    <ApexPointSeries TItem="OnboardBar" Items="_onboardBars" Name="Customers"
+                                     SeriesType="SeriesType.Bar"
+                                     XValue="@(b => b.Reseller)" YValue="@(b => b.Count)" />
+                </ApexChart>
+                <div style="max-height:150px; overflow:auto" class="rz-mt-2">
+                    @foreach (var g in OnboardDetail())
                     {
-                        <Select TValue="string" Value="@_onboardMonth" ValueChanged="OnOnboardMonthChanged" Size="Size.Small" Style="max-width:170px" aria-label="Month">
-                            @foreach (var m in _onboardMonths)
-                            {
-                                <SelectItem TValue="string" Value="@m">@MonthLabel(m)</SelectItem>
-                            }
-                        </Select>
+                        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-m-0">
+                            <strong>@g.Key</strong>: @string.Join(", ", g.Select(o => o.CustomerName))
+                        </RadzenText>
                     }
-                </Div>
-                @if (_onboardBars.Count > 0)
-                {
-                    <ApexChart TItem="OnboardBar" Options="_onboardOptions" @ref="_onboardChart">
-                        <ApexPointSeries TItem="OnboardBar" Items="_onboardBars" Name="Customers"
-                                         SeriesType="SeriesType.Bar"
-                                         XValue="@(b => b.Reseller)" YValue="@(b => b.Count)" />
-                    </ApexChart>
-                    <div style="max-height:150px; overflow:auto" class="mt-2">
-                        @foreach (var g in OnboardDetail())
-                        {
-                            <Small Display="Display.Block">
-                                <strong>@g.Key</strong>: @string.Join(", ", g.Select(o => o.CustomerName))
-                            </Small>
-                        }
-                    </div>
-                }
-                else if (_entitlementsLoading)
-                {
-                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height:200px;">
-                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-                    </Div>
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
-                        No onboarding data yet. Attribution appears once the background read-model has synced.
-                    </Paragraph>
-                }
-            </CardBody>
-        </Card>
-    </Column>
+                </div>
+            }
+            else if (_entitlementsLoading)
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height:200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
+                    No onboarding data yet. Attribution appears once the background read-model has synced.
+                </RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
 
-    <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop" Margin="Margin.Is3.FromBottom">
-        <Card Shadow="Shadow.Small" Class="h-100">
-            <CardBody>
-                <Div Flex="Flex.JustifyContent.Between.AlignItems.Start.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
-                    <Div>
-                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Partner links established</Heading>
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block">
-                            When channel partner links were created, month by month. Pick a month to see with whom.
-                        </Small>
-                    </Div>
-                    @if (_linkMonths.Count > 0)
-                    {
-                        <Select TValue="string" Value="@_linkMonth" ValueChanged="OnLinkMonthChanged" Size="Size.Small" Style="max-width:170px" aria-label="Month">
-                            @foreach (var m in _linkMonths)
-                            {
-                                <SelectItem TValue="string" Value="@m">@MonthLabel(m)</SelectItem>
-                            }
-                        </Select>
+    <RadzenColumn Size="12" SizeLG="6">
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+                <div>
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Partner links established</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                        When channel partner links were created, month by month. Pick a month to see with whom.
+                    </RadzenText>
+                </div>
+                @if (_linkMonths.Count > 0)
+                {
+                    <RadzenDropDown TValue="string" Data="MonthOptions(_linkMonths)" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                                    Value="@_linkMonth" ValueChanged="OnLinkMonthChanged" Style="max-width:170px" aria-label="Month" Name="linkMonth" />
+                }
+            </RadzenStack>
+            @if (_linkSeries.Count > 0)
+            {
+                <ApexChart TItem="LinkMonthPoint" Options="_linkOptions" @ref="_linkChart">
+                    <ApexPointSeries TItem="LinkMonthPoint" Items="_linkSeries" Name="Links established"
+                                     SeriesType="SeriesType.Bar"
+                                     XValue="@(p => p.Label)" YValue="@(p => p.Count)" />
+                </ApexChart>
+                <div style="max-height:150px; overflow:auto" class="rz-mt-2">
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-1">
+                        Established in @(_linkMonth is null ? "—" : MonthLabel(_linkMonth)):
+                    </RadzenText>
+                    @{
+                        var linkDetail = LinkDetail();
                     }
-                </Div>
-                @if (_linkSeries.Count > 0)
-                {
-                    <ApexChart TItem="LinkMonthPoint" Options="_linkOptions" @ref="_linkChart">
-                        <ApexPointSeries TItem="LinkMonthPoint" Items="_linkSeries" Name="Links established"
-                                         SeriesType="SeriesType.Bar"
-                                         XValue="@(p => p.Label)" YValue="@(p => p.Count)" />
-                    </ApexChart>
-                    <div style="max-height:150px; overflow:auto" class="mt-2">
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is1.FromBottom">
-                            Established in @(_linkMonth is null ? "—" : MonthLabel(_linkMonth)):
-                        </Small>
-                        @{
-                            var linkDetail = LinkDetail();
-                        }
-                        @if (linkDetail.Count > 0)
+                    @if (linkDetail.Count > 0)
+                    {
+                        @foreach (var l in linkDetail)
                         {
-                            @foreach (var l in linkDetail)
-                            {
-                                <Badge Color="@LinkStateColor(l.LinkState)" Margin="Margin.Is1">@l.Reseller</Badge>
-                            }
+                            <RadzenBadge BadgeStyle="@LinkStateColor(l.LinkState)" Text="@l.Reseller" class="rz-m-1" />
                         }
-                        else
-                        {
-                            <Small TextColor="TextColor.Secondary">No links established this month.</Small>
-                        }
-                    </div>
-                }
-                else if (_entitlementsLoading)
-                {
-                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height:200px;">
-                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-                    </Div>
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
-                        No channel partner links established yet.
-                    </Paragraph>
-                }
-            </CardBody>
-        </Card>
-    </Column>
+                    }
+                    else
+                    {
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">No links established this month.</RadzenText>
+                    }
+                </div>
+            }
+            else if (_entitlementsLoading)
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height:200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
+                    No channel partner links established yet.
+                </RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
 
-    <Column ColumnSize="ColumnSize.Is12" Margin="Margin.Is3.FromBottom">
-        <Card Shadow="Shadow.Small">
-            <CardBody>
-                <Div Flex="Flex.JustifyContent.Between.AlignItems.Start.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
-                    <Div>
-                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Top indirect resellers</Heading>
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block">
-                            @(_resellerMetric switch
-                            {
-                                "avg" => "Ranked by average active seats per customer — a fairer comparison when one reseller dwarfs the rest. Parentheses show the customer count; each bar is labelled with its exact figure.",
-                                "revenue" => "Ranked by estimated monthly revenue (repriced end-customer billing, from list pricing + repricing mark-ups). Parentheses show the customer count; each bar is labelled with its exact figure.",
-                                _ => "Ranked by total active seats. Parentheses show the customer count; each bar is labelled with its exact seat count."
-                            })
-                        </Small>
-                    </Div>
-                    @if (_resellers.Count > 0)
-                    {
-                        <Select TValue="string" Value="@_resellerMetric" ValueChanged="OnResellerMetricChanged" Size="Size.Small" Style="max-width:220px" aria-label="Rank by">
-                            <SelectItem TValue="string" Value="@("seats")">Total seats</SelectItem>
-                            <SelectItem TValue="string" Value="@("avg")">Avg seats / customer</SelectItem>
-                            <SelectItem TValue="string" Value="@("revenue")">Monthly revenue</SelectItem>
-                        </Select>
-                    }
-                </Div>
+    <RadzenColumn Size="12">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+                <div>
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Top indirect resellers</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                        @(_resellerMetric switch
+                        {
+                            "avg" => "Ranked by average active seats per customer — a fairer comparison when one reseller dwarfs the rest. Parentheses show the customer count; each bar is labelled with its exact figure.",
+                            "revenue" => "Ranked by estimated monthly revenue (repriced end-customer billing, from list pricing + repricing mark-ups). Parentheses show the customer count; each bar is labelled with its exact figure.",
+                            _ => "Ranked by total active seats. Parentheses show the customer count; each bar is labelled with its exact seat count."
+                        })
+                    </RadzenText>
+                </div>
                 @if (_resellers.Count > 0)
                 {
-                    <ApexChart TItem="ResellerSlice" Title="@_resellerTitle" Options="_resellerOptions" @ref="_resellerChart">
-                        <ApexPointSeries TItem="ResellerSlice"
-                                         Items="_resellerView"
-                                         Name="@_resellerSeriesName"
-                                         SeriesType="SeriesType.Bar"
-                                         XValue="@(r => $"{r.Reseller} ({r.Customers:0})")"
-                                         YValue="@(r => _resellerMetric switch { "avg" => r.AvgSeats, "revenue" => r.Revenue, _ => r.Seats })" />
-                    </ApexChart>
+                    <RadzenDropDown TValue="string" Data="_resellerMetricOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                                    Value="@_resellerMetric" ValueChanged="OnResellerMetricChanged" Style="max-width:220px" aria-label="Rank by" Name="resellerMetric" />
                 }
-                else if (_entitlementsLoading)
-                {
-                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 200px;">
-                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-                    </Div>
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
-                        No indirect resellers with customers yet. When a linked reseller owns downstream
-                        customers, they'll appear here ranked by total active seats.
-                    </Paragraph>
-                }
-            </CardBody>
-        </Card>
-    </Column>
+            </RadzenStack>
+            @if (_resellers.Count > 0)
+            {
+                <ApexChart TItem="ResellerSlice" Title="@_resellerTitle" Options="_resellerOptions" @ref="_resellerChart">
+                    <ApexPointSeries TItem="ResellerSlice"
+                                     Items="_resellerView"
+                                     Name="@_resellerSeriesName"
+                                     SeriesType="SeriesType.Bar"
+                                     XValue="@(r => $"{r.Reseller} ({r.Customers:0})")"
+                                     YValue="@(r => _resellerMetric switch { "avg" => r.AvgSeats, "revenue" => r.Revenue, _ => r.Seats })" />
+                </ApexChart>
+            }
+            else if (_entitlementsLoading)
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
+                    No indirect resellers with customers yet. When a linked reseller owns downstream
+                    customers, they'll appear here ranked by total active seats.
+                </RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
 
-    <Column ColumnSize="ColumnSize.Is12" Margin="Margin.Is3.FromBottom">
-        <Card Shadow="Shadow.Small">
-            <CardBody>
-                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
-                    <Div>
-                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">GCP &amp; Marketplace consumption (billed)</Heading>
-                        <Small TextColor="TextColor.Secondary">
-                            Actual spend from the Cloud Billing → BigQuery export (last month) — real billed
-                            figures, distinct from the list-price estimate above.
-                        </Small>
-                    </Div>
-                    <Button Type="ButtonType.Link" To="/billing/spend" Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
-                        Spend trends <Icon Name="@AppIcons.ArrowForward" Class="ms-1" />
-                    </Button>
-                </Div>
+    <RadzenColumn Size="12">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+                <div>
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">GCP &amp; Marketplace consumption (billed)</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                        Actual spend from the Cloud Billing → BigQuery export (last month) — real billed
+                        figures, distinct from the list-price estimate above.
+                    </RadzenText>
+                </div>
+                <LinkButton To="/billing/spend" Text="Spend trends" Icon="@AppIcons.ArrowForward" Variant="Variant.Text" Size="ButtonSize.Small" />
+            </RadzenStack>
 
-                @if (_spendUnconfigured)
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">The BigQuery billing-export sync isn't configured.</Paragraph>
-                }
-                else if (_spendLoading)
-                {
-                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 200px;">
-                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-                    </Div>
-                }
-                else if (_spendBars.Count > 0)
-                {
-                    <Div Flex="Flex.Wrap" Gap="Gap.Is5" Margin="Margin.Is2.FromBottom">
-                        @foreach (var t in _spendTotals)
-                        {
-                            <Div>
-                                <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Total billed (@t.Currency)</Small>
-                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@t.Currency @t.Total.ToString("N2")</Heading>
-                            </Div>
-                        }
-                    </Div>
-                    <ApexChart TItem="SpendBar" Title="@_spendChartTitle" Options="_spendOptions" @ref="_spendChart">
-                        <ApexPointSeries TItem="SpendBar"
-                                         Items="_spendBars"
-                                         Name="Billed spend"
-                                         SeriesType="SeriesType.Bar"
-                                         XValue="@(b => b.Reseller)"
-                                         YValue="@(b => b.Cost)" />
-                    </ApexChart>
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
-                        Billed spend attributed to each customer's owning channel partner (Direct = account-owned).
-                        @if (_spendAsOf is { } asOf)
-                        {
-                            <span>As of @asOf.LocalDateTime.ToString("g").</span>
-                        }
-                    </Small>
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No billed spend recorded yet.</Paragraph>
-                }
-            </CardBody>
-        </Card>
-    </Column>
-</Row>
+            @if (_spendUnconfigured)
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">The BigQuery billing-export sync isn't configured.</RadzenText>
+            }
+            else if (_spendLoading)
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
+            }
+            else if (_spendBars.Count > 0)
+            {
+                <RadzenStack Orientation="Orientation.Horizontal" Gap="2rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+                    @foreach (var t in _spendTotals)
+                    {
+                        <div>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Total billed (@t.Currency)</RadzenText>
+                            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@t.Currency @t.Total.ToString("N2")</RadzenText>
+                        </div>
+                    }
+                </RadzenStack>
+                <ApexChart TItem="SpendBar" Title="@_spendChartTitle" Options="_spendOptions" @ref="_spendChart">
+                    <ApexPointSeries TItem="SpendBar"
+                                     Items="_spendBars"
+                                     Name="Billed spend"
+                                     SeriesType="SeriesType.Bar"
+                                     XValue="@(b => b.Reseller)"
+                                     YValue="@(b => b.Cost)" />
+                </ApexChart>
+                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.P" class="rz-text-secondary-color rz-mt-2 rz-mb-0">
+                    Billed spend attributed to each customer's owning channel partner (Direct = account-owned).
+                    @if (_spendAsOf is { } asOf)
+                    {
+                        <span>As of @asOf.LocalDateTime.ToString("g").</span>
+                    }
+                </RadzenText>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded yet.</RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
 
 @code {
-    private record SummaryCard(string Key, string Label, string Value, string Icon, TextColor Color, bool Ready);
+    private record SummaryCard(string Key, string Label, string Value, string Icon, string Color, bool Ready);
     private record MonthlyPoint(string Key, string Label, decimal Direct, decimal Indirect);
     private record ProductSlice(string Product, decimal Count);
     private record ResellerSlice(string Reseller, decimal Customers, decimal Seats, decimal AvgSeats, decimal Revenue);
@@ -703,6 +659,17 @@
     private record LinkMonthPoint(string Key, string Label, decimal Count);
     private record SpendBar(string Reseller, decimal Cost);
     private record SpendTotal(string Currency, decimal Total);
+
+    private static readonly SelectOption[] _resellerMetricOptions =
+    [
+        new("seats", "Total seats"),
+        new("avg", "Avg seats / customer"),
+        new("revenue", "Monthly revenue"),
+    ];
+
+    private IEnumerable<SelectOption> MonthOptions(IEnumerable<string> months) => months.Select(m => new SelectOption(m, MonthLabel(m)));
+
+    private static string MarginClass(decimal margin) => margin >= 0 ? "rz-color-success" : "rz-color-danger";
 
     // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
     // its own axis/legend/title text in a fixed colour that ignores the Bootstrap colour mode, so without this
@@ -821,13 +788,13 @@
     private SummaryCard[] Cards =>
     [
         new("customers", "Customers", (_overview?.CustomerCount ?? _data?.CustomerCount ?? 0).ToString(),
-            AppIcons.Business, TextColor.Primary, _overview is not null || _data is not null),
+            AppIcons.Business, Colors.Primary, _overview is not null || _data is not null),
         new("skus", "Active SKUs", (_data?.ActiveEntitlementCount ?? 0).ToString(),
-            AppIcons.Inventory, TextColor.Success, _data is not null),
+            AppIcons.Inventory, Colors.Success, _data is not null),
         new("links", "Channel links", (_overview?.ChannelLinkCount ?? 0).ToString(),
-            AppIcons.Hub, TextColor.Info, _overview is not null),
+            AppIcons.Hub, Colors.Info, _overview is not null),
         new("suspended", "Suspended", (_data?.SuspendedEntitlementCount ?? 0).ToString(),
-            AppIcons.PauseCircle, TextColor.Warning, _data is not null),
+            AppIcons.PauseCircle, Colors.Warning, _data is not null),
     ];
 
     // Tracks which KPI cards have their details panel expanded (keyed by SummaryCard.Key).
@@ -1221,12 +1188,12 @@
             ? d.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)
             : key;
 
-    private static Color LinkStateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle LinkStateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "SUSPENDED" => Color.Warning,
-        "INVITED" => Color.Info,
-        _ => Color.Secondary
+        "ACTIVE" => BadgeStyle.Success,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "INVITED" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private async Task LoadOverviewAsync(CancellationToken cancellationToken)

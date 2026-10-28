@@ -3,86 +3,72 @@
 @inject GChannelApiClient Api
 @inject UiNotifier Snackbar
 @inject NavigationManager Nav
+@inject DialogService Dialogs
 
 <PageTitle>Cloud Identity check · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-    <Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">Cloud Identity check</Heading>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Cloud Identity check</RadzenText>
     <GuidedWalkthrough Id="cloud-identity" Steps="_walkthrough" AutoStart="true" />
-</Div>
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
+</RadzenStack>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     Verify whether a customer domain already has a Google Cloud Identity account before you
     start provisioning.
-</Paragraph>
+</RadzenText>
 
-<Row>
-    <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
-        <Card Shadow="Shadow.Small">
-            <CardBody>
-                <EditForm Model="_model" OnValidSubmit="CheckAsync">
-                    <DataAnnotationsValidator />
-                    <Field data-walkthrough="ci-domain">
-                        <FieldLabel>Customer domain</FieldLabel>
-                        <Addons>
-                            <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Language" /></AddonLabel></Addon>
-                            <Addon AddonType="AddonType.Body">
-                                <TextInput @bind-Value="_model.Domain" Placeholder="example.com" />
-                            </Addon>
-                        </Addons>
-                        <ValidationMessage For="() => _model.Domain" />
-                    </Field>
-                    <Field>
-                        <FieldLabel>Primary admin email (optional)</FieldLabel>
-                        <Addons>
-                            <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Email" /></AddonLabel></Addon>
-                            <Addon AddonType="AddonType.Body">
-                                <TextInput @bind-Value="_model.PrimaryAdminEmail" Placeholder="admin@example.com" />
-                            </Addon>
-                        </Addons>
-                    </Field>
-                    <Button Type="ButtonType.Submit" Color="Color.Primary" Disabled="_busy" data-walkthrough="ci-check">
-                        <Icon Name="@AppIcons.Search" Class="me-1" /> @(_busy ? "Checking…" : "Check")
-                    </Button>
-                </EditForm>
-            </CardBody>
-        </Card>
+<RadzenRow Gap="1.5rem">
+    <RadzenColumn Size="12" SizeLG="5">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenTemplateForm TItem="InputModel" Data="_model" Submit="CheckAsync">
+                <RadzenStack Gap="1rem">
+                    <div data-walkthrough="ci-domain">
+                        <RadzenFormField Text="Customer domain" Variant="Variant.Outlined" Style="width:100%">
+                            <Start><RadzenIcon Icon="@AppIcons.Language" /></Start>
+                            <ChildContent><RadzenTextBox @bind-Value="_model.Domain" Name="Domain" Placeholder="example.com" /></ChildContent>
+                            <Helper><RadzenRequiredValidator Component="Domain" Text="A domain is required." /></Helper>
+                        </RadzenFormField>
+                    </div>
+                    <RadzenFormField Text="Primary admin email (optional)" Variant="Variant.Outlined" Style="width:100%">
+                        <Start><RadzenIcon Icon="@AppIcons.Email" /></Start>
+                        <ChildContent><RadzenTextBox @bind-Value="_model.PrimaryAdminEmail" Name="PrimaryAdminEmail" Placeholder="admin@example.com" /></ChildContent>
+                    </RadzenFormField>
+                    <div>
+                        <RadzenButton ButtonType="ButtonType.Submit" Text="@(_busy ? "Checking…" : "Check")" Icon="@AppIcons.Search" ButtonStyle="ButtonStyle.Primary" Disabled="_busy" data-walkthrough="ci-check" />
+                    </div>
+                </RadzenStack>
+            </RadzenTemplateForm>
+        </RadzenCard>
 
-        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromTop" data-walkthrough="ci-history">
-            <CardBody>
-                <Heading Size="HeadingSize.Is6" Margin="Margin.Is2.FromBottom">Recently checked</Heading>
-                @if (_history.Count == 0)
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No checks yet.</Paragraph>
-                }
-                else
-                {
-                    <ListGroup Flush>
-                        @foreach (var item in _history)
-                        {
-                            <ListGroupItem Padding="Padding.Is0.OnX.Is2.OnY">
-                                <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Width="Width.Is100">
-                                    <Div>
-                                        <Strong Display="Display.Block">@item.Domain</Strong>
-                                        <Small TextColor="TextColor.Secondary">
-                                            @(item.Exists ? "Exists" : "Available") · @item.PerformedAt.LocalDateTime.ToString("g")
-                                        </Small>
-                                    </Div>
-                                    <Tooltip Text="Recheck (bypass cache)" Inline>
-                                        <Button Color="Color.Primary" Size="Size.Small" Outline Disabled="_busy"
-                                                Clicked="() => RecheckAsync(item)" aria-label="Recheck">
-                                            <Icon Name="@AppIcons.Refresh" />
-                                        </Button>
-                                    </Tooltip>
-                                </Div>
-                            </ListGroupItem>
-                        }
-                    </ListGroup>
-                }
-            </CardBody>
-        </Card>
-    </Column>
+        <RadzenCard Variant="Variant.Filled" class="rz-mt-4" data-walkthrough="ci-history">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Recently checked</RadzenText>
+            @if (_history.Count == 0)
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No checks yet.</RadzenText>
+            }
+            else
+            {
+                <RadzenStack Gap="0">
+                    @foreach (var item in _history)
+                    {
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0.75rem" class="rz-py-2 rz-border-bottom rz-border-color-base-200">
+                            <div>
+                                <RadzenText TextStyle="TextStyle.Body1" class="rz-m-0" Style="font-weight:600">@item.Domain</RadzenText>
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    @(item.Exists ? "Exists" : "Available") · @item.PerformedAt.LocalDateTime.ToString("g")
+                                </RadzenText>
+                            </div>
+                            <Tip Text="Recheck (bypass cache)">
+                                <RadzenButton Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small" Disabled="_busy"
+                                              Click="() => RecheckAsync(item)" aria-label="Recheck" />
+                            </Tip>
+                        </RadzenStack>
+                    }
+                </RadzenStack>
+            }
+        </RadzenCard>
+    </RadzenColumn>
 
-    <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
+    <RadzenColumn Size="12" SizeLG="7">
         @if (_busy)
         {
             <LoadingPanel Title="Checking Cloud Identity…"
@@ -90,143 +76,88 @@
         }
         else if (_result is not null)
         {
-            <Alert Color="@(_result.Exists ? Color.Warning : Color.Success)" Visible Margin="Margin.Is4.FromBottom">
-                <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Gap="Gap.Is3" Width="Width.Is100">
+            <RadzenAlert AlertStyle="@(_result.Exists ? AlertStyle.Warning : AlertStyle.Success)" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0.75rem" Wrap="FlexWrap.Wrap">
                     @if (_result.Exists)
                     {
                         <span>A Cloud Identity account already exists for <b>@_result.Domain</b>.</span>
-                        <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Class="text-nowrap">
-                            <Button Color="Color.Primary" Outline Size="Size.Small" Clicked="OpenImportDialog">
-                                <Icon Name="@AppIcons.MoveToInbox" Class="me-1" /> Import existing customer
-                            </Button>
-                            <Button Color="Color.Primary" Size="Size.Small" Clicked="ViewCustomers">
-                                <Icon Name="@AppIcons.People" Class="me-1" /> View customers
-                            </Button>
-                        </Div>
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-text-nowrap">
+                            <RadzenButton Text="Import existing customer" Icon="@AppIcons.MoveToInbox" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small" Click="OpenImportDialogAsync" />
+                            <RadzenButton Text="View customers" Icon="@AppIcons.People" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small" Click="ViewCustomers" />
+                        </RadzenStack>
                     }
                     else
                     {
                         <span>No Cloud Identity account exists for <b>@_result.Domain</b>. You can provision it.</span>
-                        <Button Color="Color.Primary" Size="Size.Small" Clicked="ProvisionAsync" Class="text-nowrap">
-                            <Icon Name="@AppIcons.AddBusiness" Class="me-1" /> Provision customer
-                        </Button>
+                        <RadzenButton Text="Provision customer" Icon="@AppIcons.AddBusiness" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small" Click="ProvisionAsync" class="rz-text-nowrap" />
                     }
-                </Div>
-            </Alert>
+                </RadzenStack>
+            </RadzenAlert>
 
             @if (_result.PartnerLink is not null)
             {
                 var link = _result.PartnerLink;
                 var invited = string.Equals(link.LinkState, "INVITED", StringComparison.OrdinalIgnoreCase);
-                <Alert Color="@(invited ? Color.Warning : Color.Info)" Visible Margin="Margin.Is4.FromBottom">
-                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Gap="Gap.Is3" Width="Width.Is100">
+                <RadzenAlert AlertStyle="@(invited ? AlertStyle.Warning : AlertStyle.Info)" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0.75rem" Wrap="FlexWrap.Wrap">
                         <span>
                             This domain matches a channel partner link
                             (<b>@(link.ChannelPartner?.PrimaryDomain ?? _result.Domain)</b>) with state
-                            <Badge Color="@(invited ? Color.Warning : Color.Secondary)" Margin="Margin.Is1.FromStart">@(link.LinkState ?? "UNKNOWN")</Badge>.
+                            <RadzenBadge BadgeStyle="@(invited ? BadgeStyle.Warning : BadgeStyle.Light)" Text="@(link.LinkState ?? "UNKNOWN")" class="rz-ms-1" />.
                             @if (invited)
                             {
                                 <text>The partner has not accepted our invitation yet.</text>
                             }
                         </span>
-                        <Button Color="Color.Primary" Size="Size.Small" Clicked="@(() => ViewPartnerLink(link.Id))" Class="text-nowrap">
-                            <Icon Name="@AppIcons.Hub" Class="me-1" /> View partner link
-                        </Button>
-                    </Div>
-                </Alert>
+                        <RadzenButton Text="View partner link" Icon="@AppIcons.Hub" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small" Click="@(() => ViewPartnerLink(link.Id))" class="rz-text-nowrap" />
+                    </RadzenStack>
+                </RadzenAlert>
             }
 
             @if (_result.HasNonDomainAccounts)
             {
-                <Alert Color="Color.Info" Visible Margin="Margin.Is4.FromBottom">
+                <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
                     One or more matches are not domain-verified (<b>DOMAIN</b>) accounts. These cannot be
                     used for reseller actions such as customer creation, transfers or entitlements.
-                </Alert>
+                </RadzenAlert>
             }
 
             @if (_result.Accounts.Count > 0)
             {
-                <Card Shadow="Shadow.Small">
-                    <Table Narrow Hoverable Responsive Margin="Margin.Is0">
-                        <TableHeader>
-                            <TableRow>
-                                <TableHeaderCell>Customer</TableHeaderCell>
-                                <TableHeaderCell>Type</TableHeaderCell>
-                                <TableHeaderCell>Existing</TableHeaderCell>
-                                <TableHeaderCell>Owned</TableHeaderCell>
-                                <TableHeaderCell>Cloud Identity ID</TableHeaderCell>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            @foreach (var account in _result.Accounts)
-                            {
-                                <TableRow>
-                                    <TableRowCell>@account.CustomerName</TableRowCell>
-                                    <TableRowCell>
-                                        @if (account.IsDomain)
-                                        {
-                                            <Badge Color="Color.Success">@account.CustomerType</Badge>
-                                        }
-                                        else
-                                        {
-                                            <Badge Color="Color.Warning"><Icon Name="@AppIcons.Warning" Class="me-1" />@account.CustomerType — not usable</Badge>
-                                        }
-                                    </TableRowCell>
-                                    <TableRowCell>
-                                        <Icon Name="@(account.Existing ? AppIcons.Check : AppIcons.Close)"
-                                              TextColor="@(account.Existing ? TextColor.Success : TextColor.Secondary)" />
-                                    </TableRowCell>
-                                    <TableRowCell>
-                                        <Icon Name="@(account.Owned ? AppIcons.Check : AppIcons.Close)"
-                                              TextColor="@(account.Owned ? TextColor.Success : TextColor.Secondary)" />
-                                    </TableRowCell>
-                                    <TableRowCell>@account.CustomerCloudIdentityId</TableRowCell>
-                                </TableRow>
-                            }
-                        </TableBody>
-                    </Table>
-                </Card>
+                <RadzenCard Variant="Variant.Filled">
+                    <RadzenDataGrid TItem="CloudIdentityAccount" Data="_result.Accounts" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="CloudIdentityAccount" Property="@nameof(CloudIdentityAccount.CustomerName)" Title="Customer" />
+                            <RadzenDataGridColumn TItem="CloudIdentityAccount" Title="Type">
+                                <Template Context="account">
+                                    @if (account.IsDomain)
+                                    {
+                                        <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="@account.CustomerType" />
+                                    }
+                                    else
+                                    {
+                                        <RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="@($"{account.CustomerType} — not usable")" />
+                                    }
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="CloudIdentityAccount" Title="Existing" Width="90px">
+                                <Template Context="account">
+                                    <RadzenIcon Icon="@(account.Existing ? AppIcons.Check : AppIcons.Close)" IconColor="@(account.Existing ? Colors.Success : Colors.Base500)" />
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="CloudIdentityAccount" Title="Owned" Width="90px">
+                                <Template Context="account">
+                                    <RadzenIcon Icon="@(account.Owned ? AppIcons.Check : AppIcons.Close)" IconColor="@(account.Owned ? Colors.Success : Colors.Base500)" />
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="CloudIdentityAccount" Property="@nameof(CloudIdentityAccount.CustomerCloudIdentityId)" Title="Cloud Identity ID" />
+                        </Columns>
+                    </RadzenDataGrid>
+                </RadzenCard>
             }
         }
-    </Column>
-</Row>
-
-<Modal @bind-Visible="_importOpen">
-    <ModalContent Centered>
-        <ModalHeader>
-            <ModalTitle>Import existing customer</ModalTitle>
-            <CloseButton />
-        </ModalHeader>
-        <ModalBody>
-            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
-                Bring a customer that already has a Cloud Identity into this reseller account (a pre-transfer
-                step). Provide one identifier — the checked domain is prefilled.
-            </Paragraph>
-            <Field>
-                <FieldLabel>Primary domain</FieldLabel>
-                <TextInput @bind-Value="_import.Domain" />
-                <FieldHelp>e.g. contoso.com</FieldHelp>
-            </Field>
-            <Field>
-                <FieldLabel>Cloud Identity id</FieldLabel>
-                <TextInput @bind-Value="_import.CloudIdentityId" />
-            </Field>
-            <Field>
-                <FieldLabel>Primary admin email</FieldLabel>
-                <TextInput @bind-Value="_import.PrimaryAdminEmail" Role="TextRole.Email" />
-            </Field>
-            <Field>
-                <Check TValue="bool" @bind-Value="_import.OverwriteIfExists">Overwrite if the customer is already imported</Check>
-            </Field>
-        </ModalBody>
-        <ModalFooter>
-            <Button Color="Color.Secondary" Clicked="@(() => _importOpen = false)" Disabled="@_importing">Cancel</Button>
-            <Button Color="Color.Primary" Clicked="ImportExistingAsync" Disabled="@_importing" Loading="@_importing">
-                @(_importing ? "Importing…" : "Import")
-            </Button>
-        </ModalFooter>
-    </ModalContent>
-</Modal>
+    </RadzenColumn>
+</RadzenRow>
 
 @code {
     [SupplyParameterFromQuery(Name = "domain")]
@@ -237,10 +168,6 @@
     private IReadOnlyList<IdentityCheckHistoryItem> _history = [];
     private bool _busy;
     private bool _autoChecked;
-
-    private bool _importOpen;
-    private bool _importing;
-    private readonly ImportModel _import = new();
 
     private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
     [
@@ -275,49 +202,25 @@
 
     private void ViewCustomers() => Nav.NavigateTo("/customers");
 
-    private void OpenImportDialog()
+    private async Task OpenImportDialogAsync()
     {
-        _import.Reset();
-        _import.Domain = _result?.Domain ?? _model.Domain;
-        _import.PrimaryAdminEmail = string.IsNullOrWhiteSpace(_model.PrimaryAdminEmail) ? null : _model.PrimaryAdminEmail;
-        _importOpen = true;
-    }
-
-    private async Task ImportExistingAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_import.Domain)
-            && string.IsNullOrWhiteSpace(_import.CloudIdentityId)
-            && string.IsNullOrWhiteSpace(_import.PrimaryAdminEmail))
+        var parameters = new Dictionary<string, object?>
         {
-            await Snackbar.Add("Provide a domain, Cloud Identity id, or primary admin email to import.", Severity.Warning);
-            return;
+            [nameof(ImportCustomerDialog.Description)] = "Bring a customer that already has a Cloud Identity into this reseller account (a pre-transfer step). Provide one identifier — the checked domain is prefilled.",
+            [nameof(ImportCustomerDialog.Domain)] = _result?.Domain ?? _model.Domain,
+            [nameof(ImportCustomerDialog.Import)] = new Func<ImportCustomerRequest, Task<Customer?>>(request => Api.ImportCustomerAsync(request))
+        };
+        if (!string.IsNullOrWhiteSpace(_model.PrimaryAdminEmail))
+        {
+            parameters[nameof(ImportCustomerDialog.PrimaryAdminEmail)] = _model.PrimaryAdminEmail;
         }
 
-        _importing = true;
-        try
-        {
-            var imported = await Api.ImportCustomerAsync(new ImportCustomerRequest
-            {
-                Domain = _import.Domain,
-                CloudIdentityId = _import.CloudIdentityId,
-                PrimaryAdminEmail = _import.PrimaryAdminEmail,
-                OverwriteIfExists = _import.OverwriteIfExists
-            });
+        var imported = await Dialogs.OpenAsync<ImportCustomerDialog>("Import existing customer", parameters,
+            new DialogOptions { Width = "min(34rem, 95vw)", CloseDialogOnOverlayClick = false });
 
-            _importOpen = false;
-            await Snackbar.Add($"Imported {imported?.OrgDisplayName ?? imported?.Domain ?? "customer"}.", Severity.Success);
-            if (imported is not null)
-            {
-                Nav.NavigateTo($"/customers/{imported.Id}");
-            }
-        }
-        catch (Exception ex)
+        if (imported is Customer customer)
         {
-            await Snackbar.Add($"Failed to import customer: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _importing = false;
+            Nav.NavigateTo($"/customers/{customer.Id}");
         }
     }
 
@@ -371,24 +274,7 @@
 
     private sealed class InputModel
     {
-        [System.ComponentModel.DataAnnotations.Required]
         public string Domain { get; set; } = string.Empty;
         public string? PrimaryAdminEmail { get; set; }
-    }
-
-    private sealed class ImportModel
-    {
-        public string? Domain { get; set; }
-        public string? CloudIdentityId { get; set; }
-        public string? PrimaryAdminEmail { get; set; }
-        public bool OverwriteIfExists { get; set; }
-
-        public void Reset()
-        {
-            Domain = null;
-            CloudIdentityId = null;
-            PrimaryAdminEmail = null;
-            OverwriteIfExists = false;
-        }
     }
 }

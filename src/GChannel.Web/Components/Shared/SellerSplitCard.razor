@@ -1,133 +1,127 @@
 @* Native Google vs third-party (Marketplace / partner) split of billed spend, from the export's
    transaction_type / seller_name. Used estate-wide on Spend trends and per customer on the detail page. *@
 
-<Card Shadow="Shadow.Small">
-    <CardBody>
-        <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromBottom">
-            <Div>
-                <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Google Cloud vs Marketplace / partners</Heading>
-                @if (Subtitle is not null)
-                {
-                    <Small TextColor="TextColor.Secondary">@Subtitle</Small>
-                }
-            </Div>
-            @if (Summary?.AsOf is { } asOf)
+<RadzenCard Variant="Variant.Filled">
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+        <div>
+            <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Google Cloud vs Marketplace / partners</RadzenText>
+            @if (Subtitle is not null)
             {
-                <Small TextColor="TextColor.Secondary">as of @asOf.LocalDateTime.ToString("g")</Small>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@Subtitle</RadzenText>
             }
-        </Div>
-
-        @if (Loading)
+        </div>
+        @if (Summary?.AsOf is { } asOf)
         {
-            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">as of @asOf.LocalDateTime.ToString("g")</RadzenText>
         }
-        else if (Summary is null || Summary.Unconfigured)
-        {
-            <Paragraph TextColor="TextColor.Secondary">Billing export not configured.</Paragraph>
-        }
-        else if (Summary.ByCategory.Count == 0)
-        {
-            <Paragraph TextColor="TextColor.Secondary">
-                No seller breakdown yet — it is populated by the next billing-export sync.
-            </Paragraph>
-        }
-        else
-        {
-            @foreach (var currency in Summary.ByCategory.Select(l => l.Currency).Distinct())
-            {
-                var lines = Summary.ByCategory.Where(l => l.Currency == currency).ToList();
-                var total = lines.Sum(l => l.Cost);
-                var google = lines.Where(l => l.Category == SellerCategory.Google).Sum(l => l.Cost);
-                var third = lines.Where(l => SellerCategories.IsThirdParty(l.Category)).Sum(l => l.Cost);
-                var pctThird = total == 0 ? 0 : (double)(third / total) * 100;
+    </RadzenStack>
 
-                <Div Margin="Margin.Is3.FromBottom">
-                    <Div Flex="Flex.AlignItems.Baseline" Gap="Gap.Is2" Margin="Margin.Is1.FromBottom">
-                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@third.ToString("N0") <span style="font-size:0.7em">@currency</span></Heading>
-                        <Small TextColor="TextColor.Secondary">third-party · @pctThird.ToString("0.#")% of @total.ToString("N0")</Small>
-                    </Div>
-                    <Progress Value="@((int)Math.Round(pctThird))" Color="Color.Secondary" Size="Size.Small" Margin="Margin.Is2.FromBottom" />
-                    <Table Narrow Hoverable Borderless>
-                        <TableBody>
-                            @foreach (var l in lines.OrderBy(l => l.Category))
-                            {
-                                <TableRow>
-                                    <TableRowCell>
-                                        <Badge Color="@CategoryColor(l.Category)" Pill>@SellerCategories.Label(l.Category)</Badge>
-                                    </TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@l.Cost.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">
-                                        <Small TextColor="TextColor.Secondary">@(total == 0 ? "—" : $"{(double)(l.Cost / total) * 100:0.#}%")</Small>
-                                    </TableRowCell>
-                                </TableRow>
-                            }
-                        </TableBody>
-                    </Table>
-                </Div>
-            }
+    @if (Loading)
+    {
+        <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+    }
+    else if (Summary is null || Summary.Unconfigured)
+    {
+        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">Billing export not configured.</RadzenText>
+    }
+    else if (Summary.ByCategory.Count == 0)
+    {
+        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">
+            No seller breakdown yet — it is populated by the next billing-export sync.
+        </RadzenText>
+    }
+    else
+    {
+        @foreach (var currency in Summary.ByCategory.Select(l => l.Currency).Distinct())
+        {
+            var lines = Summary.ByCategory.Where(l => l.Currency == currency).ToList();
+            var total = lines.Sum(l => l.Cost);
+            var google = lines.Where(l => l.Category == SellerCategory.Google).Sum(l => l.Cost);
+            var third = lines.Where(l => SellerCategories.IsThirdParty(l.Category)).Sum(l => l.Cost);
+            var pctThird = total == 0 ? 0 : (double)(third / total) * 100;
 
-            @if (Summary.ThirdPartySellers.Count > 0)
-            {
-                <Heading Size="HeadingSize.Is6" Margin="Margin.Is2.FromTop.Is1.FromBottom">Third-party sellers</Heading>
-                <Table Narrow Hoverable Borderless>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHeaderCell>Seller</TableHeaderCell>
-                            <TableHeaderCell>Via</TableHeaderCell>
-                            <TableHeaderCell TextAlignment="TextAlignment.End">Net cost</TableHeaderCell>
-                            <TableHeaderCell>Currency</TableHeaderCell>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        @foreach (var s in Summary.ThirdPartySellers.Take(MaxRows))
+            <div class="rz-mb-4">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.End" Gap="0.5rem" class="rz-mb-1">
+                    <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@third.ToString("N0") <span style="font-size:0.7em">@currency</span></RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">third-party · @pctThird.ToString("0.#")% of @total.ToString("N0")</RadzenText>
+                </RadzenStack>
+                <RadzenProgressBar Value="@Math.Round(pctThird)" ShowValue="false" ProgressBarStyle="ProgressBarStyle.Secondary" Style="height: 6px" class="rz-mb-2" />
+                <table class="gchannel-table gchannel-table-hover">
+                    <tbody>
+                        @foreach (var l in lines.OrderBy(l => l.Category))
                         {
-                            <TableRow>
-                                <TableRowCell>@s.SellerName</TableRowCell>
-                                <TableRowCell><Small TextColor="TextColor.Secondary">@SellerCategories.Label(s.Category)</Small></TableRowCell>
-                                <TableRowCell TextAlignment="TextAlignment.End">@s.Cost.ToString("N2")</TableRowCell>
-                                <TableRowCell>@s.Currency</TableRowCell>
-                            </TableRow>
+                            <tr>
+                                <td><RadzenBadge BadgeStyle="@CategoryStyle(l.Category)" IsPill="true" Text="@SellerCategories.Label(l.Category)" /></td>
+                                <td class="num">@l.Cost.ToString("N2")</td>
+                                <td class="num rz-text-secondary-color">@(total == 0 ? "—" : $"{(double)(l.Cost / total) * 100:0.#}%")</td>
+                            </tr>
                         }
-                    </TableBody>
-                </Table>
-            }
-
-            @if (ShowProducts && Summary.ThirdPartyProducts.Count > 0)
-            {
-                <Heading Size="HeadingSize.Is6" Margin="Margin.Is3.FromTop.Is1.FromBottom">Third-party products</Heading>
-                <Table Narrow Hoverable Borderless>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHeaderCell>Product</TableHeaderCell>
-                            <TableHeaderCell>Seller</TableHeaderCell>
-                            <TableHeaderCell TextAlignment="TextAlignment.End">Net cost</TableHeaderCell>
-                            <TableHeaderCell>Currency</TableHeaderCell>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        @foreach (var p in Summary.ThirdPartyProducts.Take(MaxRows))
-                        {
-                            <TableRow>
-                                <TableRowCell>@p.ServiceDescription</TableRowCell>
-                                <TableRowCell><Small TextColor="TextColor.Secondary">@p.SellerName</Small></TableRowCell>
-                                <TableRowCell TextAlignment="TextAlignment.End">@p.Cost.ToString("N2")</TableRowCell>
-                                <TableRowCell>@p.Currency</TableRowCell>
-                            </TableRow>
-                        }
-                    </TableBody>
-                </Table>
-            }
-
-            <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
-                Split by the export's <code>transaction_type</code>: GOOGLE = native Google Cloud; THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY = Marketplace, ISV and partner products. "Unclassified" covers taxes, adjustments and rows without a type.
-                @if (Summary.InvoiceMonths.Count > 0)
-                {
-                    <span> Window: @FormatMonth(Summary.InvoiceMonths.First())@(Summary.InvoiceMonths.Count > 1 ? $" – {FormatMonth(Summary.InvoiceMonths.Last())}" : "").</span>
-                }
-            </Small>
+                    </tbody>
+                </table>
+            </div>
         }
-    </CardBody>
-</Card>
+
+        @if (Summary.ThirdPartySellers.Count > 0)
+        {
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mt-2 rz-mb-1">Third-party sellers</RadzenText>
+            <table class="gchannel-table gchannel-table-hover">
+                <thead>
+                    <tr>
+                        <th>Seller</th>
+                        <th>Via</th>
+                        <th class="num">Net cost</th>
+                        <th>Currency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in Summary.ThirdPartySellers.Take(MaxRows))
+                    {
+                        <tr>
+                            <td>@s.SellerName</td>
+                            <td class="rz-text-secondary-color">@SellerCategories.Label(s.Category)</td>
+                            <td class="num">@s.Cost.ToString("N2")</td>
+                            <td>@s.Currency</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (ShowProducts && Summary.ThirdPartyProducts.Count > 0)
+        {
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mt-4 rz-mb-1">Third-party products</RadzenText>
+            <table class="gchannel-table gchannel-table-hover">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Seller</th>
+                        <th class="num">Net cost</th>
+                        <th>Currency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in Summary.ThirdPartyProducts.Take(MaxRows))
+                    {
+                        <tr>
+                            <td>@p.ServiceDescription</td>
+                            <td class="rz-text-secondary-color">@p.SellerName</td>
+                            <td class="num">@p.Cost.ToString("N2")</td>
+                            <td>@p.Currency</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.P" class="rz-text-secondary-color rz-mt-2 rz-mb-0">
+            Split by the export's <code>transaction_type</code>: GOOGLE = native Google Cloud; THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY = Marketplace, ISV and partner products. "Unclassified" covers taxes, adjustments and rows without a type.
+            @if (Summary.InvoiceMonths.Count > 0)
+            {
+                <span> Window: @FormatMonth(Summary.InvoiceMonths.First())@(Summary.InvoiceMonths.Count > 1 ? $" – {FormatMonth(Summary.InvoiceMonths.Last())}" : "").</span>
+            }
+        </RadzenText>
+    }
+</RadzenCard>
 
 @code {
     [Parameter] public SellerSpendSummary? Summary { get; set; }
@@ -136,12 +130,12 @@
     [Parameter] public bool ShowProducts { get; set; } = true;
     [Parameter] public int MaxRows { get; set; } = 10;
 
-    private static Color CategoryColor(SellerCategory c) => c switch
+    private static BadgeStyle CategoryStyle(SellerCategory c) => c switch
     {
-        SellerCategory.Google => Color.Primary,
-        SellerCategory.ThirdPartyReseller => Color.Secondary,
-        SellerCategory.ThirdPartyAgency => Color.Info,
-        _ => Color.Light
+        SellerCategory.Google => BadgeStyle.Primary,
+        SellerCategory.ThirdPartyReseller => BadgeStyle.Secondary,
+        SellerCategory.ThirdPartyAgency => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private static string FormatMonth(string yyyymm) =>

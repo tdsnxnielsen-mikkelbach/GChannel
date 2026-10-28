@@ -6,105 +6,90 @@
 
 <PageTitle>Entitlements · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
-    <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Entitlements</Heading>
-</Div>
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-4">Entitlements</RadzenText>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
     Estate-wide subscriptions from the synced read-model. Filter by lifecycle state to see the
     entitlements behind the dashboard KPIs. Paging, sorting and search run server-side.
-</Paragraph>
+</RadzenText>
 
-<Div Flex="Flex.Wrap.JustifyContent.Between.AlignItems.Center" Gap="Gap.Is3" Margin="Margin.Is2.FromBottom">
-    <Div Flex="Flex.Wrap.AlignItems.Center" Gap="Gap.Is3">
-        <Select TValue="string" Value="@_state" ValueChanged="OnStateChanged" Style="min-width:150px" aria-label="State">
-            <SelectItem TValue="string" Value="@("")">All states</SelectItem>
-            <SelectItem TValue="string" Value="@("active")">Active</SelectItem>
-            <SelectItem TValue="string" Value="@("trial")">Trial</SelectItem>
-            <SelectItem TValue="string" Value="@("suspended")">Suspended</SelectItem>
-        </Select>
-        <Select TValue="string" Value="@_scope" ValueChanged="OnScopeChanged" Style="min-width:150px" aria-label="Scope">
-            <SelectItem TValue="string" Value="@("direct")">Direct</SelectItem>
-            <SelectItem TValue="string" Value="@("indirect")">Indirect (resellers)</SelectItem>
-            <SelectItem TValue="string" Value="@("all")">All</SelectItem>
-        </Select>
-        <Addons Style="min-width:280px">
-            <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Search" /></AddonLabel></Addon>
-            <Addon AddonType="AddonType.Body">
-                <TextInput Value="@_search" ValueChanged="OnSearchChanged" Debounce="true" DebounceInterval="400"
-                           Placeholder="Search customer, offer, id…" />
-            </Addon>
-        </Addons>
-    </Div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap">
+        <RadzenDropDown TValue="string" Data="_stateOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                        Value="@_state" ValueChanged="OnStateChanged" Style="min-width:150px" aria-label="State" Name="state" />
+        <RadzenDropDown TValue="string" Data="_scopeOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                        Value="@_scope" ValueChanged="OnScopeChanged" Style="min-width:170px" aria-label="Scope" Name="scope" />
+        <SearchBox Value="@_search" ValueChanged="OnSearchChanged" Label="Search customer, offer, id…" Style="width: 100%; min-width: 280px" />
+    </RadzenStack>
     <AsOfBadge AsOf="_asOf" />
-</Div>
+</RadzenStack>
 
-<Card Shadow="Shadow.Small">
-    <DataGrid @ref="_grid" TItem="EstateEntitlement" Data="_items" ReadData="OnReadData" TotalItems="_total"
-              ShowPager ShowPageSizes PageSize="25" PageSizes="_pageSizes" Hoverable Responsive Sortable SortMode="DataGridSortMode.Single">
-        <DataGridColumns>
-            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.CustomerName)" SortField="customer" Caption="Customer">
-                <DisplayTemplate>
-                    <Anchor To="@($"/customers/{context.Item.CustomerId}")">@(context.Item.CustomerName ?? context.Item.CustomerId)</Anchor>
-                    @if (!string.IsNullOrEmpty(context.Item.OwningLinkId))
+<RadzenCard Variant="Variant.Filled">
+    <RadzenDataGrid @ref="_grid" TItem="EstateEntitlement" Data="_items" Count="_total" LoadData="OnLoadData" IsLoading="_loading"
+                    AllowPaging="true" PageSize="25" PageSizeOptions="_pageSizes" ShowPagingSummary="true"
+                    AllowSorting="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+        <Columns>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.CustomerName)" SortProperty="customer" Title="Customer">
+                <Template Context="e">
+                    <RadzenLink Path="@($"/customers/{e.CustomerId}")" Text="@(e.CustomerName ?? e.CustomerId)" />
+                    @if (!string.IsNullOrEmpty(e.OwningLinkId))
                     {
-                        <Badge Color="Color.Secondary" Margin="Margin.Is1.FromStart">Reseller</Badge>
+                        <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Reseller" class="rz-ms-1" />
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.OfferName)" SortField="product" Caption="Product / offer">
-                <DisplayTemplate>
-                    <div>@(context.Item.OfferName ?? context.Item.SkuName ?? "—")</div>
-                    @if (!string.IsNullOrEmpty(context.Item.ProductName))
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.OfferName)" SortProperty="product" Title="Product / offer">
+                <Template Context="e">
+                    <div>@(e.OfferName ?? e.SkuName ?? "—")</div>
+                    @if (!string.IsNullOrEmpty(e.ProductName))
                     {
-                        <Small TextColor="TextColor.Secondary">@context.Item.ProductName</Small>
+                        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@e.ProductName</RadzenText>
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.State)" SortField="state" Caption="State">
-                <DisplayTemplate>
-                    <Badge Color="@StateColor(context.Item)">@StateLabel(context.Item)</Badge>
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.Seats)" SortField="seats" Caption="Seats" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End" />
-            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.UnitPrice)" Caption="Est. monthly" Sortable="false" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End">
-                <DisplayTemplate>
-                    @if (EstimatedMonthly(context.Item) is { } v)
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.State)" SortProperty="state" Title="State" Width="120px">
+                <Template Context="e">
+                    <RadzenBadge BadgeStyle="@StateColor(e)" Text="@StateLabel(e)" />
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.Seats)" SortProperty="seats" Title="Seats" TextAlign="TextAlign.End" Width="90px" />
+            <RadzenDataGridColumn TItem="EstateEntitlement" Title="Est. monthly" Sortable="false" TextAlign="TextAlign.End">
+                <Template Context="e">
+                    @if (EstimatedMonthly(e) is { } v)
                     {
-                        <Tooltip Text="@($"Wholesale {FormatMoney(context.Item.UnitPrice * context.Item.BillableSeats, context.Item.Currency)} × (1 + {context.Item.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")" Multiline Inline>
-                            <span>@FormatMoney(v, context.Item.Currency)</span>
-                        </Tooltip>
+                        <Tip Text="@($"Wholesale {FormatMoney(e.UnitPrice * e.BillableSeats, e.Currency)} × (1 + {e.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")">@FormatMoney(v, e.Currency)</Tip>
                     }
                     else
                     {
                         <span>—</span>
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.CommitmentEndTime)" SortField="renewal" Caption="Renewal">
-                <DisplayTemplate>
-                    @(context.Item.CommitmentEndTime?.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "—")
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateEntitlement" Field="@nameof(EstateEntitlement.EntitlementId)" Caption="Actions" Sortable="false" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End">
-                <DisplayTemplate>
-                    <Tooltip Text="View entitlement" Inline>
-                        <Button Type="ButtonType.Link" To="@($"/customers/{context.Item.CustomerId}/entitlements/{context.Item.EntitlementId}")"
-                                Size="Size.Small" Color="Color.Light" aria-label="View entitlement">
-                            <Icon Name="@AppIcons.Visibility" />
-                        </Button>
-                    </Tooltip>
-                </DisplayTemplate>
-            </DataGridColumn>
-        </DataGridColumns>
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.CommitmentEndTime)" SortProperty="renewal" Title="Renewal" Width="130px">
+                <Template Context="e">
+                    @(e.CommitmentEndTime?.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "—")
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="90px">
+                <Template Context="e">
+                    <Tip Text="View entitlement">
+                        <LinkButton To="@($"/customers/{e.CustomerId}/entitlements/{e.EntitlementId}")" Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="View entitlement" />
+                    </Tip>
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
         <EmptyTemplate>
-            <Alert Color="Color.Info" Visible Margin="Margin.Is0">No entitlements match the current filters.</Alert>
+            @if (_loading)
+            {
+                <LoadingPanel Title="Loading entitlements…" Hint="Querying the synced read-model." />
+            }
+            else
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-3">No entitlements match the current filters.</RadzenAlert>
+            }
         </EmptyTemplate>
-        <LoadingTemplate>
-            <LoadingPanel Title="Loading entitlements…" Hint="Querying the synced read-model." />
-        </LoadingTemplate>
-    </DataGrid>
-</Card>
+    </RadzenDataGrid>
+</RadzenCard>
 
 @code {
     [SupplyParameterFromQuery(Name = "state")]
@@ -113,10 +98,25 @@
     [SupplyParameterFromQuery(Name = "scope")]
     public string? ScopeQuery { get; set; }
 
-    private static readonly int[] _pageSizes = [25, 50, 100];
-    private DataGrid<EstateEntitlement>? _grid;
+    private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
+    private static readonly SelectOption[] _stateOptions =
+    [
+        new("", "All states"),
+        new("active", "Active"),
+        new("trial", "Trial"),
+        new("suspended", "Suspended"),
+    ];
+    private static readonly SelectOption[] _scopeOptions =
+    [
+        new("direct", "Direct"),
+        new("indirect", "Indirect (resellers)"),
+        new("all", "All"),
+    ];
+
+    private RadzenDataGrid<EstateEntitlement>? _grid;
     private List<EstateEntitlement> _items = [];
     private int _total;
+    private bool _loading = true;
     private string _state = "";
     private string _scope = "direct";
     private string? _search;
@@ -130,7 +130,7 @@
         {
             _state = state;
             _scope = scope;
-            _ = _grid?.Reload();
+            _ = _grid?.FirstPage(true);
         }
     }
 
@@ -152,37 +152,37 @@
     private async Task OnStateChanged(string value)
     {
         _state = value ?? "";
-        await (_grid?.Reload() ?? Task.CompletedTask);
+        await ReloadFirstPageAsync();
     }
 
     private async Task OnScopeChanged(string value)
     {
         _scope = string.IsNullOrEmpty(value) ? "direct" : value;
-        await (_grid?.Reload() ?? Task.CompletedTask);
+        await ReloadFirstPageAsync();
     }
 
-    private async Task OnSearchChanged(string value)
+    private async Task OnSearchChanged(string? value)
     {
         _search = value;
-        await (_grid?.Reload() ?? Task.CompletedTask);
+        await ReloadFirstPageAsync();
     }
 
-    // Server-side read: Blazorise pages are 1-based, the API's are 0-based; sort keys come from SortField.
-    private async Task OnReadData(DataGridReadDataEventArgs<EstateEntitlement> e)
-    {
-        if (e.CancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
+    private Task ReloadFirstPageAsync() => _grid?.FirstPage(true) ?? Task.CompletedTask;
 
-        var sortColumn = e.Columns.FirstOrDefault(c => c.SortDirection != SortDirection.Default);
+    // Server-side read: Radzen gives Skip/Top, the API takes a 0-based page; sort keys come from SortProperty.
+    private async Task OnLoadData(LoadDataArgs args)
+    {
+        _loading = true;
+        var pageSize = args.Top ?? 25;
+        var page = pageSize == 0 ? 0 : (args.Skip ?? 0) / pageSize;
+        var sort = args.Sorts?.FirstOrDefault();
         try
         {
             var result = await Api.ListEstateEntitlementsAsync(
-                e.Page - 1, e.PageSize, sortColumn?.SortField,
-                sortColumn?.SortDirection == SortDirection.Descending,
+                page, pageSize, sort?.Property,
+                sort?.SortOrder == SortOrder.Descending,
                 _search, string.IsNullOrEmpty(_state) ? null : _state,
-                _scope, e.CancellationToken);
+                _scope, CancellationToken.None);
 
             _items = result?.Items?.ToList() ?? [];
             _total = result?.Total ?? 0;
@@ -193,6 +193,10 @@
             await Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
             _items = [];
             _total = 0;
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 
@@ -210,16 +214,16 @@
             : char.ToUpperInvariant(e.State[0]) + e.State[1..].ToLowerInvariant();
     }
 
-    private static Color StateColor(EstateEntitlement e)
+    private static BadgeStyle StateColor(EstateEntitlement e)
     {
-        if (e.IsTrial) return Color.Info;
+        if (e.IsTrial) return BadgeStyle.Info;
         return e.State?.ToUpperInvariant() switch
         {
-            "ACTIVE" => Color.Success,
-            "SUSPENDED" => Color.Warning,
-            "CANCELLED" or "CANCELED" => Color.Danger,
-            "PENDING" => Color.Info,
-            _ => Color.Secondary,
+            "ACTIVE" => BadgeStyle.Success,
+            "SUSPENDED" => BadgeStyle.Warning,
+            "CANCELLED" or "CANCELED" => BadgeStyle.Danger,
+            "PENDING" => BadgeStyle.Info,
+            _ => BadgeStyle.Light,
         };
     }
 

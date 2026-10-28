@@ -5,7 +5,7 @@ Google account and the UI abstracts the **Google Cloud Channel API** behind poin
 actions — they never see the underlying REST calls.
 
 Built with **.NET Aspire** on the **Critter Stack** ([Marten](https://martendb.io) event store +
-[Wolverine](https://wolverinefx.net) messaging): the front end (Blazor + Blazorise), the API and the
+[Wolverine](https://wolverinefx.net) messaging): the front end (Blazor + [Radzen](https://blazor.radzen.com) components), the API and the
 worker run as three independently scalable **Azure Container Apps**, backed by **Azure Database for
 PostgreSQL flexible server**, **Azure Service Bus** and **Azure Managed Redis**. Deployment is handled by
 the **Azure Developer CLI (`azd`)**.

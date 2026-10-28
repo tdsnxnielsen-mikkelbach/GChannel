@@ -6,64 +6,49 @@
 
 <PageTitle>Invite channel partner · GChannel</PageTitle>
 
-<Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Margin="Margin.Is4.FromBottom">
-    <Button Type="ButtonType.Link" To="/channel-partner-links" Color="Color.Light" aria-label="Back to channel partner links">
-        <Icon Name="@AppIcons.ArrowBack" />
-    </Button>
-    <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Invite channel partner</Heading>
-</Div>
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-4">
+    <LinkButton To="/channel-partner-links" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="Back to channel partner links" />
+    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Invite channel partner</RadzenText>
+</RadzenStack>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     Link a downstream reseller to your distributor account. Enter the reseller's Cloud Identity ID;
     the link starts in the <strong>INVITED</strong> state and the partner accepts it via the
     invitation link shown afterwards.
-</Paragraph>
+</RadzenText>
 
-<Card Shadow="Shadow.Small" Style="max-width: 640px;">
-    <CardBody Padding="Padding.Is4">
-        <Validations @ref="_validations" Mode="ValidationMode.Manual">
-            <Validation Validator="ValidationRule.IsNotEmpty">
-                <Field>
-                    <FieldLabel>Reseller Cloud Identity ID</FieldLabel>
-                    <TextInput @bind-Value="_resellerCloudIdentityId">
-                        <Feedback><ValidationError>A reseller Cloud Identity ID is required.</ValidationError></Feedback>
-                    </TextInput>
-                    <FieldHelp>The downstream reseller's Cloud Identity customer ID.</FieldHelp>
-                </Field>
-            </Validation>
+<RadzenCard Variant="Variant.Filled" Style="max-width: 640px;">
+    <RadzenTemplateForm TItem="InviteModel" Data="_model" Submit="SubmitAsync">
+        <RadzenStack Gap="1rem">
+            <RadzenFormField Text="Reseller Cloud Identity ID" Variant="Variant.Outlined" Style="width:100%">
+                <ChildContent><RadzenTextBox @bind-Value="_model.ResellerCloudIdentityId" Name="ResellerCloudIdentityId" /></ChildContent>
+                <Helper>
+                    <RadzenRequiredValidator Component="ResellerCloudIdentityId" Text="A reseller Cloud Identity ID is required." />
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">The downstream reseller's Cloud Identity customer ID.</RadzenText>
+                </Helper>
+            </RadzenFormField>
 
-            <Field>
-                <FieldLabel>Reseller domain (optional)</FieldLabel>
-                <TextInput @bind-Value="_resellerDomain" />
-                <FieldHelp>Recorded so a later Cloud Identity check on this domain can find this invitation.</FieldHelp>
-            </Field>
+            <RadzenFormField Text="Reseller domain (optional)" Variant="Variant.Outlined" Style="width:100%">
+                <ChildContent><RadzenTextBox @bind-Value="_model.ResellerDomain" Name="ResellerDomain" /></ChildContent>
+                <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">Recorded so a later Cloud Identity check on this domain can find this invitation.</RadzenText></Helper>
+            </RadzenFormField>
 
-            <Div Flex="Flex.Default" Gap="Gap.Is2">
-                <Button Color="Color.Primary" Clicked="SubmitAsync" Disabled="_submitting" Loading="_submitting">
-                    <Icon Name="@AppIcons.AddLink" Class="me-1" /> @(_submitting ? "Inviting…" : "Invite partner")
-                </Button>
-                <Button Type="ButtonType.Link" To="/channel-partner-links" Color="Color.Secondary" Outline Disabled="_submitting">
-                    Cancel
-                </Button>
-            </Div>
-        </Validations>
-    </CardBody>
-</Card>
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                <RadzenButton ButtonType="ButtonType.Submit" Text="Invite partner" Icon="@AppIcons.AddLink" ButtonStyle="ButtonStyle.Primary" IsBusy="_submitting" BusyText="Inviting…" />
+                <LinkButton To="/channel-partner-links" Text="Cancel" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Disabled="_submitting" />
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenTemplateForm>
+</RadzenCard>
 
 @code {
-    private Validations? _validations;
-    private string _resellerCloudIdentityId = string.Empty;
-    private string _resellerDomain = string.Empty;
+    private readonly InviteModel _model = new();
     private bool _submitting;
 
+    // Only called by RadzenTemplateForm once the required-field validator passes.
     private async Task SubmitAsync()
     {
-        if (_validations is not null && !await _validations.ValidateAll())
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(_resellerCloudIdentityId))
+        if (string.IsNullOrWhiteSpace(_model.ResellerCloudIdentityId))
         {
             await Snackbar.Add("A reseller Cloud Identity ID is required.", Severity.Warning);
             return;
@@ -74,8 +59,8 @@
         {
             var created = await Api.CreateChannelPartnerLinkAsync(new CreateChannelPartnerLinkRequest
             {
-                ResellerCloudIdentityId = _resellerCloudIdentityId.Trim(),
-                Domain = string.IsNullOrWhiteSpace(_resellerDomain) ? null : _resellerDomain.Trim()
+                ResellerCloudIdentityId = _model.ResellerCloudIdentityId.Trim(),
+                Domain = string.IsNullOrWhiteSpace(_model.ResellerDomain) ? null : _model.ResellerDomain.Trim()
             });
 
             await Snackbar.Add("Channel partner link created.", Severity.Success);
@@ -96,5 +81,11 @@
         {
             _submitting = false;
         }
+    }
+
+    private sealed class InviteModel
+    {
+        public string ResellerCloudIdentityId { get; set; } = string.Empty;
+        public string ResellerDomain { get; set; } = string.Empty;
     }
 }

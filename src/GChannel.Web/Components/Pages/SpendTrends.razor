@@ -1,248 +1,230 @@
 @page "/billing/spend"
 @attribute [Authorize]
 @using ApexCharts
-@* ApexCharts and Blazorise both export these names; the page uses the Blazorise meaning except for Theme. *@
-@using Color = Blazorise.Color
-@using Size = Blazorise.Size
-@using Padding = Blazorise.Padding
-@using Tooltip = Blazorise.Tooltip
-@using Label = Blazorise.Label
-@using Orientation = Blazorise.Orientation
+@* ApexCharts and Radzen both export these names; the page uses the Radzen meaning except for Theme/Mode. *@
+@using Orientation = Radzen.Orientation
 @using Theme = ApexCharts.Theme
 @inject GChannelApiClient Api
 @inject NavigationManager Nav
 
 <PageTitle>Spend trends · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
-    <Div>
-        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Spend trends</Heading>
-        <Small TextColor="TextColor.Secondary">
-            Actual GCP &amp; Marketplace spend from the Cloud Billing → BigQuery cost export — real billed
-            figures, distinct from the list-price estimates elsewhere.
-        </Small>
-    </Div>
-</Div>
+<div class="rz-mb-4">
+    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Spend trends</RadzenText>
+    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+        Actual GCP &amp; Marketplace spend from the Cloud Billing → BigQuery cost export — real billed
+        figures, distinct from the list-price estimates elsewhere.
+    </RadzenText>
+</div>
 
 @if (_unconfigured)
 {
-    <Alert Color="Color.Info" Visible Margin="Margin.Is4.FromBottom">
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         The BigQuery billing-export sync isn't configured, so there is no billed spend to show. Set
         <code>GoogleBilling:BigQueryEnabled</code> plus the project/dataset/table to enable it.
-    </Alert>
+    </RadzenAlert>
 }
 
-<Row>
-    <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
-        <Card Shadow="Shadow.Small">
-            <CardBody>
-                <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Top spenders</Heading>
-                @if (_topLoading)
-                {
-                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
-                }
-                else if (_top is { Count: > 0 })
-                {
-                    <Table Narrow Hoverable Borderless Margin="Margin.Is0">
-                        <TableHeader>
-                            <TableRow>
-                                <TableHeaderCell>Customer</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Billed (last month)</TableHeaderCell>
-                                <TableHeaderCell>Currency</TableHeaderCell>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            @foreach (var s in _top)
-                            {
-                                <TableRow>
-                                    <TableRowCell>
-                                        <Anchor To="@($"/billing/spend?customerId={s.CustomerId}")">@CustomerLabel(s.CustomerId)</Anchor>
-                                        @if (!string.IsNullOrEmpty(s.OwningLinkId))
-                                        {
-                                            <Small TextColor="TextColor.Secondary" Display="Display.Block">via reseller @(s.ResellerName ?? s.OwningLinkId)</Small>
-                                        }
-                                    </TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@s.Cost.ToString("N2")</TableRowCell>
-                                    <TableRowCell>@s.Currency</TableRowCell>
-                                </TableRow>
-                            }
-                        </TableBody>
-                    </Table>
-                    @if (_topAsOf is { } asOf)
-                    {
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">as of @asOf.LocalDateTime.ToString("g")</Small>
-                    }
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No billed spend recorded yet.</Paragraph>
-                }
-            </CardBody>
-        </Card>
-
-        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromTop">
-            <CardBody>
-                <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">By reseller</Heading>
-                @if (_resellersLoading)
-                {
-                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
-                }
-                else if (_resellers is { Count: > 0 })
-                {
-                    <Table Narrow Hoverable Borderless Margin="Margin.Is0">
-                        <TableHeader>
-                            <TableRow>
-                                <TableHeaderCell>Reseller</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Customers</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Billed (last month)</TableHeaderCell>
-                                <TableHeaderCell>Currency</TableHeaderCell>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            @foreach (var r in _resellers)
-                            {
-                                <TableRow>
-                                    <TableRowCell>
-                                        @if (string.IsNullOrEmpty(r.OwningLinkId))
-                                        {
-                                            <span>Direct (no partner)</span>
-                                        }
-                                        else
-                                        {
-                                            <Anchor To="@($"/channel-partner-links/{r.OwningLinkId}")">@(r.ResellerName ?? r.OwningLinkId)</Anchor>
-                                        }
-                                    </TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@r.CustomerCount</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@r.Cost.ToString("N2")</TableRowCell>
-                                    <TableRowCell>@r.Currency</TableRowCell>
-                                </TableRow>
-                            }
-                        </TableBody>
-                    </Table>
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
-                        Distributor rollup: each resold customer's billed spend attributed to its owning channel partner.
-                    </Small>
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No billed spend recorded yet.</Paragraph>
-                }
-            </CardBody>
-        </Card>
-    </Column>
-
-    <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
-        <Card Shadow="Shadow.Small">
-            <CardBody>
-                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
-                    <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Daily trend</Heading>
-                    <Select TValue="string" Value="@CustomerId" ValueChanged="OnCustomerChanged" Style="min-width: 240px" aria-label="Customer">
-                        <SelectItem TValue="string" Value="@((string?)null)">All customers</SelectItem>
-                        @foreach (var c in _customers)
+<RadzenRow Gap="1rem" RowGap="1rem">
+    <RadzenColumn Size="12" SizeLG="5">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Top spenders</RadzenText>
+            @if (_topLoading)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else if (_top is { Count: > 0 })
+            {
+                <table class="gchannel-table gchannel-table-hover">
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th class="num">Billed (last month)</th>
+                            <th>Currency</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var s in _top)
                         {
-                            <SelectItem TValue="string" Value="@c.Id">@(c.OrgDisplayName ?? c.Id)</SelectItem>
+                            <tr>
+                                <td>
+                                    <RadzenLink Path="@($"/billing/spend?customerId={s.CustomerId}")" Text="@CustomerLabel(s.CustomerId)" />
+                                    @if (!string.IsNullOrEmpty(s.OwningLinkId))
+                                    {
+                                        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">via reseller @(s.ResellerName ?? s.OwningLinkId)</RadzenText>
+                                    }
+                                </td>
+                                <td class="num">@s.Cost.ToString("N2")</td>
+                                <td>@s.Currency</td>
+                            </tr>
                         }
-                    </Select>
-                </Div>
+                    </tbody>
+                </table>
+                @if (_topAsOf is { } asOf)
+                {
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">as of @asOf.LocalDateTime.ToString("g")</RadzenText>
+                }
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded yet.</RadzenText>
+            }
+        </RadzenCard>
 
-                @if (string.IsNullOrEmpty(CustomerId))
+        <RadzenCard Variant="Variant.Filled" class="rz-mt-4">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">By reseller</RadzenText>
+            @if (_resellersLoading)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else if (_resellers is { Count: > 0 })
+            {
+                <table class="gchannel-table gchannel-table-hover">
+                    <thead>
+                        <tr>
+                            <th>Reseller</th>
+                            <th class="num">Customers</th>
+                            <th class="num">Billed (last month)</th>
+                            <th>Currency</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _resellers)
+                        {
+                            <tr>
+                                <td>
+                                    @if (string.IsNullOrEmpty(r.OwningLinkId))
+                                    {
+                                        <span>Direct (no partner)</span>
+                                    }
+                                    else
+                                    {
+                                        <RadzenLink Path="@($"/channel-partner-links/{r.OwningLinkId}")" Text="@(r.ResellerName ?? r.OwningLinkId)" />
+                                    }
+                                </td>
+                                <td class="num">@r.CustomerCount</td>
+                                <td class="num">@r.Cost.ToString("N2")</td>
+                                <td>@r.Currency</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">
+                    Distributor rollup: each resold customer's billed spend attributed to its owning channel partner.
+                </RadzenText>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded yet.</RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+
+    <RadzenColumn Size="12" SizeLG="7">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Daily trend</RadzenText>
+                <RadzenDropDown TValue="string" Data="_customers" ValueProperty="@nameof(Customer.Id)" TextProperty="@nameof(Customer.OrgDisplayName)"
+                                Value="@CustomerId" ValueChanged="OnCustomerChanged" AllowClear="true" Placeholder="All customers" Style="min-width: 240px" aria-label="Customer" Name="customer">
+                    <Template Context="c">@(c.OrgDisplayName ?? c.Id)</Template>
+                </RadzenDropDown>
+            </RadzenStack>
+
+            @if (string.IsNullOrEmpty(CustomerId))
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">Pick a customer to see their daily spend and any spikes.</RadzenText>
+            }
+            else if (_trendLoading)
+            {
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 260px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
+            }
+            else if (_trendByCurrency.Count > 0)
+            {
+                @foreach (var group in _trendByCurrency)
                 {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">Pick a customer to see their daily spend and any spikes.</Paragraph>
-                }
-                else if (_trendLoading)
-                {
-                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 260px;">
-                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
-                    </Div>
-                }
-                else if (_trendByCurrency.Count > 0)
-                {
-                    @foreach (var group in _trendByCurrency)
-                    {
-                        <Strong Display="Display.Block" TextColor="TextColor.Secondary" Margin="Margin.Is2.FromTop">@group.Key</Strong>
-                        <ApexChart TItem="TrendItem" Options="_trendOptions" @key="(group.Key, IsDarkMode)">
-                            <ApexPointSeries TItem="TrendItem" Items="group.Value" Name="Daily cost"
-                                             SeriesType="SeriesType.Line"
+                    <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-text-secondary-color rz-mt-2 rz-mb-0">@group.Key</RadzenText>
+                    <ApexChart TItem="TrendItem" Options="_trendOptions" @key="(group.Key, IsDarkMode)">
+                        <ApexPointSeries TItem="TrendItem" Items="group.Value" Name="Daily cost"
+                                         SeriesType="SeriesType.Line"
+                                         XValue="@(p => p.Label)" YValue="@(p => p.Cost)" />
+                        @{
+                            var spikes = group.Value.Where(p => p.IsSpike).ToList();
+                        }
+                        @if (spikes.Count > 0)
+                        {
+                            <ApexPointSeries TItem="TrendItem" Items="spikes" Name="Spike"
+                                             SeriesType="SeriesType.Scatter"
                                              XValue="@(p => p.Label)" YValue="@(p => p.Cost)" />
-                            @{
-                                var spikes = group.Value.Where(p => p.IsSpike).ToList();
-                            }
-                            @if (spikes.Count > 0)
-                            {
-                                <ApexPointSeries TItem="TrendItem" Items="spikes" Name="Spike"
-                                                 SeriesType="SeriesType.Scatter"
-                                                 XValue="@(p => p.Label)" YValue="@(p => p.Cost)" />
-                            }
-                        </ApexChart>
-                    }
-                    @if (_trendAsOf is { } asOf)
-                    {
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">as of @asOf.LocalDateTime.ToString("g")</Small>
-                    }
+                        }
+                    </ApexChart>
                 }
-                else
+                @if (_trendAsOf is { } asOf)
                 {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No billed spend recorded for this customer yet.</Paragraph>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">as of @asOf.LocalDateTime.ToString("g")</RadzenText>
                 }
-            </CardBody>
-        </Card>
-    </Column>
-</Row>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded for this customer yet.</RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
 
-<Row Margin="Margin.Is2.FromTop">
-    <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
+<RadzenRow Gap="1rem" RowGap="1rem" class="rz-mt-2">
+    <RadzenColumn Size="12" SizeLG="5">
         <SellerSplitCard Summary="_sellers" Loading="_sellersLoading" Subtitle="Estate-wide, last invoice month" />
-    </Column>
-    <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
-        <Card Shadow="Shadow.Small">
-            <CardBody>
-                <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Third-party share by customer</Heading>
-                @if (_splitsLoading)
-                {
-                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
-                }
-                else if (_splits is { Count: > 0 })
-                {
-                    <DataGrid TItem="CustomerSellerSplit" Data="_splits" Narrow Hoverable Responsive Sortable
-                              ShowPager ShowPageSizes PageSize="15" PageSizes="_splitPageSizes">
-                        <DataGridColumns>
-                            <DataGridColumn TItem="CustomerSellerSplit" Field="@nameof(CustomerSellerSplit.CustomerId)" Caption="Customer" Sortable="false">
-                                <DisplayTemplate><Anchor To="@($"/customers/{context.Item.CustomerId}")">@CustomerLabel(context.Item.CustomerId)</Anchor></DisplayTemplate>
-                            </DataGridColumn>
-                            <DataGridColumn TItem="CustomerSellerSplit" Field="@nameof(CustomerSellerSplit.GoogleCost)" Caption="Google Cloud" TextAlignment="TextAlignment.End">
-                                <DisplayTemplate>@context.Item.GoogleCost.ToString("N0") <small class="text-body-secondary">@context.Item.Currency</small></DisplayTemplate>
-                            </DataGridColumn>
-                            <DataGridColumn TItem="CustomerSellerSplit" Field="@nameof(CustomerSellerSplit.ThirdPartyCost)" Caption="Third-party" TextAlignment="TextAlignment.End" SortDirection="SortDirection.Descending">
-                                <DisplayTemplate>@context.Item.ThirdPartyCost.ToString("N0")</DisplayTemplate>
-                            </DataGridColumn>
-                            <DataGridColumn TItem="CustomerSellerSplit" Field="@nameof(CustomerSellerSplit.ThirdPartyPercent)" Caption="Share">
-                                <DisplayTemplate>
-                                    <Badge Color="@(context.Item.ThirdPartyPercent >= 50 ? Color.Secondary : Color.Light)" Class="@(context.Item.ThirdPartyPercent >= 50 ? null : "text-body border")">@context.Item.ThirdPartyPercent.ToString("0.#")%</Badge>
-                                </DisplayTemplate>
-                            </DataGridColumn>
-                            <DataGridColumn TItem="CustomerSellerSplit" Field="@nameof(CustomerSellerSplit.Sellers)" Caption="Sellers" Sortable="false">
-                                <DisplayTemplate><Small>@string.Join(", ", context.Item.Sellers)</Small></DisplayTemplate>
-                            </DataGridColumn>
-                        </DataGridColumns>
-                    </DataGrid>
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No seller breakdown yet.</Paragraph>
-                }
-            </CardBody>
-        </Card>
-    </Column>
-    <Column ColumnSize="ColumnSize.Is12">
+    </RadzenColumn>
+    <RadzenColumn Size="12" SizeLG="7">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Third-party share by customer</RadzenText>
+            @if (_splitsLoading)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else if (_splits is { Count: > 0 })
+            {
+                <RadzenDataGrid TItem="CustomerSellerSplit" Data="_splits" AllowSorting="true" AllowPaging="true" PageSize="15" PageSizeOptions="_splitPageSizes" ShowPagingSummary="true"
+                                Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="CustomerSellerSplit" Title="Customer" Sortable="false">
+                            <Template Context="s"><RadzenLink Path="@($"/customers/{s.CustomerId}")" Text="@CustomerLabel(s.CustomerId)" /></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="CustomerSellerSplit" Property="@nameof(CustomerSellerSplit.GoogleCost)" Title="Google Cloud" TextAlign="TextAlign.End">
+                            <Template Context="s">@s.GoogleCost.ToString("N0") <small class="rz-text-secondary-color">@s.Currency</small></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="CustomerSellerSplit" Property="@nameof(CustomerSellerSplit.ThirdPartyCost)" Title="Third-party" TextAlign="TextAlign.End" SortOrder="SortOrder.Descending">
+                            <Template Context="s">@s.ThirdPartyCost.ToString("N0")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="CustomerSellerSplit" Property="@nameof(CustomerSellerSplit.ThirdPartyPercent)" Title="Share" Width="90px">
+                            <Template Context="s">
+                                <RadzenBadge BadgeStyle="@(s.ThirdPartyPercent >= 50 ? BadgeStyle.Secondary : BadgeStyle.Light)" Text="@($"{s.ThirdPartyPercent:0.#}%")" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="CustomerSellerSplit" Title="Sellers" Sortable="false">
+                            <Template Context="s"><small>@string.Join(", ", s.Sellers)</small></Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No seller breakdown yet.</RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+    <RadzenColumn Size="12">
         <MarketplaceOrdersTable Result="_orders" Loading="_ordersLoading" />
-    </Column>
-</Row>
+    </RadzenColumn>
+</RadzenRow>
 
 @code {
     [SupplyParameterFromQuery]
     public string? CustomerId { get; set; }
 
-    private static readonly int[] _splitPageSizes = [15, 50];
+    private static readonly IEnumerable<int> _splitPageSizes = [15, 50];
 
     // Cascaded from MainLayout so the ApexChart axis/legend text follows the app's light/dark theme.
     [CascadingParameter(Name = "IsDarkMode")]

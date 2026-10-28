@@ -6,23 +6,21 @@
 
 <PageTitle>Transfer entitlements · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-    <Div>
-        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Transfer entitlements</Heading>
-        <Small TextColor="TextColor.Secondary">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <div>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Transfer entitlements</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
             @(_customer?.OrgDisplayName ?? Id)@(string.IsNullOrEmpty(_customer?.Domain) ? "" : $" · {_customer!.Domain}")
-        </Small>
-    </Div>
-    <Button Type="ButtonType.Link" To="@($"/customers/{Id}")" Color="Color.Secondary" Outline>
-        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to customer
-    </Button>
-</Div>
+        </RadzenText>
+    </div>
+    <LinkButton To="@($"/customers/{Id}")" Text="Back to customer" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+</RadzenStack>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     Bring this customer's existing subscriptions into your reseller account. Pick the transferable
     SKUs and the Offer to transfer each onto, set the seats, then submit. Google provisions the
     transfer asynchronously.
-</Paragraph>
+</RadzenText>
 
 @if (_loading)
 {
@@ -31,164 +29,138 @@
 }
 else
 {
-    <Row>
-        <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
-            <Card Shadow="Shadow.Small">
-                <CardHeader>
-                    <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Transferable SKUs</CardTitle>
-                    <Small TextColor="TextColor.Secondary">
-                        Expand an eligible SKU to load its transferable offers and add it to the transfer.
-                    </Small>
-                </CardHeader>
-                <CardBody>
-                    @if (_skus is { Count: > 0 })
-                    {
-                        <Accordion>
+    <RadzenRow Gap="1rem" RowGap="1rem">
+        <RadzenColumn Size="12" SizeLG="7">
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Transferable SKUs</RadzenText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-3">
+                    Expand an eligible SKU to load its transferable offers and add it to the transfer.
+                </RadzenText>
+                @if (_skus is { Count: > 0 })
+                {
+                    <RadzenAccordion Multiple="true">
+                        <Items>
                             @foreach (var sku in _skus)
                             {
-                                <AccordionItem Visible="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
-                                               VisibleChanged="expanded => OnSkuExpanded(sku, expanded)">
-                                    <AccordionHeader>
-                                        <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
-                                            <AccordionToggle>
-                                                <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Width="Width.Is100" Class="pe-3">
-                                                    <Div>
-                                                        <span>@(sku.SkuDisplayName ?? sku.SkuId)</span>
-                                                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-normal">
-                                                            @(sku.ProductDisplayName ?? sku.ProductId) · SKU @sku.SkuId
-                                                        </Small>
-                                                    </Div>
-                                                    <Badge Color="@(sku.IsEligible ? Color.Success : Color.Warning)">
-                                                        @(sku.IsEligible ? "Eligible" : "Not eligible")
-                                                    </Badge>
-                                                </Div>
-                                            </AccordionToggle>
-                                        </Heading>
-                                    </AccordionHeader>
-                                    <AccordionBody>
+                                <RadzenAccordionItem Selected="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
+                                                     SelectedChanged="expanded => OnSkuExpanded(sku, expanded)">
+                                    <Template>
+                                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0.75rem" Style="width:100%" class="rz-pe-3">
+                                            <div>
+                                                <span>@(sku.SkuDisplayName ?? sku.SkuId)</span>
+                                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0" Style="font-weight:400">
+                                                    @(sku.ProductDisplayName ?? sku.ProductId) · SKU @sku.SkuId
+                                                </RadzenText>
+                                            </div>
+                                            <RadzenBadge BadgeStyle="@(sku.IsEligible ? BadgeStyle.Success : BadgeStyle.Warning)" Text="@(sku.IsEligible ? "Eligible" : "Not eligible")" />
+                                        </RadzenStack>
+                                    </Template>
+                                    <ChildContent>
                                         @if (!sku.IsEligible)
                                         {
-                                            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
+                                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
                                                 @(sku.EligibilityDescription ?? sku.IneligibilityReason ?? "This SKU can't be transferred.")
-                                            </Paragraph>
+                                            </RadzenText>
                                         }
                                         else
                                         {
-                                            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-                                                <Small TextColor="TextColor.Secondary">SKU id: @sku.SkuId</Small>
-                                                <Button Type="ButtonType.Link" To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")"
-                                                        Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
-                                                    <Icon Name="@AppIcons.OpenInNew" Class="me-1" /> View in catalog
-                                                </Button>
-                                            </Div>
+                                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+                                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">SKU id: @sku.SkuId</RadzenText>
+                                                <LinkButton To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")" Text="View in catalog" Icon="@AppIcons.OpenInNew" Variant="Variant.Text" Size="ButtonSize.Small" />
+                                            </RadzenStack>
 
                                             @if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
                                             {
                                                 @if (offers is null)
                                                 {
-                                                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                                                    <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
                                                 }
                                                 else if (offers.Count == 0)
                                                 {
-                                                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No transferable offers.</Paragraph>
+                                                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No transferable offers.</RadzenText>
                                                 }
                                                 else
                                                 {
-                                                    <Table Narrow Hoverable Margin="Margin.Is0">
-                                                        <TableHeader>
-                                                            <TableRow>
-                                                                <TableHeaderCell>Offer</TableHeaderCell>
-                                                                <TableHeaderCell TextAlignment="TextAlignment.End">Add</TableHeaderCell>
-                                                            </TableRow>
-                                                        </TableHeader>
-                                                        <TableBody>
+                                                    <table class="gchannel-table gchannel-table-hover">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Offer</th>
+                                                                <th class="num">Add</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
                                                             @foreach (var offer in offers)
                                                             {
-                                                                <TableRow>
-                                                                    <TableRowCell>@(offer.OfferDisplayName ?? offer.OfferId)</TableRowCell>
-                                                                    <TableRowCell TextAlignment="TextAlignment.End">
-                                                                        <Button Size="Size.Small" Color="Color.Primary"
-                                                                                Disabled="@_basket.Any(b => b.OfferName == offer.OfferName)"
-                                                                                Clicked="@(() => AddToBasket(sku, offer))">
-                                                                            <Icon Name="@AppIcons.Add" Class="me-1" /> Add
-                                                                        </Button>
-                                                                    </TableRowCell>
-                                                                </TableRow>
+                                                                <tr>
+                                                                    <td>@(offer.OfferDisplayName ?? offer.OfferId)</td>
+                                                                    <td class="num">
+                                                                        <RadzenButton Text="Add" Icon="@AppIcons.Add" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary"
+                                                                                      Disabled="@_basket.Any(b => b.OfferName == offer.OfferName)"
+                                                                                      Click="@(() => AddToBasket(sku, offer))" />
+                                                                    </td>
+                                                                </tr>
                                                             }
-                                                        </TableBody>
-                                                    </Table>
+                                                        </tbody>
+                                                    </table>
                                                 }
                                             }
                                         }
-                                    </AccordionBody>
-                                </AccordionItem>
+                                    </ChildContent>
+                                </RadzenAccordionItem>
                             }
-                        </Accordion>
-                    }
-                    else
-                    {
-                        <Alert Color="Color.Info" Visible Margin="Margin.Is0">
-                            This customer has no transferable SKUs. Transfers are available only when the
-                            customer already holds subscriptions (with Google directly or another reseller).
-                        </Alert>
-                    }
-                </CardBody>
-            </Card>
-        </Column>
+                        </Items>
+                    </RadzenAccordion>
+                }
+                else
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-0">
+                        This customer has no transferable SKUs. Transfers are available only when the
+                        customer already holds subscriptions (with Google directly or another reseller).
+                    </RadzenAlert>
+                }
+            </RadzenCard>
+        </RadzenColumn>
 
-        <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
-            <Card Shadow="Shadow.Small">
-                <CardHeader>
-                    <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Transfer</CardTitle>
-                    <Small TextColor="TextColor.Secondary">Offers to transfer into this account.</Small>
-                </CardHeader>
-                <CardBody>
-                    @if (_basket.Count == 0)
+        <RadzenColumn Size="12" SizeLG="5">
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Transfer</RadzenText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-3">Offers to transfer into this account.</RadzenText>
+                @if (_basket.Count == 0)
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-3">
+                        No offers selected yet. Add one or more from the transferable SKUs.
+                    </RadzenText>
+                }
+                else
+                {
+                    @foreach (var line in _basket)
                     {
-                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
-                            No offers selected yet. Add one or more from the transferable SKUs.
-                        </Paragraph>
+                        <div class="rz-mb-4">
+                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                <span>@line.OfferDisplay</span>
+                                <RadzenButton Icon="@AppIcons.Close" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => _basket.Remove(line))" aria-label="Remove" />
+                            </RadzenStack>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@line.SkuDisplay</RadzenText>
+                            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" class="rz-mt-2">
+                                <RadzenFormField Text="Seats" Variant="Variant.Outlined" Style="max-width:120px">
+                                    <RadzenNumeric TValue="int" @bind-Value="line.Seats" Min="1" Name="@($"seats-{line.OfferName}")" />
+                                </RadzenFormField>
+                                <RadzenFormField Text="PO id (optional)" Variant="Variant.Outlined" Style="flex: 1 1 auto">
+                                    <RadzenTextBox @bind-Value="line.PurchaseOrderId" Name="@($"po-{line.OfferName}")" />
+                                </RadzenFormField>
+                            </RadzenStack>
+                        </div>
                     }
-                    else
-                    {
-                        @foreach (var line in _basket)
-                        {
-                            <Div Margin="Margin.Is4.FromBottom">
-                                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                                    <span>@line.OfferDisplay</span>
-                                    <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => _basket.Remove(line))" aria-label="Remove">
-                                        <Icon Name="@AppIcons.Close" />
-                                    </Button>
-                                </Div>
-                                <Small TextColor="TextColor.Secondary">@line.SkuDisplay</Small>
-                                <Div Flex="Flex.Default" Gap="Gap.Is2" Margin="Margin.Is1.FromTop">
-                                    <Field Margin="Margin.Is0" Style="max-width:120px">
-                                        <FieldLabel>Seats</FieldLabel>
-                                        <NumericPicker TValue="int" @bind-Value="line.Seats" Min="1" Size="Size.Small" />
-                                    </Field>
-                                    <Field Margin="Margin.Is0" Class="flex-grow-1">
-                                        <FieldLabel>PO id (optional)</FieldLabel>
-                                        <TextInput @bind-Value="line.PurchaseOrderId" Size="Size.Small" />
-                                    </Field>
-                                </Div>
-                            </Div>
-                        }
 
-                        <Field Margin="Margin.Is2.FromTop">
-                            <FieldLabel>Transfer auth token (optional)</FieldLabel>
-                            <TextInput @bind-Value="_authToken" Size="Size.Small" />
-                            <FieldHelp>Required only when transferring from another reseller.</FieldHelp>
-                        </Field>
-                    }
-                </CardBody>
-                <CardFooter Background="Background.Transparent">
-                    <Button Color="Color.Primary" Disabled="@(_submitting || _basket.Count == 0)" Loading="_submitting" Clicked="SubmitAsync">
-                        <Icon Name="@AppIcons.SwapHoriz" Class="me-1" /> @(_submitting ? "Submitting…" : "Transfer to my account")
-                    </Button>
-                </CardFooter>
-            </Card>
-        </Column>
-    </Row>
+                    <RadzenFormField Text="Transfer auth token (optional)" Variant="Variant.Outlined" Style="width:100%" class="rz-mt-2 rz-mb-3">
+                        <ChildContent><RadzenTextBox @bind-Value="_authToken" Name="authToken" /></ChildContent>
+                        <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">Required only when transferring from another reseller.</RadzenText></Helper>
+                    </RadzenFormField>
+                }
+                <RadzenButton Text="Transfer to my account" Icon="@AppIcons.SwapHoriz" ButtonStyle="ButtonStyle.Primary" Disabled="@(_basket.Count == 0)" IsBusy="_submitting" BusyText="Submitting…" Click="SubmitAsync" />
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
 }
 
 @code {

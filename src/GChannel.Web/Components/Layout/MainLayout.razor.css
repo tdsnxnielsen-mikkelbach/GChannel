@@ -1,73 +1,70 @@
-/* Sidebar + app bar chrome for the Blazorise layout. The Bootstrap 5 provider renders standard Bootstrap
-   navbar/dropdown classes, so the selectors below target those inside the .gchannel-sidebar navbar. Colours
-   follow Bootstrap's colour-mode variables so the data-bs-theme toggle in MainLayout restyles everything. */
+/* Sidebar + header chrome for the Radzen layout. Everything else follows the Radzen theme variables, so the
+   light/dark toggle restyles the whole shell. */
 
-/* Specificity must beat Blazorise's .navbar[data-mode^="vertical"].navbar-dark rule, which sets the
-   background shorthand and the width variable. */
-::deep .navbar.gchannel-sidebar[data-mode^="vertical"] {
-    --b-vertical-bar-width: 260px;
-    min-height: 100vh;
-    width: 260px;
-    padding: 0.5rem 0.75rem;
-    background: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+/* Material's default header is primary-coloured; keep the app's light app bar instead. */
+::deep .rz-header {
+    --rz-header-background-color: var(--rz-base-background-color);
+    --rz-header-color: var(--rz-text-color);
+    --rz-header-shadow: none;
+    --rz-sidebar-toggle-color: var(--rz-text-color);
+    --rz-sidebar-toggle-hover-color: var(--rz-text-color);
+    --rz-sidebar-toggle-hover-background-color: var(--rz-base-200);
+    border-bottom: 1px solid var(--rz-base-300);
 }
 
-::deep .gchannel-sidebar .navbar-brand .nav-link {
+    ::deep .rz-header a,
+    ::deep .rz-header a:hover,
+    ::deep .rz-header a:focus {
+        color: inherit;
+    }
+
+::deep .gchannel-sidebar {
+    --rz-sidebar-width: 260px;
+    --rz-sidebar-background-color: transparent;
+    --rz-sidebar-color: #fff;
+    --rz-sidebar-border-inline-end: none;
+    /* The panel menu paints its own (white) item backgrounds by default — make them transparent so the
+       sidebar gradient shows through, and switch every text/icon colour to the light-on-dark palette. */
+    --rz-panel-menu-item-background-color: transparent;
+    --rz-panel-menu-item-2nd-level-background-color: transparent;
+    --rz-panel-menu-item-border: none;
+    --rz-panel-menu-item-color: rgba(255, 255, 255, 0.88);
+    --rz-panel-menu-item-2nd-level-color: rgba(255, 255, 255, 0.88);
+    --rz-panel-menu-icon-color: rgba(255, 255, 255, 0.7);
+    --rz-panel-menu-item-hover-color: #fff;
+    --rz-panel-menu-item-hover-background-color: rgba(255, 255, 255, 0.1);
+    --rz-panel-menu-item-2nd-level-hover-color: #fff;
+    --rz-panel-menu-item-2nd-level-hover-background-color: rgba(255, 255, 255, 0.1);
+    --rz-panel-menu-item-active-color: #fff;
+    --rz-panel-menu-item-active-background-color: rgba(255, 255, 255, 0.25);
+    --rz-panel-menu-item-2nd-level-active-color: #fff;
+    --rz-panel-menu-item-2nd-level-active-background-color: rgba(255, 255, 255, 0.25);
+    --rz-panel-menu-item-active-indicator: #fff;
+    --rz-menu-item-color: inherit;
+    --rz-menu-item-hover-color: inherit;
+    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+    color: #fff;
+}
+
+    ::deep .gchannel-sidebar .rz-panel-menu .rz-navigation-item-link:active {
+        background-color: rgba(255, 255, 255, 0.2);
+    }
+
+::deep .gchannel-brand .rzi {
+    color: #fff;
+}
+
+::deep .gchannel-brand-link,
+::deep .gchannel-brand-link:hover {
+    color: #fff;
     font-size: 1.1rem;
     font-weight: 600;
-    color: #fff;
-}
-
-::deep .gchannel-sidebar .nav-link,
-::deep .gchannel-sidebar .dropdown-toggle {
-    color: #d7d7d7;
-    border-radius: 4px;
-}
-
-::deep .gchannel-sidebar .nav-link:hover,
-::deep .gchannel-sidebar .dropdown-toggle:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #fff;
-}
-
-::deep .gchannel-sidebar .nav-link.active {
-    background-color: rgba(255, 255, 255, 0.37);
-    color: #fff;
-}
-
-/* Vertical bar dropdowns render inline (not as floating menus): make them transparent on the gradient. */
-::deep .gchannel-sidebar .dropdown-menu {
-    background: transparent;
-    border: 0;
-    padding: 0;
-    margin: 0;
-}
-
-::deep .gchannel-sidebar .dropdown-item {
-    color: #d7d7d7;
-    border-radius: 4px;
-    padding-top: 0.4rem;
-    padding-bottom: 0.4rem;
-}
-
-::deep .gchannel-sidebar .dropdown-item:hover,
-::deep .gchannel-sidebar .dropdown-item:focus {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #fff;
-}
-
-::deep .gchannel-sidebar .dropdown-item.active {
-    background-color: rgba(255, 255, 255, 0.37);
-    color: #fff;
-}
-
-::deep .gchannel-appbar {
-    min-height: 3.5rem;
-    background-color: var(--bs-body-bg) !important;
+    text-decoration: none;
 }
 
 ::deep .gchannel-content {
     max-width: 1600px;
+    padding: 0.5rem 0.75rem 1.5rem;
 }
 
 #blazor-error-ui {

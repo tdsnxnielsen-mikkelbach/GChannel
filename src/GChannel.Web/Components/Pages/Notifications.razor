@@ -6,149 +6,134 @@
 
 <PageTitle>Notifications · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-    <Div>
-        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Notifications</Heading>
-        <Small TextColor="TextColor.Secondary">Pub/Sub change events</Small>
-    </Div>
-    <Button Color="Color.Secondary" Outline Clicked="RefreshFeedAsync" Disabled="_feedLoading">
-        <Icon Name="@AppIcons.Refresh" Class="me-1" /> Refresh
-    </Button>
-</Div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+    <div>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Notifications</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Pub/Sub change events</RadzenText>
+    </div>
+    <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="RefreshFeedAsync" Disabled="_feedLoading" />
+</RadzenStack>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     Google publishes entitlement and customer change events to a Cloud Pub/Sub topic. A background
     subscriber in the worker records them into a live feed so the console reacts to changes without
     polling. Each event deep-links to the customer or entitlement it concerns.
-    <Tooltip Text="When the read-model is enabled, each change event also triggers a targeted refresh of the affected customer's synced data (seats, subscriptions, renewal, pricing) within seconds — so lists and dashboards update in near-real-time, with the periodic background sync as a backstop." Multiline Inline>
-        <Icon Name="@AppIcons.Info" Class="ms-1" />
-    </Tooltip>
-</Paragraph>
+    <Tip Text="When the read-model is enabled, each change event also triggers a targeted refresh of the affected customer's synced data (seats, subscriptions, renewal, pricing) within seconds — so lists and dashboards update in near-real-time, with the periodic background sync as a backstop.">
+        <RadzenIcon Icon="@AppIcons.Info" Style="font-size: 1.1rem; width: auto; height: auto; vertical-align: text-bottom" class="rz-ms-1" />
+    </Tip>
+</RadzenText>
 
 @if (!_feedLoading && _feed is not null && !_feed.SubscriberEnabled)
 {
-    <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         The background Pub/Sub subscriber isn't running. Configure <code>GoogleChannel:PubSubProjectId</code>,
         <code>GoogleChannel:PubSubSubscriptionId</code> and a service-account key to start receiving events.
         Subscriber registration below still works.
-    </Alert>
+    </RadzenAlert>
 }
 
-<Row>
-    <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
-        <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Event feed</Heading>
+<RadzenRow Gap="1rem" RowGap="1rem">
+    <RadzenColumn Size="12" SizeLG="7">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Event feed</RadzenText>
         @if (_feedLoading)
         {
             <LoadingPanel Title="Loading notifications…" Hint="Reading the recent Channel event feed." />
         }
         else if (_feed is { Notifications.Count: > 0 })
         {
-            <Card Shadow="Shadow.Small">
-                <Table Narrow Hoverable Responsive Margin="Margin.Is0">
-                    <TableHeader>
-                        <TableRow>
-                            <TableHeaderCell>Kind</TableHeaderCell>
-                            <TableHeaderCell>Customer</TableHeaderCell>
-                            <TableHeaderCell>Event</TableHeaderCell>
-                            <TableHeaderCell>Received</TableHeaderCell>
-                            <TableHeaderCell TextAlignment="TextAlignment.End">Open</TableHeaderCell>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        @foreach (var n in _feed.Notifications)
-                        {
-                            <TableRow>
-                                <TableRowCell><Badge Color="@KindColor(n.Kind)">@n.Kind</Badge></TableRowCell>
-                                <TableRowCell>
-                                    @if (!string.IsNullOrEmpty(n.CustomerId))
-                                    {
-                                        <div>@CustomerLabel(n.CustomerId)</div>
-                                        <Small TextColor="TextColor.Secondary">@n.CustomerId</Small>
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </TableRowCell>
-                                <TableRowCell>
-                                    <div>@(n.EventType ?? "—")</div>
-                                    <Small TextColor="TextColor.Secondary">@n.ResourceName</Small>
-                                </TableRowCell>
-                                <TableRowCell>@n.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</TableRowCell>
-                                <TableRowCell TextAlignment="TextAlignment.End">
-                                    @if (!string.IsNullOrEmpty(n.CustomerId) && !string.IsNullOrEmpty(n.EntitlementId))
-                                    {
-                                        <Anchor To="@($"/customers/{n.CustomerId}/entitlements/{n.EntitlementId}")">Entitlement</Anchor>
-                                    }
-                                    else if (!string.IsNullOrEmpty(n.CustomerId))
-                                    {
-                                        <Anchor To="@($"/customers/{n.CustomerId}")">Customer</Anchor>
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </TableRowCell>
-                            </TableRow>
-                        }
-                    </TableBody>
-                </Table>
-            </Card>
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenDataGrid TItem="ChannelNotification" Data="_feed.Notifications" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Kind" Width="120px">
+                            <Template Context="n"><RadzenBadge BadgeStyle="@KindColor(n.Kind)" Text="@n.Kind" /></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Customer">
+                            <Template Context="n">
+                                @if (!string.IsNullOrEmpty(n.CustomerId))
+                                {
+                                    <div>@CustomerLabel(n.CustomerId)</div>
+                                    <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@n.CustomerId</RadzenText>
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Event">
+                            <Template Context="n">
+                                <div>@(n.EventType ?? "—")</div>
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0" Style="overflow-wrap: anywhere">@n.ResourceName</RadzenText>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Received" Width="150px">
+                            <Template Context="n">@n.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Open" TextAlign="TextAlign.End" Width="110px">
+                            <Template Context="n">
+                                @if (!string.IsNullOrEmpty(n.CustomerId) && !string.IsNullOrEmpty(n.EntitlementId))
+                                {
+                                    <RadzenLink Path="@($"/customers/{n.CustomerId}/entitlements/{n.EntitlementId}")" Text="Entitlement" />
+                                }
+                                else if (!string.IsNullOrEmpty(n.CustomerId))
+                                {
+                                    <RadzenLink Path="@($"/customers/{n.CustomerId}")" Text="Customer" />
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
         }
         else
         {
-            <Alert Color="Color.Info" Visible>No notifications received yet.</Alert>
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No notifications received yet.</RadzenAlert>
         }
-    </Column>
+    </RadzenColumn>
 
-    <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
-        <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Subscriber registration</Heading>
-        <Card Shadow="Shadow.Small">
-            <CardBody>
-                @if (_registrationLoading)
+    <RadzenColumn Size="12" SizeLG="5">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Subscriber registration</RadzenText>
+        <RadzenCard Variant="Variant.Filled">
+            @if (_registrationLoading)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Topic</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-3" Style="overflow-wrap: anywhere">@(_registration?.Topic ?? "— none registered —")</RadzenText>
+
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Registered service accounts</RadzenText>
+                @if (_registration is { ServiceAccounts.Count: > 0 })
                 {
-                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                    <RadzenStack Gap="0">
+                        @foreach (var account in _registration.ServiceAccounts)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-py-2 rz-border-bottom rz-border-color-base-200">
+                                <span style="overflow-wrap: anywhere">@account</span>
+                                <RadzenButton Icon="@AppIcons.Delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small" Click="@(() => UnregisterAsync(account))" Disabled="_saving" aria-label="Unregister" />
+                            </RadzenStack>
+                        }
+                    </RadzenStack>
                 }
                 else
                 {
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block">Topic</Small>
-                    <Paragraph Margin="Margin.Is3.FromBottom">@(_registration?.Topic ?? "— none registered —")</Paragraph>
-
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block">Registered service accounts</Small>
-                    @if (_registration is { ServiceAccounts.Count: > 0 })
-                    {
-                        <ListGroup Flush>
-                            @foreach (var account in _registration.ServiceAccounts)
-                            {
-                                <ListGroupItem Padding="Padding.Is0.OnX.Is2.OnY">
-                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                                        <span class="text-break">@account</span>
-                                        <Button Color="Color.Danger" Outline Size="Size.Small" Clicked="@(() => UnregisterAsync(account))" Disabled="_saving" aria-label="Unregister">
-                                            <Icon Name="@AppIcons.Delete" />
-                                        </Button>
-                                    </Div>
-                                </ListGroupItem>
-                            }
-                        </ListGroup>
-                    }
-                    else
-                    {
-                        <Paragraph Margin="Margin.Is2.FromBottom">None.</Paragraph>
-                    }
-
-                    <Divider Margin="Margin.Is3.OnY" />
-                    <Field>
-                        <FieldLabel>Service account email</FieldLabel>
-                        <TextInput @bind-Value="_newServiceAccount" Placeholder="name@project.iam.gserviceaccount.com" />
-                    </Field>
-                    <Button Color="Color.Primary" Clicked="RegisterAsync" Disabled="@(string.IsNullOrWhiteSpace(_newServiceAccount) || _saving)">
-                        <Icon Name="@AppIcons.Add" Class="me-1" /> Register subscriber
-                    </Button>
+                    <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-2">None.</RadzenText>
                 }
-            </CardBody>
-        </Card>
-    </Column>
-</Row>
+
+                <hr class="rz-my-3" />
+                <RadzenFormField Text="Service account email" Variant="Variant.Outlined" Style="width:100%" class="rz-mb-3">
+                    <RadzenTextBox @bind-Value="_newServiceAccount" Placeholder="name@project.iam.gserviceaccount.com" Name="serviceAccount" />
+                </RadzenFormField>
+                <RadzenButton Text="Register subscriber" Icon="@AppIcons.Add" ButtonStyle="ButtonStyle.Primary" Click="RegisterAsync" Disabled="@(string.IsNullOrWhiteSpace(_newServiceAccount) || _saving)" />
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
 
 @code {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(20);
@@ -338,11 +323,11 @@
         }
     }
 
-    private static Color KindColor(string kind) => kind switch
+    private static BadgeStyle KindColor(string kind) => kind switch
     {
-        "Entitlement" => Color.Primary,
-        "Customer" => Color.Info,
-        _ => Color.Secondary
+        "Entitlement" => BadgeStyle.Primary,
+        "Customer" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     public void Dispose()

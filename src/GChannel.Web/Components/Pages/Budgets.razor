@@ -5,175 +5,148 @@
 
 <PageTitle>GCP budgets · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-    <Div>
-        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">GCP budgets</Heading>
-        <Small TextColor="TextColor.Secondary">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+    <div>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">GCP budgets</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
             Cloud Billing budgets on your reseller billing accounts and per-customer sub-accounts
-        </Small>
-    </Div>
-    <Button Color="Color.Secondary" Outline Clicked="RefreshAsync" Disabled="_loadingAccounts">
-        <Icon Name="@AppIcons.Refresh" Class="me-1" /> Refresh
-    </Button>
-</Div>
+        </RadzenText>
+    </div>
+    <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="RefreshAsync" Disabled="_loadingAccounts" />
+</RadzenStack>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
     Budgets are read and written through the Cloud Billing Budget API using the reseller service
     account — a separate data plane from the Channel API. Budgets raise alerts at their thresholds; they
     don't cap spend.
-</Paragraph>
+</RadzenText>
 
 @if (_accountsError is not null)
 {
-    <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         Couldn't discover billing accounts live (@_accountsError). Showing configured accounts if any —
         ensure <code>cloudbilling.googleapis.com</code> is enabled and the service account has
         <code>roles/billing.viewer</code>.
-    </Alert>
+    </RadzenAlert>
 }
 
-<Row>
-    <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
-        <Field>
-            <FieldLabel>Billing account</FieldLabel>
-            <Select TValue="string" Value="@_selectedAccountId" ValueChanged="OnAccountChanged" Disabled="_loadingAccounts">
-                <SelectItem TValue="string" Value="@((string?)null)">Choose a billing account…</SelectItem>
-                @foreach (var account in _accounts)
-                {
-                    <SelectItem TValue="string" Value="@account.Id">@AccountLabel(account)</SelectItem>
-                }
-            </Select>
-        </Field>
-    </Column>
-    <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop" Flex="Flex.AlignItems.Center">
+<RadzenRow Gap="1rem" RowGap="1rem" AlignItems="AlignItems.Center">
+    <RadzenColumn Size="12" SizeLG="5">
+        <RadzenFormField Text="Billing account" Variant="Variant.Outlined" Style="width:100%">
+            <RadzenDropDown TValue="string" Data="_accountOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                            Value="@_selectedAccountId" ValueChanged="OnAccountChanged" Disabled="_loadingAccounts" AllowClear="true" Placeholder="Choose a billing account…" Name="billingAccount" />
+        </RadzenFormField>
+    </RadzenColumn>
+    <RadzenColumn Size="12" SizeLG="7">
         @if (!string.IsNullOrEmpty(_selectedAccountId))
         {
-            <Button Color="Color.Primary" Clicked="StartCreate">
-                <Icon Name="@AppIcons.Add" Class="me-1" /> New budget
-            </Button>
+            <RadzenButton Text="New budget" Icon="@AppIcons.Add" ButtonStyle="ButtonStyle.Primary" Click="StartCreate" />
         }
-    </Column>
-</Row>
+    </RadzenColumn>
+</RadzenRow>
 
 @if (_editing is not null)
 {
-    <Card Shadow="Shadow.Small" Margin="Margin.Is4.OnY">
-        <CardBody>
-            <Heading Size="HeadingSize.Is5" Margin="Margin.Is3.FromBottom">@(_editing.BudgetId is null ? "New budget" : "Edit budget")</Heading>
-            <Row>
-                <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
-                    <Field>
-                        <FieldLabel>Display name</FieldLabel>
-                        <TextInput @bind-Value="_editing.DisplayName" />
-                    </Field>
-                </Column>
-                <Column ColumnSize="ColumnSize.Is6.Is3.OnDesktop">
-                    <Field>
-                        <FieldLabel>Amount</FieldLabel>
-                        <NumericPicker TValue="decimal" @bind-Value="_editing.Amount" Min="0" Decimals="2" />
-                    </Field>
-                </Column>
-                <Column ColumnSize="ColumnSize.Is6.Is3.OnDesktop">
-                    <Field>
-                        <FieldLabel>Currency</FieldLabel>
-                        <TextInput @bind-Value="_editing.CurrencyCode" MaxLength="3" />
-                    </Field>
-                </Column>
-                <Column ColumnSize="ColumnSize.Is12.Is4.OnDesktop">
-                    <Field>
-                        <FieldLabel>Reset period</FieldLabel>
-                        <Select TValue="string" @bind-Value="_editing.CalendarPeriod">
-                            <SelectItem TValue="string" Value="@("MONTH")">Monthly</SelectItem>
-                            <SelectItem TValue="string" Value="@("QUARTER")">Quarterly</SelectItem>
-                            <SelectItem TValue="string" Value="@("YEAR")">Yearly</SelectItem>
-                        </Select>
-                    </Field>
-                </Column>
-                <Column ColumnSize="ColumnSize.Is12.Is8.OnDesktop" Flex="Flex.AlignItems.Center" Gap="Gap.Is4">
-                    <span class="me-2">Alert thresholds:</span>
-                    <Check TValue="bool" @bind-Value="_t50" Inline>50%</Check>
-                    <Check TValue="bool" @bind-Value="_t90" Inline>90%</Check>
-                    <Check TValue="bool" @bind-Value="_t100" Inline>100%</Check>
-                </Column>
-            </Row>
-            <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is2" Margin="Margin.Is3.FromTop">
-                <Button Color="Color.Secondary" Class="btn-link text-decoration-none" Clicked="@(() => _editing = null)" Disabled="_saving">Cancel</Button>
-                <Button Color="Color.Primary" Clicked="SaveAsync" Loading="_saving"
-                        Disabled="_saving || string.IsNullOrWhiteSpace(_editing.DisplayName)">
-                    @(_saving ? "Saving…" : "Save budget")
-                </Button>
-            </Div>
-        </CardBody>
-    </Card>
+    <RadzenCard Variant="Variant.Filled" class="rz-my-4">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">@(_editing.BudgetId is null ? "New budget" : "Edit budget")</RadzenText>
+        <RadzenRow Gap="1rem" RowGap="1rem" AlignItems="AlignItems.Center">
+            <RadzenColumn Size="12" SizeLG="6">
+                <RadzenFormField Text="Display name" Variant="Variant.Outlined" Style="width:100%">
+                    <RadzenTextBox @bind-Value="_editing.DisplayName" Name="displayName" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="6" SizeLG="3">
+                <RadzenFormField Text="Amount" Variant="Variant.Outlined" Style="width:100%">
+                    <RadzenNumeric TValue="decimal" @bind-Value="_editing.Amount" Min="0" Format="0.00" Name="amount" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="6" SizeLG="3">
+                <RadzenFormField Text="Currency" Variant="Variant.Outlined" Style="width:100%">
+                    <RadzenTextBox @bind-Value="_editing.CurrencyCode" MaxLength="3" Name="currency" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeLG="4">
+                <RadzenFormField Text="Reset period" Variant="Variant.Outlined" Style="width:100%">
+                    <RadzenDropDown TValue="string" @bind-Value="_editing.CalendarPeriod" Data="_periodOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)" Name="period" />
+                </RadzenFormField>
+            </RadzenColumn>
+            <RadzenColumn Size="12" SizeLG="8">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap">
+                    <span class="rz-me-2">Alert thresholds:</span>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem">
+                        <RadzenCheckBox TValue="bool" @bind-Value="_t50" Name="t50" /><RadzenLabel Text="50%" Component="t50" />
+                    </RadzenStack>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem">
+                        <RadzenCheckBox TValue="bool" @bind-Value="_t90" Name="t90" /><RadzenLabel Text="90%" Component="t90" />
+                    </RadzenStack>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem">
+                        <RadzenCheckBox TValue="bool" @bind-Value="_t100" Name="t100" /><RadzenLabel Text="100%" Component="t100" />
+                    </RadzenStack>
+                </RadzenStack>
+            </RadzenColumn>
+        </RadzenRow>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" class="rz-mt-3">
+            <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Click="@(() => _editing = null)" Disabled="_saving" />
+            <RadzenButton Text="Save budget" ButtonStyle="ButtonStyle.Primary" Click="SaveAsync" IsBusy="_saving" BusyText="Saving…"
+                          Disabled="@string.IsNullOrWhiteSpace(_editing.DisplayName)" />
+        </RadzenStack>
+    </RadzenCard>
 }
 
-<Heading Size="HeadingSize.Is5" Margin="Margin.Is4.FromTop.Is2.FromBottom">Budgets</Heading>
+<RadzenText TextStyle="TextStyle.H6" class="rz-mt-4 rz-mb-2">Budgets</RadzenText>
 @if (_loadingBudgets)
 {
     <LoadingPanel Title="Loading budgets…" Hint="Reading budgets for the selected billing account." />
 }
 else if (string.IsNullOrEmpty(_selectedAccountId))
 {
-    <Alert Color="Color.Info" Visible>Select a billing account to view its budgets.</Alert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">Select a billing account to view its budgets.</RadzenAlert>
 }
 else
 {
-    <Card Shadow="Shadow.Small">
-        <Table Narrow Hoverable Responsive Margin="Margin.Is0">
-            <TableHeader>
-                <TableRow>
-                    <TableHeaderCell>Name</TableHeaderCell>
-                    <TableHeaderCell>Amount</TableHeaderCell>
-                    <TableHeaderCell>Reset</TableHeaderCell>
-                    <TableHeaderCell>Alert thresholds</TableHeaderCell>
-                    <TableHeaderCell TextAlignment="TextAlignment.End">Actions</TableHeaderCell>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                @if (_budgets.Count == 0)
-                {
-                    <TableRow><TableRowCell ColumnSpan="5">No budgets on this billing account yet.</TableRowCell></TableRow>
-                }
-                @foreach (var budget in _budgets)
-                {
-                    <TableRow>
-                        <TableRowCell>@budget.DisplayName</TableRowCell>
-                        <TableRowCell>
-                            @if (budget.UsesLastPeriodAmount)
-                            {
-                                <span>Tracks last period</span>
-                            }
-                            else
-                            {
-                                <span>@budget.Amount.ToString("N2") @budget.CurrencyCode</span>
-                            }
-                        </TableRowCell>
-                        <TableRowCell>@(budget.CalendarPeriod ?? "Custom")</TableRowCell>
-                        <TableRowCell>@string.Join(", ", budget.ThresholdPercents.Select(p => $"{p * 100:0}%"))</TableRowCell>
-                        <TableRowCell TextAlignment="TextAlignment.End">
-                            <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is1" Class="text-nowrap">
-                                <Button Size="Size.Small" Color="Color.Primary" Outline Clicked="@(() => StartEdit(budget))" Disabled="budget.UsesLastPeriodAmount" aria-label="Edit">
-                                    <Icon Name="@AppIcons.Edit" />
-                                </Button>
-                                <Button Size="Size.Small" Color="Color.Danger" Outline Clicked="@(() => DeleteAsync(budget))" aria-label="Delete">
-                                    <Icon Name="@AppIcons.Delete" />
-                                </Button>
-                            </Div>
-                        </TableRowCell>
-                    </TableRow>
-                }
-            </TableBody>
-        </Table>
-    </Card>
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenDataGrid TItem="BudgetInfo" Data="_budgets" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true"
+                        EmptyText="No budgets on this billing account yet.">
+            <Columns>
+                <RadzenDataGridColumn TItem="BudgetInfo" Property="@nameof(BudgetInfo.DisplayName)" Title="Name" />
+                <RadzenDataGridColumn TItem="BudgetInfo" Title="Amount">
+                    <Template Context="budget">
+                        @if (budget.UsesLastPeriodAmount)
+                        {
+                            <span>Tracks last period</span>
+                        }
+                        else
+                        {
+                            <span>@budget.Amount.ToString("N2") @budget.CurrencyCode</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BudgetInfo" Title="Reset" Width="110px">
+                    <Template Context="budget">@(budget.CalendarPeriod ?? "Custom")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BudgetInfo" Title="Alert thresholds">
+                    <Template Context="budget">@string.Join(", ", budget.ThresholdPercents.Select(p => $"{p * 100:0}%"))</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BudgetInfo" Title="Actions" TextAlign="TextAlign.End" Width="110px">
+                    <Template Context="budget">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.25rem" class="rz-text-nowrap">
+                            <RadzenButton Icon="@AppIcons.Edit" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Click="@(() => StartEdit(budget))" Disabled="budget.UsesLastPeriodAmount" aria-label="Edit" />
+                            <RadzenButton Icon="@AppIcons.Delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Click="@(() => DeleteAsync(budget))" aria-label="Delete" />
+                        </RadzenStack>
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </RadzenCard>
 }
 
 @if (!string.IsNullOrEmpty(_selectedAccountId))
 {
-    <Heading Size="HeadingSize.Is5" Margin="Margin.Is5.FromTop.Is2.FromBottom">Billing permissions</Heading>
-    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
+    <RadzenText TextStyle="TextStyle.H6" class="rz-mt-6 rz-mb-2">Billing permissions</RadzenText>
+    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-3">
         Members with roles on this billing account, read live from its Cloud Billing IAM policy. Inherited
         members come from the master billing account; direct members are granted on this account itself.
-    </Paragraph>
+    </RadzenText>
 
     @if (_loadingMembers)
     {
@@ -181,286 +154,55 @@ else
     }
     else if (_members is { Available: false })
     {
-        <Alert Color="Color.Warning" Visible>
+        <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
             Couldn't read billing permissions (@(_members.Error ?? "unavailable")). The service account needs
             <code>roles/billing.viewer</code> (or <code>billing.accounts.getIamPolicy</code>) on the account.
-        </Alert>
+        </RadzenAlert>
     }
     else if (_members is not null)
     {
         @if (_identity is { DirectoryAvailable: false, DirectoryError: not null })
         {
-            <Alert Color="Color.Info" Visible Margin="Margin.Is3.FromBottom">
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-3">
                 2SV / Advanced Protection are readable via the Admin SDK only for users in your own Workspace
                 tenant or in resold customers you have reseller admin access to (@_identity.DirectoryError).
                 Account type is still classified from the domain's Cloud Identity status.
-            </Alert>
+            </RadzenAlert>
         }
-        <Row>
-            <Column ColumnSize="ColumnSize.Is12">
-                <Card Shadow="Shadow.Small" Margin="Margin.Is3.FromBottom">
-                    <CardBody Padding="Padding.Is3">
-                        <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
-                            <Icon Name="@AppIcons.Person" TextColor="TextColor.Secondary" />
-                            <Strong>Direct members (@_members.Direct.Count)</Strong>
-                        </Div>
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromBottom">
-                            Granted on this sub-account — not inherited.
-                        </Small>
-                        @MemberTable(_members.Direct, "No members set directly on this account.")
-                    </CardBody>
-                </Card>
-            </Column>
-            <Column ColumnSize="ColumnSize.Is12">
-                <Card Shadow="Shadow.Small">
-                    <CardBody Padding="Padding.Is3">
-                        <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
-                            <Icon Name="@AppIcons.AccountTree" TextColor="TextColor.Secondary" />
-                            <Strong>Inherited members (@_members.Inherited.Count)</Strong>
-                        </Div>
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromBottom">
-                            @(_members.MasterBillingAccountId is null
-                                ? "This is a master account — no inherited members."
-                                : $"Inherited from master billing account {_members.MasterBillingAccountId}.")
-                        </Small>
-                        @MemberTable(_members.Inherited, "No inherited members.")
-                    </CardBody>
-                </Card>
-            </Column>
-        </Row>
+        <RadzenCard Variant="Variant.Filled" class="rz-mb-3">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-1">
+                <RadzenIcon Icon="@AppIcons.Person" class="rz-text-secondary-color" />
+                <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-m-0" Style="font-weight:600">Direct members (@_members.Direct.Count)</RadzenText>
+            </RadzenStack>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-2">
+                Granted on this sub-account — not inherited.
+            </RadzenText>
+            <BillingMembersGrid Rows="_members.Direct" EmptyText="No members set directly on this account." IdentityByEmail="_identityByEmail" LoadingIdentity="_loadingIdentity" />
+        </RadzenCard>
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-1">
+                <RadzenIcon Icon="@AppIcons.AccountTree" class="rz-text-secondary-color" />
+                <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-m-0" Style="font-weight:600">Inherited members (@_members.Inherited.Count)</RadzenText>
+            </RadzenStack>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-2">
+                @(_members.MasterBillingAccountId is null
+                    ? "This is a master account — no inherited members."
+                    : $"Inherited from master billing account {_members.MasterBillingAccountId}.")
+            </RadzenText>
+            <BillingMembersGrid Rows="_members.Inherited" EmptyText="No inherited members." IdentityByEmail="_identityByEmail" LoadingIdentity="_loadingIdentity" />
+        </RadzenCard>
     }
 }
 
 @code {
-    private RenderFragment MemberTable(IReadOnlyList<BillingAccountMember> rows, string emptyText) => __builder =>
-    {
-        <DataGrid TItem="BillingAccountMember" Data="rows" Narrow Hoverable Responsive Sortable>
-            <DataGridColumns>
-                <DataGridColumn TItem="BillingAccountMember" Field="@nameof(BillingAccountMember.Email)" Caption="Member">
-                    <DisplayTemplate>
-                        <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is1">
-                            <Icon Name="@MemberTypeIcon(context.Item.MemberType)" TextColor="TextColor.Secondary" title="@context.Item.MemberType" />
-                            <span>@context.Item.Email</span>
-                            @if (_identityByEmail.TryGetValue(context.Item.Email, out var who))
-                            {
-                                if (who.IsAdmin == true)
-                                {
-                                    <Tooltip Text="Workspace super administrator in their tenant" Inline>
-                                        <Badge Color="Color.Info" Margin="Margin.Is1.FromStart">admin</Badge>
-                                    </Tooltip>
-                                }
-                                if (who.Suspended == true)
-                                {
-                                    <Tooltip Text="Account is suspended in Workspace but still holds this billing role" Inline>
-                                        <Badge Color="Color.Danger" Margin="Margin.Is1.FromStart">suspended</Badge>
-                                    </Tooltip>
-                                }
-                            }
-                        </Div>
-                    </DisplayTemplate>
-                </DataGridColumn>
-                <DataGridColumn TItem="BillingAccountMember" Field="@nameof(BillingAccountMember.RoleDisplayName)" Caption="Role">
-                    <DisplayTemplate><span class="text-nowrap">@context.Item.RoleDisplayName</span></DisplayTemplate>
-                </DataGridColumn>
-                <DataGridColumn TItem="BillingAccountMember" Field="@nameof(BillingAccountMember.MemberType)" Caption="Account" SortComparer="@(Compare(AccountRank))">
-                    <DisplayTemplate><span class="text-nowrap">@AccountKindChip(context.Item)</span></DisplayTemplate>
-                </DataGridColumn>
-                <DataGridColumn TItem="BillingAccountMember" Field="@nameof(BillingAccountMember.Email)" Caption="2SV" SortComparer="@(Compare(TwoSvRank))">
-                    <DisplayTemplate><span class="text-nowrap">@TwoSvChip(context.Item)</span></DisplayTemplate>
-                </DataGridColumn>
-                <DataGridColumn TItem="BillingAccountMember" Field="@nameof(BillingAccountMember.Email)" Caption="Adv. Protection" SortComparer="@(Compare(AdvancedProtectionRank))">
-                    <DisplayTemplate><span class="text-nowrap">@AdvancedProtectionChip(context.Item)</span></DisplayTemplate>
-                </DataGridColumn>
-            </DataGridColumns>
-            <EmptyTemplate><Paragraph Margin="Margin.Is0">@emptyText</Paragraph></EmptyTemplate>
-        </DataGrid>
-    };
+    private static readonly SelectOption[] _periodOptions =
+    [
+        new("MONTH", "Monthly"),
+        new("QUARTER", "Quarterly"),
+        new("YEAR", "Yearly"),
+    ];
 
-    // In-memory DataGrid sorting over the posture ranks (the grid can only sort declared fields on its own).
-    private static IComparer<BillingAccountMember> Compare(Func<BillingAccountMember, int> rank) =>
-        Comparer<BillingAccountMember>.Create((a, b) => rank(a).CompareTo(rank(b)));
-
-    private RenderFragment AccountKindChip(BillingAccountMember m) => __builder =>
-    {
-        if (!IsUserLike(m)) { <Small TextColor="TextColor.Secondary">—</Small> return; }
-        if (_loadingIdentity && !_identityByEmail.ContainsKey(m.Email)) { <div class="spinner-border spinner-border-sm text-secondary" role="status"></div> return; }
-        if (!_identityByEmail.TryGetValue(m.Email, out var id))
-        {
-            <Tooltip Text="Identity lookup for this member didn't return — refresh to retry." Inline>
-                <Small TextColor="TextColor.Secondary">?</Small>
-            </Tooltip>
-            return;
-        }
-
-        var (label, color) = id.AccountKind switch
-        {
-            GoogleAccountKind.Managed => ("Managed", Color.Success),
-            GoogleAccountKind.ManagedTeam => ("Managed (team)", Color.Warning),
-            GoogleAccountKind.Consumer => ("Consumer", Color.Danger),
-            _ => ("Unknown", Color.Secondary)
-        };
-        <Tooltip Text="@(id.AccountKindReason ?? label)" Multiline Inline>
-            <Badge Color="@color">@label</Badge>
-        </Tooltip>
-    };
-
-    private RenderFragment TwoSvChip(BillingAccountMember m) => __builder =>
-    {
-        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id)) { <Small TextColor="TextColor.Secondary">—</Small> return; }
-        if (id.TwoStepVerificationEnrolled is null)
-        {
-            <Tooltip Text="Not visible: the user's tenant is neither ours nor a resold customer we have reseller admin access to." Multiline Inline>
-                <Small TextColor="TextColor.Secondary">n/a</Small>
-            </Tooltip>
-            return;
-        }
-        var enrolled = id.TwoStepVerificationEnrolled.Value;
-        var enforced = id.TwoStepVerificationEnforced == true;
-        <Tooltip Text="@(enforced ? "Enrolled and enforced by policy" : enrolled ? "Enrolled (not enforced)" : "Not enrolled in 2-Step Verification")" Inline>
-            <Badge Color="@(enrolled ? Color.Success : Color.Danger)">
-                <Icon Name="@(enrolled ? AppIcons.VerifiedUser : AppIcons.GppBad)" Class="me-1" />@(enrolled ? (enforced ? "On · enforced" : "On") : "Off")
-            </Badge>
-        </Tooltip>
-    };
-
-    private RenderFragment AdvancedProtectionChip(BillingAccountMember m) => __builder =>
-    {
-        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id))
-        {
-            <Small TextColor="TextColor.Secondary">—</Small>
-            return;
-        }
-        if (!id.SecurityVisible)
-        {
-            <Tooltip Text="@(id.AccountKind == GoogleAccountKind.Consumer
-                ? "Consumer Google Account — not in any Workspace tenant, so Google exposes no 2SV, passkey or Advanced Protection data to anyone but the owner."
-                : "This user's tenant is neither ours nor a resold customer we have reseller admin access to.")" Multiline Inline>
-                <Small TextColor="TextColor.Secondary">—</Small>
-            </Tooltip>
-            return;
-        }
-        var keys = KeysSummary(id);
-        <Div Flex="Flex.Column.AlignItems.Start">
-            @switch (id.AdvancedProtection)
-            {
-                case AdvancedProtectionStatus.Enrolled:
-                    <Tooltip Text="@($"Enrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")" Multiline Inline>
-                        <Badge Color="Color.Success"><Icon Name="@AppIcons.Shield" Class="me-1" />Enrolled</Badge>
-                    </Tooltip>
-                    break;
-                case AdvancedProtectionStatus.NotEnrolled:
-                    <Tooltip Text="@($"Unenrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")" Multiline Inline>
-                        <Badge Color="Color.Warning">Not enrolled</Badge>
-                    </Tooltip>
-                    break;
-                case AdvancedProtectionStatus.Unavailable:
-                    <Tooltip Text="@($"Audit log not readable: {id.AdvancedProtectionError}{keys}")" Multiline Inline>
-                        <Badge Color="Color.Danger"><Icon Name="@AppIcons.ErrorOutline" Class="me-1" />Unavailable</Badge>
-                    </Tooltip>
-                    break;
-                default:
-                    // Advanced Protection requires a passkey or security key, so a confirmed 0/0 from the usage
-                    // report is a safe "not enrolled" even without an audit event.
-                    if (id is { SecurityKeys: 0, Passkeys: 0 })
-                    {
-                        <Tooltip Text="@($"No enroll/unenroll audit event retained, but the usage report shows no passkeys or security keys — Advanced Protection requires one.{keys}")" Multiline Inline>
-                            <Badge Color="Color.Warning">Not enrolled</Badge>
-                        </Tooltip>
-                    }
-                    else
-                    {
-                        <Tooltip Text="@($"No Advanced Protection enroll/unenroll event in the ~6 months of audit log Google retains — there is no state field, so enrollment before that can't be confirmed.{keys}")" Multiline Inline>
-                            <Small TextColor="TextColor.Secondary">No recent event</Small>
-                        </Tooltip>
-                    }
-                    break;
-            }
-            @* Passkey / security-key line: the factor Advanced Protection enforces, shown for every state. *@
-            @if (id.SecurityKeys is not null || id.Passkeys is not null)
-            {
-                var (label, color) = KeysLine(id);
-                <Tooltip Text="@($"From the user usage report for {id.KeysAsOf:yyyy-MM-dd} (accounts:num_security_keys / num_passkeys_enrolled).")" Multiline Inline>
-                    <Small TextColor="@color" Class="d-flex align-items-center gap-1">
-                        <Icon Name="@AppIcons.Key" />@label
-                    </Small>
-                </Tooltip>
-            }
-        </Div>
-    };
-
-    // Advanced Protection requires a passkey or security key, so surface those counts alongside.
-    private static string KeysSummary(MemberIdentityInfo id) =>
-        id.SecurityKeys is null && id.Passkeys is null
-            ? ""
-            : $" Keys as of {id.KeysAsOf:yyyy-MM-dd}: {id.SecurityKeys ?? 0} security key(s), {id.Passkeys ?? 0} passkey(s).";
-
-    private static (string Label, TextColor Color) KeysLine(MemberIdentityInfo id)
-    {
-        var keys = id.SecurityKeys ?? 0;
-        var passkeys = id.Passkeys ?? 0;
-        if (keys == 0 && passkeys == 0)
-        {
-            return ("no keys or passkeys", TextColor.Danger);
-        }
-
-        var parts = new List<string>();
-        if (keys > 0) parts.Add($"{keys} security key{(keys == 1 ? "" : "s")}");
-        if (passkeys > 0) parts.Add($"{passkeys} passkey{(passkeys == 1 ? "" : "s")}");
-        return (string.Join(" · ", parts), TextColor.Success);
-    }
-
-    private static bool IsUserLike(BillingAccountMember m) =>
-        m.MemberType is "user" || m.MemberType is "group";
-
-    // Sort keys: ascending = weakest posture first, so one click surfaces the members to act on.
-    // Rows with no data (service accounts, unreadable tenants) sink to the bottom.
-    private int AccountRank(BillingAccountMember m)
-    {
-        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id)) { return 9; }
-        return id.AccountKind switch
-        {
-            GoogleAccountKind.Consumer => 0,
-            GoogleAccountKind.ManagedTeam => 1,
-            GoogleAccountKind.Unknown => 2,
-            GoogleAccountKind.Managed => 3,
-            _ => 8
-        };
-    }
-
-    private int TwoSvRank(BillingAccountMember m)
-    {
-        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id)) { return 9; }
-        return id.TwoStepVerificationEnrolled switch
-        {
-            false => 0,                                                 // Off
-            true when id.TwoStepVerificationEnforced != true => 1,      // On, not enforced
-            true => 2,                                                  // On · enforced
-            null => 8                                                   // n/a (tenant not readable)
-        };
-    }
-
-    private int AdvancedProtectionRank(BillingAccountMember m)
-    {
-        if (!IsUserLike(m) || !_identityByEmail.TryGetValue(m.Email, out var id) || !id.SecurityVisible) { return 9; }
-        return id.AdvancedProtection switch
-        {
-            AdvancedProtectionStatus.NotEnrolled => 0,
-            AdvancedProtectionStatus.Unknown when id is { SecurityKeys: 0, Passkeys: 0 } => 0, // inferred not enrolled
-            AdvancedProtectionStatus.Unavailable => 1,
-            AdvancedProtectionStatus.Unknown => 2,                       // no recent event, has keys
-            AdvancedProtectionStatus.Enrolled => 3,
-            _ => 8
-        };
-    }
-
-    private static string MemberTypeIcon(string type) => type switch
-    {
-        "user" => AppIcons.Person,
-        "group" => AppIcons.Groups,
-        "serviceAccount" => AppIcons.SmartToy,
-        "domain" => AppIcons.Language,
-        _ => AppIcons.HelpOutline
-    };
+    private IEnumerable<SelectOption> _accountOptions => _accounts.Select(a => new SelectOption(a.Id, AccountLabel(a)));
 
     private sealed class BudgetForm
     {
@@ -593,7 +335,7 @@ else
         }
 
         var emails = _members.Direct.Concat(_members.Inherited)
-            .Where(IsUserLike)
+            .Where(m => m.MemberType is "user" or "group")
             .Select(m => m.Email)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -742,4 +484,3 @@ else
         return account.IsSubaccount ? $"— {name} ({account.Id})" : $"{name} ({account.Id})";
     }
 }
-

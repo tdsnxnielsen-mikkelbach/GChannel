@@ -5,10 +5,10 @@
 
 <PageTitle>SKU groups · GChannel</PageTitle>
 
-<Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">SKU groups</Heading>
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-2">SKU groups</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     Rebilling-supported SKU groups. Expand a group to load its billable SKUs.
-</Paragraph>
+</RadzenText>
 
 @if (_loading)
 {
@@ -17,77 +17,65 @@
 }
 else if (_groups is { Count: > 0 })
 {
-    <Accordion>
-        @foreach (var grp in _groups)
-        {
-            <AccordionItem Visible="_expanded.Contains(grp.Id)"
-                           VisibleChanged="expanded => OnGroupExpanded(grp, expanded)">
-                <AccordionHeader>
-                    <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
-                        <AccordionToggle>@(grp.DisplayName ?? grp.Id)</AccordionToggle>
-                    </Heading>
-                </AccordionHeader>
-                <AccordionBody>
+    <RadzenAccordion Multiple="true">
+        <Items>
+            @foreach (var grp in _groups)
+            {
+                <RadzenAccordionItem Text="@(grp.DisplayName ?? grp.Id)"
+                                     Selected="_expanded.Contains(grp.Id)"
+                                     SelectedChanged="expanded => OnGroupExpanded(grp, expanded)">
                     @if (_billableByGroup.TryGetValue(grp.Id, out var billables))
                     {
                         @if (billables is null)
                         {
-                            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
                         }
                         else if (billables.Count == 0)
                         {
-                            <Paragraph TextColor="TextColor.Secondary">No billable SKUs found.</Paragraph>
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">No billable SKUs found.</RadzenText>
                         }
                         else
                         {
-                            <Table Narrow Hoverable Responsive>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHeaderCell>SKU</TableHeaderCell>
-                                        <TableHeaderCell>Service</TableHeaderCell>
-                                        <TableHeaderCell>Related</TableHeaderCell>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
+                            <table class="gchannel-table gchannel-table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>SKU</th>
+                                        <th>Service</th>
+                                        <th>Related</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
                                     @foreach (var sku in billables)
                                     {
-                                        <TableRow>
-                                            <TableRowCell>
-                                                <Tooltip Text="@(sku.SkuId ?? sku.Sku)" Inline>
-                                                    <span>@(sku.SkuDisplayName ?? sku.SkuId ?? sku.Sku)</span>
-                                                </Tooltip>
-                                            </TableRowCell>
-                                            <TableRowCell>@(sku.ServiceDisplayName ?? sku.Service)</TableRowCell>
-                                            <TableRowCell>
+                                        <tr>
+                                            <td><Tip Text="@(sku.SkuId ?? sku.Sku)">@(sku.SkuDisplayName ?? sku.SkuId ?? sku.Sku)</Tip></td>
+                                            <td>@(sku.ServiceDisplayName ?? sku.Service)</td>
+                                            <td>
                                                 @if (!string.IsNullOrEmpty(sku.ProductId))
                                                 {
-                                                    <Button Type="ButtonType.Link" To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")"
-                                                            Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
-                                                        <Icon Name="@AppIcons.Inventory" Class="me-1" /> Product
-                                                    </Button>
+                                                    <LinkButton To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")" Text="Product" Icon="@AppIcons.Inventory"
+                                                                Variant="Variant.Text" Size="ButtonSize.Small" />
                                                 }
                                                 @if (!string.IsNullOrEmpty(sku.SkuId))
                                                 {
-                                                    <Button Type="ButtonType.Link" To="@($"/catalog/offers?sku={sku.SkuId}")"
-                                                            Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
-                                                        <Icon Name="@AppIcons.LocalOffer" Class="me-1" /> Offers
-                                                    </Button>
+                                                    <LinkButton To="@($"/catalog/offers?sku={sku.SkuId}")" Text="Offers" Icon="@AppIcons.LocalOffer"
+                                                                Variant="Variant.Text" Size="ButtonSize.Small" />
                                                 }
-                                            </TableRowCell>
-                                        </TableRow>
+                                            </td>
+                                        </tr>
                                     }
-                                </TableBody>
-                            </Table>
+                                </tbody>
+                            </table>
                         }
                     }
-                </AccordionBody>
-            </AccordionItem>
-        }
-    </Accordion>
+                </RadzenAccordionItem>
+            }
+        </Items>
+    </RadzenAccordion>
 }
 else
 {
-    <Alert Color="Color.Info" Visible>No SKU groups available.</Alert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No SKU groups available.</RadzenAlert>
 }
 
 @code {
@@ -144,3 +132,4 @@ else
         }
     }
 }
+

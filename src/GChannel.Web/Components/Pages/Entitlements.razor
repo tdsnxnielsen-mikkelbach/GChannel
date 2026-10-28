@@ -2,33 +2,28 @@
 @attribute [Authorize]
 @inject GChannelApiClient Api
 @inject UiNotifier Snackbar
+@inject ContextMenuService ContextMenus
 
 <PageTitle>Entitlements · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-    <Div>
-        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Entitlements</Heading>
-        <Small TextColor="TextColor.Secondary">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <div>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Entitlements</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
             @(_customer?.OrgDisplayName ?? CustomerId)@(string.IsNullOrEmpty(_customer?.Domain) ? "" : $" · {_customer!.Domain}")
-        </Small>
-    </Div>
-    <Div Flex="Flex.Default" Gap="Gap.Is2">
-        <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}")" Color="Color.Secondary" Outline>
-            <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Customer
-        </Button>
-        <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/transfer")" Color="Color.Secondary" Outline>
-            <Icon Name="@AppIcons.SwapHoriz" Class="me-1" /> Transfer in
-        </Button>
-        <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/entitlements/new")" Color="Color.Primary">
-            <Icon Name="@AppIcons.AddShoppingCart" Class="me-1" /> Purchase
-        </Button>
-    </Div>
-</Div>
+        </RadzenText>
+    </div>
+    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+        <LinkButton To="@($"/customers/{CustomerId}")" Text="Customer" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+        <LinkButton To="@($"/customers/{CustomerId}/transfer")" Text="Transfer in" Icon="@AppIcons.SwapHoriz" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+        <LinkButton To="@($"/customers/{CustomerId}/entitlements/new")" Text="Purchase" Icon="@AppIcons.AddShoppingCart" />
+    </RadzenStack>
+</RadzenStack>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     The subscriptions this customer holds. Each entitlement maps to a Catalog SKU/Offer; use the
     actions menu to modify or change its lifecycle state.
-</Paragraph>
+</RadzenText>
 
 @if (_loading)
 {
@@ -37,127 +32,98 @@
 }
 else if (_entitlements is { Count: > 0 })
 {
-    <Card Shadow="Shadow.Small">
-        <Table Hoverable Responsive Margin="Margin.Is0">
-            <TableHeader>
-                <TableRow>
-                    <TableHeaderCell>Offer / SKU</TableHeaderCell>
-                    <TableHeaderCell>Product</TableHeaderCell>
-                    <TableHeaderCell>State</TableHeaderCell>
-                    <TableHeaderCell>Seats</TableHeaderCell>
-                    <TableHeaderCell>Est. monthly</TableHeaderCell>
-                    <TableHeaderCell>Ion cost / margin</TableHeaderCell>
-                    <TableHeaderCell>Created</TableHeaderCell>
-                    <TableHeaderCell TextAlignment="TextAlignment.End">Actions</TableHeaderCell>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                @foreach (var e in _entitlements)
-                {
-                    <TableRow>
-                        <TableRowCell>
-                            @if (!string.IsNullOrEmpty(e.SkuId))
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenDataGrid TItem="Entitlement" Data="_entitlements" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+            <Columns>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Offer / SKU">
+                    <Template Context="e">
+                        @if (!string.IsNullOrEmpty(e.SkuId))
+                        {
+                            <Tip Text="@(e.OfferId ?? e.Id)"><RadzenLink Path="@($"/catalog/offers?sku={e.SkuId}")" Text="@OfferLabel(e)" /></Tip>
+                        }
+                        else
+                        {
+                            @OfferLabel(e)
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Product">
+                    <Template Context="e">
+                        @if (!string.IsNullOrEmpty(e.ProductId))
+                        {
+                            <Tip Text="@e.ProductId">
+                                <RadzenLink Path="@($"/catalog/products?product={e.ProductId}&sku={e.SkuId}")" Text="@(e.ProductDisplayName ?? e.ProductId)" />
+                            </Tip>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="State">
+                    <Template Context="e">
+                        <RadzenBadge BadgeStyle="@StateColor(e.ProvisioningState)" Text="@(e.ProvisioningState ?? "—")" />
+                        @if (e.IsTrial)
+                        {
+                            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Trial" class="rz-ms-1" />
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Seats" Width="80px">
+                    <Template Context="e">@(Seats(e) ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Est. monthly">
+                    <Template Context="e">
+                        @if (MonthlyEstimate(e) is { } v)
+                        {
+                            <Tip Text="@EstimateBreakdown(e)">@FormatMoney(v, e.PriceCurrency)</Tip>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Ion cost / margin">
+                    <Template Context="e">
+                        @if (e.IonCostPerSeat is { } ionCost)
+                        {
+                            <Tip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)">@FormatMoney(ionCost, e.IonCurrency)</Tip>
+                            @if (e.IonMarginPercent is { } mp)
                             {
-                                <Tooltip Text="@(e.OfferId ?? e.Id)" Inline>
-                                    <Anchor To="@($"/catalog/offers?sku={e.SkuId}")">@OfferLabel(e)</Anchor>
-                                </Tooltip>
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="@($"rz-m-0 {(mp >= 0 ? "rz-color-success" : "rz-color-danger")}")">@mp.ToString("0.0")% margin</RadzenText>
                             }
-                            else
-                            {
-                                @OfferLabel(e)
-                            }
-                        </TableRowCell>
-                        <TableRowCell>
-                            @if (!string.IsNullOrEmpty(e.ProductId))
-                            {
-                                <Tooltip Text="@e.ProductId" Inline>
-                                    <Anchor To="@($"/catalog/products?product={e.ProductId}&sku={e.SkuId}")">
-                                        @(e.ProductDisplayName ?? e.ProductId)
-                                    </Anchor>
-                                </Tooltip>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </TableRowCell>
-                        <TableRowCell>
-                            <Badge Color="@StateColor(e.ProvisioningState)">@(e.ProvisioningState ?? "—")</Badge>
-                            @if (e.IsTrial)
-                            {
-                                <Badge Color="Color.Info" Margin="Margin.Is1.FromStart">Trial</Badge>
-                            }
-                        </TableRowCell>
-                        <TableRowCell>@(Seats(e) ?? "—")</TableRowCell>
-                        <TableRowCell>
-                            @if (MonthlyEstimate(e) is { } v)
-                            {
-                                <Tooltip Text="@EstimateBreakdown(e)" Inline>
-                                    <span>@FormatMoney(v, e.PriceCurrency)</span>
-                                </Tooltip>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </TableRowCell>
-                        <TableRowCell>
-                            @if (e.IonCostPerSeat is { } ionCost)
-                            {
-                                <Tooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)" Inline>
-                                    <span>@FormatMoney(ionCost, e.IonCurrency)</span>
-                                </Tooltip>
-                                @if (e.IonMarginPercent is { } mp)
-                                {
-                                    <Small TextColor="@(mp >= 0 ? TextColor.Success : TextColor.Danger)" Display="Display.Block">@mp.ToString("0.0")% margin</Small>
-                                }
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </TableRowCell>
-                        <TableRowCell>@(e.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</TableRowCell>
-                        <TableRowCell TextAlignment="TextAlignment.End">
-                            <Div Flex="Flex.JustifyContent.End.AlignItems.Center" Gap="Gap.Is1" Class="text-nowrap">
-                                <Tooltip Text="View" Inline>
-                                    <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/entitlements/{e.Id}")" Size="Size.Small" Color="Color.Light" aria-label="View">
-                                        <Icon Name="@AppIcons.Visibility" />
-                                    </Button>
-                                </Tooltip>
-                                <Dropdown EndAligned>
-                                    <DropdownToggle Size="Size.Small" Color="Color.Light" ShowToggleIcon="false" aria-label="Actions">
-                                        <Icon Name="@AppIcons.MoreVert" />
-                                    </DropdownToggle>
-                                    <DropdownMenu>
-                                        @if (IsSuspended(e))
-                                        {
-                                            <DropdownItem Clicked="@(() => ActivateAsync(e))"><Icon Name="@AppIcons.PlayArrow" Class="me-2" />Activate</DropdownItem>
-                                        }
-                                        else
-                                        {
-                                            <DropdownItem Clicked="@(() => SuspendAsync(e))"><Icon Name="@AppIcons.Pause" Class="me-2" />Suspend</DropdownItem>
-                                        }
-                                        @if (e.IsTrial)
-                                        {
-                                            <DropdownItem Clicked="@(() => StartPaidAsync(e))"><Icon Name="@AppIcons.Paid" Class="me-2" />Start paid service</DropdownItem>
-                                        }
-                                        <DropdownItem Clicked="@(() => CancelAsync(e))"><Icon Name="@AppIcons.Cancel" TextColor="TextColor.Danger" Class="me-2" />Cancel</DropdownItem>
-                                    </DropdownMenu>
-                                </Dropdown>
-                            </Div>
-                        </TableRowCell>
-                    </TableRow>
-                }
-            </TableBody>
-        </Table>
-    </Card>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Created" Width="110px">
+                    <Template Context="e">@(e.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Actions" TextAlign="TextAlign.End" Width="110px">
+                    <Template Context="e">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" AlignItems="AlignItems.Center" Gap="0.25rem" class="rz-text-nowrap">
+                            <Tip Text="View">
+                                <LinkButton To="@($"/customers/{CustomerId}/entitlements/{e.Id}")" Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="View" />
+                            </Tip>
+                            <RadzenButton Icon="@AppIcons.MoreVert" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" aria-label="Actions"
+                                          Click="@(args => OpenActionsMenu(args, e))" />
+                        </RadzenStack>
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </RadzenCard>
 }
 else
 {
-    <Alert Color="Color.Info" Visible>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
         No entitlements yet. Use <strong>Purchase</strong> to sell this customer their first SKU.
-    </Alert>
+    </RadzenAlert>
 }
 
 @code {
@@ -204,13 +170,13 @@ else
     private static string OfferLabel(Entitlement e) =>
         e.SkuDisplayName ?? e.OfferDisplayName ?? e.OfferId ?? e.Id;
 
-    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle StateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "SUSPENDED" => Color.Warning,
-        "CANCELLED" or "CANCELED" => Color.Danger,
-        "PENDING" => Color.Info,
-        _ => Color.Secondary
+        "ACTIVE" => BadgeStyle.Success,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "CANCELLED" or "CANCELED" => BadgeStyle.Danger,
+        "PENDING" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private static string? Seats(Entitlement e) =>
@@ -243,6 +209,42 @@ else
         string.IsNullOrEmpty(currency)
             ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
             : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
+
+    // Row "⋮" menu: Radzen context menus are service-driven, so build the items for this entitlement on click.
+    private void OpenActionsMenu(MouseEventArgs args, Entitlement e)
+    {
+        var items = new List<ContextMenuItem>();
+        if (IsSuspended(e))
+        {
+            items.Add(new ContextMenuItem { Text = "Activate", Value = "activate", Icon = AppIcons.PlayArrow });
+        }
+        else
+        {
+            items.Add(new ContextMenuItem { Text = "Suspend", Value = "suspend", Icon = AppIcons.Pause });
+        }
+
+        if (e.IsTrial)
+        {
+            items.Add(new ContextMenuItem { Text = "Start paid service", Value = "paid", Icon = AppIcons.Paid });
+        }
+
+        items.Add(new ContextMenuItem { Text = "Cancel", Value = "cancel", Icon = AppIcons.Cancel, IconColor = Colors.Danger });
+
+        ContextMenus.Open(args, items, async menu =>
+        {
+            ContextMenus.Close();
+            var task = menu.Value switch
+            {
+                "activate" => ActivateAsync(e),
+                "suspend" => SuspendAsync(e),
+                "paid" => StartPaidAsync(e),
+                "cancel" => CancelAsync(e),
+                _ => Task.CompletedTask
+            };
+            await task;
+            await InvokeAsync(StateHasChanged);
+        });
+    }
 
     private Task ActivateAsync(Entitlement e) =>
         RunAsync(e, "Activate", $"Activate entitlement '{e.OfferId ?? e.Id}'?",

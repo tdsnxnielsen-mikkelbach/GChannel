@@ -19,7 +19,7 @@ src/
   GChannel.Core                   # Critter Stack core: Google clients, Marten events/read models/documents, EstateObserver, Wolverine messages + topology
   GChannel.ApiService             # Wolverine.HTTP endpoints + Google Channel client (internal ingress)
   GChannel.Worker                 # Wolverine handlers/sagas: estate sync, projections, Pub/Sub bridge, billing jobs (no ingress)
-  GChannel.Web                    # Blazor (Blazorise Bootstrap 5 + FontAwesome + ApexCharts), Google login (external ingress)
+  GChannel.Web                    # Blazor (Radzen Blazor components + Material Symbols + ApexCharts), Google login (external ingress)
 tests/
   GChannel.Tests                  # xUnit v3 integration tests on Testcontainers PostgreSQL (Alba for the API, Wolverine tracked sessions for the worker)
 ```
@@ -39,7 +39,7 @@ compete for them, and `min-replicas = 1` keeps the Pub/Sub bridge consuming. Bot
 
 ```mermaid
 flowchart LR
-    User[[Reseller]] -- Google sign-in --> Web[GChannel.Web<br/>Blazor / Blazorise<br/>external ingress]
+    User[[Reseller]] -- Google sign-in --> Web[GChannel.Web<br/>Blazor / Radzen<br/>external ingress]
     Web -- Bearer: Google access token --> Api[GChannel.ApiService<br/>Wolverine.HTTP, internal ingress]
     Api -- typed client --> Google[(Google Cloud<br/>Channel API)]
     Worker[GChannel.Worker<br/>Wolverine handlers, 1 replica] -- typed client --> Google

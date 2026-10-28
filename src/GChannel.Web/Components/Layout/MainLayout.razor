@@ -1,96 +1,57 @@
 @inherits LayoutComponentBase
-@using Blazorise.Components
-@inject IJSRuntime JS
+@implements IDisposable
 @inject OnboardingTourService Tour
+@inject ThemeService Theme
+@inject CookieThemeService CookieTheme
 
-@* Blazorise providers: toasts (INotificationService), confirm dialogs (IMessageService), dynamic modals and the
-   page progress bar are rendered once here and driven from any page through their services. *@
-<NotificationProvider Location="NotificationLocation.End" />
-<MessageProvider />
-<ModalProvider />
-<PageProgressProvider />
+@* Radzen's dialog / notification / tooltip / context-menu hosts, rendered once and driven from any page through
+   their services. CookieThemeService is injected (not otherwise used) so it starts persisting the chosen theme. *@
+<RadzenComponents @rendermode="InteractiveServer" />
 
-@* Plain wrapper so the scoped CSS (::deep selectors) in MainLayout.razor.css reaches the Blazorise markup. *@
+@* Plain wrapper so the scoped CSS (::deep selectors) in MainLayout.razor.css reaches the Radzen markup. *@
 <div class="gchannel-shell">
-<Layout Sider>
-    <LayoutSider>
-        <LayoutSiderContent>
-            <Bar @ref="_sidebar"
-                 Mode="BarMode.VerticalInline"
-                 CollapseMode="BarCollapseMode.Hide"
-                 Breakpoint="Breakpoint.Desktop"
-                 NavigationBreakpoint="Breakpoint.Tablet"
-                 ThemeContrast="ThemeContrast.Dark"
-                 Class="gchannel-sidebar">
-                <BarBrand>
-                    <BarItem>
-                        <BarLink To="">
-                            <Icon Name="@AppIcons.Hub" Class="me-2" /> Channel Partner
-                        </BarLink>
-                    </BarItem>
-                </BarBrand>
-                <BarMenu>
-                    <BarStart>
-                        <NavMenu />
-                    </BarStart>
-                </BarMenu>
-            </Bar>
-        </LayoutSiderContent>
-    </LayoutSider>
-    <Layout>
-        <LayoutHeader Fixed>
-            <Bar Breakpoint="Breakpoint.Desktop" Background="Background.Light" ThemeContrast="ThemeContrast.Light" Class="gchannel-appbar border-bottom">
-                <BarToggler Bar="@_sidebar" />
-                <BarBrand>GChannel</BarBrand>
-                <BarMenu>
-                    <BarEnd>
-                        <BarItem>
-                            <Tooltip Text="Take the product tour" Placement="TooltipPlacement.Bottom">
-                                <Button Color="Color.Light" Clicked="StartTourAsync" data-onboarding="appbar-help" aria-label="Take the product tour">
-                                    <Icon Name="@AppIcons.HelpOutline" />
-                                </Button>
-                            </Tooltip>
-                        </BarItem>
-                        <BarItem>
-                            <Button Color="Color.Light" Clicked="ToggleDarkModeAsync" data-onboarding="appbar-theme" aria-label="Toggle light / dark theme">
-                                <Icon Name="@(_isDarkMode ? AppIcons.LightMode : AppIcons.DarkMode)" />
-                            </Button>
-                        </BarItem>
-                        <AuthorizeView>
-                            <Authorized>
-                                <BarItem>
-                                    <Text Class="mx-3 d-none d-md-inline">@context.User.Identity?.Name</Text>
-                                </BarItem>
-                                <BarItem>
-                                    <form action="/account/logout" method="post" class="d-inline">
-                                        <AntiforgeryToken />
-                                        <Button Type="ButtonType.Submit" Color="Color.Secondary" Outline>
-                                            <Icon Name="@AppIcons.Logout" Class="me-1" /> Sign out
-                                        </Button>
-                                    </form>
-                                </BarItem>
-                            </Authorized>
-                            <NotAuthorized>
-                                <BarItem>
-                                    <Button Type="ButtonType.Link" To="/account/login" Color="Color.Primary" Outline>
-                                        <Icon Name="@AppIcons.Login" Class="me-1" /> Sign in with Google
-                                    </Button>
-                                </BarItem>
-                            </NotAuthorized>
-                        </AuthorizeView>
-                    </BarEnd>
-                </BarMenu>
-            </Bar>
-        </LayoutHeader>
-        <LayoutContent Padding="Padding.Is4.OnX.Is4.OnY">
-            <Container Fluid Class="gchannel-content">
-                <CascadingValue Name="IsDarkMode" Value="_isDarkMode">
-                    @Body
-                </CascadingValue>
-            </Container>
-        </LayoutContent>
-    </Layout>
-</Layout>
+<RadzenLayout>
+    <RadzenHeader>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-px-3" Style="height: 100%">
+            <RadzenSidebarToggle Click="@(() => _sidebarExpanded = !_sidebarExpanded)" />
+            <RadzenText TextStyle="TextStyle.H6" TagName="TagName.Span" class="rz-m-0">GChannel</RadzenText>
+            <span style="flex: 1 1 auto"></span>
+            <Tip Text="Take the product tour" Position="TooltipPosition.Bottom">
+                <RadzenButton Icon="@AppIcons.HelpOutline" Variant="Variant.Text" ButtonStyle="ButtonStyle.Base" Click="StartTourAsync"
+                              data-onboarding="appbar-help" aria-label="Take the product tour" />
+            </Tip>
+            <span data-onboarding="appbar-theme">
+                <RadzenAppearanceToggle />
+            </span>
+            <AuthorizeView>
+                <Authorized>
+                    <RadzenText TextStyle="TextStyle.Body2" TagName="TagName.Span" class="rz-mx-2 rz-display-none rz-display-md-inline-block">@context.User.Identity?.Name</RadzenText>
+                    <form action="/account/logout" method="post" class="rz-display-inline">
+                        <AntiforgeryToken />
+                        <RadzenButton ButtonType="ButtonType.Submit" Text="Sign out" Icon="@AppIcons.Logout" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Size="ButtonSize.Small" />
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <LinkButton To="/account/login" Text="Sign in with Google" Icon="@AppIcons.Login" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small" />
+                </NotAuthorized>
+            </AuthorizeView>
+        </RadzenStack>
+    </RadzenHeader>
+    <RadzenSidebar @bind-Expanded="_sidebarExpanded" class="gchannel-sidebar">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="gchannel-brand rz-px-4 rz-py-3">
+            <RadzenIcon Icon="@AppIcons.Hub" />
+            <RadzenLink Path="" Text="Channel Partner" class="gchannel-brand-link" />
+        </RadzenStack>
+        <NavMenu />
+    </RadzenSidebar>
+    <RadzenBody>
+        <div class="gchannel-content">
+            <CascadingValue Name="IsDarkMode" Value="_isDarkMode">
+                @Body
+            </CascadingValue>
+        </div>
+    </RadzenBody>
+</RadzenLayout>
 </div>
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -100,43 +61,29 @@
 </div>
 
 @code {
-    // Browser localStorage key the chosen theme is persisted under so it survives a page refresh.
-    private const string ThemeStorageKey = "gchannel-theme";
-
-    private Bar _sidebar = null!;
+    private bool _sidebarExpanded = true;
     private bool _isDarkMode;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override void OnInitialized()
     {
-        if (!firstRender)
+        _isDarkMode = IsDark(Theme.Theme);
+        Theme.ThemeChanged += OnThemeChanged;
+    }
+
+    // Cascaded to the pages so ApexCharts (which paints its own axis/legend text) follows the Radzen theme.
+    private static bool IsDark(string? theme) => theme?.EndsWith("-dark", StringComparison.OrdinalIgnoreCase) == true || string.Equals(theme, "dark", StringComparison.OrdinalIgnoreCase);
+
+    private void OnThemeChanged()
+    {
+        var dark = IsDark(Theme.Theme);
+        if (dark != _isDarkMode)
         {
-            return;
+            _isDarkMode = dark;
+            _ = InvokeAsync(StateHasChanged);
         }
-
-        // localStorage / matchMedia are only reachable once the interactive circuit is connected (not during
-        // the static prerender), so restore the saved preference here and re-render with the right theme.
-        var stored = await JS.InvokeAsync<string?>("localStorage.getItem", ThemeStorageKey);
-        _isDarkMode = stored switch
-        {
-            "dark" => true,
-            "light" => false,
-            // No saved choice yet: honour the operating-system / browser preference.
-            _ => await JS.InvokeAsync<bool>("gchannelTheme.prefersDark")
-        };
-        await ApplyThemeAsync();
-        StateHasChanged();
     }
-
-    private async Task ToggleDarkModeAsync()
-    {
-        _isDarkMode = !_isDarkMode;
-        await JS.InvokeVoidAsync("localStorage.setItem", ThemeStorageKey, _isDarkMode ? "dark" : "light");
-        await ApplyThemeAsync();
-    }
-
-    // Bootstrap 5.3 colour modes: every Bootstrap/Blazorise component follows the data-bs-theme attribute on <html>.
-    private Task ApplyThemeAsync() =>
-        JS.InvokeVoidAsync("gchannelTheme.apply", _isDarkMode ? "dark" : "light").AsTask();
 
     private Task StartTourAsync() => Tour.StartAsync();
+
+    public void Dispose() => Theme.ThemeChanged -= OnThemeChanged;
 }

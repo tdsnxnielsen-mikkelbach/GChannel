@@ -1,4 +1,4 @@
-using Blazorise;
+using Radzen;
 
 namespace GChannel.Web.Services;
 
@@ -12,25 +12,38 @@ public enum Severity
 }
 
 /// <summary>
-/// Thin façade over Blazorise's <see cref="INotificationService"/> (toasts) and <see cref="IMessageService"/>
-/// (confirm dialogs). Both are rendered by the providers in <c>MainLayout</c>. Registered scoped per circuit.
+/// Thin façade over Radzen's <see cref="NotificationService"/> (toasts) and <see cref="DialogService"/>
+/// (confirm dialogs). Both are hosted by the <c>RadzenComponents</c> element in <c>MainLayout</c>. Registered scoped per circuit.
 /// </summary>
-public sealed class UiNotifier(INotificationService notifications, IMessageService messages)
+public sealed class UiNotifier(NotificationService notifications, DialogService dialogs)
 {
-    public Task Add(string message, Severity severity = Severity.Info) => severity switch
+    public Task Add(string message, Severity severity = Severity.Info)
     {
-        Severity.Success => notifications.Success(message),
-        Severity.Warning => notifications.Warning(message),
-        Severity.Error => notifications.Error(message),
-        _ => notifications.Info(message)
-    };
+        notifications.Notify(new NotificationMessage
+        {
+            Severity = severity switch
+            {
+                Severity.Success => NotificationSeverity.Success,
+                Severity.Warning => NotificationSeverity.Warning,
+                Severity.Error => NotificationSeverity.Error,
+                _ => NotificationSeverity.Info
+            },
+            Summary = message,
+            Duration = severity == Severity.Error ? 8000 : 4000,
+            CloseOnClick = true
+        });
+        return Task.CompletedTask;
+    }
 
     /// <summary>Modal yes/cancel confirmation. Returns <c>true</c> only when the user picks the confirm button.</summary>
-    public Task<bool> ConfirmAsync(string title, string message, string yesText = "OK", string cancelText = "Cancel") =>
-        messages.Confirm(message, title, options =>
+    public async Task<bool> ConfirmAsync(string title, string message, string yesText = "OK", string cancelText = "Cancel")
+    {
+        var result = await dialogs.Confirm(message, title, new ConfirmOptions
         {
-            options.ConfirmButtonText = yesText;
-            options.CancelButtonText = cancelText;
-            options.ShowMessageIcon = false;
+            OkButtonText = yesText,
+            CancelButtonText = cancelText,
+            CloseDialogOnOverlayClick = true
         });
+        return result == true;
+    }
 }

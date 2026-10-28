@@ -7,9 +7,9 @@
 
 @if (_visible)
 {
-    <Tooltip Text="@Tooltip" Inline>
-        <span class="gchannel-beacon" @onclick="DismissAsync" @onclick:stopPropagation="true"></span>
-    </Tooltip>
+    <Tip Text="@Tooltip">
+        <span class="gchannel-beacon" @onclick="DismissAsync" @onclick:stopPropagation="true" @onclick:preventDefault="true"></span>
+    </Tip>
 }
 
 @code {
@@ -90,3 +90,4 @@
 
     public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
 }
+

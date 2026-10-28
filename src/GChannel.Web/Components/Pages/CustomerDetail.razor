@@ -3,6 +3,7 @@
 @inject GChannelApiClient Api
 @inject UiNotifier Snackbar
 @inject NavigationManager Nav
+@inject DialogService Dialogs
 
 <PageTitle>@(_customer?.OrgDisplayName ?? "Customer") · GChannel</PageTitle>
 
@@ -13,556 +14,445 @@
 }
 else if (_customer is null)
 {
-    <Alert Color="Color.Danger" Visible>Customer not found.</Alert>
-    <Button Type="ButtonType.Link" To="/customers" Color="Color.Secondary" Outline Margin="Margin.Is4.FromTop">
-        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to customers
-    </Button>
+    <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">Customer not found.</RadzenAlert>
+    <LinkButton To="/customers" Text="Back to customers" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Class="rz-mt-4" />
 }
 else
 {
-    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
-        <Div>
-            <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">@(_customer.OrgDisplayName ?? _customer.Id)</Heading>
-            <Small TextColor="TextColor.Secondary">@_customer.Domain</Small>
-        </Div>
-        <Div Flex="Flex.Default" Gap="Gap.Is2" Class="flex-wrap justify-content-end">
-            <Button Type="ButtonType.Link" To="@($"/customers/{_customer.Id}/entitlements")" Color="Color.Primary">
-                <Icon Name="@AppIcons.Subscriptions" Class="me-1" /> Entitlements
-            </Button>
-            <Button Type="ButtonType.Link" To="@($"/customers/{_customer.Id}/transfer")" Color="Color.Secondary" Outline>
-                <Icon Name="@AppIcons.SwapHoriz" Class="me-1" /> Transfer
-            </Button>
-            <Button Type="ButtonType.Link" To="@($"/customers/{_customer.Id}/repricing")" Color="Color.Secondary" Outline>
-                <Icon Name="@AppIcons.Percent" Class="me-1" /> Repricing
-            </Button>
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-4">
+        <div>
+            <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">@(_customer.OrgDisplayName ?? _customer.Id)</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@_customer.Domain</RadzenText>
+        </div>
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+            <LinkButton To="@($"/customers/{_customer.Id}/entitlements")" Text="Entitlements" Icon="@AppIcons.Subscriptions" />
+            <LinkButton To="@($"/customers/{_customer.Id}/transfer")" Text="Transfer" Icon="@AppIcons.SwapHoriz" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+            <LinkButton To="@($"/customers/{_customer.Id}/repricing")" Text="Repricing" Icon="@AppIcons.Percent" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
             @if (string.IsNullOrEmpty(_customer.CloudIdentityId))
             {
                 <div style="position:relative; display:inline-flex">
-                    <Button Color="Color.Primary" Outline Clicked="OpenProvisionDialog">
-                        <Icon Name="@AppIcons.AddBusiness" Class="me-1" /> Provision Cloud Identity
-                    </Button>
+                    <RadzenButton Text="Provision Cloud Identity" Icon="@AppIcons.AddBusiness" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Click="OpenProvisionDialogAsync" />
                     <FeatureBeacon Id="provision-cloud-identity-v1" Tooltip="New: create a Cloud Identity for this customer" />
                 </div>
             }
-            <Button Type="ButtonType.Link" To="@($"/customers/edit/{_customer.Id}")" Color="Color.Secondary" Outline>
-                <Icon Name="@AppIcons.Edit" Class="me-1" /> Edit
-            </Button>
-            <Button Color="Color.Danger" Outline Clicked="DeleteAsync">
-                <Icon Name="@AppIcons.Delete" Class="me-1" /> Delete
-            </Button>
-        </Div>
-    </Div>
+            <LinkButton To="@($"/customers/edit/{_customer.Id}")" Text="Edit" Icon="@AppIcons.Edit" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+            <RadzenButton Text="Delete" Icon="@AppIcons.Delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Click="DeleteAsync" />
+        </RadzenStack>
+    </RadzenStack>
 
-    <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-        <CardBody>
-            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromBottom">
-                <Small TextColor="TextColor.Secondary" Class="text-uppercase fw-semibold">Estimated monthly value</Small>
-                @if (_value is { MixedCurrencies: false, Currency: { Length: > 0 } cur })
-                {
-                    <Badge Color="Color.Light" Class="border text-body">@cur</Badge>
-                }
-            </Div>
-            @if (_valueLoading)
+    <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-1">
+            <RadzenText TextStyle="TextStyle.Overline" class="rz-text-secondary-color rz-m-0">Estimated monthly value</RadzenText>
+            @if (_value is { MixedCurrencies: false, Currency: { Length: > 0 } cur })
             {
-                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="@cur" />
             }
-            else if (_value is { PricedEntitlementCount: > 0 } v)
+        </RadzenStack>
+        @if (_valueLoading)
+        {
+            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+        }
+        else if (_value is { PricedEntitlementCount: > 0 } v)
+        {
+            <RadzenRow Gap="1rem" RowGap="1rem">
+                <RadzenColumn Size="12" SizeMD="4">
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Wholesale cost</RadzenText>
+                    <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@FormatMoney(v.WholesaleMonthly, v.Currency)</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">What you pay Google — actual (Ion) where available, else estimated from list</RadzenText>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="4">
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Repriced revenue</RadzenText>
+                    <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@FormatMoney(v.RevenueMonthly, v.Currency)</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">What this customer is billed</RadzenText>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="4">
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Margin</RadzenText>
+                    <RadzenText TextStyle="TextStyle.H5" class="@($"rz-m-0 {(v.MarginMonthly >= 0 ? "rz-color-success" : "rz-color-danger")}")">@FormatMoney(v.MarginMonthly, v.Currency)</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Revenue − wholesale</RadzenText>
+                </RadzenColumn>
+            </RadzenRow>
+            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.P" class="rz-text-secondary-color rz-mt-2 rz-mb-0">
+                Across @v.PricedEntitlementCount active entitlement(s) · @v.ActiveSeats seat(s)@(v.UnpricedEntitlementCount > 0 ? $"; {v.UnpricedEntitlementCount} unpriced (excluded)" : ""), estimated from offer
+                list pricing with repricing applied; wholesale uses actual Ion cost where available. Not an invoiced figure.@(v.MixedCurrencies ? $" Headline shows the dominant currency ({v.Currency}); every currency is broken out below." : "")
+            </RadzenText>
+            @if (v.MixedCurrencies)
             {
-                <Row>
-                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block">Wholesale cost</Small>
-                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@FormatMoney(v.WholesaleMonthly, v.Currency)</Heading>
-                        <Small TextColor="TextColor.Secondary">What you pay Google — actual (Ion) where available, else estimated from list</Small>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block">Repriced revenue</Small>
-                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@FormatMoney(v.RevenueMonthly, v.Currency)</Heading>
-                        <Small TextColor="TextColor.Secondary">What this customer is billed</Small>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                        <Small TextColor="TextColor.Secondary" Display="Display.Block">Margin</Small>
-                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0" TextColor="@(v.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@FormatMoney(v.MarginMonthly, v.Currency)</Heading>
-                        <Small TextColor="TextColor.Secondary">Revenue − wholesale</Small>
-                    </Column>
-                </Row>
-                <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
-                    Across @v.PricedEntitlementCount active entitlement(s) · @v.ActiveSeats seat(s)@(v.UnpricedEntitlementCount > 0 ? $"; {v.UnpricedEntitlementCount} unpriced (excluded)" : ""), estimated from offer
-                    list pricing with repricing applied; wholesale uses actual Ion cost where available. Not an invoiced figure.@(v.MixedCurrencies ? $" Headline shows the dominant currency ({v.Currency}); every currency is broken out below." : "")
-                </Small>
-                @if (v.MixedCurrencies)
-                {
-                    <Table Narrow Hoverable Borderless Margin="Margin.Is2.FromTop">
-                        <TableHeader>
-                            <TableRow>
-                                <TableHeaderCell>Currency</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Wholesale cost</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Repriced revenue</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Margin</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Seats</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Subscriptions</TableHeaderCell>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            @foreach (var line in v.Currencies)
-                            {
-                                <TableRow>
-                                    <TableRowCell>@line.Currency</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@line.WholesaleMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@line.RevenueMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(line.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@line.MarginMonthly.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@line.ActiveSeats</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@line.PricedEntitlementCount</TableRowCell>
-                                </TableRow>
-                            }
-                        </TableBody>
-                    </Table>
-                }
+                <table class="gchannel-table gchannel-table-hover rz-mt-2">
+                    <thead>
+                        <tr>
+                            <th>Currency</th>
+                            <th class="num">Wholesale cost</th>
+                            <th class="num">Repriced revenue</th>
+                            <th class="num">Margin</th>
+                            <th class="num">Seats</th>
+                            <th class="num">Subscriptions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in v.Currencies)
+                        {
+                            <tr>
+                                <td>@line.Currency</td>
+                                <td class="num">@line.WholesaleMonthly.ToString("N2")</td>
+                                <td class="num">@line.RevenueMonthly.ToString("N2")</td>
+                                <td class="@($"num {(line.MarginMonthly >= 0 ? "rz-color-success" : "rz-color-danger")}")">@line.MarginMonthly.ToString("N2")</td>
+                                <td class="num">@line.ActiveSeats</td>
+                                <td class="num">@line.PricedEntitlementCount</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             }
-            else
-            {
-                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is1.FromTop.Is0.FromBottom">
-                    No priced subscriptions for this customer yet@(_value is { UnpricedEntitlementCount: > 0 } u ? $" ({u.UnpricedEntitlementCount} unpriced)" : "") — values appear once the background read-model has priced this customer's entitlements.
-                </Paragraph>
-            }
-        </CardBody>
-    </Card>
+        }
+        else
+        {
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mt-1 rz-mb-0">
+                No priced subscriptions for this customer yet@(_value is { UnpricedEntitlementCount: > 0 } u ? $" ({u.UnpricedEntitlementCount} unpriced)" : "") — values appear once the background read-model has priced this customer's entitlements.
+            </RadzenText>
+        }
+    </RadzenCard>
 
     @if (_spend is { Unconfigured: false })
     {
-        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-            <CardBody>
-                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromBottom">
-                    <Small TextColor="TextColor.Secondary" Class="text-uppercase fw-semibold">Billed spend (actual)</Small>
-                    @if (_spend.AsOf is { } asOf)
-                    {
-                        <Small TextColor="TextColor.Secondary">as of @asOf.LocalDateTime.ToString("g")</Small>
-                    }
-                </Div>
-                @if (_spendLoading)
+        <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-1">
+                <RadzenText TextStyle="TextStyle.Overline" class="rz-text-secondary-color rz-m-0">Billed spend (actual)</RadzenText>
+                @if (_spend.AsOf is { } asOf)
                 {
-                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">as of @asOf.LocalDateTime.ToString("g")</RadzenText>
                 }
-                else if (_spend.Months is { Count: > 0 })
-                {
-                    <Table Narrow Hoverable Borderless Margin="Margin.Is1.FromTop">
-                        <TableHeader>
-                            <TableRow>
-                                <TableHeaderCell>Invoice month</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Net cost</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Gross</TableHeaderCell>
-                                <TableHeaderCell TextAlignment="TextAlignment.End">Credits</TableHeaderCell>
-                                <TableHeaderCell>Currency</TableHeaderCell>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            @foreach (var m in _spend.Months.OrderByDescending(m => m.InvoiceMonth))
-                            {
-                                <TableRow>
-                                    <TableRowCell>@FormatMonth(m.InvoiceMonth)</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@m.Cost.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@m.GrossCost.ToString("N2")</TableRowCell>
-                                    <TableRowCell TextAlignment="TextAlignment.End">@m.Credits.ToString("N2")</TableRowCell>
-                                    <TableRowCell>@m.Currency</TableRowCell>
-                                </TableRow>
-                            }
-                        </TableBody>
-                    </Table>
-                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromTop">
-                        <Small TextColor="TextColor.Secondary">
-                            Actual amounts from the GCP/Marketplace billing export — real billed figures, not the list-price estimate above.
-                        </Small>
-                        <Button Type="ButtonType.Link" To="@($"/billing/spend?customerId={_customer.Id}")" Color="Color.Primary" Class="btn-link text-decoration-none text-nowrap">
-                            Trend <Icon Name="@AppIcons.ShowChart" Class="ms-1" />
-                        </Button>
-                    </Div>
-                }
-                else
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is1.FromTop.Is0.FromBottom">
-                        No billed spend recorded for this customer yet — the export sync attributes spend once the customer's entitlements carry a billing account.
-                    </Paragraph>
-                }
-            </CardBody>
-        </Card>
+            </RadzenStack>
+            @if (_spendLoading)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else if (_spend.Months is { Count: > 0 })
+            {
+                <table class="gchannel-table gchannel-table-hover rz-mt-1">
+                    <thead>
+                        <tr>
+                            <th>Invoice month</th>
+                            <th class="num">Net cost</th>
+                            <th class="num">Gross</th>
+                            <th class="num">Credits</th>
+                            <th>Currency</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in _spend.Months.OrderByDescending(m => m.InvoiceMonth))
+                        {
+                            <tr>
+                                <td>@FormatMonth(m.InvoiceMonth)</td>
+                                <td class="num">@m.Cost.ToString("N2")</td>
+                                <td class="num">@m.GrossCost.ToString("N2")</td>
+                                <td class="num">@m.Credits.ToString("N2")</td>
+                                <td>@m.Currency</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mt-2">
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                        Actual amounts from the GCP/Marketplace billing export — real billed figures, not the list-price estimate above.
+                    </RadzenText>
+                    <LinkButton To="@($"/billing/spend?customerId={_customer.Id}")" Text="Trend" Icon="@AppIcons.ShowChart" Variant="Variant.Text" Size="ButtonSize.Small" Class="rz-text-nowrap" />
+                </RadzenStack>
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mt-1 rz-mb-0">
+                    No billed spend recorded for this customer yet — the export sync attributes spend once the customer's entitlements carry a billing account.
+                </RadzenText>
+            }
+        </RadzenCard>
 
         @if (_sellerSpend is { Unconfigured: false, ByCategory.Count: > 0 } || _marketplace is { Orders.Count: > 0 })
         {
-            <Row Margin="Margin.Is4.FromBottom">
-                <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+            <RadzenRow Gap="1rem" RowGap="1rem" class="rz-mb-4">
+                <RadzenColumn Size="12" SizeLG="6">
                     <SellerSplitCard Summary="_sellerSpend" Loading="_spendLoading" Subtitle="This customer, last 3 invoice months" MaxRows="6" />
-                </Column>
-                <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeLG="6">
                     <MarketplaceOrdersTable Result="_marketplace" Loading="_spendLoading" ShowAccount="false" />
-                </Column>
-            </Row>
+                </RadzenColumn>
+            </RadzenRow>
         }
     }
 
-    <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-        <CardHeader>
-            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-                <Div>
-                    <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Entitlements</CardTitle>
-                    <Small TextColor="TextColor.Secondary">
-                        The subscriptions this customer holds, with seats, estimated monthly cost, renewal date and auto-renew status.
-                    </Small>
-                </Div>
-                <Button Type="ButtonType.Link" To="@($"/customers/{_customer.Id}/entitlements")" Color="Color.Primary" Class="btn-link text-decoration-none text-nowrap">
-                    Manage <Icon Name="@AppIcons.ArrowForward" Class="ms-1" />
-                </Button>
-            </Div>
-        </CardHeader>
-        <CardBody>
-            @if (_entitlementsLoading)
-            {
-                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
-            }
-            else if (_entitlements is { Count: > 0 })
-            {
-                <Table Narrow Hoverable Responsive>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHeaderCell>Offer / SKU</TableHeaderCell>
-                            <TableHeaderCell>State</TableHeaderCell>
-                            <TableHeaderCell TextAlignment="TextAlignment.End">Seats</TableHeaderCell>
-                            <TableHeaderCell TextAlignment="TextAlignment.End">Est. monthly</TableHeaderCell>
-                            <TableHeaderCell TextAlignment="TextAlignment.End">Ion cost / margin</TableHeaderCell>
-                            <TableHeaderCell>Renewal</TableHeaderCell>
-                            <TableHeaderCell>Auto-renew</TableHeaderCell>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        @foreach (var e in _entitlements)
-                        {
-                            <TableRow>
-                                <TableRowCell>
-                                    <Anchor To="@($"/customers/{_customer!.Id}/entitlements/{e.Id}")">@OfferLabel(e)</Anchor>
-                                    @if (!string.IsNullOrEmpty(e.ProductDisplayName ?? e.ProductId))
-                                    {
-                                        <Small TextColor="TextColor.Secondary" Display="Display.Block">@(e.ProductDisplayName ?? e.ProductId)</Small>
-                                    }
-                                </TableRowCell>
-                                <TableRowCell>
-                                    <Badge Color="@StateColor(e.ProvisioningState)">@(e.ProvisioningState ?? "—")</Badge>
-                                    @if (e.IsTrial)
-                                    {
-                                        <Badge Color="Color.Info" Margin="Margin.Is1.FromStart">Trial</Badge>
-                                    }
-                                </TableRowCell>
-                                <TableRowCell TextAlignment="TextAlignment.End">@(Seats(e) ?? "—")</TableRowCell>
-                                <TableRowCell TextAlignment="TextAlignment.End">
-                                    @if (MonthlyEstimate(e) is { } v)
-                                    {
-                                        <Tooltip Text="@EstimateBreakdown(e)" Inline><span>@FormatMoney(v, e.PriceCurrency)</span></Tooltip>
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </TableRowCell>
-                                <TableRowCell TextAlignment="TextAlignment.End">
-                                    @if (e.IonCostPerSeat is { } ionCost)
-                                    {
-                                        <Tooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)" Inline>
-                                            <span>@FormatMoney(ionCost, e.IonCurrency)</span>
-                                        </Tooltip>
-                                        @if (e.IonMarginPercent is { } mp)
-                                        {
-                                            <Small TextColor="@(mp >= 0 ? TextColor.Success : TextColor.Danger)" Display="Display.Block">@mp.ToString("0.0")% margin</Small>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </TableRowCell>
-                                <TableRowCell>
-                                    @if (e.Commitment?.EndTime is { } end)
-                                    {
-                                        <Tooltip Text="@(e.PlanDescription ?? e.Commitment?.PaymentPlan)" Inline><span>@end.ToString("yyyy-MM-dd")</span></Tooltip>
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </TableRowCell>
-                                <TableRowCell>
-                                    @if (e.Commitment?.RenewalEnabled is { } renew)
-                                    {
-                                        <Badge Color="@(renew ? Color.Success : Color.Warning)">@(renew ? "On" : "Off")</Badge>
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </TableRowCell>
-                            </TableRow>
-                        }
-                    </TableBody>
-                </Table>
-            }
-            else
-            {
-                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
-                    No entitlements yet. Use <Anchor To="@($"/customers/{_customer.Id}/entitlements/new")">Purchase</Anchor> to sell this customer their first SKU.
-                </Paragraph>
-            }
-        </CardBody>
-    </Card>
-
-    <Row>
-        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Details</CardTitle></CardHeader>
-                <CardBody>
-                    <Table Narrow Borderless Margin="Margin.Is0">
-                        <TableBody>
-                            <TableRow><TableRowCell><strong>Customer id</strong></TableRowCell><TableRowCell>@_customer.Id</TableRowCell></TableRow>
-                            <TableRow><TableRowCell><strong>Domain</strong></TableRowCell><TableRowCell>@_customer.Domain</TableRowCell></TableRow>
-                            <TableRow><TableRowCell><strong>Language</strong></TableRowCell><TableRowCell>@(_customer.LanguageCode ?? "—")</TableRowCell></TableRow>
-                            <TableRow><TableRowCell><strong>Cloud Identity id</strong></TableRowCell><TableRowCell>@(_customer.CloudIdentityId ?? "—")</TableRowCell></TableRow>
-                            <TableRow><TableRowCell><strong>Created</strong></TableRowCell><TableRowCell>@(_customer.CreateTime?.ToString("u") ?? "—")</TableRowCell></TableRow>
-                            <TableRow>
-                                <TableRowCell><strong>Channel partner</strong></TableRowCell>
-                                <TableRowCell>
-                                    @if (!string.IsNullOrEmpty(_customer.ChannelPartnerId))
-                                    {
-                                        <Anchor To="@($"/channel-partner-links/{_customer.ChannelPartnerId}")">@_customer.ChannelPartnerId</Anchor>
-                                    }
-                                    else
-                                    {
-                                        <span>Direct (no partner)</span>
-                                    }
-                                </TableRowCell>
-                            </TableRow>
-                        </TableBody>
-                    </Table>
-                </CardBody>
-            </Card>
-        </Column>
-
-        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Cloud Identity</CardTitle></CardHeader>
-                <CardBody>
-                    @if (_customer.CloudIdentity is { } ci)
-                    {
-                        <Table Narrow Borderless Margin="Margin.Is0">
-                            <TableBody>
-                                <TableRow><TableRowCell><strong>Type</strong></TableRowCell><TableRowCell>@(ci.CustomerType ?? "—")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Primary domain</strong></TableRowCell><TableRowCell>@(ci.PrimaryDomain ?? "—")</TableRowCell></TableRow>
-                                <TableRow>
-                                    <TableRowCell><strong>Domain verified</strong></TableRowCell>
-                                    <TableRowCell>
-                                        <Badge Color="@(ci.IsDomainVerified ? Color.Success : Color.Warning)">@(ci.IsDomainVerified ? "Verified" : "Unverified")</Badge>
-                                    </TableRowCell>
-                                </TableRow>
-                                <TableRow><TableRowCell><strong>Alternate email</strong></TableRowCell><TableRowCell>@(ci.AlternateEmail ?? "—")</TableRowCell></TableRow>
-                                @if (!string.IsNullOrEmpty(ci.AdminConsoleUri))
+    <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-3">
+            <div>
+                <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Entitlements</RadzenText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                    The subscriptions this customer holds, with seats, estimated monthly cost, renewal date and auto-renew status.
+                </RadzenText>
+            </div>
+            <LinkButton To="@($"/customers/{_customer.Id}/entitlements")" Text="Manage" Icon="@AppIcons.ArrowForward" Variant="Variant.Text" Size="ButtonSize.Small" Class="rz-text-nowrap" />
+        </RadzenStack>
+        @if (_entitlementsLoading)
+        {
+            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+        }
+        else if (_entitlements is { Count: > 0 })
+        {
+            <RadzenDataGrid TItem="Entitlement" Data="_entitlements" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="Entitlement" Title="Offer / SKU">
+                        <Template Context="e">
+                            <RadzenLink Path="@($"/customers/{_customer!.Id}/entitlements/{e.Id}")" Text="@OfferLabel(e)" />
+                            @if (!string.IsNullOrEmpty(e.ProductDisplayName ?? e.ProductId))
+                            {
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@(e.ProductDisplayName ?? e.ProductId)</RadzenText>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Entitlement" Title="State">
+                        <Template Context="e">
+                            <RadzenBadge BadgeStyle="@StateColor(e.ProvisioningState)" Text="@(e.ProvisioningState ?? "—")" />
+                            @if (e.IsTrial)
+                            {
+                                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Trial" class="rz-ms-1" />
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Entitlement" Title="Seats" TextAlign="TextAlign.End" Width="80px">
+                        <Template Context="e">@(Seats(e) ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Entitlement" Title="Est. monthly" TextAlign="TextAlign.End">
+                        <Template Context="e">
+                            @if (MonthlyEstimate(e) is { } v)
+                            {
+                                <Tip Text="@EstimateBreakdown(e)">@FormatMoney(v, e.PriceCurrency)</Tip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Entitlement" Title="Ion cost / margin" TextAlign="TextAlign.End">
+                        <Template Context="e">
+                            @if (e.IonCostPerSeat is { } ionCost)
+                            {
+                                <Tip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)">@FormatMoney(ionCost, e.IonCurrency)</Tip>
+                                @if (e.IonMarginPercent is { } mp)
                                 {
-                                    <TableRow><TableRowCell><strong>Admin console</strong></TableRowCell><TableRowCell><Anchor To="@ci.AdminConsoleUri" Target="Target.Blank">Open</Anchor></TableRowCell></TableRow>
+                                    <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="@($"rz-m-0 {(mp >= 0 ? "rz-color-success" : "rz-color-danger")}")">@mp.ToString("0.0")% margin</RadzenText>
                                 }
-                            </TableBody>
-                        </Table>
-                    }
-                    else
-                    {
-                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No Cloud Identity linked.</Paragraph>
-                    }
-                </CardBody>
-            </Card>
-        </Column>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Entitlement" Title="Renewal" Width="120px">
+                        <Template Context="e">
+                            @if (e.Commitment?.EndTime is { } end)
+                            {
+                                <Tip Text="@(e.PlanDescription ?? e.Commitment?.PaymentPlan)">@end.ToString("yyyy-MM-dd")</Tip>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="Entitlement" Title="Auto-renew" Width="110px">
+                        <Template Context="e">
+                            @if (e.Commitment?.RenewalEnabled is { } renew)
+                            {
+                                <RadzenBadge BadgeStyle="@(renew ? BadgeStyle.Success : BadgeStyle.Warning)" Text="@(renew ? "On" : "Off")" />
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+        else
+        {
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
+                No entitlements yet. Use <RadzenLink Path="@($"/customers/{_customer.Id}/entitlements/new")" Text="Purchase" /> to sell this customer their first SKU.
+            </RadzenText>
+        }
+    </RadzenCard>
 
-        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Primary contact</CardTitle></CardHeader>
-                <CardBody>
-                    @if (_customer.PrimaryContact is { } c)
-                    {
-                        <Table Narrow Borderless Margin="Margin.Is0">
-                            <TableBody>
-                                <TableRow><TableRowCell><strong>Name</strong></TableRowCell><TableRowCell>@($"{c.FirstName} {c.LastName}".Trim())</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Email</strong></TableRowCell><TableRowCell>@(c.Email ?? "—")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Phone</strong></TableRowCell><TableRowCell>@(c.Phone ?? "—")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Title</strong></TableRowCell><TableRowCell>@(c.Title ?? "—")</TableRowCell></TableRow>
-                            </TableBody>
-                        </Table>
-                    }
-                    else
-                    {
-                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No contact on file.</Paragraph>
-                    }
-                </CardBody>
-            </Card>
-        </Column>
-
-        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Address</CardTitle></CardHeader>
-                <CardBody>
-                    @if (_customer.Address is { } a)
-                    {
-                        <Table Narrow Borderless Margin="Margin.Is0">
-                            <TableBody>
-                                <TableRow><TableRowCell><strong>Street</strong></TableRowCell><TableRowCell>@(string.Join(", ", a.AddressLines) is { Length: > 0 } s ? s : "—")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>City</strong></TableRowCell><TableRowCell>@(a.Locality ?? "—")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>State / province</strong></TableRowCell><TableRowCell>@(a.AdministrativeArea ?? "—")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Postal code</strong></TableRowCell><TableRowCell>@(a.PostalCode ?? "—")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Region</strong></TableRowCell><TableRowCell>@(a.RegionCode ?? "—")</TableRowCell></TableRow>
-                            </TableBody>
-                        </Table>
-                    }
-                    else
-                    {
-                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No address on file.</Paragraph>
-                    }
-                </CardBody>
-            </Card>
-        </Column>
-    </Row>
-
-    <Card Shadow="Shadow.Small" Margin="Margin.Is2.FromTop">
-        <CardHeader>
-            <CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Purchasable catalog</CardTitle>
-            <Small TextColor="TextColor.Secondary">
-                SKUs this customer is eligible to purchase. Pick a product to load its SKUs, then
-                expand a SKU for its purchasable offers or jump to the catalog.
-            </Small>
-        </CardHeader>
-        <CardBody>
-            @if (_products is null)
-            {
-                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
-            }
-            else
-            {
-                <Field Style="max-width:480px">
-                    <FieldLabel>Product</FieldLabel>
-                    <Select TValue="string" Value="@_selectedProductId" ValueChanged="OnProductSelected">
-                        <SelectItem TValue="string" Value="@((string?)null)">Choose a product…</SelectItem>
-                        @foreach (var product in _products)
+    <RadzenRow Gap="1rem" RowGap="1rem" class="rz-mb-4">
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Details</RadzenText>
+                <RadzenStack Gap="0.5rem">
+                    <DetailRow Label="Customer id">@_customer.Id</DetailRow>
+                    <DetailRow Label="Domain">@_customer.Domain</DetailRow>
+                    <DetailRow Label="Language">@(_customer.LanguageCode ?? "—")</DetailRow>
+                    <DetailRow Label="Cloud Identity id">@(_customer.CloudIdentityId ?? "—")</DetailRow>
+                    <DetailRow Label="Created">@(_customer.CreateTime?.ToString("u") ?? "—")</DetailRow>
+                    <DetailRow Label="Channel partner">
+                        @if (!string.IsNullOrEmpty(_customer.ChannelPartnerId))
                         {
-                            <SelectItem TValue="string" Value="@product.Id">@(product.DisplayName ?? product.Id)</SelectItem>
+                            <RadzenLink Path="@($"/channel-partner-links/{_customer.ChannelPartnerId}")" Text="@_customer.ChannelPartnerId" />
                         }
-                    </Select>
-                </Field>
+                        else
+                        {
+                            <span>Direct (no partner)</span>
+                        }
+                    </DetailRow>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
 
-                @if (_skusLoading)
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Cloud Identity</RadzenText>
+                @if (_customer.CloudIdentity is { } ci)
                 {
-                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                    <RadzenStack Gap="0.5rem">
+                        <DetailRow Label="Type">@(ci.CustomerType ?? "—")</DetailRow>
+                        <DetailRow Label="Primary domain">@(ci.PrimaryDomain ?? "—")</DetailRow>
+                        <DetailRow Label="Domain verified">
+                            <RadzenBadge BadgeStyle="@(ci.IsDomainVerified ? BadgeStyle.Success : BadgeStyle.Warning)" Text="@(ci.IsDomainVerified ? "Verified" : "Unverified")" />
+                        </DetailRow>
+                        <DetailRow Label="Alternate email">@(ci.AlternateEmail ?? "—")</DetailRow>
+                        @if (!string.IsNullOrEmpty(ci.AdminConsoleUri))
+                        {
+                            <DetailRow Label="Admin console"><RadzenLink Path="@ci.AdminConsoleUri" Target="_blank" Text="Open" /></DetailRow>
+                        }
+                    </RadzenStack>
                 }
-                else if (_purchasableSkus is { Count: > 0 })
+                else
                 {
-                    <Accordion>
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No Cloud Identity linked.</RadzenText>
+                }
+            </RadzenCard>
+        </RadzenColumn>
+
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Primary contact</RadzenText>
+                @if (_customer.PrimaryContact is { } c)
+                {
+                    <RadzenStack Gap="0.5rem">
+                        <DetailRow Label="Name">@($"{c.FirstName} {c.LastName}".Trim())</DetailRow>
+                        <DetailRow Label="Email">@(c.Email ?? "—")</DetailRow>
+                        <DetailRow Label="Phone">@(c.Phone ?? "—")</DetailRow>
+                        <DetailRow Label="Title">@(c.Title ?? "—")</DetailRow>
+                    </RadzenStack>
+                }
+                else
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No contact on file.</RadzenText>
+                }
+            </RadzenCard>
+        </RadzenColumn>
+
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Address</RadzenText>
+                @if (_customer.Address is { } a)
+                {
+                    <RadzenStack Gap="0.5rem">
+                        <DetailRow Label="Street">@(string.Join(", ", a.AddressLines) is { Length: > 0 } s ? s : "—")</DetailRow>
+                        <DetailRow Label="City">@(a.Locality ?? "—")</DetailRow>
+                        <DetailRow Label="State / province">@(a.AdministrativeArea ?? "—")</DetailRow>
+                        <DetailRow Label="Postal code">@(a.PostalCode ?? "—")</DetailRow>
+                        <DetailRow Label="Region">@(a.RegionCode ?? "—")</DetailRow>
+                    </RadzenStack>
+                }
+                else
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No address on file.</RadzenText>
+                }
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
+
+    <RadzenCard Variant="Variant.Filled" class="rz-mt-2">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Purchasable catalog</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-3">
+            SKUs this customer is eligible to purchase. Pick a product to load its SKUs, then
+            expand a SKU for its purchasable offers or jump to the catalog.
+        </RadzenText>
+        @if (_products is null)
+        {
+            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+        }
+        else
+        {
+            <RadzenFormField Text="Product" Variant="Variant.Outlined" Style="width:100%; max-width:480px" class="rz-mb-3">
+                <RadzenDropDown TValue="string" Data="_products" TextProperty="@nameof(CatalogProduct.DisplayName)" ValueProperty="@nameof(CatalogProduct.Id)"
+                                Value="@_selectedProductId" ValueChanged="OnProductSelected" AllowClear="true" Placeholder="Choose a product…" Name="product">
+                    <Template Context="p">@(p.DisplayName ?? p.Id)</Template>
+                </RadzenDropDown>
+            </RadzenFormField>
+
+            @if (_skusLoading)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else if (_purchasableSkus is { Count: > 0 })
+            {
+                <RadzenAccordion Multiple="true">
+                    <Items>
                         @foreach (var sku in _purchasableSkus)
                         {
-                            <AccordionItem Visible="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
-                                           VisibleChanged="expanded => OnSkuExpanded(sku, expanded)">
-                                <AccordionHeader>
-                                    <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
-                                        <AccordionToggle>@(sku.DisplayName ?? sku.SkuId)</AccordionToggle>
-                                    </Heading>
-                                </AccordionHeader>
-                                <AccordionBody>
-                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-                                        <Small TextColor="TextColor.Secondary">SKU id: @sku.SkuId</Small>
-                                        <Button Type="ButtonType.Link" To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")"
-                                                Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
-                                            <Icon Name="@AppIcons.OpenInNew" Class="me-1" /> View in catalog
-                                        </Button>
-                                    </Div>
+                            <RadzenAccordionItem Text="@(sku.DisplayName ?? sku.SkuId)"
+                                                 Selected="_expandedSkus.Contains(sku.SkuId ?? string.Empty)"
+                                                 SelectedChanged="expanded => OnSkuExpanded(sku, expanded)">
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+                                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">SKU id: @sku.SkuId</RadzenText>
+                                    <LinkButton To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")" Text="View in catalog" Icon="@AppIcons.OpenInNew" Variant="Variant.Text" Size="ButtonSize.Small" />
+                                </RadzenStack>
 
-                                    @if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
+                                @if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
+                                {
+                                    @if (offers is null)
                                     {
-                                        @if (offers is null)
-                                        {
-                                            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
-                                        }
-                                        else if (offers.Count == 0)
-                                        {
-                                            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No purchasable offers.</Paragraph>
-                                        }
-                                        else
-                                        {
-                                            <Table Narrow Hoverable Responsive Margin="Margin.Is0">
-                                                <TableHeader>
-                                                    <TableRow>
-                                                        <TableHeaderCell>Offer</TableHeaderCell>
-                                                        <TableHeaderCell>Price reference</TableHeaderCell>
-                                                    </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                    @foreach (var offer in offers)
-                                                    {
-                                                        <TableRow>
-                                                            <TableRowCell>@(offer.DisplayName ?? offer.OfferName)</TableRowCell>
-                                                            <TableRowCell>@(offer.PriceReferenceId ?? "—")</TableRowCell>
-                                                        </TableRow>
-                                                    }
-                                                </TableBody>
-                                            </Table>
-                                        }
+                                        <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
                                     }
-                                </AccordionBody>
-                            </AccordionItem>
+                                    else if (offers.Count == 0)
+                                    {
+                                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No purchasable offers.</RadzenText>
+                                    }
+                                    else
+                                    {
+                                        <table class="gchannel-table gchannel-table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Offer</th>
+                                                    <th>Price reference</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var offer in offers)
+                                                {
+                                                    <tr>
+                                                        <td>@(offer.DisplayName ?? offer.OfferName)</td>
+                                                        <td>@(offer.PriceReferenceId ?? "—")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                }
+                            </RadzenAccordionItem>
                         }
-                    </Accordion>
-                }
-                else if (_purchasableSkus is not null)
-                {
-                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
-                        No purchasable SKUs for this product.
-                    </Paragraph>
-                }
+                    </Items>
+                </RadzenAccordion>
             }
-        </CardBody>
-    </Card>
+            else if (_purchasableSkus is not null)
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
+                    No purchasable SKUs for this product.
+                </RadzenText>
+            }
+        }
+    </RadzenCard>
 
-    <Button Type="ButtonType.Link" To="/customers" Color="Color.Secondary" Margin="Margin.Is4.FromTop" Class="btn-link text-decoration-none">
-        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to customers
-    </Button>
-
-    <Modal @bind-Visible="_provisionOpen">
-        <ModalContent Centered>
-            <ModalHeader>
-                <ModalTitle>Provision Cloud Identity</ModalTitle>
-                <CloseButton />
-            </ModalHeader>
-            <ModalBody>
-                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
-                    Create a brand-new Cloud Identity for <b>@(_customer.OrgDisplayName ?? _customer.Domain)</b>.
-                    This is a long-running operation — you'll be taken to the Operations page to watch it finish.
-                </Paragraph>
-                <Field><FieldLabel>Admin first name</FieldLabel><TextInput @bind-Value="_provision.GivenName" /></Field>
-                <Field><FieldLabel>Admin last name</FieldLabel><TextInput @bind-Value="_provision.FamilyName" /></Field>
-                <Field>
-                    <FieldLabel>Admin email</FieldLabel>
-                    <TextInput @bind-Value="_provision.AdminEmail" Role="TextRole.Email" />
-                    <FieldHelp>@($"Within {_customer.Domain}, e.g. admin@{_customer.Domain}")</FieldHelp>
-                </Field>
-                <Field>
-                    <FieldLabel>Alternate (recovery) email</FieldLabel>
-                    <TextInput @bind-Value="_provision.AlternateEmail" Role="TextRole.Email" />
-                    <FieldHelp>Outside the customer's domain</FieldHelp>
-                </Field>
-                <Field><FieldLabel>Contact phone (optional)</FieldLabel><TextInput @bind-Value="_provision.PhoneNumber" Role="TextRole.Telephone" /></Field>
-                <Field>
-                    <FieldLabel>Language code (optional)</FieldLabel>
-                    <TextInput @bind-Value="_provision.LanguageCode" />
-                    <FieldHelp>e.g. en-US</FieldHelp>
-                </Field>
-                <Field>
-                    <Check TValue="bool" @bind-Value="_provision.ValidateOnly">Validate only (don't provision yet)</Check>
-                </Field>
-            </ModalBody>
-            <ModalFooter>
-                <Button Color="Color.Secondary" Clicked="@(() => _provisionOpen = false)" Disabled="@_provisioning">Cancel</Button>
-                <Button Color="Color.Primary" Clicked="ProvisionAsync" Disabled="@_provisioning" Loading="@_provisioning">
-                    @(_provisioning ? "Submitting…" : (_provision.ValidateOnly ? "Validate" : "Provision"))
-                </Button>
-            </ModalFooter>
-        </ModalContent>
-    </Modal>
+    <LinkButton To="/customers" Text="Back to customers" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Class="rz-mt-4" />
 }
 
 @code {
@@ -589,10 +479,6 @@ else
     private SellerSpendSummary? _sellerSpend;
     private MarketplaceOrdersResult? _marketplace;
     private bool _spendLoading = true;
-
-    private bool _provisionOpen;
-    private bool _provisioning;
-    private readonly ProvisionModel _provision = new();
 
     protected override async Task OnParametersSetAsync()
     {
@@ -700,13 +586,13 @@ else
             ? d.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)
             : invoiceMonth;
 
-    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle StateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "SUSPENDED" => Color.Warning,
-        "CANCELLED" or "CANCELED" => Color.Danger,
-        "PENDING" => Color.Info,
-        _ => Color.Secondary
+        "ACTIVE" => BadgeStyle.Success,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "CANCELLED" or "CANCELED" => BadgeStyle.Danger,
+        "PENDING" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private static string? Seats(Entitlement e) =>
@@ -798,60 +684,36 @@ else
         }
     }
 
-    private void OpenProvisionDialog()
-    {
-        _provision.Reset();
-        _provisionOpen = true;
-    }
-
-    private async Task ProvisionAsync()
+    private async Task OpenProvisionDialogAsync()
     {
         if (_customer is null)
         {
             return;
         }
 
-        _provisioning = true;
-        try
+        var customerId = _customer.Id;
+        var result = await Dialogs.OpenAsync<ProvisionCloudIdentityDialog>("Provision Cloud Identity", new Dictionary<string, object?>
         {
-            var operation = await Api.ProvisionCloudIdentityAsync(_customer.Id, new ProvisionCloudIdentityRequest
-            {
-                ValidateOnly = _provision.ValidateOnly,
-                AdminUser = new AdminUser
-                {
-                    GivenName = _provision.GivenName,
-                    FamilyName = _provision.FamilyName,
-                    Email = _provision.AdminEmail
-                },
-                CloudIdentity = new CloudIdentityDetails
-                {
-                    AlternateEmail = _provision.AlternateEmail,
-                    PhoneNumber = _provision.PhoneNumber,
-                    LanguageCode = _provision.LanguageCode
-                }
-            });
+            [nameof(ProvisionCloudIdentityDialog.Customer)] = _customer,
+            [nameof(ProvisionCloudIdentityDialog.Provision)] = new Func<ProvisionCloudIdentityRequest, Task<ChannelOperation?>>(request => Api.ProvisionCloudIdentityAsync(customerId, request))
+        }, new DialogOptions { Width = "min(36rem, 95vw)", CloseDialogOnOverlayClick = false });
 
-            _provisionOpen = false;
-            if (_provision.ValidateOnly)
-            {
-                await Snackbar.Add("Validation succeeded — no Cloud Identity was created.", Severity.Success);
-            }
-            else
-            {
-                await Snackbar.Add("Provisioning started. Tracking the operation…", Severity.Success);
-                if (operation is not null)
-                {
-                    Nav.NavigateTo($"/operations?operation={Uri.EscapeDataString(operation.Id)}");
-                }
-            }
-        }
-        catch (Exception ex)
+        if (result is not ProvisionCloudIdentityDialog.Result outcome)
         {
-            await Snackbar.Add($"Failed to provision Cloud Identity: {ex.Message}", Severity.Error);
+            return;
         }
-        finally
+
+        if (outcome.ValidateOnly)
         {
-            _provisioning = false;
+            await Snackbar.Add("Validation succeeded — no Cloud Identity was created.", Severity.Success);
+        }
+        else
+        {
+            await Snackbar.Add("Provisioning started. Tracking the operation…", Severity.Success);
+            if (outcome.Operation is not null)
+            {
+                Nav.NavigateTo($"/operations?operation={Uri.EscapeDataString(outcome.Operation.Id)}");
+            }
         }
     }
 
@@ -884,27 +746,4 @@ else
             await Snackbar.Add($"Failed to delete customer: {ex.Message}", Severity.Error);
         }
     }
-
-    private sealed class ProvisionModel
-    {
-        public string? GivenName { get; set; }
-        public string? FamilyName { get; set; }
-        public string? AdminEmail { get; set; }
-        public string? AlternateEmail { get; set; }
-        public string? PhoneNumber { get; set; }
-        public string? LanguageCode { get; set; }
-        public bool ValidateOnly { get; set; }
-
-        public void Reset()
-        {
-            GivenName = null;
-            FamilyName = null;
-            AdminEmail = null;
-            AlternateEmail = null;
-            PhoneNumber = null;
-            LanguageCode = null;
-            ValidateOnly = false;
-        }
-    }
 }
-

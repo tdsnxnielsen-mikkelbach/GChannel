@@ -31,7 +31,9 @@
 | `ConnectionStrings:messaging` | ApiService + Worker | Aspire: locally provisioned Service Bus namespace host + `DefaultAzureCredential` (your `az login`) | Aspire: Service Bus namespace host + `DefaultAzureCredential` (managed identity) |
 | `Azure:SubscriptionId` / `Azure:Location` / `Azure:ResourceGroup` | AppHost | user-secrets — where Aspire provisions the dev Service Bus namespace | n/a (`azd` provisions) |
 | `ConnectionStrings:cache` | ApiService + Worker | Aspire (local `redis` container) | Aspire: Azure Managed Redis + Entra token |
-| `Blazorise:ProductToken` | Web | _unset_ (community licence banner shown) | Optional commercial [Blazorise](https://blazorise.com/commercial) product token; set via user secrets / env var to remove the banner |
+
+The UI component library ([Radzen Blazor](https://blazor.radzen.com), MIT) needs no licence key or
+configuration; the chosen light/dark theme is persisted in a `GChannelTheme` cookie.
 
 The three connection strings are injected by the Aspire AppHost (`WithReference(...)`) and consumed by
 name — `AddGChannelMarten` (`gchanneldb`), `UseAzureServiceBusUsingNamedConnection("messaging")` and the

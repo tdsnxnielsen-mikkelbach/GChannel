@@ -3,351 +3,279 @@
 @inject GChannelApiClient Api
 @inject UiNotifier Snackbar
 @inject NavigationManager Nav
+@inject DialogService Dialogs
 
 <PageTitle>Customers · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
-    <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Customers</Heading>
-    <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-4">
+    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Customers</RadzenText>
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
         <div style="position:relative; display:inline-flex">
-            <Button Color="Color.Primary" Outline Clicked="OpenImportDialog">
-                <Icon Name="@AppIcons.MoveToInbox" Class="me-1" /> Import customer
-            </Button>
+            <RadzenButton Text="Import customer" Icon="@AppIcons.MoveToInbox" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Click="OpenImportDialogAsync" />
             <FeatureBeacon Id="import-customer-v1" Tooltip="New: import a customer that already has a Cloud Identity" />
         </div>
-        <Button Type="ButtonType.Link" To="/customers/new" Color="Color.Primary">
-            <Icon Name="@AppIcons.PersonAdd" Class="me-1" /> New customer
-        </Button>
-    </Div>
-</Div>
+        <LinkButton To="/customers/new" Text="New customer" Icon="@AppIcons.PersonAdd" />
+    </RadzenStack>
+</RadzenStack>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
     Customers linked to your reseller account. Paging, sorting and search run server-side against the
     synced read-model. Open a customer to view details and the catalog they are eligible to purchase.
-</Paragraph>
+</RadzenText>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-    <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is3">
-        <Addons Style="max-width:360px">
-            <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Search" /></AddonLabel></Addon>
-            <Addon AddonType="AddonType.Body">
-                <TextInput Value="@_search" ValueChanged="OnSearchChanged" Debounce="true" DebounceInterval="400"
-                           Placeholder="Search org, domain, id…" />
-            </Addon>
-        </Addons>
-        <Select TValue="string" Value="@_scope" ValueChanged="OnScopeChanged" Style="max-width:180px" aria-label="Source">
-            <SelectItem Value="@("all")">All customers</SelectItem>
-            <SelectItem Value="@("direct")">Direct only</SelectItem>
-            <SelectItem Value="@("indirect")">Via resellers</SelectItem>
-        </Select>
-    </Div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap">
+        <SearchBox Value="@_search" ValueChanged="OnSearchChanged" Label="Search org, domain, id…" />
+        <RadzenDropDown TValue="string" Data="_scopes" TextProperty="@nameof(SelectOption.Text)" ValueProperty="@nameof(SelectOption.Value)"
+                        Value="@_scope" ValueChanged="OnScopeChanged" Style="width: 180px" aria-label="Source" Name="scope" />
+    </RadzenStack>
     <AsOfBadge AsOf="_asOf" />
-</Div>
+</RadzenStack>
 
-<Card Shadow="Shadow.Small">
-    <DataGrid @ref="_grid" TItem="EstateCustomer" Data="_items" ReadData="OnReadData" TotalItems="_total"
-              ShowPager ShowPageSizes PageSize="25" PageSizes="_pageSizes" Hoverable Responsive Sortable
-              SortMode="DataGridSortMode.Single" DetailRowStartsVisible="false" DetailRowTrigger="@(e => IsExpanded(e.Item))">
-        <DataGridColumns>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.CustomerId)" Caption=" " Sortable="false">
-                <DisplayTemplate>
-                    <Tooltip Text="@(IsExpanded(context.Item) ? "Hide subscriptions" : "Show subscriptions")" Inline>
-                        <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => ToggleExpandAsync(context.Item))" aria-label="Toggle subscriptions">
-                            <Icon Name="@(IsExpanded(context.Item) ? AppIcons.KeyboardArrowUp : AppIcons.KeyboardArrowDown)" />
-                        </Button>
-                    </Tooltip>
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.OrgName)" SortField="org" Caption="Organization">
-                <DisplayTemplate>@(context.Item.OrgName ?? context.Item.CustomerId)</DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.Domain)" SortField="domain" Caption="Domain" />
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.IsResellerSelf)" Caption="Source" Sortable="false">
-                <DisplayTemplate>
-                    @if (context.Item.IsResellerSelf)
+<RadzenCard Variant="Variant.Filled">
+    <RadzenDataGrid @ref="_grid" TItem="EstateCustomer" Data="_items" Count="_total" LoadData="OnLoadData" IsLoading="_loading"
+                    AllowPaging="true" PageSize="25" PageSizeOptions="_pageSizes" ShowPagingSummary="true"
+                    AllowSorting="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true"
+                    ExpandMode="DataGridExpandMode.Multiple" RowExpand="OnRowExpandAsync">
+        <Columns>
+            <RadzenDataGridColumn TItem="EstateCustomer" Property="@nameof(EstateCustomer.OrgName)" SortProperty="org" Title="Organization">
+                <Template Context="c">@(c.OrgName ?? c.CustomerId)</Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Property="@nameof(EstateCustomer.Domain)" SortProperty="domain" Title="Domain" />
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="Source" Sortable="false">
+                <Template Context="c">
+                    @if (c.IsResellerSelf)
                     {
-                        <Tooltip Text="A reseller buying for their own use — a direct sale from us." Inline>
-                            <Badge Color="Color.Primary">Direct (reseller own use)</Badge>
-                        </Tooltip>
+                        <Tip Text="A reseller buying for their own use — a direct sale from us.">
+                            <RadzenBadge BadgeStyle="BadgeStyle.Primary" Text="Direct (reseller own use)" />
+                        </Tip>
                     }
                     else
                     {
-                        <Tooltip Text="@($"End customer of reseller {context.Item.ResellerName ?? context.Item.OwningLinkId}")" Inline>
-                            <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is1">
-                                @if (context.Item.OwningLinkId is not null)
+                        <Tip Text="@($"End customer of reseller {c.ResellerName ?? c.OwningLinkId}")">
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem">
+                                @if (c.OwningLinkId is not null)
                                 {
-                                    <Badge Color="Color.Info" Link="@($"/channel-partner-links/{context.Item.OwningLinkId}")">Reseller</Badge>
+                                    <a href="@($"/channel-partner-links/{c.OwningLinkId}")"><RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Reseller" /></a>
                                 }
                                 else
                                 {
-                                    <Badge Color="Color.Info">Reseller</Badge>
+                                    <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Reseller" />
                                 }
-                                <Small TextColor="TextColor.Secondary">@(context.Item.ResellerName ?? context.Item.OwningLinkId)</Small>
-                            </Div>
-                        </Tooltip>
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Span" class="rz-text-secondary-color rz-m-0">@(c.ResellerName ?? c.OwningLinkId)</RadzenText>
+                            </RadzenStack>
+                        </Tip>
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.CloudIdentityId)" Caption="Cloud Identity" Sortable="false">
-                <DisplayTemplate>
-                    @if (!string.IsNullOrEmpty(context.Item.CloudIdentityId))
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="Cloud Identity" Sortable="false">
+                <Template Context="c">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem">
+                        @if (!string.IsNullOrEmpty(c.CloudIdentityId))
+                        {
+                            <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Linked" />
+                        }
+                        else
+                        {
+                            <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Not linked" />
+                        }
+                        @if (!string.IsNullOrEmpty(c.Domain))
+                        {
+                            <Tip Text="Check Cloud Identity for this domain">
+                                <LinkButton To="@($"/accounts/cloud-identity?domain={Uri.EscapeDataString(c.Domain)}")" Icon="@AppIcons.VerifiedUser"
+                                            Variant="Variant.Text" Size="ButtonSize.Small" Title="Check Cloud Identity" />
+                            </Tip>
+                        }
+                    </RadzenStack>
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Property="@nameof(EstateCustomer.SeatCount)" SortProperty="seats" Title="Seats" Width="80px" />
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="Subscriptions" Sortable="false">
+                <Template Context="c">
+                    <span>@c.ActiveSubscriptions Active</span>
+                    @if (c.SuspendedSubscriptions > 0)
                     {
-                        <Badge Color="Color.Success">Linked</Badge>
+                        <span class="rz-text-secondary-color"> · @c.SuspendedSubscriptions Suspended</span>
                     }
-                    else
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="Renewal" Sortable="false">
+                <Template Context="c">
+                    @if (c.NextRenewalUtc is { } r)
                     {
-                        <Badge Color="Color.Secondary">Not linked</Badge>
-                    }
-                    @if (!string.IsNullOrEmpty(context.Item.Domain))
-                    {
-                        <Tooltip Text="Check Cloud Identity for this domain" Inline>
-                            <Button Type="ButtonType.Link" To="@($"/accounts/cloud-identity?domain={Uri.EscapeDataString(context.Item.Domain)}")"
-                                    Size="Size.Small" Color="Color.Primary" Class="btn-link" aria-label="Check Cloud Identity">
-                                <Icon Name="@AppIcons.VerifiedUser" />
-                            </Button>
-                        </Tooltip>
-                    }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.SeatCount)" SortField="seats" Caption="Seats" />
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.ActiveSubscriptions)" Caption="Subscriptions" Sortable="false">
-                <DisplayTemplate>
-                    <span>@context.Item.ActiveSubscriptions Active</span>
-                    @if (context.Item.SuspendedSubscriptions > 0)
-                    {
-                        <span class="text-body-secondary"> · @context.Item.SuspendedSubscriptions Suspended</span>
-                    }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.NextRenewalUtc)" Caption="Renewal" Sortable="false">
-                <DisplayTemplate>
-                    @if (context.Item.NextRenewalUtc is { } r)
-                    {
-                        <Tooltip Text="@(context.Item.NextRenewalOfferName ?? "Next commitment renewal")" Inline>
+                        <Tip Text="@(c.NextRenewalOfferName ?? "Next commitment renewal")">
                             <div>
                                 <div>@r.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)</div>
-                                @if (!string.IsNullOrEmpty(context.Item.NextRenewalOfferName))
+                                @if (!string.IsNullOrEmpty(c.NextRenewalOfferName))
                                 {
-                                    <Small TextColor="TextColor.Secondary">@context.Item.NextRenewalOfferName</Small>
+                                    <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@c.NextRenewalOfferName</RadzenText>
                                 }
                             </div>
-                        </Tooltip>
+                        </Tip>
                     }
                     else
                     {
                         <span>—</span>
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.NextRenewalAutoRenew)" Caption="Auto-renew" Sortable="false">
-                <DisplayTemplate>
-                    @if (context.Item.NextRenewalAutoRenew is true)
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="Auto-renew" Sortable="false">
+                <Template Context="c">
+                    @if (c.NextRenewalAutoRenew is true)
                     {
-                        <Tooltip Text="Auto-renewal is on for the next renewing subscription." Inline>
-                            <Badge Color="Color.Success"><Icon Name="@AppIcons.Autorenew" Class="me-1" />On</Badge>
-                        </Tooltip>
+                        <Tip Text="Auto-renewal is on for the next renewing subscription.">
+                            <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="On" />
+                        </Tip>
                     }
-                    else if (context.Item.NextRenewalAutoRenew is false)
+                    else if (c.NextRenewalAutoRenew is false)
                     {
-                        <Tooltip Text="Auto-renewal is off — the next renewing subscription will not renew automatically." Inline>
-                            <Badge Color="Color.Warning"><Icon Name="@AppIcons.Block" Class="me-1" />Off</Badge>
-                        </Tooltip>
-                    }
-                    else
-                    {
-                        <span>—</span>
-                    }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.EstimatedMonthlyTotal)" Caption="Est. monthly" Sortable="false">
-                <DisplayTemplate>
-                    @if (context.Item.EstimatedMonthlyTotal is { } v)
-                    {
-                        <Tooltip Text="Estimated from offer list pricing with repricing applied — not invoiced." Inline>
-                            <span>@FormatMoney(v, context.Item.Currency)</span>
-                        </Tooltip>
+                        <Tip Text="Auto-renewal is off — the next renewing subscription will not renew automatically.">
+                            <RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="Off" />
+                        </Tip>
                     }
                     else
                     {
                         <span>—</span>
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.Currency)" Caption="Billed (last month)" Sortable="false">
-                <DisplayTemplate>
-                    @if (BilledLabel(context.Item.CustomerId) is { } billed)
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="Est. monthly" Sortable="false">
+                <Template Context="c">
+                    @if (c.EstimatedMonthlyTotal is { } v)
                     {
-                        <Tooltip Text="Actual billed GCP/Marketplace spend from the BigQuery cost export — real invoiced-style figure." Inline>
-                            <span>@billed</span>
-                        </Tooltip>
+                        <Tip Text="Estimated from offer list pricing with repricing applied — not invoiced.">@FormatMoney(v, c.Currency)</Tip>
                     }
                     else
                     {
                         <span>—</span>
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.CreateTime)" SortField="created" Caption="Created">
-                <DisplayTemplate>@(context.Item.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateCustomer" Field="@nameof(EstateCustomer.CustomerId)" Caption="Actions" Sortable="false" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End">
-                <DisplayTemplate>
-                    <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is1" Class="text-nowrap">
-                        <Tooltip Text="Refresh now" Inline>
-                            <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => ResyncAsync(context.Item))" aria-label="Refresh now"><Icon Name="@AppIcons.Sync" /></Button>
-                        </Tooltip>
-                        <Tooltip Text="View" Inline>
-                            <Button Type="ButtonType.Link" To="@($"/customers/{context.Item.CustomerId}")" Size="Size.Small" Color="Color.Light" aria-label="View"><Icon Name="@AppIcons.Visibility" /></Button>
-                        </Tooltip>
-                        <Tooltip Text="Entitlements" Inline>
-                            <Button Type="ButtonType.Link" To="@($"/customers/{context.Item.CustomerId}/entitlements")" Size="Size.Small" Color="Color.Light" aria-label="Entitlements"><Icon Name="@AppIcons.Subscriptions" /></Button>
-                        </Tooltip>
-                        <Tooltip Text="Edit" Inline>
-                            <Button Type="ButtonType.Link" To="@($"/customers/edit/{context.Item.CustomerId}")" Size="Size.Small" Color="Color.Light" aria-label="Edit"><Icon Name="@AppIcons.Edit" /></Button>
-                        </Tooltip>
-                        <Tooltip Text="Delete" Inline>
-                            <Button Size="Size.Small" Color="Color.Danger" Outline Clicked="@(() => DeleteAsync(context.Item))" aria-label="Delete"><Icon Name="@AppIcons.Delete" /></Button>
-                        </Tooltip>
-                    </Div>
-                </DisplayTemplate>
-            </DataGridColumn>
-        </DataGridColumns>
-        <DetailRowTemplate>
-            <Div Padding="Padding.Is3" Background="Background.Light">
-                @if (!_subscriptions.TryGetValue(context.Item.CustomerId, out var subs))
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="Billed (last month)" Sortable="false">
+                <Template Context="c">
+                    @if (BilledLabel(c.CustomerId) is { } billed)
+                    {
+                        <Tip Text="Actual billed GCP/Marketplace spend from the BigQuery cost export — real invoiced-style figure.">@billed</Tip>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Property="@nameof(EstateCustomer.CreateTime)" SortProperty="created" Title="Created" Width="110px">
+                <Template Context="c">@(c.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="230px">
+                <Template Context="c">
+                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.25rem" class="rz-text-nowrap">
+                        <Tip Text="Refresh now">
+                            <RadzenButton Icon="@AppIcons.Sync" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => ResyncAsync(c))" aria-label="Refresh now" />
+                        </Tip>
+                        <Tip Text="View">
+                            <LinkButton To="@($"/customers/{c.CustomerId}")" Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="View" />
+                        </Tip>
+                        <Tip Text="Entitlements">
+                            <LinkButton To="@($"/customers/{c.CustomerId}/entitlements")" Icon="@AppIcons.Subscriptions" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="Entitlements" />
+                        </Tip>
+                        <Tip Text="Edit">
+                            <LinkButton To="@($"/customers/edit/{c.CustomerId}")" Icon="@AppIcons.Edit" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="Edit" />
+                        </Tip>
+                        <Tip Text="Delete">
+                            <RadzenButton Icon="@AppIcons.Delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Click="@(() => DeleteAsync(c))" aria-label="Delete" />
+                        </Tip>
+                    </RadzenStack>
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+        <Template Context="customer">
+            <div class="rz-p-3 rz-background-color-base-50">
+                @if (!_subscriptions.TryGetValue(customer.CustomerId, out var subs))
                 {
-                    <Div Flex="Flex.AlignItems.Center" Margin="Margin.Is2.OnY">
-                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                        <Small TextColor="TextColor.Secondary">Loading subscriptions…</Small>
-                    </Div>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-my-2">
+                        <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.ExtraSmall" ShowValue="false" />
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Loading subscriptions…</RadzenText>
+                    </RadzenStack>
                 }
                 else if (subs is null)
                 {
-                    <Alert Color="Color.Danger" Visible Margin="Margin.Is0">Couldn't load this customer's subscriptions.</Alert>
+                    <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-0">Couldn't load this customer's subscriptions.</RadzenAlert>
                 }
                 else if (subs.Count == 0)
                 {
-                    <Alert Color="Color.Info" Visible Margin="Margin.Is0">No subscriptions for this customer yet.</Alert>
+                    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-0">No subscriptions for this customer yet.</RadzenAlert>
                 }
                 else
                 {
-                    <Row Gutter="Gutter.Is3">
+                    <RadzenRow Gap="1rem" RowGap="1rem">
                         @foreach (var e in subs)
                         {
-                            <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet.Is4.OnDesktop">
-                                <Card Class="h-100">
-                                    <CardBody>
-                                        <Div Flex="Flex.JustifyContent.Between.AlignItems.Start" Margin="Margin.Is1.FromBottom">
-                                            <Div>
-                                                <Strong Display="Display.Block">@OfferTitle(e)</Strong>
-                                                @if (!string.IsNullOrWhiteSpace(e.ProductDisplayName) && e.ProductDisplayName != OfferTitle(e))
-                                                {
-                                                    <Small TextColor="TextColor.Secondary">@e.ProductDisplayName</Small>
-                                                }
-                                            </Div>
-                                            <Badge Color="@StateColor(e.ProvisioningState)">@StateLabel(e.ProvisioningState)</Badge>
-                                        </Div>
-                                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is2.FromBottom">
-                                            @(e.PlanDescription ?? e.Commitment?.PaymentPlan ?? e.OfferDisplayName ?? "Plan not available")
-                                        </Paragraph>
-                                        <Div Flex="Flex.AlignItems.Center" Margin="Margin.Is1.FromBottom">
-                                            <Icon Name="@AppIcons.Event" TextColor="TextColor.Secondary" Class="me-2" />
-                                            <span>Renewal @RenewalText(e)</span>
-                                        </Div>
-                                        <Div Flex="Flex.AlignItems.Center">
-                                            <Icon Name="@AppIcons.People" TextColor="TextColor.Secondary" Class="me-2" />
-                                            <Tooltip Text="Assigned-seat counts aren't available from the Channel API; total licenses shown." Inline>
-                                                <span>— / @SeatCount(e) licenses</span>
-                                            </Tooltip>
-                                        </Div>
-                                    </CardBody>
-                                    <CardFooter Background="Background.Transparent" Border="Border.Is0">
-                                        <Button Type="ButtonType.Link" To="@($"/customers/{context.Item.CustomerId}/entitlements/{e.Id}")"
-                                                Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">Details</Button>
-                                    </CardFooter>
-                                </Card>
-                            </Column>
+                            <RadzenColumn Size="12" SizeMD="6" SizeLG="4">
+                                <RadzenCard Variant="Variant.Outlined" class="rz-h-100">
+                                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="0.5rem" class="rz-mb-1">
+                                        <div>
+                                            <RadzenText TextStyle="TextStyle.Body1" class="rz-m-0" Style="font-weight:600">@OfferTitle(e)</RadzenText>
+                                            @if (!string.IsNullOrWhiteSpace(e.ProductDisplayName) && e.ProductDisplayName != OfferTitle(e))
+                                            {
+                                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@e.ProductDisplayName</RadzenText>
+                                            }
+                                        </div>
+                                        <RadzenBadge BadgeStyle="@StateColor(e.ProvisioningState)" Text="@StateLabel(e.ProvisioningState)" />
+                                    </RadzenStack>
+                                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-2">
+                                        @(e.PlanDescription ?? e.Commitment?.PaymentPlan ?? e.OfferDisplayName ?? "Plan not available")
+                                    </RadzenText>
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-1">
+                                        <RadzenIcon Icon="@AppIcons.Event" class="rz-text-secondary-color" />
+                                        <span>Renewal @RenewalText(e)</span>
+                                    </RadzenStack>
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-2">
+                                        <RadzenIcon Icon="@AppIcons.People" class="rz-text-secondary-color" />
+                                        <Tip Text="Assigned-seat counts aren't available from the Channel API; total licenses shown.">— / @SeatCount(e) licenses</Tip>
+                                    </RadzenStack>
+                                    <LinkButton To="@($"/customers/{customer.CustomerId}/entitlements/{e.Id}")" Text="Details" Variant="Variant.Text" Size="ButtonSize.Small" />
+                                </RadzenCard>
+                            </RadzenColumn>
                         }
-                    </Row>
+                    </RadzenRow>
                 }
-            </Div>
-        </DetailRowTemplate>
+            </div>
+        </Template>
         <EmptyTemplate>
-            <Alert Color="Color.Info" Visible Margin="Margin.Is0">No customers yet. Use <strong>New customer</strong> to create one.</Alert>
+            @if (_loading)
+            {
+                <LoadingPanel Title="Loading customers…" Hint="Querying the synced read-model." />
+            }
+            else
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-3">No customers yet. Use <strong>New customer</strong> to create one.</RadzenAlert>
+            }
         </EmptyTemplate>
-        <LoadingTemplate>
-            <LoadingPanel Title="Loading customers…" Hint="Querying the synced read-model." />
-        </LoadingTemplate>
-    </DataGrid>
-</Card>
-
-<Modal @bind-Visible="_importOpen">
-    <ModalContent Centered>
-        <ModalHeader>
-            <ModalTitle>Import existing customer</ModalTitle>
-            <CloseButton />
-        </ModalHeader>
-        <ModalBody>
-            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
-                Bring a customer that already has a Cloud Identity into your reseller account — a pre-transfer
-                step. Provide one identifier (domain, Cloud Identity id, or primary admin email).
-            </Paragraph>
-            <Field>
-                <FieldLabel>Primary domain</FieldLabel>
-                <TextInput @bind-Value="_import.Domain" />
-                <FieldHelp>e.g. contoso.com</FieldHelp>
-            </Field>
-            <Field>
-                <FieldLabel>Cloud Identity id</FieldLabel>
-                <TextInput @bind-Value="_import.CloudIdentityId" />
-            </Field>
-            <Field>
-                <FieldLabel>Primary admin email</FieldLabel>
-                <TextInput @bind-Value="_import.PrimaryAdminEmail" Role="TextRole.Email" />
-            </Field>
-            <Field>
-                <Check TValue="bool" @bind-Value="_import.OverwriteIfExists">Overwrite if the customer is already imported</Check>
-            </Field>
-        </ModalBody>
-        <ModalFooter>
-            <Button Color="Color.Secondary" Clicked="@(() => _importOpen = false)" Disabled="@_importing">Cancel</Button>
-            <Button Color="Color.Primary" Clicked="ImportAsync" Disabled="@_importing" Loading="@_importing">
-                @(_importing ? "Importing…" : "Import")
-            </Button>
-        </ModalFooter>
-    </ModalContent>
-</Modal>
+    </RadzenDataGrid>
+</RadzenCard>
 
 @code {
-    private static readonly int[] _pageSizes = [25, 50, 100];
-    private DataGrid<EstateCustomer>? _grid;
+    private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
+    private static readonly SelectOption[] _scopes =
+    [
+        new("all", "All customers"),
+        new("direct", "Direct only"),
+        new("indirect", "Via resellers"),
+    ];
+
+    private RadzenDataGrid<EstateCustomer>? _grid;
     private List<EstateCustomer> _items = [];
     private int _total;
+    private bool _loading = true;
     private string? _search;
     private string _scope = "all";
     private DateTimeOffset? _asOf;
 
-    private bool _importOpen;
-    private bool _importing;
-    private readonly ImportModel _import = new();
-
-    // Per-customer expansion state + lazily-loaded subscription cards (null value = load failed).
-    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+    // Lazily-loaded subscription cards per expanded customer (null value = load failed).
     private readonly Dictionary<string, List<Entitlement>?> _subscriptions = new(StringComparer.OrdinalIgnoreCase);
 
-    private bool IsExpanded(EstateCustomer c) => _expanded.Contains(c.CustomerId);
-
-    private async Task ToggleExpandAsync(EstateCustomer customer)
+    private async Task OnRowExpandAsync(EstateCustomer customer)
     {
-        if (!_expanded.Add(customer.CustomerId))
-        {
-            _expanded.Remove(customer.CustomerId);
-            if (_grid is not null) await _grid.ToggleDetailRow(customer, forceDetailRow: true);
-            return;
-        }
-
-        if (_grid is not null) await _grid.ToggleDetailRow(customer, forceDetailRow: true);
-
         if (_subscriptions.ContainsKey(customer.CustomerId))
         {
             return; // already loaded (or loading) — keep the cached cards
@@ -370,13 +298,13 @@
     private static string StateLabel(string? state) =>
         string.IsNullOrEmpty(state) ? "Unknown" : char.ToUpperInvariant(state[0]) + state[1..].ToLowerInvariant();
 
-    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle StateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "SUSPENDED" => Color.Warning,
-        "CANCELLED" or "CANCELED" => Color.Danger,
-        "PENDING" => Color.Info,
-        _ => Color.Secondary,
+        "ACTIVE" => BadgeStyle.Success,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "CANCELLED" or "CANCELED" => BadgeStyle.Danger,
+        "PENDING" => BadgeStyle.Info,
+        _ => BadgeStyle.Light,
     };
 
     private static string RenewalText(Entitlement e) =>
@@ -422,22 +350,20 @@
     private string? BilledLabel(string customerId) =>
         _billed.TryGetValue(customerId, out var v) ? FormatMoney(v.Cost, v.Currency) : null;
 
-    // Server-side read: Blazorise pages are 1-based, the API's are 0-based; sort keys come from SortField.
-    private async Task OnReadData(DataGridReadDataEventArgs<EstateCustomer> e)
+    // Server-side read: Radzen gives Skip/Top, the API takes a 0-based page; sort keys come from SortProperty.
+    private async Task OnLoadData(LoadDataArgs args)
     {
-        if (e.CancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-
-        var sortColumn = e.Columns.FirstOrDefault(c => c.SortDirection != SortDirection.Default);
+        _loading = true;
+        var pageSize = args.Top ?? 25;
+        var page = pageSize == 0 ? 0 : (args.Skip ?? 0) / pageSize;
+        var sort = args.Sorts?.FirstOrDefault();
         try
         {
-            await EnsureBilledAsync(e.CancellationToken);
+            await EnsureBilledAsync(CancellationToken.None);
             var result = await Api.ListEstateCustomersAsync(
-                e.Page - 1, e.PageSize, sortColumn?.SortField,
-                sortColumn?.SortDirection == SortDirection.Descending,
-                _search, linkId: _scope == "all" ? null : _scope, e.CancellationToken);
+                page, pageSize, sort?.Property,
+                sort?.SortOrder == SortOrder.Descending,
+                _search, linkId: _scope == "all" ? null : _scope, CancellationToken.None);
 
             _items = result?.Items?.ToList() ?? [];
             _total = result?.Total ?? 0;
@@ -449,18 +375,32 @@
             _items = [];
             _total = 0;
         }
+        finally
+        {
+            _loading = false;
+        }
     }
 
-    private async Task OnSearchChanged(string value)
+    private async Task OnSearchChanged(string? value)
     {
         _search = value;
-        await (_grid?.Reload() ?? Task.CompletedTask);
+        await ReloadFirstPageAsync();
     }
 
     private async Task OnScopeChanged(string value)
     {
         _scope = value;
-        await (_grid?.Reload() ?? Task.CompletedTask);
+        await ReloadFirstPageAsync();
+    }
+
+    private async Task ReloadFirstPageAsync()
+    {
+        if (_grid is null)
+        {
+            return;
+        }
+
+        await _grid.FirstPage(true);
     }
 
     private async Task ResyncAsync(EstateCustomer customer)
@@ -501,63 +441,16 @@
         }
     }
 
-    private void OpenImportDialog()
+    private async Task OpenImportDialogAsync()
     {
-        _import.Reset();
-        _importOpen = true;
-    }
-
-    private async Task ImportAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_import.Domain)
-            && string.IsNullOrWhiteSpace(_import.CloudIdentityId)
-            && string.IsNullOrWhiteSpace(_import.PrimaryAdminEmail))
+        var imported = await Dialogs.OpenAsync<ImportCustomerDialog>("Import existing customer", new Dictionary<string, object?>
         {
-            await Snackbar.Add("Provide a domain, Cloud Identity id, or primary admin email to import.", Severity.Warning);
-            return;
-        }
+            [nameof(ImportCustomerDialog.Import)] = new Func<ImportCustomerRequest, Task<Customer?>>(request => Api.ImportCustomerAsync(request))
+        }, new DialogOptions { Width = "min(34rem, 95vw)", CloseDialogOnOverlayClick = false });
 
-        _importing = true;
-        try
+        if (imported is Customer customer)
         {
-            var imported = await Api.ImportCustomerAsync(new ImportCustomerRequest
-            {
-                Domain = _import.Domain,
-                CloudIdentityId = _import.CloudIdentityId,
-                PrimaryAdminEmail = _import.PrimaryAdminEmail,
-                OverwriteIfExists = _import.OverwriteIfExists
-            });
-
-            _importOpen = false;
-            await Snackbar.Add($"Imported {imported?.OrgDisplayName ?? imported?.Domain ?? "customer"}.", Severity.Success);
-            if (imported is not null)
-            {
-                Nav.NavigateTo($"/customers/{imported.Id}");
-            }
-        }
-        catch (Exception ex)
-        {
-            await Snackbar.Add($"Failed to import customer: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _importing = false;
-        }
-    }
-
-    private sealed class ImportModel
-    {
-        public string? Domain { get; set; }
-        public string? CloudIdentityId { get; set; }
-        public string? PrimaryAdminEmail { get; set; }
-        public bool OverwriteIfExists { get; set; }
-
-        public void Reset()
-        {
-            Domain = null;
-            CloudIdentityId = null;
-            PrimaryAdminEmail = null;
-            OverwriteIfExists = false;
+            Nav.NavigateTo($"/customers/{customer.Id}");
         }
     }
 }

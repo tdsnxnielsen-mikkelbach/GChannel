@@ -6,154 +6,143 @@
 
 <PageTitle>License change alerts · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-    <Div>
-        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">License change alerts</Heading>
-        <Small TextColor="TextColor.Secondary">Notify indirect resellers when an end customer's license changes</Small>
-    </Div>
-    <Button Color="Color.Secondary" Outline Clicked="LoadAsync" Disabled="_loading">
-        <Icon Name="@AppIcons.Refresh" Class="me-1" /> Refresh
-    </Button>
-</Div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+    <div>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">License change alerts</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Notify indirect resellers when an end customer's license changes</RadzenText>
+    </div>
+    <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="LoadAsync" Disabled="_loading" />
+</RadzenStack>
 
-<Alert Color="Color.Info" Visible Margin="Margin.Is4.FromBottom">
+<RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
     <b>Preview only.</b> This page showcases the reseller notification email. No mail is sent — the
     "Send" action is disabled by design.
-</Alert>
+</RadzenAlert>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
-    License change events arrive live on the Channel <Anchor To="/notifications">Pub/Sub feed</Anchor>.
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
+    License change events arrive live on the Channel <RadzenLink Path="/notifications" Text="Pub/Sub feed" />.
     Each entitlement event is matched to the end customer it concerns and to the indirect reseller that
     owns that customer, so the owning reseller can be emailed a summary of what changed.
-</Paragraph>
+</RadzenText>
 
 @if (!_loading && !_subscriberEnabled)
 {
-    <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         The background Pub/Sub subscriber isn't running, so no live change events are arriving. The rows
         below are illustrative samples. Configure the subscriber on the
-        <Anchor To="/notifications">Notifications</Anchor> page to drive this from real events.
-    </Alert>
+        <RadzenLink Path="/notifications" Text="Notifications" /> page to drive this from real events.
+    </RadzenAlert>
 }
 else if (!_loading && _usingSamples)
 {
-    <Alert Color="Color.Info" Visible Margin="Margin.Is4.FromBottom">
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         No license change events have arrived yet — showing illustrative samples so you can preview the email.
-    </Alert>
+    </RadzenAlert>
 }
 
-<Row>
-    <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
-        <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Recent license changes</Heading>
+<RadzenRow Gap="1rem" RowGap="1rem">
+    <RadzenColumn Size="12" SizeLG="7">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Recent license changes</RadzenText>
         @if (_loading)
         {
             <LoadingPanel Title="Loading license changes…" Hint="Reading the live change feed and resolving owning resellers." />
         }
         else
         {
-            <Card Shadow="Shadow.Small">
-                <DataGrid TItem="LicenseChangeEvent" Data="_events" Hoverable Narrow Responsive Sortable
-                          SelectedRow="_selected" SelectedRowChanged="OnRowSelected" RowSelectable="@(args => args.Item.IsIndirect)">
-                    <DataGridColumns>
-                        <DataGridColumn TItem="LicenseChangeEvent" Field="@nameof(LicenseChangeEvent.ChangeType)" Caption="Change">
-                            <DisplayTemplate>
-                                <Badge Color="@ChangeColor(context.Item.ChangeType)">@context.Item.ChangeType</Badge>
-                                @if (!string.IsNullOrEmpty(context.Item.Detail))
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenDataGrid TItem="LicenseChangeEvent" Data="_events" AllowPaging="false" AllowSorting="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true"
+                                SelectionMode="DataGridSelectionMode.Single" @bind-Value="_selectedRows" RowSelect="OnRowSelected" EmptyText="No license changes to show.">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.ChangeType)" Title="Change">
+                            <Template Context="e">
+                                <RadzenBadge BadgeStyle="@ChangeColor(e.ChangeType)" Text="@e.ChangeType" />
+                                @if (!string.IsNullOrEmpty(e.Detail))
                                 {
-                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">@context.Item.Detail</Small>
+                                    <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@e.Detail</RadzenText>
                                 }
-                            </DisplayTemplate>
-                        </DataGridColumn>
-                        <DataGridColumn TItem="LicenseChangeEvent" Field="@nameof(LicenseChangeEvent.CustomerName)" Caption="End customer">
-                            <DisplayTemplate>
-                                <div>@context.Item.CustomerName</div>
-                                <Small TextColor="TextColor.Secondary">@(context.Item.CustomerDomain ?? context.Item.CustomerId)</Small>
-                            </DisplayTemplate>
-                        </DataGridColumn>
-                        <DataGridColumn TItem="LicenseChangeEvent" Field="@nameof(LicenseChangeEvent.ResellerName)" Caption="Indirect reseller" SortDirection="SortDirection.Ascending">
-                            <DisplayTemplate>
-                                @if (context.Item.IsIndirect)
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.CustomerName)" Title="End customer">
+                            <Template Context="e">
+                                <div>@e.CustomerName</div>
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@(e.CustomerDomain ?? e.CustomerId)</RadzenText>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.ResellerName)" Title="Indirect reseller" SortOrder="SortOrder.Ascending">
+                            <Template Context="e">
+                                @if (e.IsIndirect)
                                 {
-                                    <span>@context.Item.ResellerName</span>
-                                }
-                                else
-                                {
-                                    <Badge Color="Color.Secondary">Direct</Badge>
-                                }
-                            </DisplayTemplate>
-                        </DataGridColumn>
-                        <DataGridColumn TItem="LicenseChangeEvent" Field="@nameof(LicenseChangeEvent.ResellerEmail)" Caption="Reseller email" Sortable="false">
-                            <DisplayTemplate>
-                                @if (context.Item.IsIndirect)
-                                {
-                                    <Anchor To="@($"mailto:{context.Item.ResellerEmail}")">@context.Item.ResellerEmail</Anchor>
+                                    <span>@e.ResellerName</span>
                                 }
                                 else
                                 {
-                                    <span class="text-body-secondary">—</span>
+                                    <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Direct" />
                                 }
-                            </DisplayTemplate>
-                        </DataGridColumn>
-                        <DataGridColumn TItem="LicenseChangeEvent" Field="@nameof(LicenseChangeEvent.OccurredAt)" Caption="When">
-                            <DisplayTemplate>@context.Item.OccurredAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</DisplayTemplate>
-                        </DataGridColumn>
-                        <DataGridColumn TItem="LicenseChangeEvent" Field="@nameof(LicenseChangeEvent.CustomerId)" Caption="Preview" Sortable="false" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End">
-                            <DisplayTemplate>
-                                <Button Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none"
-                                        Disabled="!context.Item.IsIndirect" Clicked="@(() => _selected = context.Item)">Preview</Button>
-                            </DisplayTemplate>
-                        </DataGridColumn>
-                    </DataGridColumns>
-                    <EmptyTemplate>
-                        <Paragraph Margin="Margin.Is0">No license changes to show.</Paragraph>
-                    </EmptyTemplate>
-                </DataGrid>
-            </Card>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Title="Reseller email" Sortable="false">
+                            <Template Context="e">
+                                @if (e.IsIndirect)
+                                {
+                                    <a href="@($"mailto:{e.ResellerEmail}")">@e.ResellerEmail</a>
+                                }
+                                else
+                                {
+                                    <span class="rz-text-secondary-color">—</span>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.OccurredAt)" Title="When" Width="150px">
+                            <Template Context="e">@e.OccurredAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Title="Preview" Sortable="false" TextAlign="TextAlign.End" Width="100px">
+                            <Template Context="e">
+                                <RadzenButton Text="Preview" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text"
+                                              Disabled="!e.IsIndirect" Click="@(() => Select(e))" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
         }
-    </Column>
+    </RadzenColumn>
 
-    <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
-        <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Email preview</Heading>
+    <RadzenColumn Size="12" SizeLG="5">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Email preview</RadzenText>
         @if (_selected is null || !_selected.IsIndirect)
         {
-            <Alert Color="Color.Info" Visible>Select an indirect reseller's license change to preview the email that would be sent.</Alert>
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">Select an indirect reseller's license change to preview the email that would be sent.</RadzenAlert>
         }
         else
         {
-            <Card Shadow="Shadow.Small">
-                <CardBody>
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block">To</Small>
-                    <Paragraph Margin="Margin.Is2.FromBottom">@_selected.ResellerName &lt;@_selected.ResellerEmail&gt;</Paragraph>
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">To</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-2">@_selected.ResellerName &lt;@_selected.ResellerEmail&gt;</RadzenText>
 
-                    <Small TextColor="TextColor.Secondary" Display="Display.Block">Subject</Small>
-                    <Paragraph Margin="Margin.Is3.FromBottom"><b>@Subject(_selected)</b></Paragraph>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Subject</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-3"><b>@Subject(_selected)</b></RadzenText>
 
-                    <Divider Margin="Margin.Is3.FromBottom" />
+                <hr class="rz-mb-3" />
 
-                    <Paragraph Margin="Margin.Is0" Style="white-space:pre-line">@Body(_selected)</Paragraph>
-                </CardBody>
-                <CardFooter Background="Background.Transparent">
-                    <Button Color="Color.Primary" Disabled="true">
-                        <Icon Name="@AppIcons.Send" Class="me-1" /> Send (disabled in preview)
-                    </Button>
-                </CardFooter>
-            </Card>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-3" Style="white-space:pre-line">@Body(_selected)</RadzenText>
+                <RadzenButton Text="Send (disabled in preview)" Icon="@AppIcons.Send" ButtonStyle="ButtonStyle.Primary" Disabled="true" />
+            </RadzenCard>
         }
 
-        <Strong Display="Display.Block" Margin="Margin.Is5.FromTop.Is1.FromBottom">How it works</Strong>
-        <ListGroup Flush>
-            <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
-                <Icon Name="@AppIcons.Notifications" TextColor="TextColor.Secondary" Class="me-2" />A Channel entitlement change event arrives on the Pub/Sub feed.
-            </ListGroupItem>
-            <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
-                <Icon Name="@AppIcons.Hub" TextColor="TextColor.Secondary" Class="me-2" />The affected customer is resolved to its owning channel partner (indirect reseller).
-            </ListGroupItem>
-            <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
-                <Icon Name="@AppIcons.Email" TextColor="TextColor.Secondary" Class="me-2" />A summary email is composed and sent to the reseller's registered contact.
-            </ListGroupItem>
-        </ListGroup>
-    </Column>
-</Row>
+        <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mt-6 rz-mb-1">How it works</RadzenText>
+        <RadzenStack Gap="0.25rem">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="@AppIcons.Notifications" class="rz-text-secondary-color" /><span>A Channel entitlement change event arrives on the Pub/Sub feed.</span>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="@AppIcons.Hub" class="rz-text-secondary-color" /><span>The affected customer is resolved to its owning channel partner (indirect reseller).</span>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="@AppIcons.Email" class="rz-text-secondary-color" /><span>A summary email is composed and sent to the reseller's registered contact.</span>
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
 
 @code {
     private sealed record LicenseChangeEvent(
@@ -172,6 +161,7 @@ else if (!_loading && _usingSamples)
     private bool _subscriberEnabled;
     private bool _usingSamples;
     private LicenseChangeEvent? _selected;
+    private IList<LicenseChangeEvent>? _selectedRows;
     private List<LicenseChangeEvent> _events = [];
     private readonly CancellationTokenSource _cts = new();
 
@@ -315,12 +305,23 @@ else if (!_loading && _usingSamples)
         }
     }
 
+    // Grid row click: only indirect-reseller rows have an email to preview.
     private void OnRowSelected(LicenseChangeEvent? item)
     {
         if (item is { IsIndirect: true })
         {
             _selected = item;
         }
+        else
+        {
+            _selectedRows = _selected is null ? null : [_selected];
+        }
+    }
+
+    private void Select(LicenseChangeEvent item)
+    {
+        _selected = item;
+        _selectedRows = [item];
     }
 
     // The concrete amount that changed, from the entitlement change history: the seat delta between the
@@ -379,13 +380,13 @@ else if (!_loading && _usingSamples)
         _ => "License change"
     };
 
-    private static Color ChangeColor(string changeType) => changeType switch
+    private static BadgeStyle ChangeColor(string changeType) => changeType switch
     {
-        "New license" or "Seats changed" or "Activated" or "Renewed" => Color.Success,
-        "Offer change" or "Renewal changed" or "Seat cap changed" => Color.Info,
-        "Suspended" => Color.Warning,
-        "Cancelled" => Color.Danger,
-        _ => Color.Secondary
+        "New license" or "Seats changed" or "Activated" or "Renewed" => BadgeStyle.Success,
+        "Offer change" or "Renewal changed" or "Seat cap changed" => BadgeStyle.Info,
+        "Suspended" => BadgeStyle.Warning,
+        "Cancelled" => BadgeStyle.Danger,
+        _ => BadgeStyle.Light
     };
 
     private static string Subject(LicenseChangeEvent e) =>

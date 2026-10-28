@@ -5,9 +5,7 @@
 @* §9 phase 3: a page-scoped guided walkthrough. Renders a "Show me how" launcher and (optionally)
    auto-runs once per user, reusing the Driver.js interop from phase 2. Completion persists per Id. *@
 
-<Button Color="Color.Primary" Size="Size.Small" Clicked="StartAsync" Class="@($"btn-link text-decoration-none {Class}")">
-    <Icon Name="@AppIcons.Lightbulb" Class="me-1" /> @ButtonText
-</Button>
+<RadzenButton Text="@ButtonText" Icon="@AppIcons.Lightbulb" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small" Click="StartAsync" class="@Class" />
 
 @code {
     /// <summary>Stable id for this walkthrough; completion is stored under "wt:{Id}".</summary>
@@ -92,3 +90,4 @@
         _selfRef?.Dispose();
     }
 }
+

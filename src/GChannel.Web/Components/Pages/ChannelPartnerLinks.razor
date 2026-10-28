@@ -5,111 +5,105 @@
 
 <PageTitle>Channel partner links · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
-    <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Channel partner links</Heading>
-    <Button Type="ButtonType.Link" To="/channel-partner-links/new" Color="Color.Primary">
-        <Icon Name="@AppIcons.AddLink" Class="me-1" /> Invite partner
-    </Button>
-</Div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-4">
+    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Channel partner links</RadzenText>
+    <LinkButton To="/channel-partner-links/new" Text="Invite partner" Icon="@AppIcons.AddLink" />
+</RadzenStack>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
     Downstream resellers (channel partners) linked to your distributor account. Paging, sorting and
     search run server-side against the synced read-model. Open a link to view its details and customers.
-</Paragraph>
+</RadzenText>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-    <Addons Style="max-width:360px">
-        <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Search" /></AddonLabel></Addon>
-        <Addon AddonType="AddonType.Body">
-            <TextInput Value="@_search" ValueChanged="OnSearchChanged" Debounce="true" DebounceInterval="400"
-                       Placeholder="Search domain, cloud id, link id…" />
-        </Addon>
-    </Addons>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <SearchBox Value="@_search" ValueChanged="OnSearchChanged" Label="Search domain, cloud id, link id…" />
     <AsOfBadge AsOf="_asOf" />
-</Div>
+</RadzenStack>
 
-<Card Shadow="Shadow.Small">
-    <DataGrid @ref="_grid" TItem="EstateReseller" Data="_items" ReadData="OnReadData" TotalItems="_total"
-              ShowPager ShowPageSizes PageSize="25" PageSizes="_pageSizes" Hoverable Responsive Sortable SortMode="DataGridSortMode.Single">
-        <DataGridColumns>
-            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.PrimaryDomain)" SortField="domain" Caption="Reseller Cloud Identity">
-                <DisplayTemplate>@(context.Item.PrimaryDomain ?? context.Item.ResellerCloudId ?? context.Item.LinkId)</DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.CustomerCount)" Caption="Customers" Sortable="false" />
-            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.LinkId)" Caption="Billed (last month)" Sortable="false">
-                <DisplayTemplate>
-                    @if (BilledLabel(context.Item.LinkId) is { } billed)
+<RadzenCard Variant="Variant.Filled">
+    <RadzenDataGrid @ref="_grid" TItem="EstateReseller" Data="_items" Count="_total" LoadData="OnLoadData" IsLoading="_loading"
+                    AllowPaging="true" PageSize="25" PageSizeOptions="_pageSizes" ShowPagingSummary="true"
+                    AllowSorting="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+        <Columns>
+            <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.PrimaryDomain)" SortProperty="domain" Title="Reseller Cloud Identity">
+                <Template Context="r">@(r.PrimaryDomain ?? r.ResellerCloudId ?? r.LinkId)</Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.CustomerCount)" Title="Customers" Sortable="false" Width="110px" />
+            <RadzenDataGridColumn TItem="EstateReseller" Title="Billed (last month)" Sortable="false">
+                <Template Context="r">
+                    @if (BilledLabel(r.LinkId) is { } billed)
                     {
-                        <Tooltip Text="Actual billed GCP/Marketplace spend across this reseller's customers (BigQuery cost export)." Inline>
-                            <span>@billed</span>
-                        </Tooltip>
+                        <Tip Text="Actual billed GCP/Marketplace spend across this reseller's customers (BigQuery cost export).">@billed</Tip>
                     }
                     else
                     {
                         <span>—</span>
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.LinkState)" SortField="state" Caption="State">
-                <DisplayTemplate>
-                    <Badge Color="@StateColor(context.Item.LinkState)">@(string.IsNullOrEmpty(context.Item.LinkState) ? "—" : context.Item.LinkState)</Badge>
-                    @if (!string.IsNullOrEmpty(context.Item.SyncError))
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.LinkState)" SortProperty="state" Title="State">
+                <Template Context="r">
+                    <RadzenBadge BadgeStyle="@StateColor(r.LinkState)" Text="@(string.IsNullOrEmpty(r.LinkState) ? "—" : r.LinkState)" />
+                    @if (!string.IsNullOrEmpty(r.SyncError))
                     {
-                        <Tooltip Text="@context.Item.SyncError" Multiline Inline>
-                            <Icon Name="@AppIcons.Warning" TextColor="TextColor.Warning" Class="ms-1" />
-                        </Tooltip>
+                        <Tip Text="@r.SyncError">
+                            <RadzenIcon Icon="@AppIcons.Warning" IconColor="@Colors.Warning" class="rz-ms-1" />
+                        </Tip>
                     }
-                </DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.CreateTime)" SortField="created" Caption="Created">
-                <DisplayTemplate>@(context.Item.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</DisplayTemplate>
-            </DataGridColumn>
-            <DataGridColumn TItem="EstateReseller" Field="@nameof(EstateReseller.ResellerCloudId)" Caption="Actions" Sortable="false" TextAlignment="TextAlignment.End" HeaderTextAlignment="TextAlignment.End">
-                <DisplayTemplate>
-                    <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is1" Class="text-nowrap">
-                        <Tooltip Text="Refresh now" Inline>
-                            <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => ResyncAsync(context.Item))" aria-label="Refresh now"><Icon Name="@AppIcons.Sync" /></Button>
-                        </Tooltip>
-                        <Tooltip Text="View" Inline>
-                            <Button Type="ButtonType.Link" To="@($"/channel-partner-links/{context.Item.LinkId}")" Size="Size.Small" Color="Color.Light" aria-label="View"><Icon Name="@AppIcons.Visibility" /></Button>
-                        </Tooltip>
-                    </Div>
-                </DisplayTemplate>
-            </DataGridColumn>
-        </DataGridColumns>
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.CreateTime)" SortProperty="created" Title="Created" Width="110px">
+                <Template Context="r">@(r.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateReseller" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="110px">
+                <Template Context="r">
+                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.25rem" class="rz-text-nowrap">
+                        <Tip Text="Refresh now">
+                            <RadzenButton Icon="@AppIcons.Sync" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => ResyncAsync(r))" aria-label="Refresh now" />
+                        </Tip>
+                        <Tip Text="View">
+                            <LinkButton To="@($"/channel-partner-links/{r.LinkId}")" Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="View" />
+                        </Tip>
+                    </RadzenStack>
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
         <EmptyTemplate>
-            <Alert Color="Color.Info" Visible Margin="Margin.Is0">No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.</Alert>
+            @if (_loading)
+            {
+                <LoadingPanel Title="Loading channel partner links…" Hint="Querying the synced read-model." />
+            }
+            else
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-3">No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.</RadzenAlert>
+            }
         </EmptyTemplate>
-        <LoadingTemplate>
-            <LoadingPanel Title="Loading channel partner links…" Hint="Querying the synced read-model." />
-        </LoadingTemplate>
-    </DataGrid>
-</Card>
+    </RadzenDataGrid>
+</RadzenCard>
 
 @code {
-    private static readonly int[] _pageSizes = [25, 50, 100];
-    private DataGrid<EstateReseller>? _grid;
+    private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
+    private RadzenDataGrid<EstateReseller>? _grid;
     private List<EstateReseller> _items = [];
     private int _total;
+    private bool _loading = true;
     private string? _search;
     private DateTimeOffset? _asOf;
 
-    // Server-side read: Blazorise pages are 1-based, the API's are 0-based; sort keys come from SortField.
-    private async Task OnReadData(DataGridReadDataEventArgs<EstateReseller> e)
+    // Server-side read: Radzen gives Skip/Top, the API takes a 0-based page; sort keys come from SortProperty.
+    private async Task OnLoadData(LoadDataArgs args)
     {
-        if (e.CancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
-
-        var sortColumn = e.Columns.FirstOrDefault(c => c.SortDirection != SortDirection.Default);
+        _loading = true;
+        var pageSize = args.Top ?? 25;
+        var page = pageSize == 0 ? 0 : (args.Skip ?? 0) / pageSize;
+        var sort = args.Sorts?.FirstOrDefault();
         try
         {
-            await EnsureBilledAsync(e.CancellationToken);
+            await EnsureBilledAsync(CancellationToken.None);
             var result = await Api.ListEstateResellersAsync(
-                e.Page - 1, e.PageSize, sortColumn?.SortField,
-                sortColumn?.SortDirection == SortDirection.Descending,
-                _search, state: null, e.CancellationToken);
+                page, pageSize, sort?.Property,
+                sort?.SortOrder == SortOrder.Descending,
+                _search, state: null, CancellationToken.None);
 
             _items = result?.Items?.ToList() ?? [];
             _total = result?.Total ?? 0;
@@ -120,6 +114,10 @@
             await Snackbar.Add($"Failed to load channel partner links: {ex.Message}", Severity.Error);
             _items = [];
             _total = 0;
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 
@@ -153,10 +151,10 @@
             ? $"{v.Currency} {v.Cost.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}"
             : null;
 
-    private async Task OnSearchChanged(string value)
+    private async Task OnSearchChanged(string? value)
     {
         _search = value;
-        await (_grid?.Reload() ?? Task.CompletedTask);
+        await (_grid?.FirstPage(true) ?? Task.CompletedTask);
     }
 
     private async Task ResyncAsync(EstateReseller link)
@@ -172,12 +170,12 @@
         }
     }
 
-    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle StateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "INVITED" => Color.Info,
-        "SUSPENDED" => Color.Warning,
-        "REVOKED" => Color.Danger,
-        _ => Color.Secondary
+        "ACTIVE" => BadgeStyle.Success,
+        "INVITED" => BadgeStyle.Info,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "REVOKED" => BadgeStyle.Danger,
+        _ => BadgeStyle.Light
     };
 }

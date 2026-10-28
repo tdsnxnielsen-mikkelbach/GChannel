@@ -6,101 +6,82 @@
 
 @if (_state is not null && !_state.WelcomeDismissed)
 {
-    <Modal Visible="true" Closing="@(e => { e.Cancel = true; return Task.CompletedTask; })" ShowBackdrop>
-        <ModalContent Centered>
-            <ModalBody Padding="Padding.Is4">
-                <Div Flex="Flex.AlignItems.Center" Margin="Margin.Is3.FromBottom">
-                    <Icon Name="@AppIcons.WavingHand" TextColor="TextColor.Primary" IconSize="IconSize.x2" Margin="Margin.Is3.FromEnd" />
-                    <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">Welcome to GChannel</Heading>
-                </Div>
-                <Paragraph Margin="Margin.Is2.FromBottom">
-                    This console manages your Google Cloud reseller business — customers, catalog SKUs,
-                    entitlements, transfers and eventing.
-                </Paragraph>
-                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
-                    We'll add a short checklist to your dashboard to help you complete the first key steps.
-                </Paragraph>
-                <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is2">
-                    <Button Color="Color.Secondary" Clicked="SkipAsync" Class="btn-link text-decoration-none">Skip onboarding</Button>
-                    <Button Color="Color.Primary" Outline Clicked="GetStartedAsync">Maybe later</Button>
-                    <Button Color="Color.Primary" Clicked="TakeTourAsync">
-                        <Icon Name="@AppIcons.Tour" Class="me-1" /> Take a tour
-                    </Button>
-                </Div>
-            </ModalBody>
-        </ModalContent>
-    </Modal>
+    <div class="gchannel-overlay" role="dialog" aria-modal="true" aria-labelledby="gchannel-welcome-title">
+        <RadzenCard Variant="Variant.Filled" Style="max-width: 36rem; width: 100%" class="rz-p-6 rz-shadow-6">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" class="rz-mb-3">
+                <RadzenIcon Icon="@AppIcons.WavingHand" IconColor="@Colors.Primary" Style="font-size: 2.5rem; width: auto; height: auto" />
+                <RadzenText TextStyle="TextStyle.H5" class="rz-m-0" id="gchannel-welcome-title">Welcome to GChannel</RadzenText>
+            </RadzenStack>
+            <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-2">
+                This console manages your Google Cloud reseller business — customers, catalog SKUs,
+                entitlements, transfers and eventing.
+            </RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-5">
+                We'll add a short checklist to your dashboard to help you complete the first key steps.
+            </RadzenText>
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                <RadzenButton Text="Skip onboarding" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Click="SkipAsync" />
+                <RadzenButton Text="Maybe later" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Click="GetStartedAsync" />
+                <RadzenButton Text="Take a tour" Icon="@AppIcons.Tour" ButtonStyle="ButtonStyle.Primary" Click="TakeTourAsync" />
+            </RadzenStack>
+        </RadzenCard>
+    </div>
 }
 
 @if (_state is not null && _state.WelcomeDismissed && !_state.ChecklistDismissed)
 {
-    <Card Margin="Margin.Is4.FromBottom">
-        <CardBody>
-            <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Margin="Margin.Is2.FromBottom">
-                <Div Flex="Flex.AlignItems.Center">
-                    <Icon Name="@AppIcons.Checklist" TextColor="TextColor.Primary" Margin="Margin.Is2.FromEnd" />
-                    <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Getting started</Heading>
-                </Div>
-                <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2">
-                    <Small TextColor="TextColor.Secondary">@CompletedCount of @Steps.Count done</Small>
-                    <Button Color="Color.Primary" Size="Size.Small" Clicked="RestartTourAsync" Class="btn-link text-decoration-none">
-                        <Icon Name="@AppIcons.Tour" Class="me-1" /> Restart tour
-                    </Button>
-                    <Tooltip Text="Hide this checklist" Inline>
-                        <Button Color="Color.Secondary" Size="Size.Small" Clicked="DismissChecklistAsync" Class="btn-link" aria-label="Hide this checklist">
-                            <Icon Name="@AppIcons.Close" />
-                        </Button>
-                    </Tooltip>
-                </Div>
-            </Div>
+    <RadzenCard Variant="Variant.Filled" class="rz-mb-5">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="@AppIcons.Checklist" IconColor="@Colors.Primary" />
+                <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Getting started</RadzenText>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@CompletedCount of @Steps.Count done</RadzenText>
+                <RadzenButton Text="Restart tour" Icon="@AppIcons.Tour" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small" Click="RestartTourAsync" />
+                <Tip Text="Hide this checklist">
+                    <RadzenButton Icon="@AppIcons.Close" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Size="ButtonSize.Small" Click="DismissChecklistAsync" aria-label="Hide this checklist" />
+                </Tip>
+            </RadzenStack>
+        </RadzenStack>
 
-            <Progress Value="@((int)Math.Round(ProgressValue))" Color="Color.Primary" Size="Size.Small" Margin="Margin.Is3.FromBottom" />
+        <RadzenProgressBar Value="@Math.Round(ProgressValue)" ShowValue="false" ProgressBarStyle="ProgressBarStyle.Primary" Style="height: 6px" class="rz-mb-3" />
 
-            <ListGroup Flush>
-                @foreach (var step in Steps)
-                {
-                    var done = IsDone(step);
-                    <ListGroupItem Padding="Padding.Is0.OnX.Is2.OnY">
-                        <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Width="Width.Is100">
-                            <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is3">
-                                @if (step.Manual)
-                                {
-                                    <Check TValue="bool" Value="done" ValueChanged="@(v => ToggleManualAsync(step, v))" />
-                                }
-                                else
-                                {
-                                    <Icon Name="@(done ? AppIcons.CheckCircle : AppIcons.RadioButtonUnchecked)"
-                                          TextColor="@(done ? TextColor.Success : TextColor.Secondary)" />
-                                }
-                                <Div>
-                                    <Text Display="Display.Block" Style="@(done ? "text-decoration: line-through; opacity: 0.7;" : null)">
-                                        @step.Title
-                                    </Text>
-                                    <Small TextColor="TextColor.Secondary">@step.Description</Small>
-                                </Div>
-                            </Div>
-                            <Button Color="Color.Primary" Size="Size.Small" Class="btn-link text-decoration-none text-nowrap"
-                                    Clicked="@(() => Nav.NavigateTo(step.Link))">
-                                @step.Action <Icon Name="@AppIcons.ArrowForward" Class="ms-1" />
-                            </Button>
-                        </Div>
-                    </ListGroupItem>
-                }
-            </ListGroup>
-        </CardBody>
-    </Card>
+        <RadzenStack Gap="0">
+            @foreach (var step in Steps)
+            {
+                var done = IsDone(step);
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0.75rem" class="rz-py-2 rz-border-bottom rz-border-color-base-200 gchannel-checklist-item">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                        @if (step.Manual)
+                        {
+                            <RadzenCheckBox TValue="bool" Value="done" Change="@((bool v) => ToggleManualAsync(step, v))" aria-label="@step.Title" />
+                        }
+                        else
+                        {
+                            <RadzenIcon Icon="@(done ? AppIcons.CheckCircle : AppIcons.RadioButtonUnchecked)" IconColor="@(done ? Colors.Success : Colors.Base500)" />
+                        }
+                        <div>
+                            <RadzenText TextStyle="TextStyle.Body1" class="rz-m-0" Style="@(done ? "text-decoration: line-through; opacity: 0.7;" : null)">
+                                @step.Title
+                            </RadzenText>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@step.Description</RadzenText>
+                        </div>
+                    </RadzenStack>
+                    <RadzenButton Text="@step.Action" Icon="@AppIcons.ArrowForward" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small"
+                                  Click="@(() => Nav.NavigateTo(step.Link))" class="rz-text-nowrap" />
+                </RadzenStack>
+            }
+        </RadzenStack>
+    </RadzenCard>
 }
 
 @if (_state is not null && _state.WelcomeDismissed && _state.ChecklistDismissed)
 {
-    <Div Flex="Flex.JustifyContent.End.AlignItems.Center" Gap="Gap.Is1" Margin="Margin.Is4.FromBottom">
-        <Button Color="Color.Primary" Size="Size.Small" Clicked="RestartTourAsync" Class="btn-link text-decoration-none">
-            <Icon Name="@AppIcons.Tour" Class="me-1" /> Take the product tour
-        </Button>
-        <Button Color="Color.Secondary" Size="Size.Small" Clicked="ShowChecklistAsync" Class="btn-link text-decoration-none">
-            <Icon Name="@AppIcons.Checklist" Class="me-1" /> Show checklist
-        </Button>
-    </Div>
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" AlignItems="AlignItems.Center" Gap="0.25rem" class="rz-mb-5">
+        <RadzenButton Text="Take the product tour" Icon="@AppIcons.Tour" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small" Click="RestartTourAsync" />
+        <RadzenButton Text="Show checklist" Icon="@AppIcons.Checklist" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Size="ButtonSize.Small" Click="ShowChecklistAsync" />
+    </RadzenStack>
 }
 
 @code {
@@ -241,3 +222,4 @@
         await Onboarding.SaveAsync(_state);
     }
 }
+

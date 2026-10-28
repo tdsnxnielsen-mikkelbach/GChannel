@@ -1,0 +1,12 @@
+@namespace GChannel.Web.Components
+
+@* One label/value line of a details card. *@
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Start" Gap="1rem" class="gchannel-detail-row">
+    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0" Style="flex: 0 0 11rem">@Label</RadzenText>
+    <RadzenText TextStyle="TextStyle.Body2" class="rz-m-0" Style="flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere">@ChildContent</RadzenText>
+</RadzenStack>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

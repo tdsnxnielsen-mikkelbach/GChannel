@@ -12,308 +12,244 @@
 }
 else if (_entitlement is null)
 {
-    <Alert Color="Color.Danger" Visible>Entitlement not found.</Alert>
-    <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/entitlements")" Color="Color.Secondary" Outline Margin="Margin.Is4.FromTop">
-        <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Back to entitlements
-    </Button>
+    <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">Entitlement not found.</RadzenAlert>
+    <LinkButton To="@($"/customers/{CustomerId}/entitlements")" Text="Back to entitlements" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Class="rz-mt-4" />
 }
 else
 {
-    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is4.FromBottom">
-        <Div>
-            <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">@(_entitlement.SkuDisplayName ?? _entitlement.OfferDisplayName ?? _entitlement.OfferId ?? _entitlement.Id)</Heading>
-            <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Margin="Margin.Is1.FromTop">
-                <Badge Color="@StateColor(_entitlement.ProvisioningState)">@(_entitlement.ProvisioningState ?? "—")</Badge>
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-4">
+        <div>
+            <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">@(_entitlement.SkuDisplayName ?? _entitlement.OfferDisplayName ?? _entitlement.OfferId ?? _entitlement.Id)</RadzenText>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mt-1">
+                <RadzenBadge BadgeStyle="@StateColor(_entitlement.ProvisioningState)" Text="@(_entitlement.ProvisioningState ?? "—")" />
                 @if (_entitlement.IsTrial)
                 {
-                    <Badge Color="Color.Info">Trial</Badge>
+                    <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Trial" />
                 }
-            </Div>
-        </Div>
-        <Button Type="ButtonType.Link" To="@($"/customers/{CustomerId}/entitlements")" Color="Color.Secondary" Outline>
-            <Icon Name="@AppIcons.ArrowBack" Class="me-1" /> Entitlements
-        </Button>
-    </Div>
+            </RadzenStack>
+        </div>
+        <LinkButton To="@($"/customers/{CustomerId}/entitlements")" Text="Entitlements" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+    </RadzenStack>
 
-    <Row>
-        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Details</CardTitle></CardHeader>
-                <CardBody>
-                    <Table Narrow Borderless Margin="Margin.Is0">
-                        <TableBody>
-                            <TableRow><TableRowCell><strong>Entitlement id</strong></TableRowCell><TableRowCell>@_entitlement.Id</TableRowCell></TableRow>
-                            <TableRow>
-                                <TableRowCell><strong>Offer</strong></TableRowCell>
-                                <TableRowCell>
-                                    @if (!string.IsNullOrEmpty(_entitlement.SkuId))
-                                    {
-                                        <Anchor To="@($"/catalog/offers?sku={_entitlement.SkuId}")">@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")</Anchor>
-                                    }
-                                    else { <span>@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")</span> }
-                                    @if (!string.IsNullOrEmpty(_entitlement.OfferId) && !string.IsNullOrEmpty(_entitlement.OfferDisplayName))
-                                    {
-                                        <Small TextColor="TextColor.Secondary" Display="Display.Block">@_entitlement.OfferId</Small>
-                                    }
-                                </TableRowCell>
-                            </TableRow>
-                            <TableRow>
-                                <TableRowCell><strong>Product / SKU</strong></TableRowCell>
-                                <TableRowCell>
-                                    @if (!string.IsNullOrEmpty(_entitlement.ProductId))
-                                    {
-                                        <Anchor To="@($"/catalog/products?product={_entitlement.ProductId}&sku={_entitlement.SkuId}")">
-                                            @(_entitlement.ProductDisplayName ?? _entitlement.ProductId) / @(_entitlement.SkuDisplayName ?? _entitlement.SkuId)
-                                        </Anchor>
-                                        <Small TextColor="TextColor.Secondary" Display="Display.Block">@(_entitlement.ProductId) / @(_entitlement.SkuId)</Small>
-                                    }
-                                    else { <span>—</span> }
-                                </TableRowCell>
-                            </TableRow>
-                            <TableRow><TableRowCell><strong>Seats</strong></TableRowCell><TableRowCell>@(Seats(_entitlement) ?? "—")</TableRowCell></TableRow>
-                            <TableRow><TableRowCell><strong>Purchase order</strong></TableRowCell><TableRowCell>@(_entitlement.PurchaseOrderId ?? "—")</TableRowCell></TableRow>
-                            <TableRow>
-                                <TableRowCell><strong>Billing account</strong></TableRowCell>
-                                <TableRowCell>
-                                    @if (!string.IsNullOrEmpty(_entitlement.BillingAccount))
-                                    {
-                                        <span>@(BillingAccountId ?? _entitlement.BillingAccount)</span>
-                                        <Small TextColor="TextColor.Secondary" Display="Display.Block">@_entitlement.BillingAccount</Small>
-                                    }
-                                    else { <span>—</span> }
-                                </TableRowCell>
-                            </TableRow>
-                            <TableRow><TableRowCell><strong>Created</strong></TableRowCell><TableRowCell>@(_entitlement.CreateTime?.ToString("u") ?? "—")</TableRowCell></TableRow>
-                            <TableRow><TableRowCell><strong>Updated</strong></TableRowCell><TableRowCell>@(_entitlement.UpdateTime?.ToString("u") ?? "—")</TableRowCell></TableRow>
-                            @if (_entitlement.IsTrial && _entitlement.TrialEndTime is not null)
-                            {
-                                <TableRow><TableRowCell><strong>Trial ends</strong></TableRowCell><TableRowCell>@_entitlement.TrialEndTime.Value.ToString("u")</TableRowCell></TableRow>
-                            }
-                            @if (_entitlement.SuspensionReasons.Count > 0)
-                            {
-                                <TableRow><TableRowCell><strong>Suspension reasons</strong></TableRowCell><TableRowCell>@string.Join(", ", _entitlement.SuspensionReasons)</TableRowCell></TableRow>
-                            }
-                        </TableBody>
-                    </Table>
-                </CardBody>
-            </Card>
-
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Commitment &amp; renewal</CardTitle></CardHeader>
-                <CardBody>
-                    <Table Narrow Borderless Margin="Margin.Is2.FromBottom">
-                        <TableBody>
-                            <TableRow><TableRowCell><strong>Payment plan</strong></TableRowCell><TableRowCell>@(_entitlement.Commitment?.PaymentPlan ?? "—")</TableRowCell></TableRow>
-                            <TableRow><TableRowCell><strong>Commitment start</strong></TableRowCell><TableRowCell>@(_entitlement.Commitment?.StartTime?.ToString("u") ?? "—")</TableRowCell></TableRow>
-                            <TableRow><TableRowCell><strong>Commitment end</strong></TableRowCell><TableRowCell>@(_entitlement.Commitment?.EndTime?.ToString("u") ?? "—")</TableRowCell></TableRow>
-                        </TableBody>
-                    </Table>
-                    <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is4">
-                        <Switch TValue="bool" @bind-Value="_renewalEnabled" Color="Color.Primary">Auto-renew</Switch>
-                        <Button Size="Size.Small" Color="Color.Secondary" Outline Disabled="_busy" Clicked="SaveRenewalAsync">
-                            Save renewal
-                        </Button>
-                    </Div>
-                </CardBody>
-            </Card>
-
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Licenses</CardTitle></CardHeader>
-                <CardBody>
-                    <Table Narrow Borderless Margin="Margin.Is0">
-                        <TableBody>
-                            <TableRow><TableRowCell><strong>Total licenses</strong></TableRowCell><TableRowCell>@SeatCount</TableRowCell></TableRow>
-                            <TableRow>
-                                <TableRowCell><strong>Assigned</strong></TableRowCell>
-                                <TableRowCell>
-                                    <Tooltip Text="Assigned-seat counts aren't exposed by the Channel API — they live in each customer's own Workspace tenant (Enterprise License Manager / Admin SDK), which needs per-customer authorization." Multiline Inline>
-                                        <span>— <Small TextColor="TextColor.Secondary">(not available)</Small></span>
-                                    </Tooltip>
-                                </TableRowCell>
-                            </TableRow>
-                        </TableBody>
-                    </Table>
-                    <Button Type="ButtonType.Link" To="#modify" Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
-                        <Icon Name="@AppIcons.Tune" Class="me-1" /> Manage licenses
-                    </Button>
-                </CardBody>
-            </Card>
-
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Payment &amp; pricing (estimated)</CardTitle></CardHeader>
-                <CardBody>
-                    @if (_pricingLoading)
+    <RadzenRow Gap="1rem" RowGap="1rem">
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Details</RadzenText>
+                <RadzenStack Gap="0.5rem">
+                    <DetailRow Label="Entitlement id">@_entitlement.Id</DetailRow>
+                    <DetailRow Label="Offer">
+                        @if (!string.IsNullOrEmpty(_entitlement.SkuId))
+                        {
+                            <RadzenLink Path="@($"/catalog/offers?sku={_entitlement.SkuId}")" Text="@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")" />
+                        }
+                        else { <span>@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")</span> }
+                        @if (!string.IsNullOrEmpty(_entitlement.OfferId) && !string.IsNullOrEmpty(_entitlement.OfferDisplayName))
+                        {
+                            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@_entitlement.OfferId</RadzenText>
+                        }
+                    </DetailRow>
+                    <DetailRow Label="Product / SKU">
+                        @if (!string.IsNullOrEmpty(_entitlement.ProductId))
+                        {
+                            <RadzenLink Path="@($"/catalog/products?product={_entitlement.ProductId}&sku={_entitlement.SkuId}")"
+                                        Text="@($"{_entitlement.ProductDisplayName ?? _entitlement.ProductId} / {_entitlement.SkuDisplayName ?? _entitlement.SkuId}")" />
+                            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@(_entitlement.ProductId) / @(_entitlement.SkuId)</RadzenText>
+                        }
+                        else { <span>—</span> }
+                    </DetailRow>
+                    <DetailRow Label="Seats">@(Seats(_entitlement) ?? "—")</DetailRow>
+                    <DetailRow Label="Purchase order">@(_entitlement.PurchaseOrderId ?? "—")</DetailRow>
+                    <DetailRow Label="Billing account">
+                        @if (!string.IsNullOrEmpty(_entitlement.BillingAccount))
+                        {
+                            <span>@(BillingAccountId ?? _entitlement.BillingAccount)</span>
+                            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@_entitlement.BillingAccount</RadzenText>
+                        }
+                        else { <span>—</span> }
+                    </DetailRow>
+                    <DetailRow Label="Created">@(_entitlement.CreateTime?.ToString("u") ?? "—")</DetailRow>
+                    <DetailRow Label="Updated">@(_entitlement.UpdateTime?.ToString("u") ?? "—")</DetailRow>
+                    @if (_entitlement.IsTrial && _entitlement.TrialEndTime is not null)
                     {
-                        <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                        <DetailRow Label="Trial ends">@_entitlement.TrialEndTime.Value.ToString("u")</DetailRow>
                     }
-                    else if (SeatPrice is { } seat)
+                    @if (_entitlement.SuspensionReasons.Count > 0)
                     {
-                        <Table Narrow Borderless Margin="Margin.Is0">
-                            <TableBody>
-                                <TableRow><TableRowCell><strong>Billing cycle</strong></TableRowCell><TableRowCell>@(string.IsNullOrEmpty(_offerCycle) ? "—" : _offerCycle)</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Wholesale / seat</strong></TableRowCell><TableRowCell>@seat.Display@(string.IsNullOrEmpty(_offerCycle) ? "" : $" · {_offerCycle.ToLowerInvariant()}")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Seats</strong></TableRowCell><TableRowCell>@SeatCount</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Wholesale total</strong></TableRowCell><TableRowCell>@($"{seat.CurrencyCode} {WholesaleTotal:0.00}")</TableRowCell></TableRow>
-                                @if (_entitlement.IonCostPerSeat is { } ionCost)
-                                {
-                                    <TableRow><TableRowCell><strong>Ion cost / seat (actual)</strong></TableRowCell><TableRowCell>@($"{_entitlement.IonCurrency ?? seat.CurrencyCode} {ionCost:0.00}")</TableRowCell></TableRow>
-                                    @if (_entitlement.IonMarginPercent is { } ionMp)
-                                    {
-                                        <TableRow><TableRowCell><strong>Ion margin</strong></TableRowCell><TableRowCell>@ionMp.ToString("0.0")%</TableRowCell></TableRow>
-                                    }
-                                }
-                                @if (_repricingPercent is { } pct)
-                                {
-                                    <TableRow><TableRowCell><strong>Repricing</strong></TableRowCell><TableRowCell>@(pct >= 0 ? "+" : "")@pct.ToString("0.##")%</TableRowCell></TableRow>
-                                    <TableRow><TableRowCell><strong>Computed price</strong></TableRowCell><TableRowCell>@($"{seat.CurrencyCode} {ComputedTotal:0.00}")</TableRowCell></TableRow>
-                                    <TableRow><TableRowCell><strong>Est. margin</strong></TableRowCell><TableRowCell>@($"{seat.CurrencyCode} {(ComputedTotal - WholesaleTotal):0.00}")</TableRowCell></TableRow>
-                                }
-                                <TableRow><TableRowCell><strong>Estimated / month</strong></TableRowCell><TableRowCell>@($"{seat.CurrencyCode} {ComputedMonthly:0.00}")@(MonthsInCycle() > 1 ? $" (≈ {seat.CurrencyCode} {ComputedTotal:0.00} ÷ {MonthsInCycle()} mo)" : "")</TableRowCell></TableRow>
-                                <TableRow><TableRowCell><strong>Renewal</strong></TableRowCell><TableRowCell>@RenewalTermText()</TableRowCell></TableRow>
-                            </TableBody>
-                        </Table>
-                        <Small TextColor="TextColor.Secondary">
-                            Estimated wholesale list pricing × seats, normalised to a monthly figure@(_repricingPercent is null ? " (no repricing config; computed price = wholesale)" : "") — not an invoiced amount.
-                            @if (_entitlement.IonCostPerSeat is not null)
+                        <DetailRow Label="Suspension reasons">@string.Join(", ", _entitlement.SuspensionReasons)</DetailRow>
+                    }
+                </RadzenStack>
+            </RadzenCard>
+
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Commitment &amp; renewal</RadzenText>
+                <RadzenStack Gap="0.5rem" class="rz-mb-3">
+                    <DetailRow Label="Payment plan">@(_entitlement.Commitment?.PaymentPlan ?? "—")</DetailRow>
+                    <DetailRow Label="Commitment start">@(_entitlement.Commitment?.StartTime?.ToString("u") ?? "—")</DetailRow>
+                    <DetailRow Label="Commitment end">@(_entitlement.Commitment?.EndTime?.ToString("u") ?? "—")</DetailRow>
+                </RadzenStack>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenSwitch @bind-Value="_renewalEnabled" Name="renewal" />
+                        <RadzenLabel Text="Auto-renew" Component="renewal" />
+                    </RadzenStack>
+                    <RadzenButton Text="Save renewal" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Disabled="_busy" Click="SaveRenewalAsync" />
+                </RadzenStack>
+            </RadzenCard>
+
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Licenses</RadzenText>
+                <RadzenStack Gap="0.5rem" class="rz-mb-2">
+                    <DetailRow Label="Total licenses">@SeatCount</DetailRow>
+                    <DetailRow Label="Assigned">
+                        <Tip Text="Assigned-seat counts aren't exposed by the Channel API — they live in each customer's own Workspace tenant (Enterprise License Manager / Admin SDK), which needs per-customer authorization.">
+                            <span>— <span class="rz-text-secondary-color">(not available)</span></span>
+                        </Tip>
+                    </DetailRow>
+                </RadzenStack>
+                <LinkButton To="#modify" Text="Manage licenses" Icon="@AppIcons.Tune" Variant="Variant.Text" Size="ButtonSize.Small" />
+            </RadzenCard>
+
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Payment &amp; pricing (estimated)</RadzenText>
+                @if (_pricingLoading)
+                {
+                    <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+                }
+                else if (SeatPrice is { } seat)
+                {
+                    <RadzenStack Gap="0.5rem" class="rz-mb-2">
+                        <DetailRow Label="Billing cycle">@(string.IsNullOrEmpty(_offerCycle) ? "—" : _offerCycle)</DetailRow>
+                        <DetailRow Label="Wholesale / seat">@seat.Display@(string.IsNullOrEmpty(_offerCycle) ? "" : $" · {_offerCycle.ToLowerInvariant()}")</DetailRow>
+                        <DetailRow Label="Seats">@SeatCount</DetailRow>
+                        <DetailRow Label="Wholesale total">@($"{seat.CurrencyCode} {WholesaleTotal:0.00}")</DetailRow>
+                        @if (_entitlement.IonCostPerSeat is { } ionCost)
+                        {
+                            <DetailRow Label="Ion cost / seat (actual)">@($"{_entitlement.IonCurrency ?? seat.CurrencyCode} {ionCost:0.00}")</DetailRow>
+                            @if (_entitlement.IonMarginPercent is { } ionMp)
                             {
-                                <span> The <b>Ion</b> rows are <b>actual</b> transacted cost/margin from TD SYNNEX StreamOne; all other figures are estimated from Google list pricing.</span>
+                                <DetailRow Label="Ion margin">@ionMp.ToString("0.0")%</DetailRow>
                             }
-                        </Small>
+                        }
+                        @if (_repricingPercent is { } pct)
+                        {
+                            <DetailRow Label="Repricing">@(pct >= 0 ? "+" : "")@pct.ToString("0.##")%</DetailRow>
+                            <DetailRow Label="Computed price">@($"{seat.CurrencyCode} {ComputedTotal:0.00}")</DetailRow>
+                            <DetailRow Label="Est. margin">@($"{seat.CurrencyCode} {(ComputedTotal - WholesaleTotal):0.00}")</DetailRow>
+                        }
+                        <DetailRow Label="Estimated / month">@($"{seat.CurrencyCode} {ComputedMonthly:0.00}")@(MonthsInCycle() > 1 ? $" (≈ {seat.CurrencyCode} {ComputedTotal:0.00} ÷ {MonthsInCycle()} mo)" : "")</DetailRow>
+                        <DetailRow Label="Renewal">@RenewalTermText()</DetailRow>
+                    </RadzenStack>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                        Estimated wholesale list pricing × seats, normalised to a monthly figure@(_repricingPercent is null ? " (no repricing config; computed price = wholesale)" : "") — not an invoiced amount.
+                        @if (_entitlement.IonCostPerSeat is not null)
+                        {
+                            <span> The <b>Ion</b> rows are <b>actual</b> transacted cost/margin from TD SYNNEX StreamOne; all other figures are estimated from Google list pricing.</span>
+                        }
+                    </RadzenText>
+                }
+                else
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No list pricing available for this offer.</RadzenText>
+                }
+            </RadzenCard>
+        </RadzenColumn>
+
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4" id="modify">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Modify</RadzenText>
+                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Seats</RadzenText>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-4">
+                    <RadzenFormField Text="num_units" Variant="Variant.Outlined" Style="max-width:160px">
+                        <RadzenNumeric TValue="int" @bind-Value="_newSeats" Min="1" Name="seats" />
+                    </RadzenFormField>
+                    <RadzenButton Text="Update seats" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Disabled="_busy" Click="ChangeSeatsAsync" />
+                </RadzenStack>
+
+                <hr class="rz-my-3" />
+
+                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Change offer</RadzenText>
+                @if (_offers is null)
+                {
+                    <RadzenButton Text="@(_offersLoading ? "Loading offers…" : "Load eligible offers")" Icon="@AppIcons.SwapHoriz" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Click="LoadOffersAsync" Disabled="_offersLoading" />
+                }
+                else if (_offers.Count == 0)
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No alternative offers available for this SKU.</RadzenText>
+                }
+                else
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                        <RadzenFormField Text="New offer" Variant="Variant.Outlined" Style="width:100%; max-width:320px">
+                            <RadzenDropDown TValue="string" @bind-Value="_changeOfferName" Data="_offers" ValueProperty="@nameof(PurchasableOffer.OfferName)" TextProperty="@nameof(PurchasableOffer.DisplayName)"
+                                            AllowClear="true" Placeholder="Choose an offer…" Name="newOffer">
+                                <Template Context="o">@(o.DisplayName ?? o.OfferName)</Template>
+                            </RadzenDropDown>
+                        </RadzenFormField>
+                        <RadzenButton Text="Change" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Disabled="@(_busy || string.IsNullOrEmpty(_changeOfferName))" Click="ChangeOfferAsync" />
+                    </RadzenStack>
+                }
+            </RadzenCard>
+
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Lifecycle</RadzenText>
+                <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                    @if (IsSuspended(_entitlement))
+                    {
+                        <RadzenButton Text="Activate" Icon="@AppIcons.PlayArrow" ButtonStyle="ButtonStyle.Success" Variant="Variant.Outlined" Disabled="_busy" Click="ActivateAsync" />
                     }
                     else
                     {
-                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No list pricing available for this offer.</Paragraph>
+                        <RadzenButton Text="Suspend" Icon="@AppIcons.Pause" ButtonStyle="ButtonStyle.Warning" Variant="Variant.Outlined" Disabled="_busy" Click="SuspendAsync" />
                     }
-                </CardBody>
-            </Card>
-        </Column>
-
-        <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop">
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom" id="modify">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Modify</CardTitle></CardHeader>
-                <CardBody>
-                    <Strong Display="Display.Block" Margin="Margin.Is1.FromBottom">Seats</Strong>
-                    <Div Flex="Flex.AlignItems.End" Gap="Gap.Is4" Margin="Margin.Is4.FromBottom">
-                        <Field Margin="Margin.Is0" Style="max-width:160px">
-                            <FieldLabel>num_units</FieldLabel>
-                            <NumericPicker TValue="int" @bind-Value="_newSeats" Min="1" />
-                        </Field>
-                        <Button Size="Size.Small" Color="Color.Secondary" Outline Disabled="_busy" Clicked="ChangeSeatsAsync">
-                            Update seats
-                        </Button>
-                    </Div>
-
-                    <Divider Margin="Margin.Is3.OnY" />
-
-                    <Strong Display="Display.Block" Margin="Margin.Is1.FromBottom">Change offer</Strong>
-                    @if (_offers is null)
+                    @if (_entitlement.IsTrial)
                     {
-                        <Button Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none" Clicked="LoadOffersAsync" Disabled="_offersLoading">
-                            <Icon Name="@AppIcons.SwapHoriz" Class="me-1" /> @(_offersLoading ? "Loading offers…" : "Load eligible offers")
-                        </Button>
+                        <RadzenButton Text="Start paid service" Icon="@AppIcons.Paid" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Disabled="_busy" Click="StartPaidAsync" />
                     }
-                    else if (_offers.Count == 0)
-                    {
-                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No alternative offers available for this SKU.</Paragraph>
-                    }
-                    else
-                    {
-                        <Div Flex="Flex.AlignItems.End" Gap="Gap.Is4">
-                            <Field Margin="Margin.Is0" Style="max-width:320px">
-                                <FieldLabel>New offer</FieldLabel>
-                                <Select TValue="string" @bind-Value="_changeOfferName">
-                                    <SelectItem TValue="string" Value="@((string?)null)">Choose an offer…</SelectItem>
-                                    @foreach (var offer in _offers)
-                                    {
-                                        <SelectItem TValue="string" Value="@offer.OfferName">@(offer.DisplayName ?? offer.OfferName)</SelectItem>
-                                    }
-                                </Select>
-                            </Field>
-                            <Button Size="Size.Small" Color="Color.Secondary" Outline Disabled="@(_busy || string.IsNullOrEmpty(_changeOfferName))"
-                                    Clicked="ChangeOfferAsync">Change</Button>
-                        </Div>
-                    }
-                </CardBody>
-            </Card>
+                    <RadzenButton Text="Cancel" Icon="@AppIcons.Cancel" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Disabled="_busy" Click="CancelAsync" />
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
 
-            <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-                <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Lifecycle</CardTitle></CardHeader>
-                <CardBody>
-                    <Div Flex="Flex.Wrap" Gap="Gap.Is2">
-                        @if (IsSuspended(_entitlement))
-                        {
-                            <Button Color="Color.Success" Outline Disabled="_busy" Clicked="ActivateAsync">
-                                <Icon Name="@AppIcons.PlayArrow" Class="me-1" /> Activate
-                            </Button>
-                        }
-                        else
-                        {
-                            <Button Color="Color.Warning" Outline Disabled="_busy" Clicked="SuspendAsync">
-                                <Icon Name="@AppIcons.Pause" Class="me-1" /> Suspend
-                            </Button>
-                        }
-                        @if (_entitlement.IsTrial)
-                        {
-                            <Button Color="Color.Primary" Outline Disabled="_busy" Clicked="StartPaidAsync">
-                                <Icon Name="@AppIcons.Paid" Class="me-1" /> Start paid service
-                            </Button>
-                        }
-                        <Button Color="Color.Danger" Outline Disabled="_busy" Clicked="CancelAsync">
-                            <Icon Name="@AppIcons.Cancel" Class="me-1" /> Cancel
-                        </Button>
-                    </Div>
-                </CardBody>
-            </Card>
-        </Column>
-    </Row>
-
-    <Card Shadow="Shadow.Small" Margin="Margin.Is2.FromTop">
-        <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Change history</CardTitle></CardHeader>
-        <CardBody>
-            @if (_changes is null)
-            {
-                <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
-            }
-            else if (_changes.Count == 0)
-            {
-                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No recorded changes.</Paragraph>
-            }
-            else
-            {
-                <Table Narrow Hoverable Responsive Margin="Margin.Is0">
-                    <TableHeader>
-                        <TableRow>
-                            <TableHeaderCell>When</TableHeaderCell>
-                            <TableHeaderCell>Change</TableHeaderCell>
-                            <TableHeaderCell>Offer</TableHeaderCell>
-                            <TableHeaderCell>By</TableHeaderCell>
-                            <TableHeaderCell>Reason</TableHeaderCell>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        @foreach (var change in _changes)
-                        {
-                            <TableRow>
-                                <TableRowCell>@(change.CreateTime?.ToString("u") ?? "—")</TableRowCell>
-                                <TableRowCell>@(change.ChangeType ?? "—")</TableRowCell>
-                                <TableRowCell>
-                                    @if (!string.IsNullOrEmpty(change.OfferId))
-                                    {
-                                        <Tooltip Text="@change.OfferId" Inline>
-                                            <Anchor To="@($"/catalog/offers?sku={_entitlement.SkuId}")">@(change.OfferDisplayName ?? change.OfferId)</Anchor>
-                                        </Tooltip>
-                                    }
-                                    else { <span>—</span> }
-                                </TableRowCell>
-                                <TableRowCell>@(change.OperatorType ?? "—")</TableRowCell>
-                                <TableRowCell>@(change.Reason ?? "—")</TableRowCell>
-                            </TableRow>
-                        }
-                    </TableBody>
-                </Table>
-            }
-        </CardBody>
-    </Card>
+    <RadzenCard Variant="Variant.Filled" class="rz-mt-2">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Change history</RadzenText>
+        @if (_changes is null)
+        {
+            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+        }
+        else if (_changes.Count == 0)
+        {
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No recorded changes.</RadzenText>
+        }
+        else
+        {
+            <RadzenDataGrid TItem="EntitlementChange" Data="_changes" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="When" Width="190px">
+                        <Template Context="change">@(change.CreateTime?.ToString("u") ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="Change">
+                        <Template Context="change">@(change.ChangeType ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="Offer">
+                        <Template Context="change">
+                            @if (!string.IsNullOrEmpty(change.OfferId))
+                            {
+                                <Tip Text="@change.OfferId"><RadzenLink Path="@($"/catalog/offers?sku={_entitlement.SkuId}")" Text="@(change.OfferDisplayName ?? change.OfferId)" /></Tip>
+                            }
+                            else { <span>—</span> }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="By">
+                        <Template Context="change">@(change.OperatorType ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="Reason">
+                        <Template Context="change">@(change.Reason ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </RadzenCard>
 }
 
 @code {
@@ -558,13 +494,13 @@ else
     private static bool IsSuspended(Entitlement e) =>
         string.Equals(e.ProvisioningState, "SUSPENDED", StringComparison.OrdinalIgnoreCase);
 
-    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle StateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "SUSPENDED" => Color.Warning,
-        "CANCELLED" or "CANCELED" => Color.Danger,
-        "PENDING" => Color.Info,
-        _ => Color.Secondary
+        "ACTIVE" => BadgeStyle.Success,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "CANCELLED" or "CANCELED" => BadgeStyle.Danger,
+        "PENDING" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private static string? Seats(Entitlement e) =>

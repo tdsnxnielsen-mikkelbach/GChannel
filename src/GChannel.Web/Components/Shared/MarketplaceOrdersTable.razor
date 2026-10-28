@@ -1,90 +1,88 @@
 @* Marketplace orders (subscriptions / plans) from the Consumer Procurement API — entitlement-level view
    of third-party products, independent of whether they generated spend this month. *@
 
-<Card Shadow="Shadow.Small">
-    <CardBody>
-        <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromBottom">
-            <Div>
-                <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Marketplace orders</Heading>
-                <Small TextColor="TextColor.Secondary">
-                    Third-party subscriptions and plans on the billing account(s), from the Cloud Commerce Consumer Procurement API.
-                </Small>
-            </Div>
-            @if (Result?.AsOf is { } asOf)
-            {
-                <Small TextColor="TextColor.Secondary">scanned @asOf.LocalDateTime.ToString("g")</Small>
-            }
-        </Div>
-
-        @if (Loading)
+<RadzenCard Variant="Variant.Filled">
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+        <div>
+            <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Marketplace orders</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                Third-party subscriptions and plans on the billing account(s), from the Cloud Commerce Consumer Procurement API.
+            </RadzenText>
+        </div>
+        @if (Result?.AsOf is { } asOf)
         {
-            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">scanned @asOf.LocalDateTime.ToString("g")</RadzenText>
         }
-        else if (Result is null || Result.Unconfigured)
+    </RadzenStack>
+
+    @if (Loading)
+    {
+        <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+    }
+    else if (Result is null || Result.Unconfigured)
+    {
+        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">
+            Marketplace order scan isn't configured (<code>GoogleBilling:MarketplaceOrdersEnabled</code> + service account).
+        </RadzenText>
+    }
+    else
+    {
+        @if (Result.Errors.Count > 0)
         {
-            <Paragraph TextColor="TextColor.Secondary">
-                Marketplace order scan isn't configured (<code>GoogleBilling:MarketplaceOrdersEnabled</code> + service account).
-            </Paragraph>
+            <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-2">
+                Orders couldn't be read for @Result.Errors.Count billing account(s) — typically the Consumer Procurement API isn't
+                enabled or the service account lacks <code>consumerprocurement.orders.list</code>.
+                <Tip Text="@string.Join("\n", Result.Errors.Select(e => $"{e.Key}: {e.Value}"))"><RadzenLink Path="#" Text="details" class="rz-text-caption" /></Tip>
+            </RadzenAlert>
+        }
+
+        @if (Result.Orders.Count == 0)
+        {
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">
+                @(Result.AsOf is null ? "No scan has completed yet." : "No Marketplace orders found.")
+            </RadzenText>
         }
         else
         {
-            @if (Result.Errors.Count > 0)
-            {
-                <Alert Color="Color.Warning" Visible Margin="Margin.Is2.FromBottom">
-                    Orders couldn't be read for @Result.Errors.Count billing account(s) — typically the Consumer Procurement API isn't
-                    enabled or the service account lacks <code>consumerprocurement.orders.list</code>.
-                    <Tooltip Multiline Text="@string.Join("\n", Result.Errors.Select(e => $"{e.Key}: {e.Value}"))" Inline><Anchor To="#" Class="small">details</Anchor></Tooltip>
-                </Alert>
-            }
-
-            @if (Result.Orders.Count == 0)
-            {
-                <Paragraph TextColor="TextColor.Secondary">
-                    @(Result.AsOf is null ? "No scan has completed yet." : "No Marketplace orders found.")
-                </Paragraph>
-            }
-            else
-            {
-                <DataGrid TItem="MarketplaceOrder" Data="Result.Orders" Hoverable Narrow Sortable Responsive
-                          ShowPager PageSize="25" ShowPageSizes PageSizes="_pageSizes" PagerPosition="DataGridPagerPosition.Bottom">
-                    <DataGridColumns>
-                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.Provider)" Caption="Provider">
-                            <DisplayTemplate>@(context.Item.Provider ?? "—")</DisplayTemplate>
-                        </DataGridColumn>
-                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.DisplayName)" Caption="Order">
-                            <DisplayTemplate>@(context.Item.DisplayName ?? context.Item.Name.Split('/').Last())</DisplayTemplate>
-                        </DataGridColumn>
-                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.Name)" Caption="Product" Sortable="false">
-                            <DisplayTemplate>
-                                @foreach (var p in context.Item.Products) { <Small Display="Display.Block">@p</Small> }
-                            </DisplayTemplate>
-                        </DataGridColumn>
-                        @if (ShowAccount)
-                        {
-                            <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.BillingAccountId)" Caption="Billing account" Sortable="false">
-                                <DisplayTemplate>
-                                    <Small>@context.Item.BillingAccountId</Small>
-                                    @if (context.Item.CustomerId is not null) { <Anchor To="@($"/customers/{context.Item.CustomerId}")" Class="small d-block">customer</Anchor> }
-                                </DisplayTemplate>
-                            </DataGridColumn>
-                        }
-                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.Active)" Caption="State">
-                            <DisplayTemplate>
-                                <Badge Color="@(context.Item.Active ? Color.Success : Color.Secondary)" Pill>@(context.Item.Active ? "active" : "cancelled")</Badge>
-                            </DisplayTemplate>
-                        </DataGridColumn>
-                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.CreateTime)" Caption="Created">
-                            <DisplayTemplate>@(context.Item.CreateTime?.LocalDateTime.ToString("d") ?? "—")</DisplayTemplate>
-                        </DataGridColumn>
-                    </DataGridColumns>
-                </DataGrid>
-            }
+            <RadzenDataGrid TItem="MarketplaceOrder" Data="Result.Orders" AllowSorting="true" AllowPaging="true" PageSize="25" PageSizeOptions="_pageSizes"
+                            ShowPagingSummary="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="MarketplaceOrder" Property="@nameof(MarketplaceOrder.Provider)" Title="Provider">
+                        <Template Context="order">@(order.Provider ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="MarketplaceOrder" Property="@nameof(MarketplaceOrder.DisplayName)" Title="Order">
+                        <Template Context="order">@(order.DisplayName ?? order.Name.Split('/').Last())</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="MarketplaceOrder" Title="Product" Sortable="false">
+                        <Template Context="order">
+                            @foreach (var p in order.Products) { <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-m-0">@p</RadzenText> }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    @if (ShowAccount)
+                    {
+                        <RadzenDataGridColumn TItem="MarketplaceOrder" Title="Billing account" Sortable="false">
+                            <Template Context="order">
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Span" class="rz-m-0">@order.BillingAccountId</RadzenText>
+                                @if (order.CustomerId is not null) { <RadzenLink Path="@($"/customers/{order.CustomerId}")" Text="customer" class="rz-text-caption rz-display-block" /> }
+                            </Template>
+                        </RadzenDataGridColumn>
+                    }
+                    <RadzenDataGridColumn TItem="MarketplaceOrder" Property="@nameof(MarketplaceOrder.Active)" Title="State">
+                        <Template Context="order">
+                            <RadzenBadge BadgeStyle="@(order.Active ? BadgeStyle.Success : BadgeStyle.Light)" IsPill="true" Text="@(order.Active ? "active" : "cancelled")" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="MarketplaceOrder" Property="@nameof(MarketplaceOrder.CreateTime)" Title="Created">
+                        <Template Context="order">@(order.CreateTime?.LocalDateTime.ToString("d") ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
         }
-    </CardBody>
-</Card>
+    }
+</RadzenCard>
 
 @code {
-    private static readonly int[] _pageSizes = [25, 50];
+    private static readonly IEnumerable<int> _pageSizes = [25, 50];
     [Parameter] public MarketplaceOrdersResult? Result { get; set; }
     [Parameter] public bool Loading { get; set; }
     [Parameter] public bool ShowAccount { get; set; } = true;

@@ -6,204 +6,177 @@
 
 <PageTitle>Operations · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-    <Div>
-        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Operations</Heading>
-        <Small TextColor="TextColor.Secondary">Long-running operations</Small>
-    </Div>
-    <Button Color="Color.Secondary" Outline Clicked="RefreshListAsync" Disabled="_listLoading">
-        <Icon Name="@AppIcons.Refresh" Class="me-1" /> Refresh
-    </Button>
-</Div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+    <div>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Operations</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Long-running operations</RadzenText>
+    </div>
+    <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="RefreshListAsync" Disabled="_listLoading" />
+</RadzenStack>
 
-<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-3">
     Mutating Channel calls (entitlement create/change/state changes, transfers) run asynchronously and
     return an operation. Track one by id to watch it complete, then deep-link to the customer or
     entitlement it affected.
-</Paragraph>
+</RadzenText>
 
-<Accordion Margin="Margin.Is5.FromBottom">
-    <AccordionItem @bind-Visible="_helpOpen">
-        <AccordionHeader>
-            <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
-                <AccordionToggle><Icon Name="@AppIcons.HelpOutline" Class="me-2" />How operations work &amp; examples</AccordionToggle>
-            </Heading>
-        </AccordionHeader>
-        <AccordionBody>
-            <Strong Display="Display.Block" Margin="Margin.Is1.FromBottom">Where the id comes from</Strong>
-            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
+<RadzenAccordion class="rz-mb-6">
+    <Items>
+        <RadzenAccordionItem Text="How operations work &amp; examples" Icon="@AppIcons.HelpOutline" @bind-Selected="_helpOpen">
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Where the id comes from</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-3">
                 When you buy/change/suspend an entitlement or run a transfer, the API returns an operation name
                 like <code>operations/abc-123-def</code>. Paste that whole string, or just the
                 <code>abc-123-def</code> id segment, into the box below. You usually don't need this page for
                 small accounts — most actions finish in seconds — but it's handy for transfers and bulk changes
                 that stay <em>Running</em> for a while.
-            </Paragraph>
+            </RadzenText>
 
-            <Strong Display="Display.Block" Margin="Margin.Is1.FromBottom">What you'll see</Strong>
-            <ListGroup Flush Margin="Margin.Is3.FromBottom">
-                <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
-                    <Icon Name="@AppIcons.Sync" TextColor="TextColor.Secondary" Class="me-2" /><b>Running</b> — still processing; refresh or leave the badge polling until it settles.
-                </ListGroupItem>
-                <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
-                    <Icon Name="@AppIcons.CheckCircle" TextColor="TextColor.Success" Class="me-2" /><b>Done</b> — finished; jump straight to the affected Customer or Entitlement.
-                </ListGroupItem>
-                <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
-                    <Icon Name="@AppIcons.Error" TextColor="TextColor.Danger" Class="me-2" /><b>Failed</b> — shows the error message + code (e.g. quota, invalid state) so you can retry.
-                </ListGroupItem>
-            </ListGroup>
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">What you'll see</RadzenText>
+            <RadzenStack Gap="0.25rem" class="rz-mb-3">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="@AppIcons.Sync" class="rz-text-secondary-color" /><span><b>Running</b> — still processing; refresh or leave the badge polling until it settles.</span>
+                </RadzenStack>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="@AppIcons.CheckCircle" IconColor="@Colors.Success" /><span><b>Done</b> — finished; jump straight to the affected Customer or Entitlement.</span>
+                </RadzenStack>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="@AppIcons.Error" IconColor="@Colors.Danger" /><span><b>Failed</b> — shows the error message + code (e.g. quota, invalid state) so you can retry.</span>
+                </RadzenStack>
+            </RadzenStack>
 
-            <Strong Display="Display.Block" Margin="Margin.Is1.FromBottom">Examples</Strong>
-            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Examples</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
                 • Purchase a Workspace SKU → track the op to confirm provisioning before assigning licenses.<br />
                 • Transfer customers from another reseller → watch the op finish, then open the entitlement.<br />
                 • Suspend/cancel/start-paid-service → confirm the state change actually applied.<br />
                 <em>Note:</em> Google's Channel API has no global "list all operations", so track by id rather
                 than browse — you can still cancel a still-running operation.
-            </Paragraph>
-        </AccordionBody>
-    </AccordionItem>
-</Accordion>
+            </RadzenText>
+        </RadzenAccordionItem>
+    </Items>
+</RadzenAccordion>
 
-<Card Shadow="Shadow.Small" Margin="Margin.Is5.FromBottom">
-    <CardBody>
-        <Div Flex="Flex.AlignItems.Center.Wrap" Gap="Gap.Is3">
-            <TextInput @bind-Value="_lookupId" Placeholder="operations/… or the id segment" Class="flex-grow-1" aria-label="Operation id" />
-            <Button Color="Color.Primary" Clicked="TrackAsync" Disabled="@(string.IsNullOrWhiteSpace(_lookupId) || _tracking)" Loading="_tracking">
-                <Icon Name="@AppIcons.Search" Class="me-1" /> Track
-            </Button>
-        </Div>
+<RadzenCard Variant="Variant.Filled" class="rz-mb-6">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap">
+        <RadzenTextBox @bind-Value="_lookupId" Placeholder="operations/… or the id segment" Style="flex: 1 1 16rem" aria-label="Operation id" Name="operationId" />
+        <RadzenButton Text="Track" Icon="@AppIcons.Search" ButtonStyle="ButtonStyle.Primary" Click="TrackAsync" Disabled="@string.IsNullOrWhiteSpace(_lookupId)" IsBusy="_tracking" />
+    </RadzenStack>
 
-        @if (_tracked is not null)
+    @if (_tracked is not null)
+    {
+        <hr class="rz-my-4" />
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+            <div>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-m-0" Style="font-weight:600">@(_tracked.OperationType ?? "Operation")</RadzenText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@_tracked.Name</RadzenText>
+            </div>
+            @if (_tracked.Done)
+            {
+                <RadzenBadge BadgeStyle="@(_tracked.Error is null ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(_tracked.Error is null ? "Done" : "Failed")" />
+            }
+            else
+            {
+                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Running" />
+            }
+        </RadzenStack>
+
+        @if (!string.IsNullOrEmpty(_tracked.Error))
         {
-            <Divider Margin="Margin.Is4.OnY" />
-            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
-                <Div>
-                    <Strong Display="Display.Block">@(_tracked.OperationType ?? "Operation")</Strong>
-                    <Small TextColor="TextColor.Secondary">@_tracked.Name</Small>
-                </Div>
-                @if (_tracked.Done)
-                {
-                    <Badge Color="@(_tracked.Error is null ? Color.Success : Color.Danger)">
-                        <Icon Name="@(_tracked.Error is null ? AppIcons.CheckCircle : AppIcons.Error)" Class="me-1" />@(_tracked.Error is null ? "Done" : "Failed")
-                    </Badge>
-                }
-                else
-                {
-                    <Badge Color="Color.Info"><Icon Name="@AppIcons.Sync" Class="me-1 fa-spin" />Running</Badge>
-                }
-            </Div>
-
-            @if (!string.IsNullOrEmpty(_tracked.Error))
-            {
-                <Alert Color="Color.Danger" Visible Margin="Margin.Is3.FromBottom">
-                    @_tracked.Error @(_tracked.ErrorCode is { } code and not 0 ? $"(code {code})" : "")
-                </Alert>
-            }
-
-            @if (!string.IsNullOrEmpty(_tracked.CustomerId) || !string.IsNullOrEmpty(_tracked.EntitlementId))
-            {
-                <Div Flex="Flex.Wrap" Gap="Gap.Is2" Margin="Margin.Is3.FromBottom">
-                    @if (!string.IsNullOrEmpty(_tracked.CustomerId))
-                    {
-                        <Button Type="ButtonType.Link" To="@($"/customers/{_tracked.CustomerId}")" Color="Color.Secondary" Outline Size="Size.Small">
-                            <Icon Name="@AppIcons.Person" Class="me-1" /> Customer
-                        </Button>
-                    }
-                    @if (!string.IsNullOrEmpty(_tracked.CustomerId) && !string.IsNullOrEmpty(_tracked.EntitlementId))
-                    {
-                        <Button Type="ButtonType.Link" To="@($"/customers/{_tracked.CustomerId}/entitlements/{_tracked.EntitlementId}")" Color="Color.Secondary" Outline Size="Size.Small">
-                            <Icon Name="@AppIcons.Subscriptions" Class="me-1" /> Entitlement
-                        </Button>
-                    }
-                </Div>
-            }
-
-            <Div Flex="Flex.Default" Gap="Gap.Is2">
-                <Button Color="Color.Primary" Size="Size.Small" Class="btn-link text-decoration-none" Clicked="@(() => RefreshTrackedAsync(true))">
-                    <Icon Name="@AppIcons.Refresh" Class="me-1" /> Refresh
-                </Button>
-                @if (!_tracked.Done)
-                {
-                    <Button Color="Color.Danger" Size="Size.Small" Class="btn-link text-decoration-none" Clicked="CancelAsync" Disabled="_cancelling">
-                        <Icon Name="@AppIcons.Cancel" Class="me-1" /> Cancel
-                    </Button>
-                }
-            </Div>
+            <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-3">
+                @_tracked.Error @(_tracked.ErrorCode is { } code and not 0 ? $"(code {code})" : "")
+            </RadzenAlert>
         }
-    </CardBody>
-</Card>
 
-<Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Recent operations</Heading>
+        @if (!string.IsNullOrEmpty(_tracked.CustomerId) || !string.IsNullOrEmpty(_tracked.EntitlementId))
+        {
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-3">
+                @if (!string.IsNullOrEmpty(_tracked.CustomerId))
+                {
+                    <LinkButton To="@($"/customers/{_tracked.CustomerId}")" Text="Customer" Icon="@AppIcons.Person" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Size="ButtonSize.Small" />
+                }
+                @if (!string.IsNullOrEmpty(_tracked.CustomerId) && !string.IsNullOrEmpty(_tracked.EntitlementId))
+                {
+                    <LinkButton To="@($"/customers/{_tracked.CustomerId}/entitlements/{_tracked.EntitlementId}")" Text="Entitlement" Icon="@AppIcons.Subscriptions" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Size="ButtonSize.Small" />
+                }
+            </RadzenStack>
+        }
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+            <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small" Click="@(() => RefreshTrackedAsync(true))" />
+            @if (!_tracked.Done)
+            {
+                <RadzenButton Text="Cancel" Icon="@AppIcons.Cancel" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Text" Size="ButtonSize.Small" Click="CancelAsync" Disabled="_cancelling" />
+            }
+        </RadzenStack>
+    }
+</RadzenCard>
+
+<RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Recent operations</RadzenText>
 @if (_listLoading)
 {
     <LoadingPanel Title="Loading operations…" Hint="Fetching long-running operations from the Channel API." />
 }
 else if (_listUnavailable)
 {
-    <Alert Color="Color.Info" Visible>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
         Listing operations isn't available for this account. Track an operation by id using its name from a
         mutating call's response.
-    </Alert>
+    </RadzenAlert>
 }
 else if (_operations is { Count: > 0 })
 {
-    <Card Shadow="Shadow.Small">
-        <Table Narrow Hoverable Responsive Margin="Margin.Is0">
-            <TableHeader>
-                <TableRow>
-                    <TableHeaderCell>Type</TableHeaderCell>
-                    <TableHeaderCell>Id</TableHeaderCell>
-                    <TableHeaderCell>State</TableHeaderCell>
-                    <TableHeaderCell>Correlation</TableHeaderCell>
-                    <TableHeaderCell TextAlignment="TextAlignment.End">Actions</TableHeaderCell>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                @foreach (var op in _operations)
-                {
-                    <TableRow>
-                        <TableRowCell>@(op.OperationType ?? "—")</TableRowCell>
-                        <TableRowCell><code>@op.Id</code></TableRowCell>
-                        <TableRowCell>
-                            @if (op.Done)
-                            {
-                                <Badge Color="@(op.Error is null ? Color.Success : Color.Danger)">@(op.Error is null ? "Done" : "Failed")</Badge>
-                            }
-                            else
-                            {
-                                <Badge Color="Color.Info">Running</Badge>
-                            }
-                        </TableRowCell>
-                        <TableRowCell>
-                            @if (!string.IsNullOrEmpty(op.CustomerId) && !string.IsNullOrEmpty(op.EntitlementId))
-                            {
-                                <Anchor To="@($"/customers/{op.CustomerId}/entitlements/{op.EntitlementId}")">Entitlement</Anchor>
-                            }
-                            else if (!string.IsNullOrEmpty(op.CustomerId))
-                            {
-                                <Anchor To="@($"/customers/{op.CustomerId}")">Customer</Anchor>
-                            }
-                            else
-                            {
-                                <span>—</span>
-                            }
-                        </TableRowCell>
-                        <TableRowCell TextAlignment="TextAlignment.End">
-                            <Tooltip Text="Track" Inline>
-                                <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => TrackByIdAsync(op.Id))" aria-label="Track">
-                                    <Icon Name="@AppIcons.Visibility" />
-                                </Button>
-                            </Tooltip>
-                        </TableRowCell>
-                    </TableRow>
-                }
-            </TableBody>
-        </Table>
-    </Card>
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenDataGrid TItem="ChannelOperation" Data="_operations" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+            <Columns>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Type">
+                    <Template Context="op">@(op.OperationType ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Id">
+                    <Template Context="op"><code>@op.Id</code></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="State" Width="110px">
+                    <Template Context="op">
+                        @if (op.Done)
+                        {
+                            <RadzenBadge BadgeStyle="@(op.Error is null ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(op.Error is null ? "Done" : "Failed")" />
+                        }
+                        else
+                        {
+                            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Running" />
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Correlation">
+                    <Template Context="op">
+                        @if (!string.IsNullOrEmpty(op.CustomerId) && !string.IsNullOrEmpty(op.EntitlementId))
+                        {
+                            <RadzenLink Path="@($"/customers/{op.CustomerId}/entitlements/{op.EntitlementId}")" Text="Entitlement" />
+                        }
+                        else if (!string.IsNullOrEmpty(op.CustomerId))
+                        {
+                            <RadzenLink Path="@($"/customers/{op.CustomerId}")" Text="Customer" />
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Actions" TextAlign="TextAlign.End" Width="90px">
+                    <Template Context="op">
+                        <Tip Text="Track">
+                            <RadzenButton Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => TrackByIdAsync(op.Id))" aria-label="Track" />
+                        </Tip>
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </RadzenCard>
 }
 else
 {
-    <Alert Color="Color.Info" Visible>No recent operations.</Alert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No recent operations.</RadzenAlert>
 }
 
 @code {

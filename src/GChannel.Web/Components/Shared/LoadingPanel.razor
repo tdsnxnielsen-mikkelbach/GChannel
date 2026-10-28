@@ -5,18 +5,16 @@
     user knows what is being fetched and why it might take a moment (some Channel API aggregations are slow).
 *@
 
-<Div Flex="Flex.Column.AlignItems.Center.JustifyContent.Center" Padding="Padding.Is5" Margin="Margin.Is4.OnY" Class="@Class">
-    <div class="spinner-border text-primary" role="status" style="width:3rem;height:3rem">
-        <span class="visually-hidden">Loading…</span>
-    </div>
-    <Paragraph Margin="Margin.Is4.FromTop.Is0.FromBottom" Class="fs-5">@Title</Paragraph>
+<RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.75rem" class="@($"rz-p-8 rz-my-6 {Class}")">
+    <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Large" ShowValue="false" aria-label="Loading" />
+    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.P" class="rz-m-0">@Title</RadzenText>
     @if (!string.IsNullOrWhiteSpace(Hint))
     {
-        <Paragraph TextColor="TextColor.Secondary" TextAlignment="TextAlignment.Center" Margin="Margin.Is1.FromTop" Style="max-width:32rem">
+        <RadzenText TextStyle="TextStyle.Body2" TagName="TagName.P" TextAlign="TextAlign.Center" class="rz-text-secondary-color rz-m-0" Style="max-width:32rem">
             @Hint
-        </Paragraph>
+        </RadzenText>
     }
-</Div>
+</RadzenStack>
 
 @code {
     /// <summary>Short headline describing what is loading, e.g. "Loading customers…".</summary>

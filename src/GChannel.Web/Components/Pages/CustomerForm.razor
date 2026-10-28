@@ -7,13 +7,13 @@
 
 <PageTitle>@(IsEdit ? "Edit customer" : "New customer") · GChannel</PageTitle>
 
-<Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
-    <Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">@(IsEdit ? "Edit customer" : "New customer")</Heading>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-4">
+    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">@(IsEdit ? "Edit customer" : "New customer")</RadzenText>
     @if (!IsEdit)
     {
         <GuidedWalkthrough Id="customer-new" Steps="_walkthrough" AutoStart="true" />
     }
-</Div>
+</RadzenStack>
 
 @if (_loading)
 {
@@ -22,96 +22,86 @@
 }
 else
 {
-    <Validations @ref="_validations" Mode="ValidationMode.Manual">
-        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom">
-            <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Organization</CardTitle></CardHeader>
-            <CardBody>
-                <Validation Validator="ValidationRule.IsNotEmpty">
-                    <Field data-walkthrough="cf-org">
-                        <FieldLabel>Organization name</FieldLabel>
-                        <TextInput @bind-Value="_model.OrgDisplayName">
-                            <Feedback><ValidationError>Organization name is required.</ValidationError></Feedback>
-                        </TextInput>
-                    </Field>
-                </Validation>
-                <Validation Validator="ValidationRule.IsNotEmpty">
-                    <Field data-walkthrough="cf-domain">
-                        <FieldLabel>Primary domain</FieldLabel>
-                        <TextInput @bind-Value="_model.Domain" Disabled="IsEdit">
-                            <Feedback><ValidationError>Domain is required.</ValidationError></Feedback>
-                        </TextInput>
-                        <FieldHelp>@(IsEdit ? "Domain cannot be changed after creation." : "e.g. contoso.com")</FieldHelp>
-                    </Field>
-                </Validation>
-                <Field>
-                    <FieldLabel>Language code</FieldLabel>
-                    <TextInput @bind-Value="_model.LanguageCode" />
-                    <FieldHelp>e.g. en-US</FieldHelp>
-                </Field>
-            </CardBody>
-        </Card>
+    <RadzenTemplateForm TItem="CustomerEditModel" Data="_model" Submit="SaveAsync">
+        <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Organization</RadzenText>
+            <RadzenStack Gap="1rem">
+                <div data-walkthrough="cf-org">
+                    <RadzenFormField Text="Organization name" Variant="Variant.Outlined" Style="width:100%">
+                        <ChildContent><RadzenTextBox @bind-Value="_model.OrgDisplayName" Name="OrgDisplayName" /></ChildContent>
+                        <Helper><RadzenRequiredValidator Component="OrgDisplayName" Text="Organization name is required." /></Helper>
+                    </RadzenFormField>
+                </div>
+                <div data-walkthrough="cf-domain">
+                    <RadzenFormField Text="Primary domain" Variant="Variant.Outlined" Style="width:100%">
+                        <ChildContent><RadzenTextBox @bind-Value="_model.Domain" Name="Domain" Disabled="IsEdit" /></ChildContent>
+                        <Helper>
+                            <RadzenRequiredValidator Component="Domain" Text="Domain is required." />
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">@(IsEdit ? "Domain cannot be changed after creation." : "e.g. contoso.com")</RadzenText>
+                        </Helper>
+                    </RadzenFormField>
+                </div>
+                <RadzenFormField Text="Language code" Variant="Variant.Outlined" Style="width:100%">
+                    <ChildContent><RadzenTextBox @bind-Value="_model.LanguageCode" Name="LanguageCode" /></ChildContent>
+                    <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">e.g. en-US</RadzenText></Helper>
+                </RadzenFormField>
+            </RadzenStack>
+        </RadzenCard>
 
-        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom" data-walkthrough="cf-contact">
-            <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Primary contact</CardTitle></CardHeader>
-            <CardBody>
-                <Row>
-                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
-                        <Field><FieldLabel>First name</FieldLabel><TextInput @bind-Value="_model.FirstName" /></Field>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
-                        <Field><FieldLabel>Last name</FieldLabel><TextInput @bind-Value="_model.LastName" /></Field>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
-                        <Field><FieldLabel>Email</FieldLabel><TextInput @bind-Value="_model.Email" Role="TextRole.Email" /></Field>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
-                        <Field><FieldLabel>Phone</FieldLabel><TextInput @bind-Value="_model.Phone" Role="TextRole.Telephone" /></Field>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12">
-                        <Field><FieldLabel>Title</FieldLabel><TextInput @bind-Value="_model.Title" /></Field>
-                    </Column>
-                </Row>
-            </CardBody>
-        </Card>
+        <RadzenCard Variant="Variant.Filled" class="rz-mb-4" data-walkthrough="cf-contact">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Primary contact</RadzenText>
+            <RadzenRow Gap="1rem" RowGap="1rem">
+                <RadzenColumn Size="12" SizeMD="6">
+                    <RadzenFormField Text="First name" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.FirstName" Name="FirstName" /></RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="6">
+                    <RadzenFormField Text="Last name" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.LastName" Name="LastName" /></RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="6">
+                    <RadzenFormField Text="Email" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.Email" Name="Email" type="email" /></RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="6">
+                    <RadzenFormField Text="Phone" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.Phone" Name="Phone" type="tel" /></RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12">
+                    <RadzenFormField Text="Title" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.Title" Name="Title" /></RadzenFormField>
+                </RadzenColumn>
+            </RadzenRow>
+        </RadzenCard>
 
-        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromBottom" data-walkthrough="cf-address">
-            <CardHeader><CardTitle Size="HeadingSize.Is5" Margin="Margin.Is0">Address</CardTitle></CardHeader>
-            <CardBody>
-                <Row>
-                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                        <Validation Validator="ValidationRule.IsNotEmpty">
-                            <Field>
-                                <FieldLabel>Region code</FieldLabel>
-                                <TextInput @bind-Value="_model.RegionCode">
-                                    <Feedback><ValidationError>Region code is required.</ValidationError></Feedback>
-                                </TextInput>
-                                <FieldHelp>e.g. US</FieldHelp>
-                            </Field>
-                        </Validation>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                        <Field><FieldLabel>Postal code</FieldLabel><TextInput @bind-Value="_model.PostalCode" /></Field>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
-                        <Field><FieldLabel>State / province</FieldLabel><TextInput @bind-Value="_model.AdministrativeArea" /></Field>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
-                        <Field><FieldLabel>City</FieldLabel><TextInput @bind-Value="_model.Locality" /></Field>
-                    </Column>
-                    <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet">
-                        <Field><FieldLabel>Address line</FieldLabel><TextInput @bind-Value="_model.AddressLine" /></Field>
-                    </Column>
-                </Row>
-            </CardBody>
-        </Card>
+        <RadzenCard Variant="Variant.Filled" class="rz-mb-4" data-walkthrough="cf-address">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Address</RadzenText>
+            <RadzenRow Gap="1rem" RowGap="1rem">
+                <RadzenColumn Size="12" SizeMD="4">
+                    <RadzenFormField Text="Region code" Variant="Variant.Outlined" Style="width:100%">
+                        <ChildContent><RadzenTextBox @bind-Value="_model.RegionCode" Name="RegionCode" /></ChildContent>
+                        <Helper>
+                            <RadzenRequiredValidator Component="RegionCode" Text="Region code is required." />
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">e.g. US</RadzenText>
+                        </Helper>
+                    </RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="4">
+                    <RadzenFormField Text="Postal code" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.PostalCode" Name="PostalCode" /></RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="4">
+                    <RadzenFormField Text="State / province" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.AdministrativeArea" Name="AdministrativeArea" /></RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="6">
+                    <RadzenFormField Text="City" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.Locality" Name="Locality" /></RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="6">
+                    <RadzenFormField Text="Address line" Variant="Variant.Outlined" Style="width:100%"><RadzenTextBox @bind-Value="_model.AddressLine" Name="AddressLine" /></RadzenFormField>
+                </RadzenColumn>
+            </RadzenRow>
+        </RadzenCard>
 
-        <Div Flex="Flex.Default" Gap="Gap.Is3">
-            <Button Color="Color.Primary" Clicked="SaveAsync" Disabled="_saving" Loading="_saving" data-walkthrough="cf-save">
-                @(_saving ? "Saving…" : (IsEdit ? "Save changes" : "Create customer"))
-            </Button>
-            <Button Color="Color.Secondary" Outline Clicked="Cancel" Disabled="_saving">Cancel</Button>
-        </Div>
-    </Validations>
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.75rem">
+            <RadzenButton ButtonType="ButtonType.Submit" Text="@(IsEdit ? "Save changes" : "Create customer")" ButtonStyle="ButtonStyle.Primary"
+                          IsBusy="_saving" BusyText="Saving…" data-walkthrough="cf-save" />
+            <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="Cancel" Disabled="_saving" />
+        </RadzenStack>
+    </RadzenTemplateForm>
 }
 
 @code {
@@ -129,7 +119,6 @@ else
 
     private bool IsPartner => !string.IsNullOrEmpty(LinkId);
 
-    private Validations? _validations;
     private readonly CustomerEditModel _model = new();
     private bool _loading;
     private bool _saving;
@@ -190,13 +179,9 @@ else
         }
     }
 
+    // Only called by RadzenTemplateForm once the required-field validators pass.
     private async Task SaveAsync()
     {
-        if (_validations is not null && !await _validations.ValidateAll())
-        {
-            return;
-        }
-
         _saving = true;
         try
         {
