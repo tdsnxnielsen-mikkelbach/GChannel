@@ -28,9 +28,17 @@ public static class GChannelMartenExtensions
     /// read-model documents. Schema changes are applied at startup (Marten takes an advisory lock, so the
     /// API and the worker can both do this safely).
     /// </summary>
+    /// <param name="messageStorageSchema">
+    /// PostgreSQL schema for this host's Wolverine message store (inbox/outbox, scheduled messages, node
+    /// records). The API and the worker share the database but are separate Wolverine applications, so each
+    /// MUST use its own schema: with a shared one, a topic message fanned out to both hosts' subscriptions is
+    /// rejected as a duplicate envelope by whichever host persists it second, and the two hosts take part in
+    /// each other's node leader election.
+    /// </param>
     public static MartenServiceCollectionExtensions.MartenConfigurationExpression AddGChannelMarten(
-        this IHostApplicationBuilder builder, Action<StoreOptions>? configure = null)
+        this IHostApplicationBuilder builder, string messageStorageSchema, Action<StoreOptions>? configure = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageStorageSchema);
         builder.AddAzureNpgsqlDataSource(ConnectionName);
 
         var marten = builder.Services.AddMarten(opts =>
@@ -53,9 +61,9 @@ public static class GChannelMartenExtensions
             })
             .UseNpgsqlDataSource()
             .UseLightweightSessions()
-            // Wolverine inbox/outbox + saga storage in the same database (schema "wolverine"), and Marten
-            // transactional middleware for message handlers / HTTP endpoints.
-            .IntegrateWithWolverine(cfg => cfg.MessageStorageSchemaName = "wolverine")
+            // Wolverine inbox/outbox + saga storage in the same database (one schema per host, see above), and
+            // Marten transactional middleware for message handlers / HTTP endpoints.
+            .IntegrateWithWolverine(cfg => cfg.MessageStorageSchemaName = messageStorageSchema)
             .ApplyAllDatabaseChangesOnStartup();
 
         return marten;

@@ -36,8 +36,19 @@ public static class GChannelWolverineExtensions
         // Handlers and HTTP endpoints are compiled at startup (WolverineFx.RuntimeCompilation).
         opts.UseRuntimeCompilation();
 
-        // The topology is declared in the AppHost (infrastructure as code, provisioned by Aspire/azd), so no AutoProvision.
-        opts.UseAzureServiceBusUsingNamedConnection(MessagingTopology.ConnectionName);
+        // The topology is declared in the AppHost (infrastructure as code, provisioned by Aspire/azd), so no AutoProvision:
+        //  - the shared dead-letter queue must be the declared one (Wolverine would otherwise create its own on first use);
+        //  - Wolverine's per-node system queues (wolverine.response.* for remote request/reply, wolverine.retries.* for
+        //    non-durable scheduled retries) are disabled — nothing here uses remote request/reply and every listener is
+        //    durable, so scheduled retries live in the PostgreSQL inbox instead.
+        opts.UseAzureServiceBusUsingNamedConnection(MessagingTopology.ConnectionName)
+            .DefaultDeadLetterQueueName(MessagingTopology.DeadLetterQueue)
+            .SystemQueuesAreEnabled(false);
+
+        // Wolverine cancels a handler after DefaultExecutionTimeout (60s out of the box). Every handler here talks to
+        // the quota-paced Channel API, where a single 429 cooldown already costs 30s+, so allow 10 minutes by default;
+        // the recurring-job ticks carry their own, larger [MessageTimeout] budgets.
+        opts.DefaultExecutionTimeout = 10.Minutes();
 
         // Durability: every incoming message is written to the PostgreSQL inbox and acknowledged on the
         // broker right away (long-running job ticks are not bound by the 5-minute Service Bus lock), and

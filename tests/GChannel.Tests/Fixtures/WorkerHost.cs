@@ -28,7 +28,7 @@ public static class WorkerHost
         builder.Configuration["ConnectionStrings:messaging"] = DummyServiceBus;
         builder.Configuration["GoogleChannel:AccountId"] = "accounts/C0test";
 
-        builder.AddGChannelMarten();
+        builder.AddGChannelMarten(messageStorageSchema: "wolverine_tests");
         builder.Services.AddGChannelCore(builder.Configuration);
         builder.Services.AddDistributedMemoryCache();
         builder.Services.AddSingleton<ServiceAccountChannelClientProvider>();

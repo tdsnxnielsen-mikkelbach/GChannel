@@ -11,6 +11,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using Wolverine;
+using Wolverine.Attributes;
 using Wolverine.Runtime;
 
 namespace GChannel.Worker.Handlers;
@@ -34,6 +35,9 @@ public sealed class EstateSyncHandler(
     RecurringJobCatalog catalog,
     ILogger<EstateSyncHandler> logger)
 {
+    // A rolling cycle is paced by the Channel API per-minute quotas (and stalls further on 429 cooldowns), so a
+    // large estate legitimately needs well over Wolverine's 60s default execution budget.
+    [MessageTimeout(RecurringJobs.EstateSyncBudgetSeconds)]
     public async Task<OutgoingMessages> Handle(RunEstateSyncCycle tick, IDocumentSession session, CancellationToken ct)
     {
         var outgoing = new OutgoingMessages();

@@ -7,6 +7,7 @@ using GChannel.Worker.Infrastructure;
 using Marten;
 using Microsoft.Extensions.Options;
 using Wolverine;
+using Wolverine.Attributes;
 
 namespace GChannel.Worker.Handlers;
 
@@ -29,6 +30,8 @@ public sealed class BillingPostureScanHandler(
     public const string CursorScope = "billing-posture";
     public const string OrdersCursorScope = "marketplace-orders";
 
+    // Enumerates every billing (sub-)account's IAM policy and resolves each member through the Admin SDK.
+    [MessageTimeout(RecurringJobs.BillingPostureScanBudgetSeconds)]
     public async Task<OutgoingMessages> Handle(RunBillingPostureScan tick, IDocumentSession session, CancellationToken ct)
     {
         var outgoing = new OutgoingMessages();

@@ -5,6 +5,11 @@ using Microsoft.Extensions.Options;
 namespace GChannel.Worker.Infrastructure;
 
 /// <summary>One self-rescheduling recurring job: when it runs, how the next run time is derived, and the tick message that drives it.</summary>
+/// <param name="StuckAfter">
+/// How long a run may show as "running" before the watchdog declares it stuck and starts a fresh chain. A run can
+/// never legitimately outlive its handler's <c>[MessageTimeout]</c> budget (Wolverine cancels it), so this is that
+/// budget plus a grace period for the cancellation / retry bookkeeping.
+/// </param>
 public sealed record RecurringJobDefinition(
     string Name,
     Func<bool> IsEnabled,
@@ -15,6 +20,8 @@ public sealed record RecurringJobDefinition(
 /// <summary>The worker's recurring jobs, derived from the Google Channel / Billing options.</summary>
 public sealed class RecurringJobCatalog(IOptions<GoogleChannelOptions> channelOptions, IOptions<GoogleBillingOptions> billingOptions)
 {
+    private static readonly TimeSpan StuckGrace = TimeSpan.FromMinutes(30);
+
     public IReadOnlyList<RecurringJobDefinition> Jobs
     {
         get
@@ -33,7 +40,7 @@ public sealed class RecurringJobCatalog(IOptions<GoogleChannelOptions> channelOp
                     () => channel.ReadModelSyncEnabled,
                     completed => completed + refreshInterval,
                     runId => new RunEstateSyncCycle(runId),
-                    StuckAfter: Max(refreshInterval * 4, TimeSpan.FromHours(1))),
+                    StuckAfter: Budget(RecurringJobs.EstateSyncBudgetSeconds)),
 
                 // Live dashboard aggregation (read model OFF): recompute the summary with the service account
                 // and warm the Redis cache. With the read model on, the dashboard derives from Marten instead.
@@ -42,7 +49,7 @@ public sealed class RecurringJobCatalog(IOptions<GoogleChannelOptions> channelOp
                     () => channel.BackgroundRefreshEnabled && !channel.UseReadModel,
                     completed => completed + refreshInterval,
                     runId => new RefreshDashboardSnapshot(runId),
-                    StuckAfter: Max(refreshInterval * 4, TimeSpan.FromHours(1))),
+                    StuckAfter: Budget(RecurringJobs.DashboardSnapshotBudgetSeconds)),
 
                 // BigQuery billing-export sync.
                 new RecurringJobDefinition(
@@ -50,7 +57,7 @@ public sealed class RecurringJobCatalog(IOptions<GoogleChannelOptions> channelOp
                     () => billing.BigQueryConfigured && channel.HasServiceAccountCredential,
                     completed => completed + billingInterval,
                     runId => new RunBillingSyncCycle(runId),
-                    StuckAfter: TimeSpan.FromHours(3)),
+                    StuckAfter: Budget(RecurringJobs.BillingSyncBudgetSeconds)),
 
                 // Nightly billing IAM security-posture scan at PostureScanHourUtc.
                 new RecurringJobDefinition(
@@ -58,14 +65,14 @@ public sealed class RecurringJobCatalog(IOptions<GoogleChannelOptions> channelOp
                     () => billing.PostureScanEnabled && channel.HasServiceAccountCredential && !string.IsNullOrWhiteSpace(channel.ImpersonateUser),
                     completed => NextDailyAt(completed, postureHour),
                     runId => new RunBillingPostureScan(runId),
-                    StuckAfter: TimeSpan.FromHours(6)),
+                    StuckAfter: Budget(RecurringJobs.BillingPostureScanBudgetSeconds)),
             ];
         }
     }
 
     public RecurringJobDefinition this[string name] => Jobs.First(j => j.Name == name);
 
-    private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
+    private static TimeSpan Budget(int budgetSeconds) => TimeSpan.FromSeconds(budgetSeconds) + StuckGrace;
 
     /// <summary>The next occurrence of <paramref name="hourUtc"/>:00 strictly after <paramref name="after"/>.</summary>
     public static DateTimeOffset NextDailyAt(DateTimeOffset after, int hourUtc)

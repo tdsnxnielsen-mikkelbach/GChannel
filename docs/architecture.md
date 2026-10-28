@@ -81,8 +81,12 @@ reseller account id) are passed as normal parameters/environment variables.
 ## Persistence &amp; messaging (Critter Stack)
 
 **Database.** One Azure Database for PostgreSQL flexible server (`Standard_B1ms` Burstable, PostgreSQL 16,
-32 GiB, 7-day backups, no HA) hosts a single database, `gchanneldb`, with two schemas: `gchannel`
-(Marten) and `wolverine` (Wolverine's durable inbox/outbox, node registry and dead letters). Authentication
+32 GiB, 7-day backups, no HA, no availability-zone pinning so the platform can place it where the SKU has
+capacity) hosts a single database, `gchanneldb`, with three schemas: `gchannel` (Marten) plus one Wolverine
+message store **per host** — `wolverine_api` and `wolverine_worker` (durable inbox/outbox, scheduled
+messages, node registry). The two processes are separate Wolverine applications; with a shared schema a
+topic message fanned out to both subscriptions would be rejected as a duplicate envelope by whichever host
+persisted it second. Authentication
 is **Microsoft Entra ID only** — the Bicep sets `passwordAuth: Disabled`, each container app's managed
 identity is an Entra principal on the server, and `Aspire.Azure.Npgsql` acquires the token; locally the
 AppHost runs a `postgres` container with a generated password. Schema is created/updated by
@@ -135,19 +139,26 @@ local provisioning and `azd` — it is **not** auto-provisioned by Wolverine:
 | `estate-sync` | queue | `ProjectCustomer` commands (targeted customer refresh: a mutation, a Pub/Sub event or a manual resync), consumed sequentially so Channel API quotas can be paced |
 | `jobs` | queue | self-rescheduling recurring job ticks (`RunEstateSyncCycle`, `RefreshDashboardSnapshot`, `RunBillingSyncCycle`, `RunBillingPostureScan`) |
 | `operations` | queue | Google long-running-operation saga timeouts (`CheckChannelOperation`) |
+| `wolverine-dead-letter-queue` | queue | Wolverine's shared dead-letter queue: a message that exhausts its retries is sent here (inspect / resubmit with Service Bus Explorer) |
 
 All listeners use Wolverine's **durable inbox** (so a multi-minute job tick is not bound by the 5-minute
 lock duration) and the API/worker publish through the **durable outbox** inside the same Marten
 transaction (`IntegrateWithWolverine` + `AutoApplyTransactions`), so a saved event and its integration
 message are atomic. Handlers are generated with `WolverineFx.RuntimeCompilation`. HTTP 429s from Google
-are retried with a backoff policy; poison messages land in Wolverine's dead-letter table.
+are retried with a backoff policy; poison messages land in the dead-letter queue above. Because the
+topology is fixed, Wolverine's per-node system queues (`wolverine.response.*`, `wolverine.retries.*`) are
+disabled — nothing uses remote request/reply, and scheduled retries live in the durable inbox. Every handler
+gets a 10-minute execution budget (Wolverine's default is 60 s — too short once a single 429 cooldown costs
+30 s); the recurring-job ticks carry larger `[MessageTimeout]` budgets (`RecurringJobs.*BudgetSeconds`).
 
 **Recurring jobs.** The previous `BackgroundService` timers and cluster-wide Redis locks are gone. Each
 recurring job (`RecurringJobCatalog`) is a Wolverine message that reschedules itself when it completes
 (`RecurringJobRunner` guards each run with a `RunId` stored in the `RecurringJobState` document, so a
 duplicate or stale tick is a no-op) and a watchdog (`RecurringJobsBootstrap`) re-arms any job that is
-overdue by more than the grace period. The single-replica worker plus the `RunId` guard give the
-single-flight behaviour the Redis lock used to provide.
+overdue by more than the grace period, that has been running longer than its execution budget, or whose
+run was started by a previous worker process (the worker is a single replica, so such a run cannot still be
+executing). The single-replica worker plus the `RunId` guard give the single-flight behaviour the Redis
+lock used to provide.
 
 **Long-running operations** are tracked by a Wolverine **saga** (`ChannelOperationSaga`, keyed by the
 operation name): `OperationSubmitted` starts it, `CheckChannelOperation` timeouts poll Google until `done`,

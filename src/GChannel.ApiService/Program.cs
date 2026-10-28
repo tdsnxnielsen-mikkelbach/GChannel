@@ -17,9 +17,9 @@ builder.Services.AddExceptionHandler<GoogleApiExceptionHandler>();
 builder.Services.AddHttpContextAccessor();
 
 // Azure Database for PostgreSQL via Aspire ("gchanneldb"; Microsoft Entra ID token auth in Azure) hosting
-// the Marten document store + event store and Wolverine's durable inbox/outbox. Schema changes are applied
-// at startup.
-builder.AddGChannelMarten();
+// the Marten document store + event store and Wolverine's durable inbox/outbox (schema "wolverine_api" —
+// the worker has its own). Schema changes are applied at startup.
+builder.AddGChannelMarten(messageStorageSchema: "wolverine_api");
 
 // Redis (Aspire connection "cache"): the shared Google-response cache (IDistributedCache). WithAzureAuthentication
 // enables Microsoft Entra ID (managed identity) auth for Azure Managed Redis and is a no-op for the local container.

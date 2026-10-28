@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Text.Json;
 using Wolverine;
+using Wolverine.Attributes;
 
 namespace GChannel.Worker.Handlers;
 
@@ -32,6 +33,8 @@ public sealed class DashboardRefreshHandler(
     private const int PartialPublishEvery = 10;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    // Live aggregation over the whole estate at the paced Channel API rate.
+    [MessageTimeout(RecurringJobs.DashboardSnapshotBudgetSeconds)]
     public async Task<OutgoingMessages> Handle(RefreshDashboardSnapshot tick, IDocumentSession session, CancellationToken ct)
     {
         var outgoing = new OutgoingMessages();

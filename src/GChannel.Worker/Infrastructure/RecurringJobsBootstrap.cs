@@ -7,9 +7,10 @@ namespace GChannel.Worker.Infrastructure;
 
 /// <summary>
 /// Starts each enabled recurring job's chain when none is pending and acts as a watchdog afterwards: a job
-/// whose next run is overdue (its scheduled tick was lost) or that has been "running" far longer than it
-/// plausibly could (the process died mid-run before the durable inbox replayed the tick) gets a fresh chain.
-/// A fresh chain supersedes the old one — ticks carrying the old RunId are ignored by the handlers.
+/// whose next run is overdue (its scheduled tick was lost), whose run began in a previous worker process
+/// (the process died or was replaced mid-run), or that has been "running" longer than its execution budget
+/// gets a fresh chain. A fresh chain supersedes the old one — ticks carrying the old RunId are ignored by the
+/// handlers, so a tick the durable inbox replays later is harmless.
 /// </summary>
 public sealed class RecurringJobsBootstrap(
     RecurringJobCatalog catalog,
@@ -20,6 +21,13 @@ public sealed class RecurringJobsBootstrap(
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan WatchdogInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan OverdueGrace = TimeSpan.FromMinutes(3);
+
+    // The worker runs as a single replica, so a run that started before this process did cannot still be
+    // executing anywhere — except briefly during a revision rollover, or until the durable inbox replays the
+    // interrupted tick on this node. Wait this long before declaring such a run abandoned.
+    private static readonly TimeSpan PreviousProcessGrace = TimeSpan.FromMinutes(5);
+
+    private readonly DateTimeOffset _processStartedUtc = DateTimeOffset.UtcNow;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -71,6 +79,11 @@ public sealed class RecurringJobsBootstrap(
             else if (state.IsRunning && state.LastStartedUtc is { } startedAt && startedAt < now - job.StuckAfter)
             {
                 reason = $"stuck since {startedAt:u}";
+            }
+            else if (state.IsRunning && state.LastStartedUtc is { } previous && previous < _processStartedUtc
+                     && now - _processStartedUtc >= PreviousProcessGrace)
+            {
+                reason = $"run started {previous:u} by a previous worker process";
             }
 
             if (reason is null)

@@ -12,9 +12,10 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.AddServiceDefaults();
 
 // Azure Database for PostgreSQL via Aspire ("gchanneldb"; Microsoft Entra ID token auth in Azure) hosting the
-// Marten document store + event store and Wolverine's durable inbox/outbox + saga storage. The worker also runs
-// Marten's async projection daemon (HotCold: exactly one node owns it — leader election via Postgres).
-builder.AddGChannelMarten()
+// Marten document store + event store and Wolverine's durable inbox/outbox + saga storage (schema
+// "wolverine_worker" — the API has its own). The worker also runs Marten's async projection daemon (HotCold:
+// exactly one node owns it — leader election via Postgres).
+builder.AddGChannelMarten(messageStorageSchema: "wolverine_worker")
     .AddAsyncDaemon(DaemonMode.HotCold);
 
 // Redis (Aspire connection "cache"): the API's Google-response cache, which the worker warms (live dashboard

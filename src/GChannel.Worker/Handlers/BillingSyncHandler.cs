@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Wolverine;
+using Wolverine.Attributes;
 
 namespace GChannel.Worker.Handlers;
 
@@ -30,6 +31,8 @@ public sealed class BillingSyncHandler(
 {
     private BigQueryClient? _bigQuery;
 
+    // Several aggregated BigQuery queries over the export table plus the Marketplace order scan.
+    [MessageTimeout(RecurringJobs.BillingSyncBudgetSeconds)]
     public async Task<OutgoingMessages> Handle(RunBillingSyncCycle tick, IDocumentSession session, CancellationToken ct)
     {
         var outgoing = new OutgoingMessages();

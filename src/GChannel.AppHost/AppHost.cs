@@ -30,6 +30,9 @@ postgres.ConfigureInfrastructure(infra =>
         Tier = PostgreSqlFlexibleServerSkuTier.Burstable
     };
     server.Version = PostgreSqlFlexibleServerVersion.Sixteen;
+    // No zone pinning (Aspire's default pins zone 1): "no preference" lets the platform place the server
+    // wherever the SKU has capacity — Burstable capacity is frequently exhausted in a single zone.
+    server.AvailabilityZone = "";
     server.Storage = new PostgreSqlFlexibleServerStorage { StorageSizeInGB = 32 };
     server.Backup = new PostgreSqlFlexibleServerBackupProperties
     {
@@ -80,6 +83,8 @@ cache.ConfigureInfrastructure(infra =>
 //  - queue  jobs          : the self-rescheduling recurring job ticks (estate sync, dashboard
 //      snapshot, billing export sync, billing posture scan).
 //  - queue  operations    : Google long-running-operation saga check timeouts.
+//  - queue  wolverine-dead-letter-queue : Wolverine's shared dead-letter queue — a message that exhausts its
+//      retries is sent here (declared because Wolverine must not auto-provision; see MessagingTopology).
 // Lock duration is the 5-minute maximum because handlers call the (slow, paced) Channel API.
 var serviceBus = builder.AddAzureServiceBus("messaging");
 
@@ -104,6 +109,9 @@ estateEvents.AddServiceBusSubscription("api-cache").WithProperties(ConfigureSubs
 serviceBus.AddServiceBusQueue("estate-sync").WithProperties(ConfigureQueue);
 serviceBus.AddServiceBusQueue("jobs").WithProperties(ConfigureQueue);
 serviceBus.AddServiceBusQueue("operations").WithProperties(ConfigureQueue);
+// Dead letters are only ever sent (never consumed by the apps), so the queue keeps the Service Bus defaults;
+// inspect / resubmit them with Service Bus Explorer in the portal.
+serviceBus.AddServiceBusQueue("wolverine-dead-letter-queue");
 
 static void ConfigureQueue(AzureServiceBusQueueResource queue)
 {
