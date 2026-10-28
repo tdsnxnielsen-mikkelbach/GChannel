@@ -1,82 +1,89 @@
-﻿@using MudBlazor
+@using Blazorise
+@using Blazorise.DataGrid
 @* Marketplace orders (subscriptions / plans) from the Consumer Procurement API — entitlement-level view
    of third-party products, independent of whether they generated spend this month. *@
 
-<MudPaper Class="pa-4" Elevation="2">
-    <div class="d-flex justify-space-between align-center mb-1">
-        <div>
-            <MudText Typo="Typo.h6">Marketplace orders</MudText>
-            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                Third-party subscriptions and plans on the billing account(s), from the Cloud Commerce Consumer Procurement API.
-            </MudText>
-        </div>
-        @if (Result?.AsOf is { } asOf)
-        {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">scanned @asOf.LocalDateTime.ToString("g")</MudText>
-        }
-    </div>
+<Card Shadow="Shadow.Small">
+    <CardBody>
+        <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromBottom">
+            <Div>
+                <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Marketplace orders</Heading>
+                <Small TextColor="TextColor.Secondary">
+                    Third-party subscriptions and plans on the billing account(s), from the Cloud Commerce Consumer Procurement API.
+                </Small>
+            </Div>
+            @if (Result?.AsOf is { } asOf)
+            {
+                <Small TextColor="TextColor.Secondary">scanned @asOf.LocalDateTime.ToString("g")</Small>
+            }
+        </Div>
 
-    @if (Loading)
-    {
-        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
-    }
-    else if (Result is null || Result.Unconfigured)
-    {
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
-            Marketplace order scan isn't configured (<code>GoogleBilling:MarketplaceOrdersEnabled</code> + service account).
-        </MudText>
-    }
-    else
-    {
-        @if (Result.Errors.Count > 0)
+        @if (Loading)
         {
-            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
-                Orders couldn't be read for @Result.Errors.Count billing account(s) — typically the Consumer Procurement API isn't
-                enabled or the service account lacks <code>consumerprocurement.orders.list</code>.
-                <MudTooltip Text="@string.Join("\n", Result.Errors.Select(e => $"{e.Key}: {e.Value}"))"><MudLink Typo="Typo.caption">details</MudLink></MudTooltip>
-            </MudAlert>
+            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
         }
-
-        @if (Result.Orders.Count == 0)
+        else if (Result is null || Result.Unconfigured)
         {
-            <MudText Typo="Typo.body2" Color="Color.Secondary">
-                @(Result.AsOf is null ? "No scan has completed yet." : "No Marketplace orders found.")
-            </MudText>
+            <Paragraph TextColor="TextColor.Secondary">
+                Marketplace order scan isn't configured (<code>GoogleBilling:MarketplaceOrdersEnabled</code> + service account).
+            </Paragraph>
         }
         else
         {
-            <MudTable Items="Result.Orders" Dense="true" Hover="true" Elevation="0" T="MarketplaceOrder" Breakpoint="Breakpoint.None" RowsPerPage="25">
-                <HeaderContent>
-                    <MudTh><MudTableSortLabel T="MarketplaceOrder" SortBy="@(o => o.Provider ?? "")">Provider</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="MarketplaceOrder" SortBy="@(o => o.DisplayName ?? "")">Order</MudTableSortLabel></MudTh>
-                    <MudTh>Product</MudTh>
-                    @if (ShowAccount) { <MudTh>Billing account</MudTh> }
-                    <MudTh><MudTableSortLabel T="MarketplaceOrder" SortBy="@(o => (object)(o.Active ? 0 : 1))">State</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="MarketplaceOrder" SortBy="@(o => o.CreateTime ?? DateTimeOffset.MinValue)">Created</MudTableSortLabel></MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Provider">@(context.Provider ?? "—")</MudTd>
-                    <MudTd DataLabel="Order">@(context.DisplayName ?? context.Name.Split('/').Last())</MudTd>
-                    <MudTd DataLabel="Product">
-                        @foreach (var p in context.Products) { <MudText Typo="Typo.caption" Class="d-block">@p</MudText> }
-                    </MudTd>
-                    @if (ShowAccount)
-                    {
-                        <MudTd DataLabel="Billing account">
-                            <MudText Typo="Typo.caption">@context.BillingAccountId</MudText>
-                            @if (context.CustomerId is not null) { <MudLink Href="@($"/customers/{context.CustomerId}")" Typo="Typo.caption" Class="d-block">customer</MudLink> }
-                        </MudTd>
-                    }
-                    <MudTd DataLabel="State">
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(context.Active ? Color.Success : Color.Default)">@(context.Active ? "active" : "cancelled")</MudChip>
-                    </MudTd>
-                    <MudTd DataLabel="Created">@(context.CreateTime?.LocalDateTime.ToString("d") ?? "—")</MudTd>
-                </RowTemplate>
-                <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50 }" /></PagerContent>
-            </MudTable>
+            @if (Result.Errors.Count > 0)
+            {
+                <Alert Color="Color.Warning" Visible Margin="Margin.Is2.FromBottom">
+                    Orders couldn't be read for @Result.Errors.Count billing account(s) — typically the Consumer Procurement API isn't
+                    enabled or the service account lacks <code>consumerprocurement.orders.list</code>.
+                    <Tooltip Multiline Text="@string.Join("\n", Result.Errors.Select(e => $"{e.Key}: {e.Value}"))" Inline><Anchor To="#" Class="small">details</Anchor></Tooltip>
+                </Alert>
+            }
+
+            @if (Result.Orders.Count == 0)
+            {
+                <Paragraph TextColor="TextColor.Secondary">
+                    @(Result.AsOf is null ? "No scan has completed yet." : "No Marketplace orders found.")
+                </Paragraph>
+            }
+            else
+            {
+                <DataGrid TItem="MarketplaceOrder" Data="Result.Orders" Hoverable Narrow Sortable Responsive
+                          ShowPager PageSize="25" ShowPageSizes PageSizes="new[] { 25, 50 }" PagerPosition="DataGridPagerPosition.Bottom">
+                    <DataGridColumns>
+                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.Provider)" Caption="Provider">
+                            <DisplayTemplate>@(context.Item.Provider ?? "—")</DisplayTemplate>
+                        </DataGridColumn>
+                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.DisplayName)" Caption="Order">
+                            <DisplayTemplate>@(context.Item.DisplayName ?? context.Item.Name.Split('/').Last())</DisplayTemplate>
+                        </DataGridColumn>
+                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.Name)" Caption="Product" Sortable="false">
+                            <DisplayTemplate>
+                                @foreach (var p in context.Item.Products) { <Small Display="Display.Block">@p</Small> }
+                            </DisplayTemplate>
+                        </DataGridColumn>
+                        @if (ShowAccount)
+                        {
+                            <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.BillingAccountId)" Caption="Billing account" Sortable="false">
+                                <DisplayTemplate>
+                                    <Small>@context.Item.BillingAccountId</Small>
+                                    @if (context.Item.CustomerId is not null) { <Anchor To="@($"/customers/{context.Item.CustomerId}")" Class="small d-block">customer</Anchor> }
+                                </DisplayTemplate>
+                            </DataGridColumn>
+                        }
+                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.Active)" Caption="State">
+                            <DisplayTemplate>
+                                <Badge Color="@(context.Item.Active ? Color.Success : Color.Secondary)" Pill>@(context.Item.Active ? "active" : "cancelled")</Badge>
+                            </DisplayTemplate>
+                        </DataGridColumn>
+                        <DataGridColumn TItem="MarketplaceOrder" Field="@nameof(MarketplaceOrder.CreateTime)" Caption="Created">
+                            <DisplayTemplate>@(context.Item.CreateTime?.LocalDateTime.ToString("d") ?? "—")</DisplayTemplate>
+                        </DataGridColumn>
+                    </DataGridColumns>
+                </DataGrid>
+            }
         }
-    }
-</MudPaper>
+    </CardBody>
+</Card>
 
 @code {
     [Parameter] public MarketplaceOrdersResult? Result { get; set; }

@@ -1,60 +1,94 @@
-﻿@inherits LayoutComponentBase
-@using MudBlazor
+@inherits LayoutComponentBase
+@using Blazorise
 @inject IJSRuntime JS
 @inject OnboardingTourService Tour
 
-<MudThemeProvider @ref="_mudThemeProvider" Theme="_theme" @bind-IsDarkMode="_isDarkMode" />
-<MudPopoverProvider />
-<MudDialogProvider />
-<MudSnackbarProvider />
+@* Blazorise providers: toasts (INotificationService), confirm dialogs (IMessageService), dynamic modals and the
+   page progress bar are rendered once here and driven from any page through their services. *@
+<NotificationProvider Location="NotificationLocation.End" />
+<MessageProvider />
+<ModalProvider />
+<PageProgressProvider />
 
-<MudLayout>
-    <MudAppBar Elevation="1">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
-                       OnClick="@(() => _drawerOpen = !_drawerOpen)" />
-        <MudText Typo="Typo.h6" Class="ml-2">GChannel</MudText>
-        <MudSpacer />
-        <MudTooltip Text="Take the product tour">
-            <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Inherit"
-                           OnClick="StartTourAsync" data-onboarding="appbar-help" />
-        </MudTooltip>
-        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                       Color="Color.Inherit" OnClick="ToggleDarkModeAsync" data-onboarding="appbar-theme" />
-        <AuthorizeView>
-            <Authorized>
-                <MudText Typo="Typo.body2" Class="mx-3">@context.User.Identity?.Name</MudText>
-                <form action="/account/logout" method="post">
-                    <AntiforgeryToken />
-                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined"
-                               Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Logout">
-                        Sign out
-                    </MudButton>
-                </form>
-            </Authorized>
-            <NotAuthorized>
-                <MudButton Href="/account/login" Variant="Variant.Outlined" Color="Color.Inherit"
-                           StartIcon="@Icons.Material.Filled.Login">
-                    Sign in with Google
-                </MudButton>
-            </NotAuthorized>
-        </AuthorizeView>
-    </MudAppBar>
-
-    <MudDrawer @bind-Open="_drawerOpen" Elevation="1" ClipMode="DrawerClipMode.Always">
-        <MudDrawerHeader>
-            <MudText Typo="Typo.h6">Channel Partner</MudText>
-        </MudDrawerHeader>
-        <NavMenu />
-    </MudDrawer>
-
-    <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-6">
-            <CascadingValue Name="IsDarkMode" Value="_isDarkMode">
-                @Body
-            </CascadingValue>
-        </MudContainer>
-    </MudMainContent>
-</MudLayout>
+<Layout Sider>
+    <LayoutSider>
+        <LayoutSiderContent>
+            <Bar @ref="_sidebar"
+                 Mode="BarMode.VerticalInline"
+                 CollapseMode="BarCollapseMode.Hide"
+                 Breakpoint="Breakpoint.Desktop"
+                 NavigationBreakpoint="Breakpoint.Tablet"
+                 ThemeContrast="ThemeContrast.Dark"
+                 Class="gchannel-sidebar">
+                <BarBrand>
+                    <BarItem>
+                        <BarLink To="">
+                            <Icon Name="@AppIcons.Hub" Class="me-2" /> Channel Partner
+                        </BarLink>
+                    </BarItem>
+                </BarBrand>
+                <BarMenu>
+                    <BarStart>
+                        <NavMenu />
+                    </BarStart>
+                </BarMenu>
+            </Bar>
+        </LayoutSiderContent>
+    </LayoutSider>
+    <Layout>
+        <LayoutHeader Fixed>
+            <Bar Breakpoint="Breakpoint.Desktop" Background="Background.Light" ThemeContrast="ThemeContrast.Light" Class="gchannel-appbar border-bottom">
+                <BarToggler Bar="@_sidebar" />
+                <BarBrand>GChannel</BarBrand>
+                <BarMenu>
+                    <BarEnd>
+                        <BarItem>
+                            <Tooltip Text="Take the product tour" Placement="TooltipPlacement.Bottom">
+                                <Button Color="Color.Light" Clicked="StartTourAsync" data-onboarding="appbar-help" aria-label="Take the product tour">
+                                    <Icon Name="@AppIcons.HelpOutline" />
+                                </Button>
+                            </Tooltip>
+                        </BarItem>
+                        <BarItem>
+                            <Button Color="Color.Light" Clicked="ToggleDarkModeAsync" data-onboarding="appbar-theme" aria-label="Toggle light / dark theme">
+                                <Icon Name="@(_isDarkMode ? AppIcons.LightMode : AppIcons.DarkMode)" />
+                            </Button>
+                        </BarItem>
+                        <AuthorizeView>
+                            <Authorized>
+                                <BarItem>
+                                    <Text Class="mx-3 d-none d-md-inline">@context.User.Identity?.Name</Text>
+                                </BarItem>
+                                <BarItem>
+                                    <form action="/account/logout" method="post" class="d-inline">
+                                        <AntiforgeryToken />
+                                        <Button Type="ButtonType.Submit" Color="Color.Secondary" Outline>
+                                            <Icon Name="@AppIcons.Logout" Class="me-1" /> Sign out
+                                        </Button>
+                                    </form>
+                                </BarItem>
+                            </Authorized>
+                            <NotAuthorized>
+                                <BarItem>
+                                    <Button Type="ButtonType.Link" To="/account/login" Color="Color.Primary" Outline>
+                                        <Icon Name="@AppIcons.Login" Class="me-1" /> Sign in with Google
+                                    </Button>
+                                </BarItem>
+                            </NotAuthorized>
+                        </AuthorizeView>
+                    </BarEnd>
+                </BarMenu>
+            </Bar>
+        </LayoutHeader>
+        <LayoutContent Padding="Padding.Is4.OnX.Is4.OnY">
+            <Container Fluid Class="gchannel-content">
+                <CascadingValue Name="IsDarkMode" Value="_isDarkMode">
+                    @Body
+                </CascadingValue>
+            </Container>
+        </LayoutContent>
+    </Layout>
+</Layout>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -66,18 +100,8 @@
     // Browser localStorage key the chosen theme is persisted under so it survives a page refresh.
     private const string ThemeStorageKey = "gchannel-theme";
 
-    private bool _drawerOpen = true;
+    private Bar _sidebar = null!;
     private bool _isDarkMode;
-    private MudThemeProvider _mudThemeProvider = null!;
-
-    // Descriptive page subtitles, loading text and KPI labels use Color.Secondary as "muted" text.
-    // MudBlazor's default Secondary palette is a pink/red accent, which wrongly reads as an error, so
-    // remap Secondary to the neutral muted-text colour for each mode — keeping it theme-aware.
-    private readonly MudTheme _theme = new()
-    {
-        PaletteLight = new PaletteLight { Secondary = "rgba(0,0,0,0.54)" },
-        PaletteDark = new PaletteDark { Secondary = "rgba(255,255,255,0.5)" },
-    };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -86,16 +110,17 @@
             return;
         }
 
-        // localStorage is only reachable once the interactive circuit is connected (not during the
-        // static prerender), so restore the saved preference here and re-render with the right theme.
+        // localStorage / matchMedia are only reachable once the interactive circuit is connected (not during
+        // the static prerender), so restore the saved preference here and re-render with the right theme.
         var stored = await JS.InvokeAsync<string?>("localStorage.getItem", ThemeStorageKey);
         _isDarkMode = stored switch
         {
             "dark" => true,
             "light" => false,
             // No saved choice yet: honour the operating-system / browser preference.
-            _ => await _mudThemeProvider.GetSystemDarkModeAsync()
+            _ => await JS.InvokeAsync<bool>("gchannelTheme.prefersDark")
         };
+        await ApplyThemeAsync();
         StateHasChanged();
     }
 
@@ -103,7 +128,12 @@
     {
         _isDarkMode = !_isDarkMode;
         await JS.InvokeVoidAsync("localStorage.setItem", ThemeStorageKey, _isDarkMode ? "dark" : "light");
+        await ApplyThemeAsync();
     }
+
+    // Bootstrap 5.3 colour modes: every Bootstrap/Blazorise component follows the data-bs-theme attribute on <html>.
+    private Task ApplyThemeAsync() =>
+        JS.InvokeVoidAsync("gchannelTheme.apply", _isDarkMode ? "dark" : "light").AsTask();
 
     private Task StartTourAsync() => Tour.StartAsync();
 }

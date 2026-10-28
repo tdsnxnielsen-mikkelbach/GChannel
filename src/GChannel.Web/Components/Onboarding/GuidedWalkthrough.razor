@@ -1,4 +1,4 @@
-﻿@using MudBlazor
+@using Blazorise
 @inject IJSRuntime JS
 @inject OnboardingStateService Onboarding
 @implements IAsyncDisposable
@@ -6,10 +6,9 @@
 @* §9 phase 3: a page-scoped guided walkthrough. Renders a "Show me how" launcher and (optionally)
    auto-runs once per user, reusing the Driver.js interop from phase 2. Completion persists per Id. *@
 
-<MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
-           StartIcon="@Icons.Material.Filled.Lightbulb" OnClick="StartAsync" Class="@Class">
-    @ButtonText
-</MudButton>
+<Button Color="Color.Primary" Size="Size.Small" Clicked="StartAsync" Class="@($"btn-link text-decoration-none {Class}")">
+    <Icon Name="@AppIcons.Lightbulb" Class="me-1" /> @ButtonText
+</Button>
 
 @code {
     /// <summary>Stable id for this walkthrough; completion is stored under "wt:{Id}".</summary>

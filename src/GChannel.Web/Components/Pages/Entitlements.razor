@@ -1,6 +1,7 @@
-﻿@page "/customers/{CustomerId}/entitlements"
+@page "/customers/{CustomerId}/entitlements"
 @attribute [Authorize]
 @using MudBlazor
+@using Severity = MudBlazor.Severity
 @inject GChannelApiClient Api
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService

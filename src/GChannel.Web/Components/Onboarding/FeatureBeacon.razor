@@ -1,4 +1,4 @@
-﻿@using MudBlazor
+@using Blazorise
 @inject OnboardingStateService Onboarding
 @inject NavigationManager Nav
 @implements IDisposable
@@ -8,9 +8,9 @@
 
 @if (_visible)
 {
-    <MudTooltip Text="@Tooltip">
+    <Tooltip Text="@Tooltip" Inline>
         <span class="gchannel-beacon" @onclick="DismissAsync" @onclick:stopPropagation="true"></span>
-    </MudTooltip>
+    </Tooltip>
 }
 
 @code {

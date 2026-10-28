@@ -1,4 +1,4 @@
-﻿@using MudBlazor
+@using Blazorise
 @inject OnboardingStateService Onboarding
 @inject OnboardingTourService Tour
 @inject NavigationManager Nav
@@ -7,100 +7,101 @@
 
 @if (_state is not null && !_state.WelcomeDismissed)
 {
-    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" Class="d-flex align-center justify-center">
-        <MudPaper Elevation="8" Class="pa-6" Style="max-width: 520px;">
-            <div class="d-flex align-center mb-3">
-                <MudIcon Icon="@Icons.Material.Filled.WavingHand" Color="Color.Primary" Size="Size.Large" Class="mr-3" />
-                <MudText Typo="Typo.h5">Welcome to GChannel</MudText>
-            </div>
-            <MudText Typo="Typo.body1" Class="mb-2">
-                This console manages your Google Cloud reseller business — customers, catalog SKUs,
-                entitlements, transfers and eventing.
-            </MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-                We'll add a short checklist to your dashboard to help you complete the first key steps.
-            </MudText>
-            <div class="d-flex justify-end gap-2">
-                <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="SkipAsync">Skip onboarding</MudButton>
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="GetStartedAsync">Maybe later</MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Tour"
-                           OnClick="TakeTourAsync">Take a tour</MudButton>
-            </div>
-        </MudPaper>
-    </MudOverlay>
+    <Modal Visible="true" Closing="@(e => { e.Cancel = true; return Task.CompletedTask; })" ShowBackdrop>
+        <ModalContent Centered>
+            <ModalBody Padding="Padding.Is4">
+                <Div Flex="Flex.AlignItems.Center" Margin="Margin.Is3.FromBottom">
+                    <Icon Name="@AppIcons.WavingHand" TextColor="TextColor.Primary" IconSize="IconSize.x2" Margin="Margin.Is3.FromEnd" />
+                    <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">Welcome to GChannel</Heading>
+                </Div>
+                <Paragraph Margin="Margin.Is2.FromBottom">
+                    This console manages your Google Cloud reseller business — customers, catalog SKUs,
+                    entitlements, transfers and eventing.
+                </Paragraph>
+                <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is4.FromBottom">
+                    We'll add a short checklist to your dashboard to help you complete the first key steps.
+                </Paragraph>
+                <Div Flex="Flex.JustifyContent.End" Gap="Gap.Is2">
+                    <Button Color="Color.Secondary" Clicked="SkipAsync" Class="btn-link text-decoration-none">Skip onboarding</Button>
+                    <Button Color="Color.Primary" Outline Clicked="GetStartedAsync">Maybe later</Button>
+                    <Button Color="Color.Primary" Clicked="TakeTourAsync">
+                        <Icon Name="@AppIcons.Tour" Class="me-1" /> Take a tour
+                    </Button>
+                </Div>
+            </ModalBody>
+        </ModalContent>
+    </Modal>
 }
 
 @if (_state is not null && _state.WelcomeDismissed && !_state.ChecklistDismissed)
 {
-    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
-        <div class="d-flex align-center justify-space-between mb-2">
-            <div class="d-flex align-center">
-                <MudIcon Icon="@Icons.Material.Filled.Checklist" Color="Color.Primary" Class="mr-2" />
-                <MudText Typo="Typo.h6">Getting started</MudText>
-            </div>
-            <div class="d-flex align-center gap-2">
-                <MudText Typo="Typo.body2" Color="Color.Secondary">@CompletedCount of @Steps.Count done</MudText>
-                <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.Tour" OnClick="RestartTourAsync">
-                    Restart tour
-                </MudButton>
-                <MudTooltip Text="Hide this checklist">
-                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="DismissChecklistAsync" />
-                </MudTooltip>
-            </div>
-        </div>
+    <Card Margin="Margin.Is4.FromBottom">
+        <CardBody>
+            <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Margin="Margin.Is2.FromBottom">
+                <Div Flex="Flex.AlignItems.Center">
+                    <Icon Name="@AppIcons.Checklist" TextColor="TextColor.Primary" Margin="Margin.Is2.FromEnd" />
+                    <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Getting started</Heading>
+                </Div>
+                <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2">
+                    <Small TextColor="TextColor.Secondary">@CompletedCount of @Steps.Count done</Small>
+                    <Button Color="Color.Primary" Size="Size.Small" Clicked="RestartTourAsync" Class="btn-link text-decoration-none">
+                        <Icon Name="@AppIcons.Tour" Class="me-1" /> Restart tour
+                    </Button>
+                    <Tooltip Text="Hide this checklist" Inline>
+                        <Button Color="Color.Secondary" Size="Size.Small" Clicked="DismissChecklistAsync" Class="btn-link" aria-label="Hide this checklist">
+                            <Icon Name="@AppIcons.Close" />
+                        </Button>
+                    </Tooltip>
+                </Div>
+            </Div>
 
-        <MudProgressLinear Value="ProgressValue" Color="Color.Primary" Rounded="true" Class="mb-3" />
+            <Progress Value="@((int)Math.Round(ProgressValue))" Color="Color.Primary" Size="Size.Small" Margin="Margin.Is3.FromBottom" />
 
-        <MudList T="string" Dense="true">
-            @foreach (var step in Steps)
-            {
-                var done = IsDone(step);
-                <MudListItem T="string" Class="px-0">
-                    <div class="d-flex align-center justify-space-between" style="width: 100%;">
-                        <div class="d-flex align-center">
-                            @if (step.Manual)
-                            {
-                                <MudCheckBox T="bool" Value="done" ValueChanged="@(v => ToggleManualAsync(step, v))"
-                                             Color="Color.Primary" Dense="true" />
-                            }
-                            else
-                            {
-                                <MudIcon Icon="@(done ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
-                                         Color="@(done ? Color.Success : Color.Default)" Class="mr-3" />
-                            }
-                            <div>
-                                <MudText Typo="Typo.body1"
-                                         Style="@(done ? "text-decoration: line-through; opacity: 0.7;" : null)">
-                                    @step.Title
-                                </MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@step.Description</MudText>
-                            </div>
-                        </div>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
-                                   EndIcon="@Icons.Material.Filled.ArrowForward"
-                                   OnClick="@(() => Nav.NavigateTo(step.Link))">
-                            @step.Action
-                        </MudButton>
-                    </div>
-                </MudListItem>
-            }
-        </MudList>
-    </MudPaper>
+            <ListGroup Flush>
+                @foreach (var step in Steps)
+                {
+                    var done = IsDone(step);
+                    <ListGroupItem Padding="Padding.Is0.OnX.Is2.OnY">
+                        <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Width="Width.Is100">
+                            <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is3">
+                                @if (step.Manual)
+                                {
+                                    <Check TValue="bool" Value="done" ValueChanged="@(v => ToggleManualAsync(step, v))" />
+                                }
+                                else
+                                {
+                                    <Icon Name="@(done ? AppIcons.CheckCircle : AppIcons.RadioButtonUnchecked)"
+                                          TextColor="@(done ? TextColor.Success : TextColor.Secondary)" />
+                                }
+                                <Div>
+                                    <Text Display="Display.Block" Style="@(done ? "text-decoration: line-through; opacity: 0.7;" : null)">
+                                        @step.Title
+                                    </Text>
+                                    <Small TextColor="TextColor.Secondary">@step.Description</Small>
+                                </Div>
+                            </Div>
+                            <Button Color="Color.Primary" Size="Size.Small" Class="btn-link text-decoration-none text-nowrap"
+                                    Clicked="@(() => Nav.NavigateTo(step.Link))">
+                                @step.Action <Icon Name="@AppIcons.ArrowForward" Class="ms-1" />
+                            </Button>
+                        </Div>
+                    </ListGroupItem>
+                }
+            </ListGroup>
+        </CardBody>
+    </Card>
 }
 
 @if (_state is not null && _state.WelcomeDismissed && _state.ChecklistDismissed)
 {
-    <div class="d-flex justify-end align-center gap-1 mb-4">
-        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
-                   StartIcon="@Icons.Material.Filled.Tour" OnClick="RestartTourAsync">
-            Take the product tour
-        </MudButton>
-        <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
-                   StartIcon="@Icons.Material.Filled.Checklist" OnClick="ShowChecklistAsync">
-            Show checklist
-        </MudButton>
-    </div>
+    <Div Flex="Flex.JustifyContent.End.AlignItems.Center" Gap="Gap.Is1" Margin="Margin.Is4.FromBottom">
+        <Button Color="Color.Primary" Size="Size.Small" Clicked="RestartTourAsync" Class="btn-link text-decoration-none">
+            <Icon Name="@AppIcons.Tour" Class="me-1" /> Take the product tour
+        </Button>
+        <Button Color="Color.Secondary" Size="Size.Small" Clicked="ShowChecklistAsync" Class="btn-link text-decoration-none">
+            <Icon Name="@AppIcons.Checklist" Class="me-1" /> Show checklist
+        </Button>
+    </Div>
 }
 
 @code {
@@ -219,14 +220,14 @@
 
     private Task RestartTourAsync() => Tour.StartAsync();
 
-    private async Task ToggleManualAsync(Step step, bool done)
+    private async Task ToggleManualAsync(Step step, bool value)
     {
         if (_state is null)
         {
             return;
         }
 
-        if (done)
+        if (value)
         {
             if (!_state.CompletedSteps.Contains(step.Key))
             {

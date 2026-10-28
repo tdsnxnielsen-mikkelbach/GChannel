@@ -1,70 +1,91 @@
-﻿@using MudBlazor
-<MudNavMenu>
-    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" data-onboarding="nav-dashboard">
-        Dashboard
-    </MudNavLink>
-    <MudNavGroup Title="Accounts" Icon="@Icons.Material.Filled.Group" Expanded="true" data-onboarding="nav-accounts">
-        <MudNavLink Href="accounts/cloud-identity" Icon="@Icons.Material.Filled.VerifiedUser">
-            Cloud Identity check
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Catalog" Icon="@Icons.Material.Filled.Storefront" Expanded="true" data-onboarding="nav-catalog">
-        <MudNavLink Href="catalog/products" Icon="@Icons.Material.Filled.Inventory2">
-            Products
-        </MudNavLink>
-        <MudNavLink Href="catalog/offers" Icon="@Icons.Material.Filled.LocalOffer">
-            Offers
-        </MudNavLink>
-        <MudNavLink Href="catalog/sku-groups" Icon="@Icons.Material.Filled.Category">
-            SKU groups
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Customers" Icon="@Icons.Material.Filled.People" Expanded="true" data-onboarding="nav-customers">
-        <MudNavLink Href="customers" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.PeopleAlt">
-            All customers
-        </MudNavLink>
-        <MudNavLink Href="customers/new" Icon="@Icons.Material.Filled.PersonAdd">
-            New customer
-        </MudNavLink>
-        <MudNavLink Href="entitlements" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Subscriptions">
-            Entitlements
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Channel partners" Icon="@Icons.Material.Filled.Hub" Expanded="true" data-onboarding="nav-partners">
-        <MudNavLink Href="channel-partner-links" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.AccountTree">
-            Partner links
-        </MudNavLink>
-        <MudNavLink Href="channel-partner-links/new" Icon="@Icons.Material.Filled.AddLink">
-            Invite partner
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Eventing" Icon="@Icons.Material.Filled.Notifications" Expanded="true" data-onboarding="nav-eventing">
-        <MudNavLink Href="operations" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Bolt">
-            Operations
-            <FeatureBeacon Id="operations-v1" MatchPath="operations" Tooltip="New: track long-running operations" />
-        </MudNavLink>
-        <MudNavLink Href="notifications" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.NotificationsActive">
-            Notifications
-            <FeatureBeacon Id="notifications-v1" MatchPath="notifications" Tooltip="New: live Pub/Sub notifications" />
-        </MudNavLink>
-        <MudNavLink Href="license-change-alerts" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.MarkEmailRead">
-            License change alerts
-            <FeatureBeacon Id="license-change-alerts-v1" MatchPath="license-change-alerts" Tooltip="New: email indirect resellers on license changes" />
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Billing" Icon="@Icons.Material.Filled.Payments" Expanded="true" data-onboarding="nav-billing">
-        <MudNavLink Href="billing/budgets" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Savings">
-            GCP budgets
-            <FeatureBeacon Id="gcp-budgets-v1" MatchPath="billing/budgets" Tooltip="New: view & set GCP billing budgets" />
-        </MudNavLink>
-        <MudNavLink Href="billing/spend" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ShowChart">
-            Spend trends
-            <FeatureBeacon Id="spend-trends-v1" MatchPath="billing/spend" Tooltip="New: actual GCP/Marketplace spend & trends" />
-        </MudNavLink>
-        <MudNavLink Href="billing/posture" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Security">
-            Security posture
-            <FeatureBeacon Id="billing-posture-v1" MatchPath="billing/posture" Tooltip="New: nightly 2SV / Advanced Protection / consumer-admin scan of all billing accounts" />
-        </MudNavLink>
-    </MudNavGroup>
-</MudNavMenu>
+@using Blazorise
 
+@* Sidebar navigation (BarItems inside the vertical Bar in MainLayout). The data-onboarding attributes anchor the
+   Driver.js product tour steps (OnboardingTourService) and must stay on these elements. *@
+
+<BarItem data-onboarding="nav-dashboard">
+    <BarLink To="" Match="Match.All">
+        <BarIcon IconName="@AppIcons.Dashboard" /> Dashboard
+    </BarLink>
+</BarItem>
+
+<BarItem data-onboarding="nav-accounts">
+    <BarDropdown Visible="true">
+        <BarDropdownToggle><BarIcon IconName="@AppIcons.Group" /> Accounts</BarDropdownToggle>
+        <BarDropdownMenu>
+            <BarDropdownItem To="accounts/cloud-identity"><BarIcon IconName="@AppIcons.VerifiedUser" /> Cloud Identity check</BarDropdownItem>
+        </BarDropdownMenu>
+    </BarDropdown>
+</BarItem>
+
+<BarItem data-onboarding="nav-catalog">
+    <BarDropdown Visible="true">
+        <BarDropdownToggle><BarIcon IconName="@AppIcons.Storefront" /> Catalog</BarDropdownToggle>
+        <BarDropdownMenu>
+            <BarDropdownItem To="catalog/products"><BarIcon IconName="@AppIcons.Inventory" /> Products</BarDropdownItem>
+            <BarDropdownItem To="catalog/offers"><BarIcon IconName="@AppIcons.LocalOffer" /> Offers</BarDropdownItem>
+            <BarDropdownItem To="catalog/sku-groups"><BarIcon IconName="@AppIcons.Category" /> SKU groups</BarDropdownItem>
+        </BarDropdownMenu>
+    </BarDropdown>
+</BarItem>
+
+<BarItem data-onboarding="nav-customers">
+    <BarDropdown Visible="true">
+        <BarDropdownToggle><BarIcon IconName="@AppIcons.People" /> Customers</BarDropdownToggle>
+        <BarDropdownMenu>
+            <BarDropdownItem To="customers" Match="Match.All"><BarIcon IconName="@AppIcons.PeopleAlt" /> All customers</BarDropdownItem>
+            <BarDropdownItem To="customers/new"><BarIcon IconName="@AppIcons.PersonAdd" /> New customer</BarDropdownItem>
+            <BarDropdownItem To="entitlements" Match="Match.All"><BarIcon IconName="@AppIcons.Subscriptions" /> Entitlements</BarDropdownItem>
+        </BarDropdownMenu>
+    </BarDropdown>
+</BarItem>
+
+<BarItem data-onboarding="nav-partners">
+    <BarDropdown Visible="true">
+        <BarDropdownToggle><BarIcon IconName="@AppIcons.Hub" /> Channel partners</BarDropdownToggle>
+        <BarDropdownMenu>
+            <BarDropdownItem To="channel-partner-links" Match="Match.All"><BarIcon IconName="@AppIcons.AccountTree" /> Partner links</BarDropdownItem>
+            <BarDropdownItem To="channel-partner-links/new"><BarIcon IconName="@AppIcons.AddLink" /> Invite partner</BarDropdownItem>
+        </BarDropdownMenu>
+    </BarDropdown>
+</BarItem>
+
+<BarItem data-onboarding="nav-eventing">
+    <BarDropdown Visible="true">
+        <BarDropdownToggle><BarIcon IconName="@AppIcons.Notifications" /> Eventing</BarDropdownToggle>
+        <BarDropdownMenu>
+            <BarDropdownItem To="operations" Match="Match.All">
+                <BarIcon IconName="@AppIcons.Bolt" /> Operations
+                <FeatureBeacon Id="operations-v1" MatchPath="operations" Tooltip="New: track long-running operations" />
+            </BarDropdownItem>
+            <BarDropdownItem To="notifications" Match="Match.All">
+                <BarIcon IconName="@AppIcons.NotificationsActive" /> Notifications
+                <FeatureBeacon Id="notifications-v1" MatchPath="notifications" Tooltip="New: live Pub/Sub notifications" />
+            </BarDropdownItem>
+            <BarDropdownItem To="license-change-alerts" Match="Match.All">
+                <BarIcon IconName="@AppIcons.MarkEmailRead" /> License change alerts
+                <FeatureBeacon Id="license-change-alerts-v1" MatchPath="license-change-alerts" Tooltip="New: email indirect resellers on license changes" />
+            </BarDropdownItem>
+        </BarDropdownMenu>
+    </BarDropdown>
+</BarItem>
+
+<BarItem data-onboarding="nav-billing">
+    <BarDropdown Visible="true">
+        <BarDropdownToggle><BarIcon IconName="@AppIcons.Payments" /> Billing</BarDropdownToggle>
+        <BarDropdownMenu>
+            <BarDropdownItem To="billing/budgets" Match="Match.All">
+                <BarIcon IconName="@AppIcons.Savings" /> GCP budgets
+                <FeatureBeacon Id="gcp-budgets-v1" MatchPath="billing/budgets" Tooltip="New: view & set GCP billing budgets" />
+            </BarDropdownItem>
+            <BarDropdownItem To="billing/spend" Match="Match.Prefix">
+                <BarIcon IconName="@AppIcons.ShowChart" /> Spend trends
+                <FeatureBeacon Id="spend-trends-v1" MatchPath="billing/spend" Tooltip="New: actual GCP/Marketplace spend & trends" />
+            </BarDropdownItem>
+            <BarDropdownItem To="billing/posture" Match="Match.Prefix">
+                <BarIcon IconName="@AppIcons.Security" /> Security posture
+                <FeatureBeacon Id="billing-posture-v1" MatchPath="billing/posture" Tooltip="New: nightly 2SV / Advanced Protection / consumer-admin scan of all billing accounts" />
+            </BarDropdownItem>
+        </BarDropdownMenu>
+    </BarDropdown>
+</BarItem>

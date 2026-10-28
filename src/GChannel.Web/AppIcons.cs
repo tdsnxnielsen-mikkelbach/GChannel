@@ -1,0 +1,94 @@
+namespace GChannel.Web;
+
+/// <summary>
+/// FontAwesome 6 (free) icon classes used across the UI, named after the concepts they represent (they replaced
+/// the Material icon set when the UI moved to Blazorise). Pass to <c>&lt;Icon Name="@AppIcons.X" /&gt;</c> or
+/// <c>&lt;BarIcon IconName="@AppIcons.X" /&gt;</c>.
+/// </summary>
+public static class AppIcons
+{
+    public const string AccountBalance = "fa-solid fa-building-columns";
+    public const string AccountTree = "fa-solid fa-sitemap";
+    public const string Add = "fa-solid fa-plus";
+    public const string AddBusiness = "fa-solid fa-store";
+    public const string AddLink = "fa-solid fa-link";
+    public const string AddShoppingCart = "fa-solid fa-cart-plus";
+    public const string ArrowBack = "fa-solid fa-arrow-left";
+    public const string ArrowForward = "fa-solid fa-arrow-right";
+    public const string Autorenew = "fa-solid fa-rotate";
+    public const string Block = "fa-solid fa-ban";
+    public const string Bolt = "fa-solid fa-bolt";
+    public const string Business = "fa-solid fa-building";
+    public const string Cancel = "fa-solid fa-circle-xmark";
+    public const string Category = "fa-solid fa-layer-group";
+    public const string Check = "fa-solid fa-check";
+    public const string CheckCircle = "fa-solid fa-circle-check";
+    public const string Checklist = "fa-solid fa-list-check";
+    public const string ChevronRight = "fa-solid fa-chevron-right";
+    public const string Close = "fa-solid fa-xmark";
+    public const string CloudDownload = "fa-solid fa-cloud-arrow-down";
+    public const string DarkMode = "fa-solid fa-moon";
+    public const string Dashboard = "fa-solid fa-gauge";
+    public const string Delete = "fa-solid fa-trash";
+    public const string Edit = "fa-solid fa-pen";
+    public const string Email = "fa-solid fa-envelope";
+    public const string Error = "fa-solid fa-circle-exclamation";
+    public const string ErrorOutline = "fa-regular fa-circle-xmark";
+    public const string Event = "fa-solid fa-calendar-days";
+    public const string ExpandLess = "fa-solid fa-chevron-up";
+    public const string ExpandMore = "fa-solid fa-chevron-down";
+    public const string GppBad = "fa-solid fa-triangle-exclamation";
+    public const string Group = "fa-solid fa-user-group";
+    public const string Groups = "fa-solid fa-users";
+    public const string HelpOutline = "fa-regular fa-circle-question";
+    public const string Hub = "fa-solid fa-circle-nodes";
+    public const string Info = "fa-solid fa-circle-info";
+    public const string Inventory = "fa-solid fa-boxes-stacked";
+    public const string Key = "fa-solid fa-key";
+    public const string KeyboardArrowDown = "fa-solid fa-angle-down";
+    public const string KeyboardArrowUp = "fa-solid fa-angle-up";
+    public const string Language = "fa-solid fa-globe";
+    public const string Lightbulb = "fa-regular fa-lightbulb";
+    public const string LightMode = "fa-solid fa-sun";
+    public const string LocalOffer = "fa-solid fa-tag";
+    public const string Login = "fa-solid fa-right-to-bracket";
+    public const string Logout = "fa-solid fa-right-from-bracket";
+    public const string MarkEmailRead = "fa-solid fa-envelope-circle-check";
+    public const string Menu = "fa-solid fa-bars";
+    public const string MoreVert = "fa-solid fa-ellipsis-vertical";
+    public const string MoveToInbox = "fa-solid fa-inbox";
+    public const string Notifications = "fa-regular fa-bell";
+    public const string NotificationsActive = "fa-solid fa-bell";
+    public const string OpenInNew = "fa-solid fa-arrow-up-right-from-square";
+    public const string Paid = "fa-solid fa-sack-dollar";
+    public const string Pause = "fa-solid fa-pause";
+    public const string PauseCircle = "fa-regular fa-circle-pause";
+    public const string Payments = "fa-solid fa-money-bill-wave";
+    public const string People = "fa-solid fa-users";
+    public const string PeopleAlt = "fa-solid fa-user-group";
+    public const string Percent = "fa-solid fa-percent";
+    public const string Person = "fa-solid fa-user";
+    public const string PersonAdd = "fa-solid fa-user-plus";
+    public const string PlayArrow = "fa-solid fa-play";
+    public const string RadioButtonUnchecked = "fa-regular fa-circle";
+    public const string Refresh = "fa-solid fa-arrows-rotate";
+    public const string Savings = "fa-solid fa-piggy-bank";
+    public const string Schedule = "fa-regular fa-clock";
+    public const string Search = "fa-solid fa-magnifying-glass";
+    public const string Security = "fa-solid fa-shield-halved";
+    public const string Send = "fa-solid fa-paper-plane";
+    public const string Shield = "fa-solid fa-shield";
+    public const string ShoppingCartCheckout = "fa-solid fa-cart-shopping";
+    public const string ShowChart = "fa-solid fa-chart-line";
+    public const string SmartToy = "fa-solid fa-robot";
+    public const string Storefront = "fa-solid fa-store";
+    public const string Subscriptions = "fa-regular fa-rectangle-list";
+    public const string SwapHoriz = "fa-solid fa-right-left";
+    public const string Sync = "fa-solid fa-rotate";
+    public const string Tour = "fa-solid fa-map-location-dot";
+    public const string Tune = "fa-solid fa-sliders";
+    public const string VerifiedUser = "fa-solid fa-user-shield";
+    public const string Visibility = "fa-regular fa-eye";
+    public const string Warning = "fa-solid fa-triangle-exclamation";
+    public const string WavingHand = "fa-regular fa-hand";
+}

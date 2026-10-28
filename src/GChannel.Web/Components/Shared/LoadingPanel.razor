@@ -1,22 +1,23 @@
-﻿@using MudBlazor
+@using Blazorise
 @namespace GChannel.Web.Components
 
 @*
-    Shared loading indicator. Replaces a bare top-of-page progress bar with a centered spinner plus
-    a short title and an optional explanatory hint so the user knows what is being fetched and why
-    it might take a moment (some Channel API aggregations are slow).
+    Shared loading indicator: a centered spinner plus a short title and an optional explanatory hint so the
+    user knows what is being fetched and why it might take a moment (some Channel API aggregations are slow).
 *@
 
-<MudPaper Elevation="0" Class="@($"d-flex flex-column align-center justify-center pa-8 my-4 {Class}")">
-    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
-    <MudText Typo="Typo.subtitle1" Class="mt-4">@Title</MudText>
+<Div Flex="Flex.Column.AlignItems.Center.JustifyContent.Center" Padding="Padding.Is5" Margin="Margin.Is4.OnY" Class="@Class">
+    <div class="spinner-border text-primary" role="status" style="width:3rem;height:3rem">
+        <span class="visually-hidden">Loading…</span>
+    </div>
+    <Paragraph Margin="Margin.Is4.FromTop.Is0.FromBottom" Class="fs-5">@Title</Paragraph>
     @if (!string.IsNullOrWhiteSpace(Hint))
     {
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="MudBlazor.Align.Center" Class="mt-1" Style="max-width:32rem">
+        <Paragraph TextColor="TextColor.Secondary" TextAlignment="TextAlignment.Center" Margin="Margin.Is1.FromTop" Style="max-width:32rem">
             @Hint
-        </MudText>
+        </Paragraph>
     }
-</MudPaper>
+</Div>
 
 @code {
     /// <summary>Short headline describing what is loading, e.g. "Loading customers…".</summary>

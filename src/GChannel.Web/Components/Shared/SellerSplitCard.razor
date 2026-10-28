@@ -1,119 +1,134 @@
-﻿@using MudBlazor
+@using Blazorise
 @* Native Google vs third-party (Marketplace / partner) split of billed spend, from the export's
    transaction_type / seller_name. Used estate-wide on Spend trends and per customer on the detail page. *@
 
-<MudPaper Class="pa-4" Elevation="2">
-    <div class="d-flex justify-space-between align-center mb-1">
-        <div>
-            <MudText Typo="Typo.h6">Google Cloud vs Marketplace / partners</MudText>
-            @if (Subtitle is not null)
+<Card Shadow="Shadow.Small">
+    <CardBody>
+        <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromBottom">
+            <Div>
+                <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Google Cloud vs Marketplace / partners</Heading>
+                @if (Subtitle is not null)
+                {
+                    <Small TextColor="TextColor.Secondary">@Subtitle</Small>
+                }
+            </Div>
+            @if (Summary?.AsOf is { } asOf)
             {
-                <MudText Typo="Typo.caption" Color="Color.Secondary">@Subtitle</MudText>
+                <Small TextColor="TextColor.Secondary">as of @asOf.LocalDateTime.ToString("g")</Small>
             }
-        </div>
-        @if (Summary?.AsOf is { } asOf)
+        </Div>
+
+        @if (Loading)
         {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">as of @asOf.LocalDateTime.ToString("g")</MudText>
+            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
         }
-    </div>
-
-    @if (Loading)
-    {
-        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
-    }
-    else if (Summary is null || Summary.Unconfigured)
-    {
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Billing export not configured.</MudText>
-    }
-    else if (Summary.ByCategory.Count == 0)
-    {
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
-            No seller breakdown yet — it is populated by the next billing-export sync.
-        </MudText>
-    }
-    else
-    {
-        @foreach (var currency in Summary.ByCategory.Select(l => l.Currency).Distinct())
+        else if (Summary is null || Summary.Unconfigured)
         {
-            var lines = Summary.ByCategory.Where(l => l.Currency == currency).ToList();
-            var total = lines.Sum(l => l.Cost);
-            var google = lines.Where(l => l.Category == SellerCategory.Google).Sum(l => l.Cost);
-            var third = lines.Where(l => SellerCategories.IsThirdParty(l.Category)).Sum(l => l.Cost);
-            var other = total - google - third;
-            var pctThird = total == 0 ? 0 : (double)(third / total) * 100;
+            <Paragraph TextColor="TextColor.Secondary">Billing export not configured.</Paragraph>
+        }
+        else if (Summary.ByCategory.Count == 0)
+        {
+            <Paragraph TextColor="TextColor.Secondary">
+                No seller breakdown yet — it is populated by the next billing-export sync.
+            </Paragraph>
+        }
+        else
+        {
+            @foreach (var currency in Summary.ByCategory.Select(l => l.Currency).Distinct())
+            {
+                var lines = Summary.ByCategory.Where(l => l.Currency == currency).ToList();
+                var total = lines.Sum(l => l.Cost);
+                var google = lines.Where(l => l.Category == SellerCategory.Google).Sum(l => l.Cost);
+                var third = lines.Where(l => SellerCategories.IsThirdParty(l.Category)).Sum(l => l.Cost);
+                var pctThird = total == 0 ? 0 : (double)(third / total) * 100;
 
-            <div class="mb-3">
-                <div class="d-flex align-baseline gap-2 mb-1">
-                    <MudText Typo="Typo.h5">@third.ToString("N0") <span style="font-size:0.7em">@currency</span></MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">third-party · @pctThird.ToString("0.#")% of @total.ToString("N0")</MudText>
-                </div>
-                <MudProgressLinear Value="@pctThird" Color="Color.Secondary" Rounded="true" Size="Size.Small" Class="mb-2" />
-                <MudSimpleTable Dense="true" Elevation="0" Hover="true">
-                    <tbody>
-                        @foreach (var l in lines.OrderBy(l => l.Category))
+                <Div Margin="Margin.Is3.FromBottom">
+                    <Div Flex="Flex.AlignItems.Baseline" Gap="Gap.Is2" Margin="Margin.Is1.FromBottom">
+                        <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@third.ToString("N0") <span style="font-size:0.7em">@currency</span></Heading>
+                        <Small TextColor="TextColor.Secondary">third-party · @pctThird.ToString("0.#")% of @total.ToString("N0")</Small>
+                    </Div>
+                    <Progress Value="@((int)Math.Round(pctThird))" Color="Color.Secondary" Size="Size.Small" Margin="Margin.Is2.FromBottom" />
+                    <Table Narrow Hoverable Borderless>
+                        <TableBody>
+                            @foreach (var l in lines.OrderBy(l => l.Category))
+                            {
+                                <TableRow>
+                                    <TableRowCell>
+                                        <Badge Color="@CategoryColor(l.Category)" Pill>@SellerCategories.Label(l.Category)</Badge>
+                                    </TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@l.Cost.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">
+                                        <Small TextColor="TextColor.Secondary">@(total == 0 ? "—" : $"{(double)(l.Cost / total) * 100:0.#}%")</Small>
+                                    </TableRowCell>
+                                </TableRow>
+                            }
+                        </TableBody>
+                    </Table>
+                </Div>
+            }
+
+            @if (Summary.ThirdPartySellers.Count > 0)
+            {
+                <Heading Size="HeadingSize.Is6" Margin="Margin.Is2.FromTop.Is1.FromBottom">Third-party sellers</Heading>
+                <Table Narrow Hoverable Borderless>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHeaderCell>Seller</TableHeaderCell>
+                            <TableHeaderCell>Via</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Net cost</TableHeaderCell>
+                            <TableHeaderCell>Currency</TableHeaderCell>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        @foreach (var s in Summary.ThirdPartySellers.Take(MaxRows))
                         {
-                            <tr>
-                                <td>
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(CategoryColor(l.Category))">@SellerCategories.Label(l.Category)</MudChip>
-                                </td>
-                                <td style="text-align:right">@l.Cost.ToString("N2")</td>
-                                <td style="text-align:right">
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@(total == 0 ? "—" : $"{(double)(l.Cost / total) * 100:0.#}%")</MudText>
-                                </td>
-                            </tr>
+                            <TableRow>
+                                <TableRowCell>@s.SellerName</TableRowCell>
+                                <TableRowCell><Small TextColor="TextColor.Secondary">@SellerCategories.Label(s.Category)</Small></TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">@s.Cost.ToString("N2")</TableRowCell>
+                                <TableRowCell>@s.Currency</TableRowCell>
+                            </TableRow>
                         }
-                    </tbody>
-                </MudSimpleTable>
-            </div>
-        }
-
-        @if (Summary.ThirdPartySellers.Count > 0)
-        {
-            <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Third-party sellers</MudText>
-            <MudSimpleTable Dense="true" Elevation="0" Hover="true">
-                <thead><tr><th>Seller</th><th>Via</th><th style="text-align:right">Net cost</th><th>Currency</th></tr></thead>
-                <tbody>
-                    @foreach (var s in Summary.ThirdPartySellers.Take(MaxRows))
-                    {
-                        <tr>
-                            <td>@s.SellerName</td>
-                            <td><MudText Typo="Typo.caption" Color="Color.Secondary">@SellerCategories.Label(s.Category)</MudText></td>
-                            <td style="text-align:right">@s.Cost.ToString("N2")</td>
-                            <td>@s.Currency</td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-        }
-
-        @if (ShowProducts && Summary.ThirdPartyProducts.Count > 0)
-        {
-            <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Third-party products</MudText>
-            <MudSimpleTable Dense="true" Elevation="0" Hover="true">
-                <thead><tr><th>Product</th><th>Seller</th><th style="text-align:right">Net cost</th><th>Currency</th></tr></thead>
-                <tbody>
-                    @foreach (var p in Summary.ThirdPartyProducts.Take(MaxRows))
-                    {
-                        <tr>
-                            <td>@p.ServiceDescription</td>
-                            <td><MudText Typo="Typo.caption" Color="Color.Secondary">@p.SellerName</MudText></td>
-                            <td style="text-align:right">@p.Cost.ToString("N2")</td>
-                            <td>@p.Currency</td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-        }
-
-        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
-            Split by the export's <code>transaction_type</code>: GOOGLE = native Google Cloud; THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY = Marketplace, ISV and partner products. "Unclassified" covers taxes, adjustments and rows without a type.
-            @if (Summary.InvoiceMonths.Count > 0)
-            {
-                <span> Window: @FormatMonth(Summary.InvoiceMonths.First())@(Summary.InvoiceMonths.Count > 1 ? $" – {FormatMonth(Summary.InvoiceMonths.Last())}" : "").</span>
+                    </TableBody>
+                </Table>
             }
-        </MudText>
-    }
-</MudPaper>
+
+            @if (ShowProducts && Summary.ThirdPartyProducts.Count > 0)
+            {
+                <Heading Size="HeadingSize.Is6" Margin="Margin.Is3.FromTop.Is1.FromBottom">Third-party products</Heading>
+                <Table Narrow Hoverable Borderless>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHeaderCell>Product</TableHeaderCell>
+                            <TableHeaderCell>Seller</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Net cost</TableHeaderCell>
+                            <TableHeaderCell>Currency</TableHeaderCell>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        @foreach (var p in Summary.ThirdPartyProducts.Take(MaxRows))
+                        {
+                            <TableRow>
+                                <TableRowCell>@p.ServiceDescription</TableRowCell>
+                                <TableRowCell><Small TextColor="TextColor.Secondary">@p.SellerName</Small></TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">@p.Cost.ToString("N2")</TableRowCell>
+                                <TableRowCell>@p.Currency</TableRowCell>
+                            </TableRow>
+                        }
+                    </TableBody>
+                </Table>
+            }
+
+            <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
+                Split by the export's <code>transaction_type</code>: GOOGLE = native Google Cloud; THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY = Marketplace, ISV and partner products. "Unclassified" covers taxes, adjustments and rows without a type.
+                @if (Summary.InvoiceMonths.Count > 0)
+                {
+                    <span> Window: @FormatMonth(Summary.InvoiceMonths.First())@(Summary.InvoiceMonths.Count > 1 ? $" – {FormatMonth(Summary.InvoiceMonths.Last())}" : "").</span>
+                }
+            </Small>
+        }
+    </CardBody>
+</Card>
 
 @code {
     [Parameter] public SellerSpendSummary? Summary { get; set; }
@@ -126,8 +141,8 @@
     {
         SellerCategory.Google => Color.Primary,
         SellerCategory.ThirdPartyReseller => Color.Secondary,
-        SellerCategory.ThirdPartyAgency => Color.Tertiary,
-        _ => Color.Default
+        SellerCategory.ThirdPartyAgency => Color.Info,
+        _ => Color.Light
     };
 
     private static string FormatMonth(string yyyymm) =>
