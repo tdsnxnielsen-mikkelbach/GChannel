@@ -119,15 +119,17 @@ partner link against its current read model and appends only the differences:
 
 **Messaging (Wolverine on Azure Service Bus).** Wolverine wires both processes
 (`ConfigureGChannelMessaging` in Core, with a `MessagingRole` of Api or Worker) to the `messaging`
-Service Bus namespace (Standard tier, local-auth disabled, `UseAzureServiceBusUsingNamedConnection`, so
-the Aspire connection resolves to the emulator connection string locally and to the namespace +
-`DefaultAzureCredential` in Azure). The topology is declared once in the AppHost — Aspire writes it to the
-emulator's `Config.json` locally and to Bicep in Azure — and **not** auto-provisioned by Wolverine, because
-the emulator has no management plane:
+Service Bus namespace (Standard tier, local-auth disabled, `UseAzureServiceBusUsingNamedConnection`:
+Aspire hands out the namespace host name and Wolverine authenticates with `DefaultAzureCredential` — the
+developer's Azure CLI sign-in locally, the container app's managed identity in Azure). There is **no
+emulator**: locally, Aspire's run-mode Azure provisioning creates a namespace in the developer's own
+subscription (`Azure:SubscriptionId` / `Azure:Location` in the AppHost user secrets), so every environment
+runs against real Service Bus. The topology is declared once in the AppHost and emitted as Bicep for both
+local provisioning and `azd` — it is **not** auto-provisioned by Wolverine:
 
 | Entity | Kind | Purpose |
 | --- | --- | --- |
-| `estate-events` | topic (duplicate detection, 5 min) | integration events: `CustomerChanged`, `EntitlementChanged`, `ChannelNotificationArrived`, `OperationSubmitted`, `CustomerReadModelUpdated` |
+| `estate-events` | topic (duplicate detection, 10 min) | integration events: `CustomerChanged`, `EntitlementChanged`, `ChannelNotificationArrived`, `OperationSubmitted`, `CustomerReadModelUpdated` |
 | `worker-estate` | subscription | the worker's projections / targeted refreshes |
 | `api-cache` | subscription | the API's Redis cache invalidation (`CustomerReadModelUpdatedHandler`) |
 | `estate-sync` | queue | `ProjectCustomer` commands (targeted customer refresh: a mutation, a Pub/Sub event or a manual resync), consumed sequentially so Channel API quotas can be paced |
@@ -742,12 +744,11 @@ surfacing as a benign `TaskCanceledException` (innermost `SocketException: "...a
 
 ## Local development persistence
 
-The AppHost runs PostgreSQL, Redis and the **Azure Service Bus emulator** (plus the SQL Server companion
-container the emulator needs) as containers with a **persistent lifetime** (`ContainerLifetime.Persistent`)
-and named **data volumes** (`gchannel-pg-data`, `gchannel-redis-data`; Redis also enables RDB snapshots).
-The containers therefore stay running and keep their data **between debug sessions**, so the estate isn't
-re-synced from Google and the cache stays warm on each `F5`. To wipe and resync, remove the volumes:
-`docker volume rm gchannel-pg-data gchannel-redis-data`. The emulator's topology comes from the AppHost
-(`Config.json` is regenerated on every start); note the emulator caps a topic's duplicate-detection window
-at 5 minutes and rejects unsupported entity properties, so the AppHost declares only portable settings. The
-first run pulls the `mcr.microsoft.com/mssql/server` image (~2 GB), which can take a few minutes.
+The AppHost runs PostgreSQL and Redis as containers with a **persistent lifetime**
+(`ContainerLifetime.Persistent`) and named **data volumes** (`gchannel-pg-data`, `gchannel-redis-data`;
+Redis also enables RDB snapshots). The containers therefore stay running and keep their data **between
+debug sessions**, so the estate isn't re-synced from Google and the cache stays warm on each `F5`. To wipe
+and resync, remove the volumes: `docker volume rm gchannel-pg-data gchannel-redis-data`. Service Bus is
+**not** containerised — it is a real namespace that Aspire provisions into the developer's Azure
+subscription on first run and reuses afterwards (see [deployment.md](deployment.md#run-locally)); the
+Key Vault is only part of the model when publishing, so nothing else is created in Azure for local runs.

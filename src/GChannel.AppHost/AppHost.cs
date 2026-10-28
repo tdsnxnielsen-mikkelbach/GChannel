@@ -62,24 +62,26 @@ cache.ConfigureInfrastructure(infra =>
 });
 
 // Azure Service Bus (Standard tier) — the Wolverine messaging transport between the API and the
-// worker. Runs as the Service Bus emulator (plus its SQL companion container, orchestrated by
-// Aspire) during development. The topology MUST be declared here rather than auto-provisioned by
-// Wolverine: the emulator has no runtime management plane, so Aspire writes these entities into
-// the emulator's Config.json locally and into Bicep in Azure.
+// worker. There is deliberately NO emulator: the namespace is a real Azure resource in every
+// environment. Locally, Aspire's run-mode Azure provisioning creates (and reuses) a namespace in the
+// developer's own subscription / dev resource group (configure Azure:SubscriptionId, Azure:Location and
+// Azure:ResourceGroup in the AppHost user secrets, or answer the dashboard prompt on first run) and
+// grants the signed-in developer the Service Bus Data Owner role; azd provisions it for the deployed
+// environment. The topology below is infrastructure-as-code: Aspire emits it as Bicep for both, so
+// Wolverine never auto-provisions entities.
 //
 //  - topic  estate-events : integration events (CustomerChanged, EntitlementChanged,
-//      ChannelNotificationReceived, OperationSubmitted, CustomerReadModelUpdated). Subscriptions:
+//      ChannelNotificationArrived, OperationSubmitted, CustomerReadModelUpdated). Subscriptions:
 //      worker-estate (the worker's projections/sync) and api-cache (the API's Redis cache
-//      invalidation). Duplicate detection (5 min window — the emulator's maximum) is keyed on the Google Pub/Sub message id
+//      invalidation). Duplicate detection (10 min window) is keyed on the Google Pub/Sub message id
 //      so a redelivered notification is dropped at the broker.
-//  - queue  estate-sync   : SyncLinkCustomers / SyncCustomerEntitlements / ProjectCustomer commands,
-//      consumed sequentially so the Channel API per-minute quotas can be paced.
+//  - queue  estate-sync   : ProjectCustomer commands (targeted customer refreshes), consumed
+//      sequentially so the Channel API per-minute quotas can be paced.
 //  - queue  jobs          : the self-rescheduling recurring job ticks (estate sync, dashboard
 //      snapshot, billing export sync, billing posture scan).
 //  - queue  operations    : Google long-running-operation saga check timeouts.
 // Lock duration is the 5-minute maximum because handlers call the (slow, paced) Channel API.
-var serviceBus = builder.AddAzureServiceBus("messaging")
-    .RunAsEmulator(emulator => emulator.WithLifetime(ContainerLifetime.Persistent));
+var serviceBus = builder.AddAzureServiceBus("messaging");
 
 serviceBus.ConfigureInfrastructure(infra =>
 {
@@ -95,8 +97,7 @@ var estateEvents = serviceBus.AddServiceBusTopic("estate-events")
     .WithProperties(topic =>
     {
         topic.RequiresDuplicateDetection = true;
-        // The Service Bus emulator caps the duplicate-detection window at 5 minutes (Azure allows up to 7 days).
-        topic.DuplicateDetectionHistoryTimeWindow = TimeSpan.FromMinutes(5);
+        topic.DuplicateDetectionHistoryTimeWindow = TimeSpan.FromMinutes(10);
     });
 estateEvents.AddServiceBusSubscription("worker-estate").WithProperties(ConfigureSubscription);
 estateEvents.AddServiceBusSubscription("api-cache").WithProperties(ConfigureSubscription);
@@ -122,8 +123,10 @@ static void ConfigureSubscription(AzureServiceBusSubscriptionResource subscripti
 // The OAuth client secret is persisted here and surfaced to the app as a Key Vault
 // reference, so the literal value never appears in the deployment manifest or as
 // plain-text Container Apps configuration.
-// Key Vault has no local emulator, so it is only provisioned when publishing.
-var keyVault = builder.AddAzureKeyVault("secrets");
+// Added to the model only when publishing: locally the secret parameters are injected straight
+// from user secrets (see the bottom of this file), so no vault is provisioned into the developer's
+// Azure resource group alongside the Service Bus namespace.
+var keyVault = builder.ExecutionContext.IsPublishMode ? builder.AddAzureKeyVault("secrets") : null;
 
 // Configuration supplied at deploy time (azd prompts for these once, or `azd env set`).
 var googleClientId = builder.AddParameter("GoogleClientId");
@@ -239,7 +242,7 @@ var webfrontend = builder.AddProject<Projects.GChannel_Web>("webfrontend")
     .WithEnvironment("Authentication__Google__ClientId", googleClientId)
     .WaitFor(apiService);
 
-if (builder.ExecutionContext.IsPublishMode)
+if (keyVault is not null)
 {
     // In Azure, persist the OAuth client secret in Key Vault and surface it to the
     // app as a Key Vault reference (resolved via the app's managed identity), so the

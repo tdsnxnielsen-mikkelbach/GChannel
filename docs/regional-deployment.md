@@ -320,7 +320,7 @@ dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleChannel
 dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleChannelBackgroundRefreshSeconds" "900"
 ```
 
-Then `dotnet run --project src/GChannel.AppHost` (needs Docker for the local PostgreSQL + Redis + Service Bus emulator containers).
+Then `dotnet run --project src/GChannel.AppHost` (needs Docker for the local PostgreSQL + Redis containers and `Azure:SubscriptionId` / `Azure:Location` in the AppHost user secrets for the dev Service Bus namespace).
 
 ---
 

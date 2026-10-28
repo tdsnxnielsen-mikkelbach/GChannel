@@ -16,7 +16,9 @@ namespace GChannel.Tests.Fixtures;
 /// </summary>
 public static class WorkerHost
 {
-    public const string DummyServiceBus = "Endpoint=sb://localhost;SharedAccessKeyName=test;SharedAccessKey=dGVzdA==;UseDevelopmentEmulator=true;";
+    // A syntactically valid Service Bus connection string so Wolverine's transport configures; it is never
+    // connected (every external transport is stubbed), so no namespace is involved in tests.
+    public const string DummyServiceBus = "Endpoint=sb://localhost;SharedAccessKeyName=test;SharedAccessKey=dGVzdA==;";
 
     public static async Task<IHost> StartAsync(string connectionString, Action<HostApplicationBuilder>? configure = null)
     {

@@ -17,10 +17,12 @@ public static class GChannelWolverineExtensions
 {
     /// <summary>
     /// Shared Wolverine configuration for both hosts: the Azure Service Bus transport over the Aspire
-    /// connection (<c>ConnectionStrings:messaging</c> — the emulator's connection string locally, the
-    /// namespace + managed identity in Azure), durable inbox/outbox backed by the Marten/PostgreSQL message
-    /// store, automatic Marten transactions around handlers, message routing to the declared topology and
-    /// the retry / dead-letter policies for Channel API throttling.
+    /// connection (<c>ConnectionStrings:messaging</c> — always a real namespace: Aspire hands out the
+    /// namespace host name and Wolverine authenticates with <c>DefaultAzureCredential</c>, i.e. the
+    /// developer's Azure CLI / Visual Studio sign-in locally and the container app's managed identity in
+    /// Azure), durable inbox/outbox backed by the Marten/PostgreSQL message store, automatic Marten
+    /// transactions around handlers, message routing to the declared topology and the retry / dead-letter
+    /// policies for Channel API throttling.
     /// </summary>
     public static WolverineOptions ConfigureGChannelMessaging(this WolverineOptions opts, string serviceName, MessagingRole role, Assembly applicationAssembly)
     {
@@ -34,7 +36,7 @@ public static class GChannelWolverineExtensions
         // Handlers and HTTP endpoints are compiled at startup (WolverineFx.RuntimeCompilation).
         opts.UseRuntimeCompilation();
 
-        // The topology is declared in the AppHost (the emulator has no management plane), so no AutoProvision.
+        // The topology is declared in the AppHost (infrastructure as code, provisioned by Aspire/azd), so no AutoProvision.
         opts.UseAzureServiceBusUsingNamedConnection(MessagingTopology.ConnectionName);
 
         // Durability: every incoming message is written to the PostgreSQL inbox and acknowledged on the

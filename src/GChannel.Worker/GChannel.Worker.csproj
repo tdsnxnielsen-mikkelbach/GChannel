@@ -10,9 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Microsoft.Azure.StackExchangeRedis" Version="13.5.0" />
-    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.5.0" />
-    <PackageReference Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.5.0" />
+    <PackageReference Include="Aspire.Microsoft.Azure.StackExchangeRedis" Version="13.6.4" />
+    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.6.4" />
+    <PackageReference Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.6.4" />
   </ItemGroup>
 
   <ItemGroup>

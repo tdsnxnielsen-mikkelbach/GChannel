@@ -7,7 +7,8 @@
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/)
-- [Docker Desktop](https://www.docker.com/) (local PostgreSQL + Redis + Azure Service Bus emulator containers)
+- [Docker Desktop](https://www.docker.com/) (local PostgreSQL + Redis containers)
+- An Azure subscription and [Azure CLI](https://learn.microsoft.com/cli/azure/) sign-in (`az login`) — the Service Bus namespace is a real Azure resource even for local development (see [deployment.md](deployment.md#run-locally))
 - [Azure Developer CLI (`azd`)](https://aka.ms/azd)
 - A Google Cloud project with the **Cloud Channel API** enabled and an **OAuth 2.0 Client**
   (Web application). Authorized redirect URI for local dev:
@@ -27,7 +28,8 @@
 | `GoogleChannel:PubSubProjectId` | Worker | `Parameters:` (AppHost) | `GoogleChannelPubSubProjectId` azd param (env var) |
 | `GoogleChannel:PubSubSubscriptionId` | Worker | `Parameters:` (AppHost) | `GoogleChannelPubSubSubscriptionId` azd param (env var) |
 | `ConnectionStrings:gchanneldb` | ApiService + Worker | Aspire (local `postgres` container) | Aspire: PostgreSQL flexible server host + Entra token (`Aspire.Azure.Npgsql`) — no password |
-| `ConnectionStrings:messaging` | ApiService + Worker | Aspire (Service Bus emulator connection string) | Aspire: Service Bus namespace host + `DefaultAzureCredential` |
+| `ConnectionStrings:messaging` | ApiService + Worker | Aspire: locally provisioned Service Bus namespace host + `DefaultAzureCredential` (your `az login`) | Aspire: Service Bus namespace host + `DefaultAzureCredential` (managed identity) |
+| `Azure:SubscriptionId` / `Azure:Location` / `Azure:ResourceGroup` | AppHost | user-secrets — where Aspire provisions the dev Service Bus namespace | n/a (`azd` provisions) |
 | `ConnectionStrings:cache` | ApiService + Worker | Aspire (local `redis` container) | Aspire: Azure Managed Redis + Entra token |
 | `Blazorise:ProductToken` | Web | _unset_ (community licence banner shown) | Optional commercial [Blazorise](https://blazorise.com/commercial) product token; set via user secrets / env var to remove the banner |
 

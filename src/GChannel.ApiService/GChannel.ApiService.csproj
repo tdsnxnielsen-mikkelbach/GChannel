@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,12 +8,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Microsoft.Azure.StackExchangeRedis" Version="13.5.0" />
-    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.5.0" />
-    <PackageReference Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.5.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.4" />
-    <!-- Pin over the vulnerable <=2.7.4 pulled transitively by Microsoft.AspNetCore.OpenApi (NU1903 / GHSA-v5pm-xwqc-g5wc). -->
-    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+    <PackageReference Include="Aspire.Microsoft.Azure.StackExchangeRedis" Version="13.6.4" />
+    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.6.4" />
+    <PackageReference Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.6.4" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
+    <!-- Keep on the latest 2.x: Microsoft.AspNetCore.OpenApi 10.0.x requires Microsoft.OpenApi [2.12.2, 3.0.0), so 3.x does not restore. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.13.0" />
     <PackageReference Include="WolverineFx.Http" Version="6.56.0" />
   </ItemGroup>
 

@@ -6,10 +6,27 @@
 dotnet run --project src/GChannel.AppHost
 ```
 
-This starts the Aspire dashboard, spins up the PostgreSQL, Redis and Azure Service Bus emulator
-containers (the emulator also starts a SQL Server companion container; the first run pulls that ~2 GB
-image), and launches all three services (API, worker, web). Open the `webfrontend` endpoint from the
-dashboard.
+This starts the Aspire dashboard, spins up the PostgreSQL and Redis containers, provisions (or reuses)
+a **real Azure Service Bus namespace** for you, and launches all three services (API, worker, web). Open
+the `webfrontend` endpoint from the dashboard.
+
+There is deliberately **no Service Bus emulator**: messaging runs against Azure in every environment.
+Aspire's local Azure provisioning creates the namespace, topic, subscriptions and queues declared in the
+AppHost in your own subscription (in a dev resource group, separate from the `azd` environment) and
+grants your signed-in identity the *Azure Service Bus Data Owner* role. Sign in once (`az login`) and
+tell Aspire where to provision:
+
+```powershell
+cd src/GChannel.AppHost
+dotnet user-secrets set Azure:SubscriptionId "<subscription-id>"
+dotnet user-secrets set Azure:Location "westeurope"
+dotnet user-secrets set Azure:ResourceGroup "rg-gchannel-dev-<you>"   # optional; default rg-aspire-<apphost>-<suffix>
+```
+
+(or answer the **Missing subscription configuration** prompt the dashboard shows on first run). Until this
+is configured the `messaging` resources wait in that state and the API/worker, which `WaitFor` them, don't
+start. The namespace is reused on every subsequent run; delete the dev resource group when you no longer
+need it.
 
 The PostgreSQL and Redis containers use a **persistent lifetime** and named **data volumes**
 (`gchannel-pg-data`, `gchannel-redis-data`), so they stay running and keep their data between

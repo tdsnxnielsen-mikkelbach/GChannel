@@ -21,7 +21,7 @@ public static class ApiHost
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("ConnectionStrings:gchanneldb", connectionString);
-            builder.UseSetting("ConnectionStrings:messaging", "Endpoint=sb://localhost;SharedAccessKeyName=test;SharedAccessKey=dGVzdA==;UseDevelopmentEmulator=true;");
+            builder.UseSetting("ConnectionStrings:messaging", WorkerHost.DummyServiceBus);
             builder.UseSetting("ConnectionStrings:cache", "localhost:6379,abortConnect=false");
             builder.UseSetting("GoogleChannel:AccountId", "accounts/C0test");
             builder.UseSetting("GoogleChannel:UseReadModel", "true");
