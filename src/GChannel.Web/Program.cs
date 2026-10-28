@@ -1,5 +1,8 @@
 using System.Security.Claims;
 using ApexCharts;
+using Blazorise;
+using Blazorise.Bootstrap5;
+using Blazorise.Icons.FontAwesome;
 using GChannel.Web.Components;
 using GChannel.Web.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -27,8 +30,18 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// UI: MudBlazor + ApexCharts.
+// UI: Blazorise (Bootstrap 5 provider + FontAwesome icons) + ApexCharts. MudBlazor services remain
+// registered only until the last page is migrated.
 builder.Services.AddMudServices();
+builder.Services
+    .AddBlazorise(options =>
+    {
+        options.Immediate = true;
+        // Optional commercial product token (Blazorise licensing); empty = community license.
+        options.ProductToken = builder.Configuration["Blazorise:ProductToken"];
+    })
+    .AddBootstrap5Providers()
+    .AddFontAwesomeIcons();
 builder.Services.AddApexCharts();
 
 builder.Services.AddCascadingAuthenticationState();

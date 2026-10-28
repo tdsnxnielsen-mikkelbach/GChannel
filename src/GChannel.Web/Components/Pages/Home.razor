@@ -1,6 +1,10 @@
 ﻿@page "/"
 @attribute [Authorize]
 @implements IDisposable
+@using MudBlazor
+@using ApexCharts
+@using Color = MudBlazor.Color
+@using Size = MudBlazor.Size
 @inject GChannelApiClient Api
 @inject ISnackbar Snackbar
 
