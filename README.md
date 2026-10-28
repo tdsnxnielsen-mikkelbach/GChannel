@@ -31,6 +31,7 @@ Open the `webfrontend` endpoint from the Aspire dashboard.
 | Deploying a new country/region instance | [docs/regional-deployment.md](docs/regional-deployment.md) |
 | Implemented API surface | [docs/api-surface.md](docs/api-surface.md) |
 | Roadmap & future work | [docs/todo.md](docs/todo.md) |
+| Session handoff (where work stopped, what's deployed, next steps) | [docs/session-handoff.md](docs/session-handoff.md) |
 
 ## Solution layout
 

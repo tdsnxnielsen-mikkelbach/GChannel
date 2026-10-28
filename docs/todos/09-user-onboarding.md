@@ -54,8 +54,8 @@ domain → create a customer → purchase an entitlement) without reading docs.
 
 - Persist per-user completion/dismissal (e.g. a small `UserOnboardingState` row keyed by the signed-in
   Google subject) so tours don't repeat; expose a **"Restart tour"** action.
-- Prefer an existing Blazor-compatible tour library over a bespoke build if one fits MudBlazor; only
-  hand-roll coach marks/beacons if needed.
+- Prefer an existing Blazor-compatible tour library over a bespoke build if one fits the UI library
+  (Radzen today); only hand-roll coach marks/beacons if needed.
 - Keep every step skippable and keyboard-accessible; never block the UI.
 - Drive step content from the [UI.md](UI.md) walkthrough so docs and the in-app tour stay in sync.
 
@@ -65,7 +65,8 @@ domain → create a customer → purchase an entitlement) without reading docs.
   - [x] `OnboardingState` model + per-user storage (browser `ProtectedLocalStorage` — chosen over a new
     EF table because the app uses `EnsureCreated` with no migrations; Redis/cross-device is a later
     upgrade).
-  - [x] First-run **welcome** card (MudBlazor) with *Get started* / *Skip onboarding*.
+  - [x] First-run **welcome** card (originally MudBlazor, now a Radzen card — `OnboardingPanel`) with
+    *Get started* / *Skip onboarding*.
   - [x] Dashboard **checklist** that ticks steps off from real signals (customer count, entitlements)
     plus manual steps (verify a domain, explore eventing), dismissable.
 - [x] **Phase 2 — App-wide product tour (Driver.js via JS interop)**
