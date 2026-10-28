@@ -49,8 +49,17 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
         DateTimeOffset now, CancellationToken ct)
     {
         var existing = await session.LoadAsync<CustomerRecord>(EstateStreams.Customer(customer.Id), ct);
-        return await ObserveCustomerCoreAsync(session, existing, customer, owningLinkId, source, now, ct);
+        return await ObserveCustomerCoreAsync(session, existing, customer, ResolveOwner(owningLinkId, customer), source, now, ct);
     }
+
+    /// <summary>
+    /// The owner a listed customer is attributed to. The account-level customer list (observed with a null
+    /// scope) also returns the customers managed through channel partner links, carrying the partner's id in
+    /// <see cref="Customer.ChannelPartnerId"/> — attributing those to that link (rather than "direct") keeps
+    /// the direct pass and the per-link passes in agreement instead of flipping ownership every cycle.
+    /// </summary>
+    private static string? ResolveOwner(string? owningLinkId, Customer customer) =>
+        owningLinkId ?? (string.IsNullOrWhiteSpace(customer.ChannelPartnerId) ? null : customer.ChannelPartnerId);
 
     /// <summary>
     /// Observes a whole scope's customer list (the account's direct customers, or one channel partner
@@ -86,7 +95,7 @@ public sealed class EstateObserver(ILogger<EstateObserver> logger, IIonGatewayCl
                 continue; // duplicate id within one list response
             }
             byId.TryGetValue(c.Id, out var existing);
-            await ObserveCustomerCoreAsync(session, existing, c, owningLinkId, source, now, ct);
+            await ObserveCustomerCoreAsync(session, existing, c, ResolveOwner(owningLinkId, c), source, now, ct);
         }
 
         foreach (var row in stored.Where(r => !seen.Contains(r.CustomerId) && !r.IsDeleted))

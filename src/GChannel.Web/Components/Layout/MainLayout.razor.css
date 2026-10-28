@@ -1,43 +1,63 @@
-/* Sidebar + app bar chrome for the Blazorise layout. Colours follow Bootstrap's colour-mode variables so the
-   data-bs-theme toggle in MainLayout restyles everything. */
+/* Sidebar + app bar chrome for the Blazorise layout. The Bootstrap 5 provider renders standard Bootstrap
+   navbar/dropdown classes, so the selectors below target those inside the .gchannel-sidebar navbar. Colours
+   follow Bootstrap's colour-mode variables so the data-bs-theme toggle in MainLayout restyles everything. */
 
-::deep .gchannel-sidebar {
+/* Specificity must beat Blazorise's .navbar[data-mode^="vertical"].navbar-dark rule, which sets the
+   background shorthand and the width variable. */
+::deep .navbar.gchannel-sidebar[data-mode^="vertical"] {
+    --b-vertical-bar-width: 260px;
     min-height: 100vh;
     width: 260px;
-    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
 }
 
-::deep .gchannel-sidebar .b-bar-brand .b-bar-link {
+::deep .gchannel-sidebar .navbar-brand .nav-link {
     font-size: 1.1rem;
     font-weight: 600;
     color: #fff;
 }
 
-::deep .gchannel-sidebar .b-bar-link,
-::deep .gchannel-sidebar .b-bar-dropdown-toggle {
+::deep .gchannel-sidebar .nav-link,
+::deep .gchannel-sidebar .dropdown-toggle {
     color: #d7d7d7;
     border-radius: 4px;
 }
 
-::deep .gchannel-sidebar .b-bar-link:hover,
-::deep .gchannel-sidebar .b-bar-dropdown-toggle:hover {
+::deep .gchannel-sidebar .nav-link:hover,
+::deep .gchannel-sidebar .dropdown-toggle:hover {
     background-color: rgba(255, 255, 255, 0.1);
     color: #fff;
 }
 
-::deep .gchannel-sidebar .b-bar-link.active,
-::deep .gchannel-sidebar .b-bar-dropdown-item.active {
+::deep .gchannel-sidebar .nav-link.active {
     background-color: rgba(255, 255, 255, 0.37);
     color: #fff;
 }
 
-::deep .gchannel-sidebar .b-bar-dropdown-item {
-    color: #d7d7d7;
-    padding-left: 2.25rem;
+/* Vertical bar dropdowns render inline (not as floating menus): make them transparent on the gradient. */
+::deep .gchannel-sidebar .dropdown-menu {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
 }
 
-::deep .gchannel-sidebar .b-bar-dropdown-item:hover {
+::deep .gchannel-sidebar .dropdown-item {
+    color: #d7d7d7;
+    border-radius: 4px;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+}
+
+::deep .gchannel-sidebar .dropdown-item:hover,
+::deep .gchannel-sidebar .dropdown-item:focus {
     background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+::deep .gchannel-sidebar .dropdown-item.active {
+    background-color: rgba(255, 255, 255, 0.37);
     color: #fff;
 }
 

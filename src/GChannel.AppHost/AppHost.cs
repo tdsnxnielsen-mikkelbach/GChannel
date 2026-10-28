@@ -70,7 +70,7 @@ cache.ConfigureInfrastructure(infra =>
 //  - topic  estate-events : integration events (CustomerChanged, EntitlementChanged,
 //      ChannelNotificationReceived, OperationSubmitted, CustomerReadModelUpdated). Subscriptions:
 //      worker-estate (the worker's projections/sync) and api-cache (the API's Redis cache
-//      invalidation). Duplicate detection (10 min window) is keyed on the Google Pub/Sub message id
+//      invalidation). Duplicate detection (5 min window — the emulator's maximum) is keyed on the Google Pub/Sub message id
 //      so a redelivered notification is dropped at the broker.
 //  - queue  estate-sync   : SyncLinkCustomers / SyncCustomerEntitlements / ProjectCustomer commands,
 //      consumed sequentially so the Channel API per-minute quotas can be paced.
@@ -95,7 +95,8 @@ var estateEvents = serviceBus.AddServiceBusTopic("estate-events")
     .WithProperties(topic =>
     {
         topic.RequiresDuplicateDetection = true;
-        topic.DuplicateDetectionHistoryTimeWindow = TimeSpan.FromMinutes(10);
+        // The Service Bus emulator caps the duplicate-detection window at 5 minutes (Azure allows up to 7 days).
+        topic.DuplicateDetectionHistoryTimeWindow = TimeSpan.FromMinutes(5);
     });
 estateEvents.AddServiceBusSubscription("worker-estate").WithProperties(ConfigureSubscription);
 estateEvents.AddServiceBusSubscription("api-cache").WithProperties(ConfigureSubscription);

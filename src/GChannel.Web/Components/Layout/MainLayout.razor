@@ -10,6 +10,8 @@
 <ModalProvider />
 <PageProgressProvider />
 
+@* Plain wrapper so the scoped CSS (::deep selectors) in MainLayout.razor.css reaches the Blazorise markup. *@
+<div class="gchannel-shell">
 <Layout Sider>
     <LayoutSider>
         <LayoutSiderContent>
@@ -89,6 +91,7 @@
         </LayoutContent>
     </Layout>
 </Layout>
+</div>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.

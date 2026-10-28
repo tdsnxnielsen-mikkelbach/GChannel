@@ -125,6 +125,50 @@ public sealed class EstateObserverTests(PostgresFixture postgres) : IAsyncLifeti
     }
 
     [Fact]
+    public async Task Direct_list_attributes_partner_managed_customers_to_their_link_without_flapping()
+    {
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var direct = "D" + tag;
+        var viaPartner = "P" + tag;
+        var link = "link-" + tag;
+        var now = DateTimeOffset.UtcNow;
+
+        // The account-level list returns both the direct customer and the partner-managed one (which carries
+        // ChannelPartnerId); the partner's own list then returns the managed customer again.
+        async Task RunCycleAsync()
+        {
+            await using (var session = _store.LightweightSession())
+            {
+                await _observer.ObserveCustomerListAsync(session,
+                    [MakeCustomer(direct, "Direct", "direct.example"), MakeCustomer(viaPartner, "Managed", "managed.example", partner: link)],
+                    owningLinkId: null, ObservationSource.Sync, now, CancellationToken.None);
+                await session.SaveChangesAsync();
+            }
+            await using (var session = _store.LightweightSession())
+            {
+                await _observer.ObserveCustomerListAsync(session, [MakeCustomer(viaPartner, "Managed", "managed.example", partner: link)], link, ObservationSource.Sync, now, CancellationToken.None);
+                await session.SaveChangesAsync();
+            }
+        }
+
+        await RunCycleAsync();
+        await RunCycleAsync();
+
+        await using var query = _store.QuerySession();
+        var managed = await query.LoadAsync<CustomerRecord>(EstateStreams.Customer(viaPartner));
+        managed.ShouldNotBeNull();
+        managed.OwningLinkId.ShouldBe(link);
+        managed.IsDeleted.ShouldBeFalse();
+        (await query.Events.FetchStreamAsync(EstateStreams.Customer(viaPartner))).Select(e => e.Data.GetType())
+            .ShouldBe([typeof(CustomerDiscovered)]);
+
+        var directRecord = await query.LoadAsync<CustomerRecord>(EstateStreams.Customer(direct));
+        directRecord.ShouldNotBeNull();
+        directRecord.OwningLinkId.ShouldBeNull();
+        directRecord.IsDeleted.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Entitlement_sync_projects_pricing_and_names_then_appends_only_the_seat_change()
     {
         var customerId = "E" + Guid.NewGuid().ToString("N")[..8];
