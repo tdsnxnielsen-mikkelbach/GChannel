@@ -7,7 +7,7 @@
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/)
-- [Docker Desktop](https://www.docker.com/) (local SQL Server + Redis containers)
+- [Docker Desktop](https://www.docker.com/) (local PostgreSQL + Redis + Azure Service Bus emulator containers)
 - [Azure Developer CLI (`azd`)](https://aka.ms/azd)
 - A Google Cloud project with the **Cloud Channel API** enabled and an **OAuth 2.0 Client**
   (Web application). Authorized redirect URI for local dev:
@@ -26,6 +26,14 @@
 | `GoogleChannel:BackgroundRefreshSeconds` | Worker | `Parameters:` (AppHost) | `GoogleChannelBackgroundRefreshSeconds` azd param (env var) |
 | `GoogleChannel:PubSubProjectId` | Worker | `Parameters:` (AppHost) | `GoogleChannelPubSubProjectId` azd param (env var) |
 | `GoogleChannel:PubSubSubscriptionId` | Worker | `Parameters:` (AppHost) | `GoogleChannelPubSubSubscriptionId` azd param (env var) |
+| `ConnectionStrings:gchanneldb` | ApiService + Worker | Aspire (local `postgres` container) | Aspire: PostgreSQL flexible server host + Entra token (`Aspire.Azure.Npgsql`) — no password |
+| `ConnectionStrings:messaging` | ApiService + Worker | Aspire (Service Bus emulator connection string) | Aspire: Service Bus namespace host + `DefaultAzureCredential` |
+| `ConnectionStrings:cache` | ApiService + Worker | Aspire (local `redis` container) | Aspire: Azure Managed Redis + Entra token |
+| `Blazorise:ProductToken` | Web | _unset_ (community licence banner shown) | Optional commercial [Blazorise](https://blazorise.com/commercial) product token; set via user secrets / env var to remove the banner |
+
+The three connection strings are injected by the Aspire AppHost (`WithReference(...)`) and consumed by
+name — `AddGChannelMarten` (`gchanneldb`), `UseAzureServiceBusUsingNamedConnection("messaging")` and the
+Redis client (`cache`) — so no connection string is ever typed into configuration by hand.
 
 In Azure the client secret lives in Key Vault; locally it is resolved from user-secrets, so the
 app code reads `Authentication:Google:ClientSecret` the same way in both environments. The
@@ -46,10 +54,10 @@ optional too and enable [Pub/Sub notifications](#pubsub-notifications-7).
 | `GoogleChannel:DashboardCustomerListRequestsPerMinute` | `20` | Client-side pacing (requests/minute) for customer-list calls — both the account-level `accounts.customers.list` and the per-reseller `channelPartnerLinks.customers.list` fan-out behind the indirect (reseller-owned) customer estate. Both draw on the same shared "ListCustomers requests per minute" quota (commonly **24/min**), so they are paced together through one bucket. This knob paces **both** the on-demand dashboard's customer-list calls **and** the §10 read-model worker's per-cycle link fan-out (the direct list + each `channelPartnerLinks.customers.list`), so the worker's batch stays under quota instead of tripping 429 link skips. The indirect fan-out (one call per ACTIVE channel partner link) runs only in the background refresh — never on the budgeted on-demand request — so the on-demand dashboard stays fast and the estate figure is served from the background-warmed cache. `0` disables pacing. |
 | `GoogleChannel:DashboardBudgetSeconds` | `45` | Time budget for the on-demand dashboard's per-customer entitlement phase, kept under the 60s HTTP attempt timeout. Roughly `DashboardBudgetSeconds × DashboardRequestsPerMinute / 60` customers are reachable per on-demand request; raise it (with headroom under 60s) to reach more, or enable the background refresh for a complete result. Minimum 5. |
 | `GoogleChannel:BackgroundRefreshSeconds` | `0` (off) | Interval for the background worker that recomputes the dashboard summary with a service account and warms the Redis cache. Requires a service account + impersonation user (below). |
-| `GoogleChannel:UseReadModel` | `false` | Enables the §10 durable SQL read-model: the dashboard indirect estate, the customers/entitlement list pages and the estate value rollup are served from SQL (kept fresh by the incremental sync worker) instead of live Channel API fan-outs. Falls back to the live path before the first sync, so it is safe to toggle. |
+| `GoogleChannel:UseReadModel` | `false` | Enables the §10 durable Marten read-model: the dashboard indirect estate, the customers/entitlement list pages and the estate value rollup are served from Marten (kept fresh by the incremental sync worker) instead of live Channel API fan-outs. Falls back to the live path before the first sync, so it is safe to toggle. |
 | `GoogleChannel:ReadModelLinksPerCycle` | `18` | How many of the **stalest** ACTIVE channel-partner links the sync worker fans out per cycle (`channelPartnerLinks.customers.list`) to refresh their indirect customer roster + `CustomerCount`. Sized to the `ListCustomers` per-minute quota so each cycle stays within budget; the whole estate is covered over several cycles. |
 | `GoogleChannel:ReadModelCustomersPerCycle` | `60` | How many of the **stalest** customers (direct **and** indirect) the worker syncs entitlements for per cycle, in one unified staleness-rotated pass. This is the only consumer of the contended `ListEntitlements` quota in the sync worker, kept separate from the cheap metadata/link fan-out so the indirect estate and per-link counts populate without waiting on entitlement quota. Raise it if your `ListEntitlements` quota allows; lower it under heavy 429s. |
-| `GoogleChannel:ReadModelDashboardCacheSeconds` | `20` | How long (seconds) the dashboard summary/overview **aggregated from the SQL read-model** is cached before recomputing. Kept short because aggregating the durably-synced tables is cheap (indexed SQL, no Channel API), so the dashboard always reflects the **full persisted estate** — including immediately after a redeploy — rather than the background worker's older warmed snapshot. The cache only deduplicates bursts of concurrent page loads/polls. Only applies when `UseReadModel` is on. Minimum 1. |
+| `GoogleChannel:ReadModelDashboardCacheSeconds` | `20` | How long (seconds) the dashboard summary/overview **aggregated from the Marten read-model** is cached before recomputing. Kept short because aggregating the durably-synced read models is cheap (indexed Marten documents, no Channel API), so the dashboard always reflects the **full persisted estate** — including immediately after a redeploy — rather than the background worker's older warmed snapshot. The cache only deduplicates bursts of concurrent page loads/polls. Only applies when `UseReadModel` is on. Minimum 1. |
 | `GoogleChannel:ServiceAccountKeyJson` | _empty_ | Raw JSON of a Google service-account key used by the background refresher. Treat as a secret. |
 | `GoogleChannel:ServiceAccountKeyPath` | _empty_ | Alternative to `ServiceAccountKeyJson`: path to a service-account key file. |
 | `GoogleChannel:ImpersonateUser` | _empty_ | Reseller admin email the service account impersonates via domain-wide delegation (required for the background refresh). |
@@ -57,7 +65,7 @@ optional too and enable [Pub/Sub notifications](#pubsub-notifications-7).
 | `GoogleChannel:PubSubSubscriptionId` | _empty_ | Pub/Sub subscription id (within `PubSubProjectId`) the background subscriber pulls Channel events from. Blank disables the subscriber. |
 | `GoogleChannel:WorkloadIdentityCredentialJson` | _empty_ | Workload Identity Federation credential config (`external_account` JSON) for **key-less** Pub/Sub auth. When set, takes precedence over the service-account key for the subscriber. Not a secret (no private key). Does not apply to the dashboard refresh (domain-wide delegation needs a key). |
 | `GoogleChannel:WorkloadIdentityCredentialPath` | _empty_ | Alternative to `WorkloadIdentityCredentialJson`: path to the WIF credential config file. |
-| `GoogleChannel:PubSubMaxNotifications` | `200` | Maximum recent notifications retained in the rolling Redis feed (`channel:notifications`). Minimum 1. |
+| `GoogleChannel:PubSubMaxNotifications` | `200` | Maximum recent notifications the feed endpoint returns; the Marten `ChannelNotificationRecord` feed is trimmed to 10× this value. Minimum 1. |
 | `GoogleBilling:PostureScanEnabled` | `true` | Worker runs the nightly billing IAM security-posture scan (consumer admins, 2SV / Advanced Protection / key compliance per member) into the `BillingPosture*` read-model. Needs the service-account key + `ImpersonateUser`. See [billing-permissions.md](billing-permissions.md) Part 3. |
 | `GoogleBilling:PostureScanHourUtc` | `2` | UTC hour (0–23) the nightly posture scan starts. |
 | `GoogleBilling:PostureScanStaleHours` | `26` | On worker start, scan immediately if the last completed scan is older than this (first deploy / outage catch-up). |

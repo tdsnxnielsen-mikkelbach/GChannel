@@ -12,7 +12,7 @@ and the parameters to pass to the deployment.
 
 > Nothing here changes the Danish (or any existing) instance. Each region has its **own** Google project,
 > OAuth client, service account, Channel account id, and **its own Azure environment** — they never share
-> state (separate SQL, Redis, Key Vault). Two regions can run side by side from the same source repo, each
+> state (separate PostgreSQL, Service Bus, Redis, Key Vault). Two regions can run side by side from the same source repo, each
 > with its own `azd` environment.
 
 ---
@@ -26,7 +26,7 @@ and the parameters to pass to the deployment.
 | Google Cloud **project** (APIs, quotas, Pub/Sub, WIF pool) | — | ✅ One per region |
 | **OAuth 2.0 client** (sign-in) | — | ✅ One per region (its own redirect URIs) |
 | **Service account** + domain-wide delegation | — | ✅ One per region (authorized in that region's Workspace) |
-| **Azure** subscription / resource group / Key Vault / SQL / Redis | — | ✅ One `azd` environment per region |
+| **Azure** subscription / resource group / Key Vault / PostgreSQL / Service Bus / Redis | — | ✅ One `azd` environment per region |
 | Reseller admin user the SA impersonates | — | ✅ An admin in that region's Workspace tenant |
 
 ---
@@ -167,7 +167,7 @@ These map 1:1 to the `azd` parameters exposed by the AppHost. Each is `azd env s
 | `GoogleChannelServiceAccountKeyJson` | SA key JSON (step 2.5) | **Yes** → Key Vault |
 | `GoogleChannelImpersonateUser` | reseller admin email (step 2.6), e.g. `admin@<region-domain>` | No |
 | `GoogleChannelBackgroundRefreshSeconds` | e.g. `900` (≥ 900 recommended) — `0` disables | No |
-| `GoogleChannelUseReadModel` | `true` to serve the dashboard/estate from durable SQL | No |
+| `GoogleChannelUseReadModel` | `true` to serve the dashboard/estate from the durable Marten read-model | No |
 | `GoogleChannelReadModelLinksPerCycle` | e.g. `18` (per-cycle `ListCustomers` budget) | No |
 | `GoogleChannelDashboardRequestsPerMinute` | e.g. `18` (just under the `ListEntitlements` quota) | No |
 | `GoogleChannelDashboardCustomerListRequestsPerMinute` | e.g. `18` (just under the `ListCustomers` quota) | No |
@@ -195,7 +195,7 @@ These map 1:1 to the `azd` parameters exposed by the AppHost. Each is `azd env s
 
 ## 4. Azure setup (per region)
 
-Each region is a separate `azd` environment (its own resource group + Key Vault + SQL + Redis).
+Each region is a separate `azd` environment (its own resource group + Key Vault + PostgreSQL + Service Bus + Redis).
 
 1. **Sign in** to the region's Azure context:
 
@@ -245,8 +245,8 @@ Each region is a separate `azd` environment (its own resource group + Key Vault 
 azd up
 ```
 
-`azd` provisions the Container Apps environment, **Key Vault**, serverless **Azure SQL**, **Azure Managed
-Redis**, then deploys the three container apps (`webfrontend` external, `apiservice` + `worker` internal).
+`azd` provisions the Container Apps environment, **Key Vault**, **Azure Database for PostgreSQL flexible
+server**, **Azure Service Bus**, **Azure Managed Redis**, then deploys the three container apps (`webfrontend` external, `apiservice` + `worker` internal).
 Answer any parameter prompts for values you didn't `azd env set` (empty / `0` keeps a feature off).
 
 > **Deploy-time parameter gotcha.** `azd deploy`'s container-app manifest resolves parameters **only**
@@ -292,7 +292,7 @@ azd deploy webfrontend
 1. Open the `webfrontend` URL and sign in with a Google account in the region's Workspace.
 2. **Customers** / **Channel partners** should list the region's estate (live from the signed-in token).
 3. If you enabled the read-model + background refresh, the **Home dashboard** fills in over the next few
-   sync cycles (indirect estate, seats, estimated value). It reads from durable SQL, so it survives
+   sync cycles (indirect estate, seats, estimated value). It reads from the durable Marten store, so it survives
    redeploys and only adds deltas — see [architecture.md](architecture.md) and
    [docs/todos/10-persistent-read-model.md](todos/10-persistent-read-model.md).
 4. If you enabled Pub/Sub, register the topic from **Notifications**, then trigger a change (e.g. a
@@ -320,7 +320,7 @@ dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleChannel
 dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleChannelBackgroundRefreshSeconds" "900"
 ```
 
-Then `dotnet run --project src/GChannel.AppHost` (needs Docker for the local SQL + Redis containers).
+Then `dotnet run --project src/GChannel.AppHost` (needs Docker for the local PostgreSQL + Redis + Service Bus emulator containers).
 
 ---
 

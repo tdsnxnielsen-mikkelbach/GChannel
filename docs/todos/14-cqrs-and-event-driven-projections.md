@@ -7,6 +7,20 @@
 > `ReadModelProjector`. A *formal* CQRS/MediatR refactor was deliberately **not** done (it would relabel
 > an existing design without touching the real constraint — Channel API quota). This note is retained as
 > the rationale + design record. See [10 — Persistent read-model](10-persistent-read-model.md).
+>
+> **Update (2026-10, Critter Stack):** the platform moved to **Marten + Wolverine on Azure Database for
+> PostgreSQL and Azure Service Bus** (see [architecture.md → Persistence &amp; messaging](../architecture.md#persistence--messaging-critter-stack)).
+> Everything below still holds conceptually, with these mappings: `ReadModelProjector` → `EstateObserver`
+> (`GChannel.Core/Estate`, appends diff **events** to per-customer/entitlement/link streams; the SQL rows
+> became inline Marten snapshots `CustomerRecord` / `EntitlementRecord` / `ResellerLinkRecord`);
+> `ReadModelSyncService` → the `RunEstateSyncCycle` recurring message handled by `EstateSyncHandler`;
+> the Pub/Sub subscriber → a bridge that republishes each event as `ChannelNotificationArrived` on the
+> Service Bus `estate-events` topic, handled by `ChannelNotificationArrivedHandler` → `ProjectCustomer`;
+> write-through endpoints publish `CustomerChanged` / `EntitlementChanged` through Wolverine's durable
+> outbox in the same transaction as the appended events; the API's Redis cache invalidation is now the
+> `api-cache` subscription (`CustomerReadModelUpdatedHandler`). So the "message bus / event store" that
+> the *Where formalising CQRS would help* section said was not worth adding on its own arrived as a
+> by-product of the storage migration rather than as a MediatR-style refactor.
 
 ### What shipped
 

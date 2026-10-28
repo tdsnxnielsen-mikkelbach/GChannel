@@ -4,9 +4,11 @@ A .NET 10 / Blazor dashboard for Google distributors and resellers. Users sign i
 Google account and the UI abstracts the **Google Cloud Channel API** behind point-and-click
 actions — they never see the underlying REST calls.
 
-Built with **.NET Aspire**: the front end and back-end services run as two independently
-scalable **Azure Container Apps**, backed by **Azure SQL (serverless)** and **Azure Managed
-Redis**. Deployment is handled by the **Azure Developer CLI (`azd`)**.
+Built with **.NET Aspire** on the **Critter Stack** ([Marten](https://martendb.io) event store +
+[Wolverine](https://wolverinefx.net) messaging): the front end (Blazor + Blazorise), the API and the
+worker run as three independently scalable **Azure Container Apps**, backed by **Azure Database for
+PostgreSQL flexible server**, **Azure Service Bus** and **Azure Managed Redis**. Deployment is handled by
+the **Azure Developer CLI (`azd`)**.
 
 ## Quick start
 
