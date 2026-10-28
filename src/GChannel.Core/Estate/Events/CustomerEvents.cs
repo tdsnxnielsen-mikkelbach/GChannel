@@ -57,3 +57,11 @@ public sealed record CustomerMutationRequested(
     string Action,
     string? RequestedBy,
     string? OperationName) : ICustomerEvent;
+
+/// <summary>The Google long-running operation for a customer-level mutation (import, provision Cloud Identity, transfer, purchase) finished.</summary>
+public sealed record CustomerOperationCompleted(
+    string CustomerId,
+    string Action,
+    string OperationName,
+    bool Succeeded,
+    string? Error) : ICustomerEvent;

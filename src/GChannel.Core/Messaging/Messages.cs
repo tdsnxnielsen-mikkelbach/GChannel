@@ -1,4 +1,5 @@
 using GChannel.Shared.Contracts;
+using Wolverine.Persistence.Sagas;
 
 namespace GChannel.Core.Messaging;
 
@@ -19,7 +20,7 @@ public sealed record ChannelNotificationArrived(ChannelNotification Notification
 
 /// <summary>A mutating Channel API call returned a long-running operation to track.</summary>
 public sealed record OperationSubmitted(
-    string OperationName,
+    [property: SagaIdentity] string OperationName,
     string CustomerId,
     string? EntitlementId,
     string Action,
@@ -63,4 +64,4 @@ public sealed record RunBillingPostureScan(Guid RunId) : IRecurringJobTick;
 // ---------------------------------------------------------------------------------------------------
 
 /// <summary>Timeout message: poll the Google long-running operation again.</summary>
-public sealed record CheckChannelOperation(string OperationName);
+public sealed record CheckChannelOperation([property: SagaIdentity] string OperationName);

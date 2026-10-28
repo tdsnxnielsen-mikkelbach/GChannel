@@ -1,113 +1,70 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
 using GChannel.Core.Configuration;
-using GChannel.ApiService.Data;
+using GChannel.Core.Estate.ReadModels;
+using GChannel.Core.Messaging;
+using GChannel.Core.Persistence.Documents;
+using GChannel.Worker.Infrastructure;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.BigQuery.V2;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
+using Marten;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
+using System.Globalization;
+using System.Text.RegularExpressions;
+using Wolverine;
 
-namespace GChannel.Worker.Services;
+namespace GChannel.Worker.Handlers;
 
 /// <summary>
-/// §15 billing-export sync. Once per configured interval it runs two aggregated BigQuery queries over
-/// the reseller's Cloud Billing → BigQuery detailed cost export (monthly by sub-account, and daily for
-/// the trend window), resolves each billing sub-account to a Channel customer + owning reseller link via
-/// the entitlement billing account the §10 read-model now stores, and upserts the results into the
-/// CustomerSpend / SpendDaily read-model. The UI then reads durable, indexed BILLED figures without ever
-/// touching BigQuery on the request path. A no-op unless <see cref="GoogleBillingOptions.BigQueryConfigured"/>
-/// and a service-account credential are set. Queries are aggregated server-side and capped with
-/// <see cref="GoogleBillingOptions.MaximumBytesBilled"/> to keep BigQuery cost low.
+/// Billing-export sync (the <c>RunBillingSyncCycle</c> recurring tick). Runs aggregated BigQuery queries over
+/// the reseller's Cloud Billing → BigQuery detailed cost export (monthly by sub-account, per seller/service,
+/// and daily for the trend window), resolves each billing sub-account to a Channel customer + owning reseller
+/// link via the entitlement billing account the read model stores, and upserts the results into the
+/// CustomerSpend / CustomerSpendBySeller / SpendDaily documents. Queries are aggregated server-side and
+/// capped with <see cref="GoogleBillingOptions.MaximumBytesBilled"/> to keep BigQuery cost low.
 /// </summary>
-public sealed class BillingSyncService(
+public sealed class BillingSyncHandler(
     IOptions<GoogleChannelOptions> channelOptions,
     IOptions<GoogleBillingOptions> billingOptions,
-    IServiceScopeFactory scopeFactory,
-    IConnectionMultiplexer redis,
-    ILogger<BillingSyncService> logger) : BackgroundService
+    IDocumentStore store,
+    RecurringJobCatalog catalog,
+    ILogger<BillingSyncHandler> logger)
 {
-    private const string SyncLockKey = "billing:sync:lock";
+    private BigQueryClient? _bigQuery;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public async Task<OutgoingMessages> Handle(RunBillingSyncCycle tick, IDocumentSession session, CancellationToken ct)
     {
-        var opts = billingOptions.Value;
-        var channel = channelOptions.Value;
-        if (!opts.BigQueryConfigured)
-        {
-            logger.LogInformation("Billing-export sync is disabled (GoogleBilling:BigQueryEnabled off or ProjectId/Dataset/Table unset).");
-            return;
-        }
-        if (!channel.HasServiceAccountCredential)
-        {
-            logger.LogWarning("Billing-export sync is configured but no service-account credential is available; skipping.");
-            return;
-        }
-
-        var interval = TimeSpan.FromHours(Math.Max(1, opts.SyncIntervalHours));
-        var db = redis.GetDatabase();
-        BigQueryClient? bq = null;
-
-        try { await db.KeyDeleteAsync(SyncLockKey); } catch (Exception ex) { logger.LogDebug(ex, "Could not clear billing-sync lock on startup."); }
-
-        logger.LogInformation(
-            "Billing-export sync enabled; cycle every {Interval}h against {Project}.{Dataset}.{Table}.",
-            interval.TotalHours, opts.BigQueryProjectId, opts.BillingExportDataset, opts.BillingExportTable);
-
-        do
-        {
-            try
-            {
-                if (!await db.StringSetAsync(SyncLockKey, Environment.MachineName, interval, when: When.NotExists))
-                {
-                    logger.LogDebug("Another replica already synced billing this interval; skipping.");
-                    continue;
-                }
-
-                bq ??= await BigQueryClient.CreateAsync(opts.BigQueryProjectId, BuildCredential(channel));
-                await RunCycleAsync(bq, opts, stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Billing-export sync cycle failed; will retry next interval.");
-            }
-        }
-        while (await WaitAsync(interval, stoppingToken));
+        var outgoing = new OutgoingMessages();
+        await RecurringJobRunner.RunAsync(tick, catalog[RecurringJobs.BillingSync], session, outgoing, logger, RunCycleAsync, ct);
+        return outgoing;
     }
 
     private static GoogleCredential BuildCredential(GoogleChannelOptions channel)
     {
-        // BigQuery access uses the reseller service account's OWN IAM on the export project — no
-        // domain-wide delegation/impersonation (that's only for the Channel API's user-scoped calls).
+        // BigQuery access uses the reseller service account's OWN IAM on the export project — no domain-wide
+        // delegation/impersonation (that's only for the Channel API's user-scoped calls).
         var credential = string.IsNullOrWhiteSpace(channel.ServiceAccountKeyJson)
             ? CredentialFactory.FromFile(channel.ServiceAccountKeyPath, "service_account")
             : CredentialFactory.FromJson(channel.ServiceAccountKeyJson, "service_account");
         return credential.CreateScoped("https://www.googleapis.com/auth/bigquery");
     }
 
-    private async Task RunCycleAsync(BigQueryClient bq, GoogleBillingOptions opts, CancellationToken ct)
+    private async Task<string?> RunCycleAsync(CancellationToken ct)
     {
+        var opts = billingOptions.Value;
+        var channel = channelOptions.Value;
+        _bigQuery ??= await BigQueryClient.CreateAsync(opts.BigQueryProjectId, BuildCredential(channel));
+        var bq = _bigQuery;
+
         var now = DateTimeOffset.UtcNow;
         var table = $"`{opts.BigQueryProjectId}.{opts.BillingExportDataset}.{opts.BillingExportTable}`";
         var queryOptions = new QueryOptions { MaximumBytesBilled = opts.MaximumBytesBilled };
         var excluded = opts.ExcludeBillingAccountIdList.Select(Normalize).ToHashSet(StringComparer.Ordinal);
 
-        // Resolve billing sub-account -> (customer, owning reseller link) from the §10 read-model. A
-        // sub-account can back several entitlements of one customer; keep the first mapping seen.
         var accountMap = await BuildAccountMapAsync(ct);
-
-        // --- Monthly spend by sub-account (last 13 invoice months). ---
         var minMonth = now.UtcDateTime.AddMonths(-13).ToString("yyyyMM", CultureInfo.InvariantCulture);
+        var monthWindow = Enumerable.Range(0, 14).Select(i => now.UtcDateTime.AddMonths(-i).ToString("yyyyMM", CultureInfo.InvariantCulture)).ToArray();
 
-        // Fallback correlation: GCP entitlements don't carry a billing sub-account, so the entitlement
-        // join above finds nothing. The export instead ties each sub-account to a customer via the GCP
-        // organization's domain (project.ancestors org display_name == the org's primary domain), which
-        // matches our CustomerRecord.Domain. Build sub-account -> org-domain and domain -> customer maps.
+        // Fallback correlation: GCP entitlements don't carry a billing sub-account; the export ties each sub-account
+        // to a customer via the GCP organization's domain, which matches CustomerRecord.Domain.
         var (domainMap, sldMap) = await BuildDomainMapsAsync(ct);
         var subToDomain = new Dictionary<string, string>(StringComparer.Ordinal);
         var domainSql = $"""
@@ -123,10 +80,9 @@ public sealed class BillingSyncService(
             var d = (row["org_domain"] as string)?.Trim().ToLowerInvariant();
             if (s.Length > 0 && !string.IsNullOrEmpty(d)) { subToDomain[s] = d; }
         }
-        // Manual overrides win: pin sub-accounts the export can't auto-resolve (no org, or a TLD-mismatched
-        // org domain) to a customer domain.
         foreach (var kv in opts.SubAccountDomainMapParsed) { subToDomain[Normalize(kv.Key)] = kv.Value; }
 
+        // --- Monthly spend by sub-account (last 13 invoice months). ---
         var monthlySql = $"""
             SELECT
               billing_account_id AS sub_account,
@@ -142,11 +98,11 @@ public sealed class BillingSyncService(
             [new BigQueryParameter("minMonth", BigQueryDbType.String, minMonth)], queryOptions, cancellationToken: ct);
 
         var monthlyUpserts = 0;
-        int monthlyUnmapped = 0;
-        await WithDbAsync(async dbc =>
+        var monthlyUnmapped = 0;
+        await WithSessionAsync(async session =>
         {
-            var stored = await dbc.CustomerSpend.ToDictionaryAsync(
-                r => (r.BillingSubAccountId, r.InvoiceMonth, r.Currency), ct);
+            var stored = (await session.Query<CustomerSpendRecord>().Where(r => r.InvoiceMonth.IsOneOf(monthWindow)).ToListAsync(ct))
+                .ToDictionary(r => r.Id, StringComparer.Ordinal);
             foreach (var row in monthlyRows)
             {
                 var sub = Normalize(row["sub_account"] as string);
@@ -159,11 +115,11 @@ public sealed class BillingSyncService(
                 var owner = Resolve(sub, accountMap, subToDomain, domainMap, sldMap);
                 if (owner.CustomerId is null) { monthlyUnmapped++; }
 
-                if (!stored.TryGetValue((sub, month, currency), out var rec))
+                var id = CustomerSpendRecord.MakeId(sub, month, currency);
+                if (!stored.TryGetValue(id, out var rec))
                 {
-                    rec = new CustomerSpendRecord { BillingSubAccountId = sub, InvoiceMonth = month, Currency = currency };
-                    dbc.CustomerSpend.Add(rec);
-                    stored[(sub, month, currency)] = rec;
+                    rec = new CustomerSpendRecord { Id = id, BillingSubAccountId = sub, InvoiceMonth = month, Currency = currency };
+                    stored[id] = rec;
                 }
                 rec.CustomerId = owner.CustomerId;
                 rec.OwningLinkId = owner.OwningLinkId;
@@ -171,14 +127,12 @@ public sealed class BillingSyncService(
                 rec.Credits = credits;
                 rec.Cost = gross + credits;
                 rec.LastSyncedUtc = now;
+                session.Store(rec);
                 monthlyUpserts++;
             }
-            await dbc.SaveChangesAsync(ct);
-        });
+        }, ct);
 
-        // --- Native Google vs third-party split: monthly spend by seller + service. transaction_type is
-        // GOOGLE / THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY (only on regular cost rows), seller_name is the
-        // ISV / partner legal name on Marketplace rows. Rows for the window are replaced wholesale. ---
+        // --- Native Google vs third-party split: monthly spend by seller + service. Rows for the window are replaced wholesale. ---
         var sellerSql = $"""
             SELECT
               billing_account_id AS sub_account,
@@ -197,10 +151,10 @@ public sealed class BillingSyncService(
             [new BigQueryParameter("minMonth", BigQueryDbType.String, minMonth)], queryOptions, cancellationToken: ct);
 
         var sellerUpserts = 0;
-        await WithDbAsync(async dbc =>
+        await WithSessionAsync(session =>
         {
-            await dbc.CustomerSpendBySeller.Where(r => string.Compare(r.InvoiceMonth, minMonth) >= 0).ExecuteDeleteAsync(ct);
-            var seen = new HashSet<(string, string, string, string, string, string)>();
+            session.DeleteWhere<CustomerSpendBySellerRecord>(r => r.InvoiceMonth.IsOneOf(monthWindow));
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var row in sellerRows)
             {
                 var sub = Normalize(row["sub_account"] as string);
@@ -208,22 +162,24 @@ public sealed class BillingSyncService(
                 var month = row["invoice_month"] as string ?? "";
                 var currency = row["currency"] as string ?? "";
                 if (month.Length == 0 || currency.Length == 0) { continue; }
-                var txType = (row["transaction_type"] as string ?? "").Trim().ToUpperInvariant();
+                var txType = Truncate((row["transaction_type"] as string ?? "").Trim().ToUpperInvariant(), 32);
                 var seller = (row["seller_name"] as string ?? "").Trim();
                 var service = (row["service_description"] as string ?? "").Trim();
                 var sellerKey = Truncate(seller.ToLowerInvariant(), 256);
                 var serviceKey = Truncate(service.ToLowerInvariant(), 256);
-                if (!seen.Add((sub, month, currency, txType, sellerKey, serviceKey))) { continue; }
+                var id = CustomerSpendBySellerRecord.MakeId(sub, month, currency, txType, sellerKey, serviceKey);
+                if (!seen.Add(id)) { continue; }
 
                 var gross = Dec(row["gross_cost"]);
                 var credits = Dec(row["credits"]);
                 var owner = Resolve(sub, accountMap, subToDomain, domainMap, sldMap);
-                dbc.CustomerSpendBySeller.Add(new CustomerSpendBySellerRecord
+                session.Store(new CustomerSpendBySellerRecord
                 {
+                    Id = id,
                     BillingSubAccountId = sub,
                     InvoiceMonth = month,
                     Currency = currency,
-                    TransactionType = Truncate(txType, 32),
+                    TransactionType = txType,
                     SellerKey = sellerKey,
                     ServiceKey = serviceKey,
                     SellerName = seller.Length == 0 ? null : Truncate(seller, 256),
@@ -237,8 +193,8 @@ public sealed class BillingSyncService(
                 });
                 sellerUpserts++;
             }
-            await dbc.SaveChangesAsync(ct);
-        });
+            return Task.CompletedTask;
+        }, ct);
 
         // --- Daily spend by sub-account (trailing trend window). Prune older rows first. ---
         var minDay = now.UtcDateTime.Date.AddDays(-Math.Max(1, opts.TrendDays));
@@ -257,12 +213,11 @@ public sealed class BillingSyncService(
             [new BigQueryParameter("minDay", BigQueryDbType.Timestamp, minDay)], queryOptions, cancellationToken: ct);
 
         var dailyUpserts = 0;
-        await WithDbAsync(async dbc =>
+        await WithSessionAsync(async session =>
         {
-            await dbc.SpendDaily.Where(d => d.Day < minDayOnly).ExecuteDeleteAsync(ct);
-            var stored = await dbc.SpendDaily
-                .Where(d => d.Day >= minDayOnly)
-                .ToDictionaryAsync(r => (r.BillingSubAccountId, r.Day, r.Currency), ct);
+            session.DeleteWhere<SpendDailyRecord>(d => d.Day < minDayOnly);
+            var stored = (await session.Query<SpendDailyRecord>().Where(d => d.Day >= minDayOnly).ToListAsync(ct))
+                .ToDictionary(r => r.Id, StringComparer.Ordinal);
             foreach (var row in dailyRows)
             {
                 var sub = Normalize(row["sub_account"] as string);
@@ -272,29 +227,29 @@ public sealed class BillingSyncService(
                 if (currency.Length == 0) { continue; }
                 var owner = Resolve(sub, accountMap, subToDomain, domainMap, sldMap);
 
-                if (!stored.TryGetValue((sub, day, currency), out var rec))
+                var id = SpendDailyRecord.MakeId(sub, day, currency);
+                if (!stored.TryGetValue(id, out var rec))
                 {
-                    rec = new SpendDailyRecord { BillingSubAccountId = sub, Day = day, Currency = currency };
-                    dbc.SpendDaily.Add(rec);
-                    stored[(sub, day, currency)] = rec;
+                    rec = new SpendDailyRecord { Id = id, BillingSubAccountId = sub, Day = day, Currency = currency };
+                    stored[id] = rec;
                 }
                 rec.CustomerId = owner.CustomerId;
                 rec.OwningLinkId = owner.OwningLinkId;
                 rec.Cost = Dec(row["cost"]);
                 rec.LastSyncedUtc = now;
+                session.Store(rec);
                 dailyUpserts++;
             }
-            await dbc.SaveChangesAsync(ct);
-        });
+        }, ct);
 
         logger.LogInformation(
             "Billing-export cycle: {Monthly} monthly + {Daily} daily + {Seller} seller/service spend rows upserted ({Unmapped} monthly rows unattributed to a customer).",
             monthlyUpserts, dailyUpserts, sellerUpserts, monthlyUnmapped);
+        return null;
     }
 
-    // Resolves a sub-account to a customer: the entitlement billing-account map first (precise), else the
-    // export org-domain -> CustomerRecord.Domain, else the unambiguous registrable-domain (SLD) match
-    // (handles TLD mismatches, e.g. formuepleje.dev -> formuepleje.dk).
+    // Resolves a sub-account to a customer: the entitlement billing-account map first (precise), else the export
+    // org-domain -> CustomerRecord.Domain, else the unambiguous registrable-domain (SLD) match.
     private static (string? CustomerId, string? OwningLinkId) Resolve(
         string sub,
         Dictionary<string, (string? CustomerId, string? OwningLinkId)> accountMap,
@@ -311,99 +266,77 @@ public sealed class BillingSyncService(
         return (null, null);
     }
 
-    /// <summary>Builds customer-domain and unambiguous registrable-domain (SLD) maps from the read-model.</summary>
     private async Task<(Dictionary<string, (string? CustomerId, string? OwningLinkId)> ByDomain,
                         Dictionary<string, (string? CustomerId, string? OwningLinkId)> BySld)> BuildDomainMapsAsync(CancellationToken ct)
     {
         var byDomain = new Dictionary<string, (string?, string?)>(StringComparer.OrdinalIgnoreCase);
         var sldOwner = new Dictionary<string, (string?, string?)>(StringComparer.OrdinalIgnoreCase);
         var sldCustomers = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        await WithDbAsync(async dbc =>
+        await using var session = store.QuerySession();
+        var rows = await session.Query<CustomerRecord>()
+            .Where(c => !c.IsDeleted && (c.Domain != null || c.CloudIdentityDomain != null))
+            .ToListAsync(ct);
+        foreach (var r in rows)
         {
-            var rows = await dbc.CustomerRecords.AsNoTracking()
-                .Where(c => !c.IsDeleted && (c.Domain != null || c.CloudIdentityDomain != null))
-                .Select(c => new { c.Domain, c.CloudIdentityDomain, c.CustomerId, c.OwningLinkId })
-                .ToListAsync(ct);
-            foreach (var r in rows)
+            foreach (var d in new[] { r.Domain, r.CloudIdentityDomain })
             {
-                // Map BOTH the customer domain and its Cloud Identity primary domain (they can differ).
-                foreach (var d in new[] { r.Domain, r.CloudIdentityDomain })
+                var key = d?.Trim().ToLowerInvariant();
+                if (string.IsNullOrEmpty(key)) { continue; }
+                byDomain.TryAdd(key, (r.CustomerId, r.OwningLinkId));
+                var sld = Sld(key);
+                if (sld.Length > 0)
                 {
-                    var key = d?.Trim().ToLowerInvariant();
-                    if (string.IsNullOrEmpty(key)) { continue; }
-                    byDomain.TryAdd(key, (r.CustomerId, r.OwningLinkId));
-                    var sld = Sld(key);
-                    if (sld.Length > 0)
-                    {
-                        if (!sldCustomers.TryGetValue(sld, out var set)) { set = sldCustomers[sld] = new(StringComparer.OrdinalIgnoreCase); }
-                        set.Add(r.CustomerId);
-                        sldOwner[sld] = (r.CustomerId, r.OwningLinkId);
-                    }
+                    if (!sldCustomers.TryGetValue(sld, out var set)) { set = sldCustomers[sld] = new(StringComparer.OrdinalIgnoreCase); }
+                    set.Add(r.CustomerId);
+                    sldOwner[sld] = (r.CustomerId, r.OwningLinkId);
                 }
             }
-        });
-        // Keep only SLDs owned by exactly one customer (avoids mis-attributing e.g. acme.dk vs acme.com).
+        }
         var bySld = sldOwner
             .Where(kv => sldCustomers.TryGetValue(kv.Key, out var s) && s.Count == 1)
             .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
         return (byDomain, bySld);
     }
 
-    // Registrable (second-level) label of a domain: formuepleje.dev -> "formuepleje". Sufficient for this
-    // book's TLDs; ambiguous SLDs are excluded from matching above.
     private static string Sld(string domain)
     {
         var parts = domain.Split('.', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length >= 2 ? parts[^2] : (parts.Length == 1 ? parts[0] : string.Empty);
     }
 
-    /// <summary>Builds a billing sub-account -> (customer, owning reseller link) map from the entitlement read-model.</summary>
+    /// <summary>billing sub-account -> (customer, owning reseller link) from the entitlement read model.</summary>
     private async Task<Dictionary<string, (string? CustomerId, string? OwningLinkId)>> BuildAccountMapAsync(CancellationToken ct)
     {
         var map = new Dictionary<string, (string?, string?)>(StringComparer.Ordinal);
-        await WithDbAsync(async dbc =>
+        await using var session = store.QuerySession();
+        var rows = await session.Query<EntitlementRecord>()
+            .Where(e => !e.IsDeleted && (e.BillingAccount != null || e.ProvisioningId != null))
+            .ToListAsync(ct);
+        foreach (var r in rows)
         {
-            var rows = await dbc.EntitlementRecords.AsNoTracking()
-                .Where(e => !e.IsDeleted && (
-                    (e.BillingAccount != null && e.BillingAccount != "") ||
-                    (e.ProvisioningId != null && e.ProvisioningId != "")))
-                .Select(e => new { e.BillingAccount, e.ProvisioningId, e.CustomerId, e.OwningLinkId })
-                .ToListAsync(ct);
-            foreach (var r in rows)
+            // Channel leaves billingAccount empty for GCP entitlements; there the provisioned-service id IS the Cloud
+            // Billing sub-account. Only accept candidates shaped like a sub-account.
+            foreach (var candidate in new[] { r.BillingAccount, r.ProvisioningId })
             {
-                // Channel leaves billingAccount empty for GCP entitlements; there the provisioned-service id
-                // IS the Cloud Billing sub-account, so it's the precise join key to the export. Only accept
-                // candidates shaped like a sub-account (guards against non-GCP provisioning ids).
-                foreach (var candidate in new[] { r.BillingAccount, r.ProvisioningId })
-                {
-                    var key = Normalize(candidate);
-                    if (key.Length == 0 || !BillingAccountPattern.IsMatch(key)) { continue; }
-                    map.TryAdd(key, (r.CustomerId, r.OwningLinkId));
-                }
+                var key = Normalize(candidate);
+                if (key.Length == 0 || !BillingAccountPattern.IsMatch(key)) { continue; }
+                map.TryAdd(key, (r.CustomerId, r.OwningLinkId));
             }
-        });
+        }
         return map;
     }
 
     private static readonly Regex BillingAccountPattern =
         new("^[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}-[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
 
-    private async Task WithDbAsync(Func<GChannelDbContext, Task> work)
+    private async Task WithSessionAsync(Func<IDocumentSession, Task> work, CancellationToken ct)
     {
-        using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
-        await work(db);
+        await using var session = store.LightweightSession();
+        await work(session);
+        await session.SaveChangesAsync(ct);
     }
 
-    private async Task<bool> WaitAsync(TimeSpan interval, CancellationToken ct)
-    {
-        try { await Task.Delay(interval, ct); return !ct.IsCancellationRequested; }
-        catch (OperationCanceledException) { return false; }
-    }
-
-    // Billing account ids compare case-insensitively; the export is bare (010528-357BBF-249088) while an
-    // entitlement's billingAccount may be a resource name (billingAccounts/010528-...). Take the last
-    // path segment and upper-case so both sides match.
+    // Billing account ids compare case-insensitively; take the last path segment and upper-case so both sides match.
     private static string Normalize(string? account)
     {
         if (string.IsNullOrWhiteSpace(account)) { return string.Empty; }

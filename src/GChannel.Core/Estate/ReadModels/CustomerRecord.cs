@@ -87,6 +87,11 @@ public sealed class CustomerRecord
 
     public void Apply(CustomerMutationRequested e) => MutationCount++;
 
+    public void Apply(CustomerOperationCompleted e)
+    {
+        // Audit history only.
+    }
+
     public void Apply(ChannelNotificationReceived e)
     {
         // Notifications are history, not state: nothing to project.
