@@ -1,420 +1,447 @@
 @page "/"
 @attribute [Authorize]
 @implements IDisposable
-@using MudBlazor
-@using Severity = MudBlazor.Severity
 @using ApexCharts
-@using Color = MudBlazor.Color
-@using Size = MudBlazor.Size
+@* ApexCharts and Blazorise both export these names; the page uses the Blazorise meaning except for Theme. *@
+@using Color = Blazorise.Color
+@using Size = Blazorise.Size
+@using Padding = Blazorise.Padding
+@using Tooltip = Blazorise.Tooltip
+@using Label = Blazorise.Label
+@using Orientation = Blazorise.Orientation
+@using Theme = ApexCharts.Theme
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Dashboard · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">Dashboard</MudText>
-<MudText Typo="Typo.body1" Class="mb-2" Color="Color.Secondary">
+<Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">Dashboard</Heading>
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is2.FromBottom">
     Reseller overview for your Google Cloud Channel estate.
-</MudText>
+</Paragraph>
 
 @if (_status is not null)
 {
-    <div class="d-flex align-center mb-6" style="gap: 8px;">
+    <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Margin="Margin.Is5.FromBottom">
         @if (_status.IsRunning)
         {
-            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
-                     Icon="@Icons.Material.Filled.Sync">Refreshing…</MudChip>
+            <Badge Color="Color.Info"><Icon Name="@AppIcons.Sync" Class="me-1 fa-spin" />Refreshing…</Badge>
         }
         else if (!_status.Enabled)
         {
-            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
-                     Icon="@Icons.Material.Filled.Bolt">On demand</MudChip>
+            <Badge Color="Color.Light" Class="border text-body"><Icon Name="@AppIcons.Bolt" Class="me-1" />On demand</Badge>
         }
         @if (_status.LastCompletedUtc is { } completed)
         {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">
+            <Small TextColor="TextColor.Secondary">
                 Updated @FormatAgo(completed)@(_status.LastDurationSeconds is { } secs ? $" · took {secs}s" : "")@(NextRefreshText is { } next ? $" · {next}" : "")
-            </MudText>
+            </Small>
         }
         else if (_status is { Enabled: true, IsRunning: false })
         {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">Awaiting first background refresh…@(NextRefreshText is { } next ? $" ({next})" : "")</MudText>
+            <Small TextColor="TextColor.Secondary">Awaiting first background refresh…@(NextRefreshText is { } next ? $" ({next})" : "")</Small>
         }
-    </div>
+    </Div>
 }
 
 @if (_data is { SkippedCustomerCount: > 0 })
 {
-    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+    <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
         <div>@_data.SkippedCustomerCount customer@(_data.SkippedCustomerCount == 1 ? "" : "s") couldn't be loaded; figures may be incomplete.</div>
         @if (!string.IsNullOrWhiteSpace(_data.IncompleteReason))
         {
-            <MudText Typo="Typo.caption">@_data.IncompleteReason</MudText>
+            <Small Display="Display.Block">@_data.IncompleteReason</Small>
         }
         @if (_status is { Enabled: true })
         {
-            <MudText Typo="Typo.caption">These will be retrieved during the next background refresh; figures will fill in automatically.</MudText>
+            <Small Display="Display.Block">These will be retrieved during the next background refresh; figures will fill in automatically.</Small>
         }
-    </MudAlert>
+    </Alert>
 }
 
 <OnboardingPanel CustomerCount="@(_overview?.CustomerCount ?? _data?.CustomerCount ?? 0)"
                  EntitlementCount="@EntitlementCount" />
 
-<MudGrid>
+<Row>
     @foreach (var card in Cards)
     {
-        <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2">
-                <MudCardContent>
-                    <div class="d-flex justify-space-between align-center">
-                        <div>
-                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@card.Label</MudText>
+        <Column ColumnSize="ColumnSize.Is12.Is6.OnTablet.Is3.OnDesktop" Margin="Margin.Is3.FromBottom">
+            <Card Shadow="Shadow.Small" Class="h-100">
+                <CardBody>
+                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                        <Div>
+                            <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">@card.Label</Small>
                             @if (card.Ready)
                             {
-                                <MudText Typo="Typo.h5">@card.Value</MudText>
+                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@card.Value</Heading>
                             }
                             else
                             {
-                                <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="@card.Color" Class="mt-1" />
+                                <div class="spinner-border spinner-border-sm text-secondary mt-1" role="status"><span class="visually-hidden">Loading…</span></div>
                             }
-                        </div>
-                        <MudIcon Icon="@card.Icon" Color="@card.Color" Size="Size.Large" />
-                    </div>
+                        </Div>
+                        <Icon Name="@card.Icon" TextColor="@card.Color" IconSize="IconSize.x2" />
+                    </Div>
 
-                    <MudButton Variant="Variant.Text" Size="Size.Small" Class="mt-1 px-1"
-                               Disabled="@(!card.Ready)"
-                               OnClick="@(() => ToggleDetails(card.Key))"
-                               EndIcon="@(IsExpanded(card.Key) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)">
-                        Details
-                    </MudButton>
+                    <Button Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none px-1 mt-1"
+                            Disabled="@(!card.Ready)" Clicked="@(() => ToggleDetails(card.Key))">
+                        Details <Icon Name="@(IsExpanded(card.Key) ? AppIcons.ExpandLess : AppIcons.ExpandMore)" Class="ms-1" />
+                    </Button>
 
-                    <MudCollapse Expanded="@IsExpanded(card.Key)">
-                        <div class="mt-2">
+                    <Collapse Visible="@IsExpanded(card.Key)">
+                        <Div Margin="Margin.Is2.FromTop">
                             @switch (card.Key)
                             {
                                 case "customers":
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">
                                         <b>Direct</b> = a reseller buying from us for their own use (a direct sale).
                                         <b>Indirect</b> = your resellers' downstream end customers. Together they
                                         make up your total customer estate.
-                                    </MudText>
-                                    <div class="d-flex justify-space-between align-center mt-2">
-                                        <MudText Typo="Typo.body2">Direct (reseller own use)</MudText>
-                                        <MudText Typo="Typo.body2"><b>@DirectEstate</b></MudText>
-                                    </div>
-                                    <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">Reseller end customers</MudText>
+                                    </Small>
+                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromTop">
+                                        <span>Direct (reseller own use)</span>
+                                        <b>@DirectEstate</b>
+                                    </Div>
+                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                                        <span>Reseller end customers</span>
                                         @if (IndirectLoaded)
                                         {
-                                            <MudText Typo="Typo.body2"><b>@IndirectEstate</b></MudText>
+                                            <b>@IndirectEstate</b>
                                         }
                                         else
                                         {
-                                            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+                                            <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
                                         }
-                                    </div>
+                                    </Div>
                                     @if (IndirectLoaded)
                                     {
-                                        <MudDivider Class="my-1" />
-                                        <div class="d-flex justify-space-between align-center">
-                                            <MudText Typo="Typo.body2"><b>Total estate</b></MudText>
-                                            <MudText Typo="Typo.body2"><b>@TotalEstate</b></MudText>
-                                        </div>
+                                        <Divider Margin="Margin.Is1.OnY" />
+                                        <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                                            <b>Total estate</b>
+                                            <b>@TotalEstate</b>
+                                        </Div>
                                     }
                                     break;
 
                                 case "skus":
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">
                                         Active entitlements (purchased SKUs) currently provisioned across all customers — direct and via resellers (indirect).
-                                    </MudText>
-                                    <div class="d-flex justify-space-between align-center mt-2">
-                                        <MudText Typo="Typo.body2">Active seats</MudText>
-                                        <MudText Typo="Typo.body2"><b>@(_data?.ActiveSeats ?? 0)</b></MudText>
-                                    </div>
+                                    </Small>
+                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromTop">
+                                        <span>Active seats</span>
+                                        <b>@(_data?.ActiveSeats ?? 0)</b>
+                                    </Div>
                                     @if (_products.Count > 0)
                                     {
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">Top products</MudText>
+                                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">Top products</Small>
                                         @foreach (var slice in _products.Take(4))
                                         {
-                                            <div class="d-flex justify-space-between align-center">
-                                                <MudText Typo="Typo.body2" Class="text-truncate" Style="max-width: 70%;">@slice.Product</MudText>
-                                                <MudText Typo="Typo.body2"><b>@slice.Count</b></MudText>
-                                            </div>
+                                            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                                                <span class="text-truncate" style="max-width: 70%;">@slice.Product</span>
+                                                <b>@slice.Count</b>
+                                            </Div>
                                         }
                                     }
                                     break;
 
                                 case "links":
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">
                                         Your linked indirect resellers (channel partners), grouped by link state.
-                                    </MudText>
+                                    </Small>
                                     @if (_overview?.ChannelLinkStates is { Count: > 0 } states)
                                     {
                                         @foreach (var state in states)
                                         {
-                                            <div class="d-flex justify-space-between align-center mt-1">
-                                                <MudText Typo="Typo.body2">@Humanize(state.State)</MudText>
-                                                <MudText Typo="Typo.body2"><b>@state.Count</b></MudText>
-                                            </div>
+                                            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is1.FromTop">
+                                                <span>@Humanize(state.State)</span>
+                                                <b>@state.Count</b>
+                                            </Div>
                                         }
                                     }
                                     else
                                     {
-                                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">No channel partner links yet.</MudText>
+                                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is1.FromTop">No channel partner links yet.</Small>
                                     }
                                     break;
 
                                 case "suspended":
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    <Small TextColor="TextColor.Secondary" Display="Display.Block">
                                         Entitlements that are paused (e.g. billing or admin action) and may need attention.
                                         Shown alongside the rest of the entitlement lifecycle for context.
                                         Numbers link to the matching entitlements across your whole estate.
-                                    </MudText>
-                                    <div class="d-flex justify-space-between align-center mt-2">
-                                        <MudText Typo="Typo.body2">Active</MudText>
-                                        <MudLink Href="/entitlements?state=active&amp;scope=all" Typo="Typo.body2"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></MudLink>
-                                    </div>
-                                    <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">Trial</MudText>
-                                        <MudLink Href="/entitlements?state=trial&amp;scope=all" Typo="Typo.body2"><b>@(_data?.TrialEntitlementCount ?? 0)</b></MudLink>
-                                    </div>
-                                    <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">Suspended</MudText>
-                                        <MudLink Href="/entitlements?state=suspended&amp;scope=all" Typo="Typo.body2"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></MudLink>
-                                    </div>
+                                    </Small>
+                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromTop">
+                                        <span>Active</span>
+                                        <Anchor To="/entitlements?state=active&scope=all"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></Anchor>
+                                    </Div>
+                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                                        <span>Trial</span>
+                                        <Anchor To="/entitlements?state=trial&scope=all"><b>@(_data?.TrialEntitlementCount ?? 0)</b></Anchor>
+                                    </Div>
+                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                                        <span>Suspended</span>
+                                        <Anchor To="/entitlements?state=suspended&scope=all"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></Anchor>
+                                    </Div>
                                     break;
                             }
-                        </div>
-                    </MudCollapse>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
+                        </Div>
+                    </Collapse>
+                </CardBody>
+            </Card>
+        </Column>
     }
 
     @if (_data?.EstateValue is { } estate)
     {
-        <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <div class="d-flex justify-space-between align-center">
-                    <MudText Typo="Typo.h6">Estimated estate value (monthly)</MudText>
-                    <div class="d-flex" style="gap: 4px; flex-wrap: wrap;">
-                        @foreach (var cur in estate.Currencies)
-                        {
-                            <MudChip T="string" Size="Size.Small"
-                                     Color="@(cur.Currency == estate.Currency ? Color.Primary : Color.Default)"
-                                     Variant="Variant.Outlined">@cur.Currency</MudChip>
-                        }
-                    </div>
-                </div>
-                <MudGrid Class="mt-1">
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Wholesale cost</MudText>
-                        @if (estate.Currencies.Count > 0)
-                        {
+        <Column ColumnSize="ColumnSize.Is12" Margin="Margin.Is3.FromBottom">
+            <Card Shadow="Shadow.Small">
+                <CardBody>
+                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Estimated estate value (monthly)</Heading>
+                        <Div Flex="Flex.Wrap" Gap="Gap.Is1">
                             @foreach (var cur in estate.Currencies)
                             {
-                                <MudText Typo="Typo.h5">@cur.Currency @cur.WholesaleMonthly.ToString("N2")</MudText>
+                                <Badge Color="@(cur.Currency == estate.Currency ? Color.Primary : Color.Light)" Class="@(cur.Currency == estate.Currency ? null : "border text-body")">@cur.Currency</Badge>
                             }
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.h5">@estate.Currency @estate.WholesaleMonthly.ToString("N2")</MudText>
-                        }
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">What you pay Google</MudText>
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Repriced revenue</MudText>
-                        @if (estate.Currencies.Count > 0)
-                        {
-                            @foreach (var cur in estate.Currencies)
+                        </Div>
+                    </Div>
+                    <Row Margin="Margin.Is1.FromTop">
+                        <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                            <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Wholesale cost</Small>
+                            @if (estate.Currencies.Count > 0)
                             {
-                                <MudText Typo="Typo.h5">@cur.Currency @cur.RevenueMonthly.ToString("N2")</MudText>
+                                @foreach (var cur in estate.Currencies)
+                                {
+                                    <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@cur.Currency @cur.WholesaleMonthly.ToString("N2")</Heading>
+                                }
                             }
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.h5">@estate.Currency @estate.RevenueMonthly.ToString("N2")</MudText>
-                        }
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">What end customers are billed</MudText>
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Margin</MudText>
-                        @if (estate.Currencies.Count > 0)
-                        {
-                            @foreach (var cur in estate.Currencies)
+                            else
                             {
-                                <MudText Typo="Typo.h5" Color="@(cur.MarginMonthly >= 0 ? Color.Success : Color.Error)">@cur.Currency @cur.MarginMonthly.ToString("N2")</MudText>
+                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@estate.Currency @estate.WholesaleMonthly.ToString("N2")</Heading>
                             }
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.h5" Color="@(estate.MarginMonthly >= 0 ? Color.Success : Color.Error)">@estate.Currency @estate.MarginMonthly.ToString("N2")</MudText>
-                        }
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Revenue − wholesale</MudText>
-                    </MudItem>
-                </MudGrid>
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">
-                    By source@(estate.MixedCurrencies ? " & currency" : "")
-                </MudText>
-                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
-                    <thead>
-                        <tr>
-                            @if (estate.MixedCurrencies)
+                            <Small TextColor="TextColor.Secondary">What you pay Google</Small>
+                        </Column>
+                        <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                            <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Repriced revenue</Small>
+                            @if (estate.Currencies.Count > 0)
                             {
-                                <th>Currency</th>
+                                @foreach (var cur in estate.Currencies)
+                                {
+                                    <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@cur.Currency @cur.RevenueMonthly.ToString("N2")</Heading>
+                                }
                             }
-                            <th>Source</th>
-                            <th style="text-align:right">Wholesale cost</th>
-                            <th style="text-align:right">Repriced revenue</th>
-                            <th style="text-align:right">Margin</th>
-                            <th style="text-align:right">Subscriptions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var cur in estate.Currencies)
-                        {
-                            <tr>
+                            else
+                            {
+                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@estate.Currency @estate.RevenueMonthly.ToString("N2")</Heading>
+                            }
+                            <Small TextColor="TextColor.Secondary">What end customers are billed</Small>
+                        </Column>
+                        <Column ColumnSize="ColumnSize.Is12.Is4.OnTablet">
+                            <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Margin</Small>
+                            @if (estate.Currencies.Count > 0)
+                            {
+                                @foreach (var cur in estate.Currencies)
+                                {
+                                    <Heading Size="HeadingSize.Is4" Margin="Margin.Is0" TextColor="@(cur.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.Currency @cur.MarginMonthly.ToString("N2")</Heading>
+                                }
+                            }
+                            else
+                            {
+                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0" TextColor="@(estate.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@estate.Currency @estate.MarginMonthly.ToString("N2")</Heading>
+                            }
+                            <Small TextColor="TextColor.Secondary">Revenue − wholesale</Small>
+                        </Column>
+                    </Row>
+                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is3.FromTop" Class="fw-semibold">
+                        By source@(estate.MixedCurrencies ? " & currency" : "")
+                    </Small>
+                    <Table Narrow Hoverable Borderless Margin="Margin.Is1.FromTop">
+                        <TableHeader>
+                            <TableRow>
                                 @if (estate.MixedCurrencies)
                                 {
-                                    <td>@cur.Currency</td>
+                                    <TableHeaderCell>Currency</TableHeaderCell>
                                 }
-                                <td>Direct (reseller own use)</td>
-                                <td style="text-align:right">@cur.Direct.WholesaleMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@cur.Direct.RevenueMonthly.ToString("N2")</td>
-                                <td style="text-align:right" class="@(cur.Direct.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.Direct.MarginMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@cur.Direct.PricedEntitlementCount</td>
-                            </tr>
-                            <tr>
-                                @if (estate.MixedCurrencies)
-                                {
-                                    <td></td>
-                                }
-                                <td>Via resellers (indirect)</td>
-                                <td style="text-align:right">@cur.Indirect.WholesaleMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@cur.Indirect.RevenueMonthly.ToString("N2")</td>
-                                <td style="text-align:right" class="@(cur.Indirect.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.Indirect.MarginMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@cur.Indirect.PricedEntitlementCount</td>
-                            </tr>
-                        }
-                    </tbody>
-                </MudSimpleTable>
-                @if (estate.Currencies.Count > 1)
-                {
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">By currency (total)</MudText>
-                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
-                        <thead>
-                            <tr>
-                                <th>Currency</th>
-                                <th style="text-align:right">Wholesale cost</th>
-                                <th style="text-align:right">Repriced revenue</th>
-                                <th style="text-align:right">Margin</th>
-                                <th style="text-align:right">Subscriptions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                                <TableHeaderCell>Source</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Wholesale cost</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Repriced revenue</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Margin</TableHeaderCell>
+                                <TableHeaderCell TextAlignment="TextAlignment.End">Subscriptions</TableHeaderCell>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
                             @foreach (var cur in estate.Currencies)
                             {
-                                <tr>
-                                    <td>@cur.Currency</td>
-                                    <td style="text-align:right">@cur.WholesaleMonthly.ToString("N2")</td>
-                                    <td style="text-align:right">@cur.RevenueMonthly.ToString("N2")</td>
-                                    <td style="text-align:right" class="@(cur.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.MarginMonthly.ToString("N2")</td>
-                                    <td style="text-align:right">@cur.PricedEntitlementCount</td>
-                                </tr>
+                                <TableRow>
+                                    @if (estate.MixedCurrencies)
+                                    {
+                                        <TableRowCell>@cur.Currency</TableRowCell>
+                                    }
+                                    <TableRowCell>Direct (reseller own use)</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Direct.WholesaleMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Direct.RevenueMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(cur.Direct.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.Direct.MarginMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Direct.PricedEntitlementCount</TableRowCell>
+                                </TableRow>
+                                <TableRow>
+                                    @if (estate.MixedCurrencies)
+                                    {
+                                        <TableRowCell></TableRowCell>
+                                    }
+                                    <TableRowCell>Via resellers (indirect)</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Indirect.WholesaleMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Indirect.RevenueMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(cur.Indirect.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.Indirect.MarginMonthly.ToString("N2")</TableRowCell>
+                                    <TableRowCell TextAlignment="TextAlignment.End">@cur.Indirect.PricedEntitlementCount</TableRowCell>
+                                </TableRow>
                             }
-                        </tbody>
-                    </MudSimpleTable>
-                }
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
-                    Estimates from offer <b>list</b> pricing × seats and configured repricing mark-ups — not invoiced amounts.
-                    Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} have no resolved offer price and are excluded" : "").@(estate.MixedCurrencies ? " Each currency is listed separately; the source split is broken out below." : "")
-                </MudText>
-            </MudPaper>
-        </MudItem>
+                        </TableBody>
+                    </Table>
+                    @if (estate.Currencies.Count > 1)
+                    {
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is3.FromTop" Class="fw-semibold">By currency (total)</Small>
+                        <Table Narrow Hoverable Borderless Margin="Margin.Is1.FromTop">
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHeaderCell>Currency</TableHeaderCell>
+                                    <TableHeaderCell TextAlignment="TextAlignment.End">Wholesale cost</TableHeaderCell>
+                                    <TableHeaderCell TextAlignment="TextAlignment.End">Repriced revenue</TableHeaderCell>
+                                    <TableHeaderCell TextAlignment="TextAlignment.End">Margin</TableHeaderCell>
+                                    <TableHeaderCell TextAlignment="TextAlignment.End">Subscriptions</TableHeaderCell>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                @foreach (var cur in estate.Currencies)
+                                {
+                                    <TableRow>
+                                        <TableRowCell>@cur.Currency</TableRowCell>
+                                        <TableRowCell TextAlignment="TextAlignment.End">@cur.WholesaleMonthly.ToString("N2")</TableRowCell>
+                                        <TableRowCell TextAlignment="TextAlignment.End">@cur.RevenueMonthly.ToString("N2")</TableRowCell>
+                                        <TableRowCell TextAlignment="TextAlignment.End" TextColor="@(cur.MarginMonthly >= 0 ? TextColor.Success : TextColor.Danger)">@cur.MarginMonthly.ToString("N2")</TableRowCell>
+                                        <TableRowCell TextAlignment="TextAlignment.End">@cur.PricedEntitlementCount</TableRowCell>
+                                    </TableRow>
+                                }
+                            </TableBody>
+                        </Table>
+                    }
+                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
+                        Estimates from offer <b>list</b> pricing × seats and configured repricing mark-ups — not invoiced amounts.
+                        Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} have no resolved offer price and are excluded" : "").@(estate.MixedCurrencies ? " Each currency is listed separately; the source split is broken out below." : "")
+                    </Small>
+                </CardBody>
+            </Card>
+        </Column>
     }
 
-    <MudItem xs="12" md="8">
-        <MudPaper Class="pa-4" Elevation="2">
-            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
-                <div>
-                    <MudText Typo="Typo.h6">Customers onboarded</MudText>
-                    @if (_monthly.Count > 0 && MonthlyRangeTitle is { Length: > 0 } title)
+    <Column ColumnSize="ColumnSize.Is12.Is8.OnDesktop" Margin="Margin.Is3.FromBottom">
+        <Card Shadow="Shadow.Small" Class="h-100">
+            <CardBody>
+                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
+                    <Div>
+                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Customers onboarded</Heading>
+                        @if (_monthly.Count > 0 && MonthlyRangeTitle is { Length: > 0 } title)
+                        {
+                            <Small TextColor="TextColor.Secondary">@title</Small>
+                        }
+                    </Div>
+                    @if (_allMonthly.Count > 1)
                     {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">@title</MudText>
+                        <Div Flex="Flex.AlignItems.Center.Wrap" Gap="Gap.Is2">
+                            <Select TValue="string" Value="@_rangeFrom" ValueChanged="OnRangeFromChanged" Size="Size.Small" Style="min-width:130px" aria-label="From">
+                                @foreach (var m in _allMonthly)
+                                {
+                                    <SelectItem TValue="string" Value="@m.Key">@m.Label</SelectItem>
+                                }
+                            </Select>
+                            <Select TValue="string" Value="@_rangeTo" ValueChanged="OnRangeToChanged" Size="Size.Small" Style="min-width:130px" aria-label="To">
+                                @foreach (var m in _allMonthly)
+                                {
+                                    <SelectItem TValue="string" Value="@m.Key">@m.Label</SelectItem>
+                                }
+                            </Select>
+                            <Tooltip Text="Show the whole available period" Inline>
+                                <Button Size="Size.Small" Color="Color.Secondary" Outline Clicked="ResetRangeToAll">All</Button>
+                            </Tooltip>
+                        </Div>
                     }
-                </div>
-                @if (_allMonthly.Count > 1)
+                </Div>
+                @if (_monthly.Count > 0)
                 {
-                    <div class="d-flex align-center gap-2 flex-wrap">
-                        <MudSelect T="string" Value="_rangeFrom" ValueChanged="OnRangeFromChanged" Label="From"
-                                   Dense="true" Margin="Margin.Dense" Style="min-width:130px">
-                            @foreach (var m in _allMonthly)
-                            {
-                                <MudSelectItem Value="@m.Key">@m.Label</MudSelectItem>
-                            }
-                        </MudSelect>
-                        <MudSelect T="string" Value="_rangeTo" ValueChanged="OnRangeToChanged" Label="To"
-                                   Dense="true" Margin="Margin.Dense" Style="min-width:130px">
-                            @foreach (var m in _allMonthly)
-                            {
-                                <MudSelectItem Value="@m.Key">@m.Label</MudSelectItem>
-                            }
-                        </MudSelect>
-                        <MudTooltip Text="Show the whole available period">
-                            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="ResetRangeToAll">All</MudButton>
-                        </MudTooltip>
-                    </div>
-                }
-            </div>
-            @if (_monthly.Count > 0)
-            {
-                <ApexChart TItem="MonthlyPoint" Options="_monthlyOptions" @ref="_monthlyChart">
-                    <ApexPointSeries TItem="MonthlyPoint"
-                                     Items="_monthly"
-                                     Name="@(HasIndirectOnboarding ? "Direct" : "Customers")"
-                                     SeriesType="SeriesType.Line"
-                                     XValue="@(p => p.Label)"
-                                     YValue="@(p => p.Direct)" />
-                    @if (HasIndirectOnboarding)
-                    {
+                    <ApexChart TItem="MonthlyPoint" Options="_monthlyOptions" @ref="_monthlyChart">
                         <ApexPointSeries TItem="MonthlyPoint"
                                          Items="_monthly"
-                                         Name="Via resellers (indirect)"
+                                         Name="@(HasIndirectOnboarding ? "Direct" : "Customers")"
                                          SeriesType="SeriesType.Line"
                                          XValue="@(p => p.Label)"
-                                         YValue="@(p => p.Indirect)" />
-                    }
-                </ApexChart>
-            }
-            else if (_overviewLoading)
-            {
-                <div class="d-flex align-center" style="height: 200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No customer history yet.</MudText>
-            }
-        </MudPaper>
-    </MudItem>
-
-    <MudItem xs="12" md="4">
-        <MudPaper Class="pa-4" Elevation="2">
-            <div class="d-flex align-center gap-1">
-                <MudText Typo="Typo.h6" GutterBottom="true">Product mix</MudText>
-                <MudTooltip Arrow="true" Placement="Placement.Top"
-                            Text="Slices are grouped by their catalog product name. A few entries may appear as a raw SKU or product ID when the marketing display name isn't available from the catalog — typically custom/negotiated offers, SKU groups, or products missing from the cached catalog.">
-                    <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Color="Color.Secondary" Class="mb-1" />
-                </MudTooltip>
-            </div>
-            @if (_indirectProducts.Count > 0)
-            {
-                @* Both direct and reseller (indirect) business exists — show a donut for each so the
-                   split is clear rather than blending them into one whole-estate chart. *@
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Direct (reseller own use)</MudText>
-                @if (_directProducts.Count > 0)
+                                         YValue="@(p => p.Direct)" />
+                        @if (HasIndirectOnboarding)
+                        {
+                            <ApexPointSeries TItem="MonthlyPoint"
+                                             Items="_monthly"
+                                             Name="Via resellers (indirect)"
+                                             SeriesType="SeriesType.Line"
+                                             XValue="@(p => p.Label)"
+                                             YValue="@(p => p.Indirect)" />
+                        }
+                    </ApexChart>
+                }
+                else if (_overviewLoading)
                 {
+                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 200px;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+                    </Div>
+                }
+                else
+                {
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No customer history yet.</Paragraph>
+                }
+            </CardBody>
+        </Card>
+    </Column>
+
+    <Column ColumnSize="ColumnSize.Is12.Is4.OnDesktop" Margin="Margin.Is3.FromBottom">
+        <Card Shadow="Shadow.Small" Class="h-100">
+            <CardBody>
+                <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is1" Margin="Margin.Is2.FromBottom">
+                    <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Product mix</Heading>
+                    <Tooltip Placement="TooltipPlacement.Top" Multiline Inline
+                             Text="Slices are grouped by their catalog product name. A few entries may appear as a raw SKU or product ID when the marketing display name isn't available from the catalog — typically custom/negotiated offers, SKU groups, or products missing from the public catalog.">
+                        <Icon Name="@AppIcons.Info" TextColor="TextColor.Secondary" />
+                    </Tooltip>
+                </Div>
+                @if (_indirectProducts.Count > 0)
+                {
+                    @* Both direct and reseller (indirect) business exists — show a donut for each so the
+                       split is clear rather than blending them into one whole-estate chart. *@
+                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Direct (reseller own use)</Small>
+                    @if (_directProducts.Count > 0)
+                    {
+                        <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
+                            <ApexPointSeries TItem="ProductSlice"
+                                             Items="_directProducts"
+                                             Name="SKUs"
+                                             SeriesType="SeriesType.Donut"
+                                             XValue="@(p => p.Product)"
+                                             YValue="@(p => p.Count)" />
+                        </ApexChart>
+                    }
+                    else
+                    {
+                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is2.FromBottom">No direct active entitlements.</Paragraph>
+                    }
+                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is3.FromTop" Class="fw-semibold">Via resellers (indirect)</Small>
+                    <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_indirectProductOptions" @ref="_indirectProductChart">
+                        <ApexPointSeries TItem="ProductSlice"
+                                         Items="_indirectProducts"
+                                         Name="SKUs"
+                                         SeriesType="SeriesType.Donut"
+                                         XValue="@(p => p.Product)"
+                                         YValue="@(p => p.Count)" />
+                    </ApexChart>
+                }
+                else if (_directProducts.Count > 0)
+                {
+                    @* Direct-only distributor (no reseller estate): the direct mix is the whole estate. *@
                     <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
                         <ApexPointSeries TItem="ProductSlice"
                                          Items="_directProducts"
@@ -424,271 +451,251 @@
                                          YValue="@(p => p.Count)" />
                     </ApexChart>
                 }
+                else if (_entitlementsLoading)
+                {
+                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 200px;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+                    </Div>
+                }
                 else
                 {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">No direct active entitlements.</MudText>
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No active entitlements yet.</Paragraph>
                 }
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">Via resellers (indirect)</MudText>
-                <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_indirectProductOptions" @ref="_indirectProductChart">
-                    <ApexPointSeries TItem="ProductSlice"
-                                     Items="_indirectProducts"
-                                     Name="SKUs"
-                                     SeriesType="SeriesType.Donut"
-                                     XValue="@(p => p.Product)"
-                                     YValue="@(p => p.Count)" />
-                </ApexChart>
-            }
-            else if (_directProducts.Count > 0)
-            {
-                @* Direct-only distributor (no reseller estate): the direct mix is the whole estate. *@
-                <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
-                    <ApexPointSeries TItem="ProductSlice"
-                                     Items="_directProducts"
-                                     Name="SKUs"
-                                     SeriesType="SeriesType.Donut"
-                                     XValue="@(p => p.Product)"
-                                     YValue="@(p => p.Count)" />
-                </ApexChart>
-            }
-            else if (_entitlementsLoading)
-            {
-                <div class="d-flex align-center" style="height: 200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No active entitlements yet.</MudText>
-            }
-        </MudPaper>
-    </MudItem>
+            </CardBody>
+        </Card>
+    </Column>
 
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2" Style="height:100%">
-            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
-                <div>
-                    <MudText Typo="Typo.h6">Onboarding by reseller</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
-                        Which reseller onboarded which customers in the selected month. "Direct" = account-owned.
-                    </MudText>
-                </div>
-                @if (_onboardMonths.Count > 0)
+    <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop" Margin="Margin.Is3.FromBottom">
+        <Card Shadow="Shadow.Small" Class="h-100">
+            <CardBody>
+                <Div Flex="Flex.JustifyContent.Between.AlignItems.Start.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
+                    <Div>
+                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Onboarding by reseller</Heading>
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block">
+                            Which reseller onboarded which customers in the selected month. "Direct" = account-owned.
+                        </Small>
+                    </Div>
+                    @if (_onboardMonths.Count > 0)
+                    {
+                        <Select TValue="string" Value="@_onboardMonth" ValueChanged="OnOnboardMonthChanged" Size="Size.Small" Style="max-width:170px" aria-label="Month">
+                            @foreach (var m in _onboardMonths)
+                            {
+                                <SelectItem TValue="string" Value="@m">@MonthLabel(m)</SelectItem>
+                            }
+                        </Select>
+                    }
+                </Div>
+                @if (_onboardBars.Count > 0)
                 {
-                    <MudSelect T="string" Value="_onboardMonth" Label="Month" Dense="true" Margin="Margin.Dense"
-                               Variant="Variant.Outlined" Style="max-width:170px" ValueChanged="OnOnboardMonthChanged">
-                        @foreach (var m in _onboardMonths)
+                    <ApexChart TItem="OnboardBar" Options="_onboardOptions" @ref="_onboardChart">
+                        <ApexPointSeries TItem="OnboardBar" Items="_onboardBars" Name="Customers"
+                                         SeriesType="SeriesType.Bar"
+                                         XValue="@(b => b.Reseller)" YValue="@(b => b.Count)" />
+                    </ApexChart>
+                    <div style="max-height:150px; overflow:auto" class="mt-2">
+                        @foreach (var g in OnboardDetail())
                         {
-                            <MudSelectItem Value="@m">@MonthLabel(m)</MudSelectItem>
+                            <Small Display="Display.Block">
+                                <strong>@g.Key</strong>: @string.Join(", ", g.Select(o => o.CustomerName))
+                            </Small>
                         }
-                    </MudSelect>
+                    </div>
                 }
-            </div>
-            @if (_onboardBars.Count > 0)
-            {
-                <ApexChart TItem="OnboardBar" Options="_onboardOptions" @ref="_onboardChart">
-                    <ApexPointSeries TItem="OnboardBar" Items="_onboardBars" Name="Customers"
-                                     SeriesType="SeriesType.Bar"
-                                     XValue="@(b => b.Reseller)" YValue="@(b => b.Count)" />
-                </ApexChart>
-                <div style="max-height:150px; overflow:auto" class="mt-2">
-                    @foreach (var g in OnboardDetail())
-                    {
-                        <MudText Typo="Typo.caption" Class="d-block">
-                            <strong>@g.Key</strong>: @string.Join(", ", g.Select(o => o.CustomerName))
-                        </MudText>
-                    }
-                </div>
-            }
-            else if (_entitlementsLoading)
-            {
-                <div class="d-flex align-center" style="height:200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    No onboarding data yet. Attribution appears once the background read-model has synced.
-                </MudText>
-            }
-        </MudPaper>
-    </MudItem>
-
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2" Style="height:100%">
-            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
-                <div>
-                    <MudText Typo="Typo.h6">Partner links established</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
-                        When channel partner links were created, month by month. Pick a month to see with whom.
-                    </MudText>
-                </div>
-                @if (_linkMonths.Count > 0)
+                else if (_entitlementsLoading)
                 {
-                    <MudSelect T="string" Value="_linkMonth" Label="Month" Dense="true" Margin="Margin.Dense"
-                               Variant="Variant.Outlined" Style="max-width:170px" ValueChanged="OnLinkMonthChanged">
-                        @foreach (var m in _linkMonths)
-                        {
-                            <MudSelectItem Value="@m">@MonthLabel(m)</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height:200px;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+                    </Div>
                 }
-            </div>
-            @if (_linkSeries.Count > 0)
-            {
-                <ApexChart TItem="LinkMonthPoint" Options="_linkOptions" @ref="_linkChart">
-                    <ApexPointSeries TItem="LinkMonthPoint" Items="_linkSeries" Name="Links established"
-                                     SeriesType="SeriesType.Bar"
-                                     XValue="@(p => p.Label)" YValue="@(p => p.Count)" />
-                </ApexChart>
-                <div style="max-height:150px; overflow:auto" class="mt-2">
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-1">
-                        Established in @(_linkMonth is null ? "—" : MonthLabel(_linkMonth)):
-                    </MudText>
-                    @{
-                        var linkDetail = LinkDetail();
-                    }
-                    @if (linkDetail.Count > 0)
-                    {
-                        @foreach (var l in linkDetail)
-                        {
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                     Color="@LinkStateColor(l.LinkState)" Class="ma-1">@l.Reseller</MudChip>
-                        }
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">No links established this month.</MudText>
-                    }
-                </div>
-            }
-            else if (_entitlementsLoading)
-            {
-                <div class="d-flex align-center" style="height:200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    No channel partner links established yet.
-                </MudText>
-            }
-        </MudPaper>
-    </MudItem>
+                else
+                {
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
+                        No onboarding data yet. Attribution appears once the background read-model has synced.
+                    </Paragraph>
+                }
+            </CardBody>
+        </Card>
+    </Column>
 
-    <MudItem xs="12">
-        <MudPaper Class="pa-4" Elevation="2">
-            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
-                <div>
-                    <MudText Typo="Typo.h6">Top indirect resellers</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
-                        @(_resellerMetric switch
+    <Column ColumnSize="ColumnSize.Is12.Is6.OnDesktop" Margin="Margin.Is3.FromBottom">
+        <Card Shadow="Shadow.Small" Class="h-100">
+            <CardBody>
+                <Div Flex="Flex.JustifyContent.Between.AlignItems.Start.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
+                    <Div>
+                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Partner links established</Heading>
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block">
+                            When channel partner links were created, month by month. Pick a month to see with whom.
+                        </Small>
+                    </Div>
+                    @if (_linkMonths.Count > 0)
+                    {
+                        <Select TValue="string" Value="@_linkMonth" ValueChanged="OnLinkMonthChanged" Size="Size.Small" Style="max-width:170px" aria-label="Month">
+                            @foreach (var m in _linkMonths)
+                            {
+                                <SelectItem TValue="string" Value="@m">@MonthLabel(m)</SelectItem>
+                            }
+                        </Select>
+                    }
+                </Div>
+                @if (_linkSeries.Count > 0)
+                {
+                    <ApexChart TItem="LinkMonthPoint" Options="_linkOptions" @ref="_linkChart">
+                        <ApexPointSeries TItem="LinkMonthPoint" Items="_linkSeries" Name="Links established"
+                                         SeriesType="SeriesType.Bar"
+                                         XValue="@(p => p.Label)" YValue="@(p => p.Count)" />
+                    </ApexChart>
+                    <div style="max-height:150px; overflow:auto" class="mt-2">
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is1.FromBottom">
+                            Established in @(_linkMonth is null ? "—" : MonthLabel(_linkMonth)):
+                        </Small>
+                        @{
+                            var linkDetail = LinkDetail();
+                        }
+                        @if (linkDetail.Count > 0)
                         {
-                            "avg" => "Ranked by average active seats per customer — a fairer comparison when one reseller dwarfs the rest. Parentheses show the customer count; each bar is labelled with its exact figure.",
-                            "revenue" => "Ranked by estimated monthly revenue (repriced end-customer billing, from list pricing + repricing mark-ups). Parentheses show the customer count; each bar is labelled with its exact figure.",
-                            _ => "Ranked by total active seats. Parentheses show the customer count; each bar is labelled with its exact seat count."
-                        })
-                    </MudText>
-                </div>
+                            @foreach (var l in linkDetail)
+                            {
+                                <Badge Color="@LinkStateColor(l.LinkState)" Margin="Margin.Is1">@l.Reseller</Badge>
+                            }
+                        }
+                        else
+                        {
+                            <Small TextColor="TextColor.Secondary">No links established this month.</Small>
+                        }
+                    </div>
+                }
+                else if (_entitlementsLoading)
+                {
+                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height:200px;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+                    </Div>
+                }
+                else
+                {
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
+                        No channel partner links established yet.
+                    </Paragraph>
+                }
+            </CardBody>
+        </Card>
+    </Column>
+
+    <Column ColumnSize="ColumnSize.Is12" Margin="Margin.Is3.FromBottom">
+        <Card Shadow="Shadow.Small">
+            <CardBody>
+                <Div Flex="Flex.JustifyContent.Between.AlignItems.Start.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
+                    <Div>
+                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">Top indirect resellers</Heading>
+                        <Small TextColor="TextColor.Secondary" Display="Display.Block">
+                            @(_resellerMetric switch
+                            {
+                                "avg" => "Ranked by average active seats per customer — a fairer comparison when one reseller dwarfs the rest. Parentheses show the customer count; each bar is labelled with its exact figure.",
+                                "revenue" => "Ranked by estimated monthly revenue (repriced end-customer billing, from list pricing + repricing mark-ups). Parentheses show the customer count; each bar is labelled with its exact figure.",
+                                _ => "Ranked by total active seats. Parentheses show the customer count; each bar is labelled with its exact seat count."
+                            })
+                        </Small>
+                    </Div>
+                    @if (_resellers.Count > 0)
+                    {
+                        <Select TValue="string" Value="@_resellerMetric" ValueChanged="OnResellerMetricChanged" Size="Size.Small" Style="max-width:220px" aria-label="Rank by">
+                            <SelectItem TValue="string" Value="@("seats")">Total seats</SelectItem>
+                            <SelectItem TValue="string" Value="@("avg")">Avg seats / customer</SelectItem>
+                            <SelectItem TValue="string" Value="@("revenue")">Monthly revenue</SelectItem>
+                        </Select>
+                    }
+                </Div>
                 @if (_resellers.Count > 0)
                 {
-                    <MudSelect T="string" Value="_resellerMetric" Label="Rank by" Dense="true" Margin="Margin.Dense"
-                               Variant="Variant.Outlined" Style="max-width:220px" ValueChanged="OnResellerMetricChanged">
-                        <MudSelectItem Value="@("seats")">Total seats</MudSelectItem>
-                        <MudSelectItem Value="@("avg")">Avg seats / customer</MudSelectItem>
-                        <MudSelectItem Value="@("revenue")">Monthly revenue</MudSelectItem>
-                    </MudSelect>
+                    <ApexChart TItem="ResellerSlice" Title="@_resellerTitle" Options="_resellerOptions" @ref="_resellerChart">
+                        <ApexPointSeries TItem="ResellerSlice"
+                                         Items="_resellerView"
+                                         Name="@_resellerSeriesName"
+                                         SeriesType="SeriesType.Bar"
+                                         XValue="@(r => $"{r.Reseller} ({r.Customers:0})")"
+                                         YValue="@(r => _resellerMetric switch { "avg" => r.AvgSeats, "revenue" => r.Revenue, _ => r.Seats })" />
+                    </ApexChart>
                 }
-            </div>
-            @if (_resellers.Count > 0)
-            {
-                <ApexChart TItem="ResellerSlice" Title="@_resellerTitle" Options="_resellerOptions" @ref="_resellerChart">
-                    <ApexPointSeries TItem="ResellerSlice"
-                                     Items="_resellerView"
-                                     Name="@_resellerSeriesName"
-                                     SeriesType="SeriesType.Bar"
-                                     XValue="@(r => $"{r.Reseller} ({r.Customers:0})")"
-                                     YValue="@(r => _resellerMetric switch { "avg" => r.AvgSeats, "revenue" => r.Revenue, _ => r.Seats })" />
-                </ApexChart>
-            }
-            else if (_entitlementsLoading)
-            {
-                <div class="d-flex align-center" style="height: 200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    No indirect resellers with customers yet. When a linked reseller owns downstream
-                    customers, they'll appear here ranked by total active seats.
-                </MudText>
-            }
-        </MudPaper>
-    </MudItem>
+                else if (_entitlementsLoading)
+                {
+                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 200px;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+                    </Div>
+                }
+                else
+                {
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
+                        No indirect resellers with customers yet. When a linked reseller owns downstream
+                        customers, they'll appear here ranked by total active seats.
+                    </Paragraph>
+                }
+            </CardBody>
+        </Card>
+    </Column>
 
-    <MudItem xs="12">
-        <MudPaper Class="pa-4" Elevation="2">
-            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
-                <div>
-                    <MudText Typo="Typo.h6">GCP &amp; Marketplace consumption (billed)</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                        Actual spend from the Cloud Billing → BigQuery export (last month) — real billed
-                        figures, distinct from the list-price estimate above.
-                    </MudText>
-                </div>
-                <MudButton Href="/billing/spend" Variant="Variant.Text" Size="Size.Small"
-                           EndIcon="@Icons.Material.Filled.ArrowForward">Spend trends</MudButton>
-            </div>
+    <Column ColumnSize="ColumnSize.Is12" Margin="Margin.Is3.FromBottom">
+        <Card Shadow="Shadow.Small">
+            <CardBody>
+                <Div Flex="Flex.JustifyContent.Between.AlignItems.Center.Wrap" Gap="Gap.Is2" Margin="Margin.Is2.FromBottom">
+                    <Div>
+                        <Heading Size="HeadingSize.Is5" Margin="Margin.Is0">GCP &amp; Marketplace consumption (billed)</Heading>
+                        <Small TextColor="TextColor.Secondary">
+                            Actual spend from the Cloud Billing → BigQuery export (last month) — real billed
+                            figures, distinct from the list-price estimate above.
+                        </Small>
+                    </Div>
+                    <Button Type="ButtonType.Link" To="/billing/spend" Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
+                        Spend trends <Icon Name="@AppIcons.ArrowForward" Class="ms-1" />
+                    </Button>
+                </Div>
 
-            @if (_spendUnconfigured)
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">The BigQuery billing-export sync isn't configured.</MudText>
-            }
-            else if (_spendLoading)
-            {
-                <div class="d-flex align-center" style="height: 200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
-            }
-            else if (_spendBars.Count > 0)
-            {
-                <div class="d-flex flex-wrap mb-2" style="gap: 32px;">
-                    @foreach (var t in _spendTotals)
-                    {
-                        <div>
-                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total billed (@t.Currency)</MudText>
-                            <MudText Typo="Typo.h5">@t.Currency @t.Total.ToString("N2")</MudText>
-                        </div>
-                    }
-                </div>
-                <ApexChart TItem="SpendBar" Title="@_spendChartTitle" Options="_spendOptions" @ref="_spendChart">
-                    <ApexPointSeries TItem="SpendBar"
-                                     Items="_spendBars"
-                                     Name="Billed spend"
-                                     SeriesType="SeriesType.Bar"
-                                     XValue="@(b => b.Reseller)"
-                                     YValue="@(b => b.Cost)" />
-                </ApexChart>
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
-                    Billed spend attributed to each customer's owning channel partner (Direct = account-owned).
-                    @if (_spendAsOf is { } asOf)
-                    {
-                        <span>As of @asOf.LocalDateTime.ToString("g").</span>
-                    }
-                </MudText>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No billed spend recorded yet.</MudText>
-            }
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+                @if (_spendUnconfigured)
+                {
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">The BigQuery billing-export sync isn't configured.</Paragraph>
+                }
+                else if (_spendLoading)
+                {
+                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Center" Style="height: 200px;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading…</span></div>
+                    </Div>
+                }
+                else if (_spendBars.Count > 0)
+                {
+                    <Div Flex="Flex.Wrap" Gap="Gap.Is5" Margin="Margin.Is2.FromBottom">
+                        @foreach (var t in _spendTotals)
+                        {
+                            <Div>
+                                <Small TextColor="TextColor.Secondary" Display="Display.Block" Class="fw-semibold">Total billed (@t.Currency)</Small>
+                                <Heading Size="HeadingSize.Is4" Margin="Margin.Is0">@t.Currency @t.Total.ToString("N2")</Heading>
+                            </Div>
+                        }
+                    </Div>
+                    <ApexChart TItem="SpendBar" Title="@_spendChartTitle" Options="_spendOptions" @ref="_spendChart">
+                        <ApexPointSeries TItem="SpendBar"
+                                         Items="_spendBars"
+                                         Name="Billed spend"
+                                         SeriesType="SeriesType.Bar"
+                                         XValue="@(b => b.Reseller)"
+                                         YValue="@(b => b.Cost)" />
+                    </ApexChart>
+                    <Small TextColor="TextColor.Secondary" Display="Display.Block" Margin="Margin.Is2.FromTop">
+                        Billed spend attributed to each customer's owning channel partner (Direct = account-owned).
+                        @if (_spendAsOf is { } asOf)
+                        {
+                            <span>As of @asOf.LocalDateTime.ToString("g").</span>
+                        }
+                    </Small>
+                }
+                else
+                {
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No billed spend recorded yet.</Paragraph>
+                }
+            </CardBody>
+        </Card>
+    </Column>
+</Row>
 
 @code {
-    private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
+    private record SummaryCard(string Key, string Label, string Value, string Icon, TextColor Color, bool Ready);
     private record MonthlyPoint(string Key, string Label, decimal Direct, decimal Indirect);
     private record ProductSlice(string Product, decimal Count);
     private record ResellerSlice(string Reseller, decimal Customers, decimal Seats, decimal AvgSeats, decimal Revenue);
@@ -698,7 +705,7 @@
     private record SpendTotal(string Currency, decimal Total);
 
     // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
-    // its own axis/legend/title text in a fixed colour that ignores MudBlazor's theme, so without this
+    // its own axis/legend/title text in a fixed colour that ignores the Bootstrap colour mode, so without this
     // the labels stay dark and become invisible on the dark background.
     [CascadingParameter(Name = "IsDarkMode")]
     private bool IsDarkMode { get; set; }
@@ -814,13 +821,13 @@
     private SummaryCard[] Cards =>
     [
         new("customers", "Customers", (_overview?.CustomerCount ?? _data?.CustomerCount ?? 0).ToString(),
-            Icons.Material.Filled.Business, Color.Primary, _overview is not null || _data is not null),
+            AppIcons.Business, TextColor.Primary, _overview is not null || _data is not null),
         new("skus", "Active SKUs", (_data?.ActiveEntitlementCount ?? 0).ToString(),
-            Icons.Material.Filled.Inventory2, Color.Success, _data is not null),
+            AppIcons.Inventory, TextColor.Success, _data is not null),
         new("links", "Channel links", (_overview?.ChannelLinkCount ?? 0).ToString(),
-            Icons.Material.Filled.Hub, Color.Tertiary, _overview is not null),
+            AppIcons.Hub, TextColor.Info, _overview is not null),
         new("suspended", "Suspended", (_data?.SuspendedEntitlementCount ?? 0).ToString(),
-            Icons.Material.Filled.PauseCircle, Color.Warning, _data is not null),
+            AppIcons.PauseCircle, TextColor.Warning, _data is not null),
     ];
 
     // Tracks which KPI cards have their details panel expanded (keyed by SummaryCard.Key).
@@ -1219,7 +1226,7 @@
         "ACTIVE" => Color.Success,
         "SUSPENDED" => Color.Warning,
         "INVITED" => Color.Info,
-        _ => Color.Default
+        _ => Color.Secondary
     };
 
     private async Task LoadOverviewAsync(CancellationToken cancellationToken)
@@ -1287,7 +1294,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load dashboard: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load dashboard: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -1472,3 +1479,4 @@
         _cts.Dispose();
     }
 }
+

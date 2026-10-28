@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.HttpOverrides;
-using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,9 +29,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// UI: Blazorise (Bootstrap 5 provider + FontAwesome icons) + ApexCharts. MudBlazor services remain
-// registered only until the last page is migrated.
-builder.Services.AddMudServices();
+// UI: Blazorise (Bootstrap 5 provider + FontAwesome icons) + ApexCharts.
 builder.Services
     .AddBlazorise(options =>
     {
