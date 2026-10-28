@@ -1,83 +1,89 @@
 @page "/accounts/cloud-identity"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Cloud Identity check · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center">
-    <MudText Typo="Typo.h4" GutterBottom="true">Cloud Identity check</MudText>
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+    <Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">Cloud Identity check</Heading>
     <GuidedWalkthrough Id="cloud-identity" Steps="_walkthrough" AutoStart="true" />
-</div>
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+</Div>
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
     Verify whether a customer domain already has a Google Cloud Identity account before you
     start provisioning.
-</MudText>
+</Paragraph>
 
-<MudGrid>
-    <MudItem xs="12" md="5">
-        <MudPaper Class="pa-4" Elevation="2">
-            <EditForm Model="_model" OnValidSubmit="CheckAsync">
-                <DataAnnotationsValidator />
-                <MudTextField @bind-Value="_model.Domain"
-                              Label="Customer domain"
-                              Placeholder="example.com"
-                              Required="true"
-                              Adornment="Adornment.Start"
-                              AdornmentIcon="@Icons.Material.Filled.Language"
-                              Class="mb-4" data-walkthrough="ci-domain" />
-                <MudTextField @bind-Value="_model.PrimaryAdminEmail"
-                              Label="Primary admin email (optional)"
-                              Placeholder="admin@example.com"
-                              Adornment="Adornment.Start"
-                              AdornmentIcon="@Icons.Material.Filled.Email"
-                              Class="mb-4" />
-                <MudButton ButtonType="ButtonType.Submit"
-                           Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Search"
-                           Disabled="_busy" data-walkthrough="ci-check">
-                    @(_busy ? "Checking…" : "Check")
-                </MudButton>
-            </EditForm>
-        </MudPaper>
+<Row>
+    <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
+        <Card Shadow="Shadow.Small">
+            <CardBody>
+                <EditForm Model="_model" OnValidSubmit="CheckAsync">
+                    <DataAnnotationsValidator />
+                    <Field data-walkthrough="ci-domain">
+                        <FieldLabel>Customer domain</FieldLabel>
+                        <Addons>
+                            <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Language" /></AddonLabel></Addon>
+                            <Addon AddonType="AddonType.Body">
+                                <TextInput @bind-Value="_model.Domain" Placeholder="example.com" />
+                            </Addon>
+                        </Addons>
+                        <ValidationMessage For="() => _model.Domain" />
+                    </Field>
+                    <Field>
+                        <FieldLabel>Primary admin email (optional)</FieldLabel>
+                        <Addons>
+                            <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Email" /></AddonLabel></Addon>
+                            <Addon AddonType="AddonType.Body">
+                                <TextInput @bind-Value="_model.PrimaryAdminEmail" Placeholder="admin@example.com" />
+                            </Addon>
+                        </Addons>
+                    </Field>
+                    <Button Type="ButtonType.Submit" Color="Color.Primary" Disabled="_busy" data-walkthrough="ci-check">
+                        <Icon Name="@AppIcons.Search" Class="me-1" /> @(_busy ? "Checking…" : "Check")
+                    </Button>
+                </EditForm>
+            </CardBody>
+        </Card>
 
-        <MudPaper Class="pa-4 mt-4" Elevation="2" data-walkthrough="ci-history">
-            <MudText Typo="Typo.subtitle1" GutterBottom="true">Recently checked</MudText>
-            @if (_history.Count == 0)
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No checks yet.</MudText>
-            }
-            else
-            {
-                <MudList T="string" Dense="true">
-                    @foreach (var item in _history)
-                    {
-                        <MudListItem T="string">
-                            <div class="d-flex align-center justify-space-between" style="width:100%">
-                                <div>
-                                    <MudText Typo="Typo.body2"><b>@item.Domain</b></MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        @(item.Exists ? "Exists" : "Available") · @item.PerformedAt.LocalDateTime.ToString("g")
-                                    </MudText>
-                                </div>
-                                <MudTooltip Text="Recheck (bypass cache)">
-                                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small"
-                                                   Color="Color.Primary" Disabled="_busy"
-                                                   OnClick="() => RecheckAsync(item)" />
-                                </MudTooltip>
-                            </div>
-                        </MudListItem>
-                    }
-                </MudList>
-            }
-        </MudPaper>
-    </MudItem>
+        <Card Shadow="Shadow.Small" Margin="Margin.Is4.FromTop" data-walkthrough="ci-history">
+            <CardBody>
+                <Heading Size="HeadingSize.Is6" Margin="Margin.Is2.FromBottom">Recently checked</Heading>
+                @if (_history.Count == 0)
+                {
+                    <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">No checks yet.</Paragraph>
+                }
+                else
+                {
+                    <ListGroup Flush>
+                        @foreach (var item in _history)
+                        {
+                            <ListGroupItem Padding="Padding.Is0.OnX.Is2.OnY">
+                                <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Width="Width.Is100">
+                                    <Div>
+                                        <Strong Display="Display.Block">@item.Domain</Strong>
+                                        <Small TextColor="TextColor.Secondary">
+                                            @(item.Exists ? "Exists" : "Available") · @item.PerformedAt.LocalDateTime.ToString("g")
+                                        </Small>
+                                    </Div>
+                                    <Tooltip Text="Recheck (bypass cache)" Inline>
+                                        <Button Color="Color.Primary" Size="Size.Small" Outline Disabled="_busy"
+                                                Clicked="() => RecheckAsync(item)" aria-label="Recheck">
+                                            <Icon Name="@AppIcons.Refresh" />
+                                        </Button>
+                                    </Tooltip>
+                                </Div>
+                            </ListGroupItem>
+                        }
+                    </ListGroup>
+                }
+            </CardBody>
+        </Card>
+    </Column>
 
-    <MudItem xs="12" md="7">
+    <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
         @if (_busy)
         {
             <LoadingPanel Title="Checking Cloud Identity…"
@@ -85,122 +91,143 @@
         }
         else if (_result is not null)
         {
-            <MudAlert Severity="@(_result.Exists ? Severity.Warning : Severity.Success)" Class="mb-4">
-                <div class="d-flex align-center justify-space-between" style="width:100%; gap:16px">
+            <Alert Color="@(_result.Exists ? Color.Warning : Color.Success)" Visible Margin="Margin.Is4.FromBottom">
+                <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Gap="Gap.Is3" Width="Width.Is100">
                     @if (_result.Exists)
                     {
                         <span>A Cloud Identity account already exists for <b>@_result.Domain</b>.</span>
-                        <div class="d-flex align-center" style="gap:8px">
-                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                                       StartIcon="@Icons.Material.Filled.MoveToInbox"
-                                       OnClick="OpenImportDialog">Import existing customer</MudButton>
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                                       StartIcon="@Icons.Material.Filled.People"
-                                       OnClick="ViewCustomers">View customers</MudButton>
-                        </div>
+                        <Div Flex="Flex.AlignItems.Center" Gap="Gap.Is2" Class="text-nowrap">
+                            <Button Color="Color.Primary" Outline Size="Size.Small" Clicked="OpenImportDialog">
+                                <Icon Name="@AppIcons.MoveToInbox" Class="me-1" /> Import existing customer
+                            </Button>
+                            <Button Color="Color.Primary" Size="Size.Small" Clicked="ViewCustomers">
+                                <Icon Name="@AppIcons.People" Class="me-1" /> View customers
+                            </Button>
+                        </Div>
                     }
                     else
                     {
                         <span>No Cloud Identity account exists for <b>@_result.Domain</b>. You can provision it.</span>
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                                   StartIcon="@Icons.Material.Filled.AddBusiness"
-                                   OnClick="ProvisionAsync">Provision customer</MudButton>
+                        <Button Color="Color.Primary" Size="Size.Small" Clicked="ProvisionAsync" Class="text-nowrap">
+                            <Icon Name="@AppIcons.AddBusiness" Class="me-1" /> Provision customer
+                        </Button>
                     }
-                </div>
-            </MudAlert>
+                </Div>
+            </Alert>
 
             @if (_result.PartnerLink is not null)
             {
                 var link = _result.PartnerLink;
                 var invited = string.Equals(link.LinkState, "INVITED", StringComparison.OrdinalIgnoreCase);
-                <MudAlert Severity="@(invited ? Severity.Warning : Severity.Info)" Class="mb-4">
-                    <div class="d-flex align-center justify-space-between" style="width:100%; gap:16px">
+                <Alert Color="@(invited ? Color.Warning : Color.Info)" Visible Margin="Margin.Is4.FromBottom">
+                    <Div Flex="Flex.AlignItems.Center.JustifyContent.Between" Gap="Gap.Is3" Width="Width.Is100">
                         <span>
                             This domain matches a channel partner link
                             (<b>@(link.ChannelPartner?.PrimaryDomain ?? _result.Domain)</b>) with state
-                            <MudChip T="string" Size="Size.Small" Class="ml-1"
-                                     Color="@(invited ? Color.Warning : Color.Default)"
-                                     Variant="Variant.Text">@(link.LinkState ?? "UNKNOWN")</MudChip>.
+                            <Badge Color="@(invited ? Color.Warning : Color.Secondary)" Margin="Margin.Is1.FromStart">@(link.LinkState ?? "UNKNOWN")</Badge>.
                             @if (invited)
                             {
                                 <text>The partner has not accepted our invitation yet.</text>
                             }
                         </span>
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                                   StartIcon="@Icons.Material.Filled.Hub"
-                                   OnClick="@(() => ViewPartnerLink(link.Id))">View partner link</MudButton>
-                    </div>
-                </MudAlert>
+                        <Button Color="Color.Primary" Size="Size.Small" Clicked="@(() => ViewPartnerLink(link.Id))" Class="text-nowrap">
+                            <Icon Name="@AppIcons.Hub" Class="me-1" /> View partner link
+                        </Button>
+                    </Div>
+                </Alert>
             }
 
             @if (_result.HasNonDomainAccounts)
             {
-                <MudAlert Severity="Severity.Info" Class="mb-4">
+                <Alert Color="Color.Info" Visible Margin="Margin.Is4.FromBottom">
                     One or more matches are not domain-verified (<b>DOMAIN</b>) accounts. These cannot be
                     used for reseller actions such as customer creation, transfers or entitlements.
-                </MudAlert>
+                </Alert>
             }
 
             @if (_result.Accounts.Count > 0)
             {
-                <MudTable Items="_result.Accounts" Dense="true" Hover="true" Elevation="2">
-                    <HeaderContent>
-                        <MudTh>Customer</MudTh>
-                        <MudTh>Type</MudTh>
-                        <MudTh>Existing</MudTh>
-                        <MudTh>Owned</MudTh>
-                        <MudTh>Cloud Identity ID</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
-                        <MudTd DataLabel="Type">
-                            @if (context.IsDomain)
+                <Card Shadow="Shadow.Small">
+                    <Table Narrow Hoverable Responsive Margin="Margin.Is0">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHeaderCell>Customer</TableHeaderCell>
+                                <TableHeaderCell>Type</TableHeaderCell>
+                                <TableHeaderCell>Existing</TableHeaderCell>
+                                <TableHeaderCell>Owned</TableHeaderCell>
+                                <TableHeaderCell>Cloud Identity ID</TableHeaderCell>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            @foreach (var account in _result.Accounts)
                             {
-                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">@context.CustomerType</MudChip>
+                                <TableRow>
+                                    <TableRowCell>@account.CustomerName</TableRowCell>
+                                    <TableRowCell>
+                                        @if (account.IsDomain)
+                                        {
+                                            <Badge Color="Color.Success">@account.CustomerType</Badge>
+                                        }
+                                        else
+                                        {
+                                            <Badge Color="Color.Warning"><Icon Name="@AppIcons.Warning" Class="me-1" />@account.CustomerType — not usable</Badge>
+                                        }
+                                    </TableRowCell>
+                                    <TableRowCell>
+                                        <Icon Name="@(account.Existing ? AppIcons.Check : AppIcons.Close)"
+                                              TextColor="@(account.Existing ? TextColor.Success : TextColor.Secondary)" />
+                                    </TableRowCell>
+                                    <TableRowCell>
+                                        <Icon Name="@(account.Owned ? AppIcons.Check : AppIcons.Close)"
+                                              TextColor="@(account.Owned ? TextColor.Success : TextColor.Secondary)" />
+                                    </TableRowCell>
+                                    <TableRowCell>@account.CustomerCloudIdentityId</TableRowCell>
+                                </TableRow>
                             }
-                            else
-                            {
-                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text"
-                                         Icon="@Icons.Material.Filled.Warning">@context.CustomerType — not usable</MudChip>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Existing">
-                            <MudIcon Icon="@(context.Existing ? Icons.Material.Filled.Check : Icons.Material.Filled.Close)"
-                                     Color="@(context.Existing ? Color.Success : Color.Default)" Size="Size.Small" />
-                        </MudTd>
-                        <MudTd DataLabel="Owned">
-                            <MudIcon Icon="@(context.Owned ? Icons.Material.Filled.Check : Icons.Material.Filled.Close)"
-                                     Color="@(context.Owned ? Color.Success : Color.Default)" Size="Size.Small" />
-                        </MudTd>
-                        <MudTd DataLabel="Cloud Identity ID">@context.CustomerCloudIdentityId</MudTd>
-                    </RowTemplate>
-                </MudTable>
+                        </TableBody>
+                    </Table>
+                </Card>
             }
         }
-    </MudItem>
-</MudGrid>
+    </Column>
+</Row>
 
-<MudDialog @bind-Visible="_importOpen" Options="_importDialogOptions">
-    <TitleContent>
-        <MudText Typo="Typo.h6">Import existing customer</MudText>
-    </TitleContent>
-    <DialogContent>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-            Bring a customer that already has a Cloud Identity into this reseller account (a pre-transfer
-            step). Provide one identifier — the checked domain is prefilled.
-        </MudText>
-        <MudTextField @bind-Value="_import.Domain" Label="Primary domain" HelperText="e.g. contoso.com" Class="mb-3" />
-        <MudTextField @bind-Value="_import.CloudIdentityId" Label="Cloud Identity id" Class="mb-3" />
-        <MudTextField @bind-Value="_import.PrimaryAdminEmail" Label="Primary admin email" InputType="InputType.Email" Class="mb-3" />
-        <MudCheckBox @bind-Value="_import.OverwriteIfExists" Label="Overwrite if the customer is already imported" />
-    </DialogContent>
-    <DialogActions>
-        <MudButton OnClick="@(() => _importOpen = false)" Disabled="@_importing">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ImportExistingAsync" Disabled="@_importing">
-            @(_importing ? "Importing…" : "Import")
-        </MudButton>
-    </DialogActions>
-</MudDialog>
+<Modal @bind-Visible="_importOpen">
+    <ModalContent Centered>
+        <ModalHeader>
+            <ModalTitle>Import existing customer</ModalTitle>
+            <CloseButton />
+        </ModalHeader>
+        <ModalBody>
+            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
+                Bring a customer that already has a Cloud Identity into this reseller account (a pre-transfer
+                step). Provide one identifier — the checked domain is prefilled.
+            </Paragraph>
+            <Field>
+                <FieldLabel>Primary domain</FieldLabel>
+                <TextInput @bind-Value="_import.Domain" />
+                <FieldHelp>e.g. contoso.com</FieldHelp>
+            </Field>
+            <Field>
+                <FieldLabel>Cloud Identity id</FieldLabel>
+                <TextInput @bind-Value="_import.CloudIdentityId" />
+            </Field>
+            <Field>
+                <FieldLabel>Primary admin email</FieldLabel>
+                <TextInput @bind-Value="_import.PrimaryAdminEmail" Role="TextRole.Email" />
+            </Field>
+            <Field>
+                <Check TValue="bool" @bind-Value="_import.OverwriteIfExists">Overwrite if the customer is already imported</Check>
+            </Field>
+        </ModalBody>
+        <ModalFooter>
+            <Button Color="Color.Secondary" Clicked="@(() => _importOpen = false)" Disabled="@_importing">Cancel</Button>
+            <Button Color="Color.Primary" Clicked="ImportExistingAsync" Disabled="@_importing" Loading="@_importing">
+                @(_importing ? "Importing…" : "Import")
+            </Button>
+        </ModalFooter>
+    </ModalContent>
+</Modal>
 
 @code {
     [SupplyParameterFromQuery(Name = "domain")]
@@ -215,7 +242,6 @@
     private bool _importOpen;
     private bool _importing;
     private readonly ImportModel _import = new();
-    private static readonly DialogOptions _importDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
 
     private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
     [
@@ -264,7 +290,7 @@
             && string.IsNullOrWhiteSpace(_import.CloudIdentityId)
             && string.IsNullOrWhiteSpace(_import.PrimaryAdminEmail))
         {
-            Snackbar.Add("Provide a domain, Cloud Identity id, or primary admin email to import.", Severity.Warning);
+            await Snackbar.Add("Provide a domain, Cloud Identity id, or primary admin email to import.", Severity.Warning);
             return;
         }
 
@@ -280,7 +306,7 @@
             });
 
             _importOpen = false;
-            Snackbar.Add($"Imported {imported?.OrgDisplayName ?? imported?.Domain ?? "customer"}.", Severity.Success);
+            await Snackbar.Add($"Imported {imported?.OrgDisplayName ?? imported?.Domain ?? "customer"}.", Severity.Success);
             if (imported is not null)
             {
                 Nav.NavigateTo($"/customers/{imported.Id}");
@@ -288,7 +314,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to import customer: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to import customer: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -323,7 +349,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Check failed: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Check failed: {ex.Message}", Severity.Error);
         }
         finally
         {

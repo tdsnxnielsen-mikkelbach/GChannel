@@ -1,25 +1,25 @@
 @page "/catalog/offers"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Offers · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">Offers</MudText>
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">Offers</Heading>
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
     The offers you can sell to customers. Prices shown are estimated wholesale list pricing from the
     catalog — not invoiced amounts; per-seat resource shown.
-</MudText>
+</Paragraph>
 
 @if (!string.IsNullOrEmpty(SkuFilter))
 {
-    <MudChip T="string" Color="Color.Primary" Variant="Variant.Text"
-             OnClose="ClearSkuFilter" CloseIcon="@Icons.Material.Filled.Close" Class="mb-4">
-        Filtered by SKU: @FilterLabel
-    </MudChip>
+    <Div Margin="Margin.Is4.FromBottom">
+        <Badge Color="Color.Primary" Pill Closable CloseClicked="ClearSkuFilter">
+            Filtered by SKU: @FilterLabel
+        </Badge>
+    </Div>
 }
 
 @if (_loading)
@@ -29,46 +29,58 @@
 }
 else if (_offers is { Count: > 0 })
 {
-    <MudTable Items="_offers" Dense="true" Hover="true" Elevation="2" Filter="Matches">
-        <ToolBarContent>
-            <MudTextField @bind-Value="_search" Placeholder="Search offers"
-                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                          IconSize="Size.Medium" Class="mt-0" Immediate="true" />
-        </ToolBarContent>
-        <HeaderContent>
-            <MudTh>Offer</MudTh>
-            <MudTh>SKU</MudTh>
-            <MudTh>Price (est. list)</MudTh>
-            <MudTh>Deal code</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Offer">
-                <MudTooltip Text="@(context.OfferId ?? context.Name)">
-                    <span>@(context.DisplayName ?? context.OfferId ?? context.Name)</span>
-                </MudTooltip>
-            </MudTd>
-            <MudTd DataLabel="SKU">
-                @if (!string.IsNullOrEmpty(context.ProductId))
-                {
-                    <MudTooltip Text="@(context.SkuId ?? context.SkuName)">
-                        <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
-                            @(context.SkuDisplayName ?? context.SkuId ?? context.SkuName)
-                        </MudLink>
-                    </MudTooltip>
-                }
-                else
-                {
-                    @(context.SkuDisplayName ?? context.SkuName)
-                }
-            </MudTd>
-            <MudTd DataLabel="Price (est. list)">@PriceLabel(context)</MudTd>
-            <MudTd DataLabel="Deal code">@context.DealCode</MudTd>
-        </RowTemplate>
-    </MudTable>
+    <Card Shadow="Shadow.Small">
+        <CardBody>
+            <Addons Margin="Margin.Is3.FromBottom" Style="max-width:28rem">
+                <Addon AddonType="AddonType.Start"><AddonLabel><Icon Name="@AppIcons.Search" /></AddonLabel></Addon>
+                <Addon AddonType="AddonType.Body">
+                    <TextInput @bind-Value="_search" Placeholder="Search offers" />
+                </Addon>
+            </Addons>
+            <Table Narrow Hoverable Responsive>
+                <TableHeader>
+                    <TableRow>
+                        <TableHeaderCell>Offer</TableHeaderCell>
+                        <TableHeaderCell>SKU</TableHeaderCell>
+                        <TableHeaderCell>Price (est. list)</TableHeaderCell>
+                        <TableHeaderCell>Deal code</TableHeaderCell>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    @foreach (var offer in _offers.Where(Matches))
+                    {
+                        <TableRow>
+                            <TableRowCell>
+                                <Tooltip Text="@(offer.OfferId ?? offer.Name)" Inline>
+                                    <span>@(offer.DisplayName ?? offer.OfferId ?? offer.Name)</span>
+                                </Tooltip>
+                            </TableRowCell>
+                            <TableRowCell>
+                                @if (!string.IsNullOrEmpty(offer.ProductId))
+                                {
+                                    <Tooltip Text="@(offer.SkuId ?? offer.SkuName)" Inline>
+                                        <Anchor To="@($"/catalog/products?product={offer.ProductId}&sku={offer.SkuId}")">
+                                            @(offer.SkuDisplayName ?? offer.SkuId ?? offer.SkuName)
+                                        </Anchor>
+                                    </Tooltip>
+                                }
+                                else
+                                {
+                                    @(offer.SkuDisplayName ?? offer.SkuName)
+                                }
+                            </TableRowCell>
+                            <TableRowCell>@PriceLabel(offer)</TableRowCell>
+                            <TableRowCell>@offer.DealCode</TableRowCell>
+                        </TableRow>
+                    }
+                </TableBody>
+            </Table>
+        </CardBody>
+    </Card>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">No offers available.</MudAlert>
+    <Alert Color="Color.Info" Visible>No offers available.</Alert>
 }
 
 @code {
@@ -88,7 +100,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
             _offers = [];
         }
         finally
@@ -111,7 +123,7 @@ else
         return $"{price.EffectivePrice.Display}{cycle}";
     }
 
-    // Friendly SKU name for the active filter chip, falling back to the raw id.
+    // Friendly SKU name for the active filter badge, falling back to the raw id.
     private string FilterLabel =>
         _offers?.FirstOrDefault(o => string.Equals(o.SkuId, SkuFilter, StringComparison.OrdinalIgnoreCase))?.SkuDisplayName
         ?? SkuFilter

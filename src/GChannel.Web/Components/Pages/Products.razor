@@ -1,17 +1,16 @@
 @page "/catalog/products"
 @attribute [Authorize]
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Products · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">Products</MudText>
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<Heading Size="HeadingSize.Is3" Margin="Margin.Is2.FromBottom">Products</Heading>
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
     The products you are authorized to sell. Expand a product to load its SKUs, then jump to the
     offers for any SKU.
-</MudText>
+</Paragraph>
 
 @if (_loading)
 {
@@ -20,60 +19,72 @@
 }
 else if (_products is { Count: > 0 })
 {
-    <MudExpansionPanels MultiExpansion="true" Elevation="2">
+    <Accordion>
         @foreach (var product in _products)
         {
-            <MudExpansionPanel Text="@(product.DisplayName ?? product.Id)"
-                               Expanded="_expanded.Contains(product.Id)"
-                               ExpandedChanged="expanded => OnProductExpanded(product, expanded)">
-                @if (!string.IsNullOrWhiteSpace(product.Description))
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">@product.Description</MudText>
-                }
+            <AccordionItem Visible="_expanded.Contains(product.Id)"
+                           VisibleChanged="expanded => OnProductExpanded(product, expanded)">
+                <AccordionHeader>
+                    <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
+                        <AccordionToggle>@(product.DisplayName ?? product.Id)</AccordionToggle>
+                    </Heading>
+                </AccordionHeader>
+                <AccordionBody>
+                    @if (!string.IsNullOrWhiteSpace(product.Description))
+                    {
+                        <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">@product.Description</Paragraph>
+                    }
 
-                @if (_skusByProduct.TryGetValue(product.Id, out var skus))
-                {
-                    @if (skus is null)
+                    @if (_skusByProduct.TryGetValue(product.Id, out var skus))
                     {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                        @if (skus is null)
+                        {
+                            <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
+                        }
+                        else if (skus.Count == 0)
+                        {
+                            <Paragraph TextColor="TextColor.Secondary">No SKUs found.</Paragraph>
+                        }
+                        else
+                        {
+                            <Table Narrow Hoverable Responsive>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHeaderCell>SKU</TableHeaderCell>
+                                        <TableHeaderCell>Id</TableHeaderCell>
+                                        <TableHeaderCell>Related</TableHeaderCell>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    @foreach (var sku in skus)
+                                    {
+                                        <TableRow Selected="IsDeepLinkedSku(sku)">
+                                            <TableRowCell>
+                                                <Tooltip Text="@sku.Id" Inline>
+                                                    <span>@(sku.DisplayName ?? sku.Id)</span>
+                                                </Tooltip>
+                                            </TableRowCell>
+                                            <TableRowCell>@sku.Id</TableRowCell>
+                                            <TableRowCell>
+                                                <Button Type="ButtonType.Link" To="@($"/catalog/offers?sku={sku.Id}")"
+                                                        Size="Size.Small" Color="Color.Primary" Class="btn-link text-decoration-none">
+                                                    <Icon Name="@AppIcons.LocalOffer" Class="me-1" /> Offers
+                                                </Button>
+                                            </TableRowCell>
+                                        </TableRow>
+                                    }
+                                </TableBody>
+                            </Table>
+                        }
                     }
-                    else if (skus.Count == 0)
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">No SKUs found.</MudText>
-                    }
-                    else
-                    {
-                        <MudTable Items="skus" Dense="true" Hover="true" Elevation="0" RowStyleFunc="SkuRowStyle">
-                            <HeaderContent>
-                                <MudTh>SKU</MudTh>
-                                <MudTh>Id</MudTh>
-                                <MudTh>Related</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd DataLabel="SKU">
-                                    <MudTooltip Text="@context.Id">
-                                        <span>@(context.DisplayName ?? context.Id)</span>
-                                    </MudTooltip>
-                                </MudTd>
-                                <MudTd DataLabel="Id">@context.Id</MudTd>
-                                <MudTd DataLabel="Related">
-                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.LocalOffer"
-                                               Href="@($"/catalog/offers?sku={context.Id}")">
-                                        Offers
-                                    </MudButton>
-                                </MudTd>
-                            </RowTemplate>
-                        </MudTable>
-                    }
-                }
-            </MudExpansionPanel>
+                </AccordionBody>
+            </AccordionItem>
         }
-    </MudExpansionPanels>
+    </Accordion>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">No products available.</MudAlert>
+    <Alert Color="Color.Info" Visible>No products available.</Alert>
 }
 
 @code {
@@ -98,7 +109,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
             _products = [];
         }
         finally
@@ -149,12 +160,10 @@ else
         catch (Exception ex)
         {
             _skusByProduct.Remove(product.Id);
-            Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
         }
     }
 
-    private string SkuRowStyle(CatalogSku sku, int _) =>
-        !string.IsNullOrEmpty(SkuId) && string.Equals(sku.Id, SkuId, StringComparison.OrdinalIgnoreCase)
-            ? "background-color: var(--mud-palette-primary-hover);"
-            : string.Empty;
+    private bool IsDeepLinkedSku(CatalogSku sku) =>
+        !string.IsNullOrEmpty(SkuId) && string.Equals(sku.Id, SkuId, StringComparison.OrdinalIgnoreCase);
 }
