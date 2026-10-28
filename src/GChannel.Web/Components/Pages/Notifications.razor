@@ -1,149 +1,155 @@
 @page "/notifications"
 @attribute [Authorize]
 @implements IDisposable
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Notifications · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
-    <div>
-        <MudText Typo="Typo.h4">Notifications</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Pub/Sub change events</MudText>
-    </div>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
-               OnClick="RefreshFeedAsync" Disabled="_feedLoading">Refresh</MudButton>
-</div>
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+    <Div>
+        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Notifications</Heading>
+        <Small TextColor="TextColor.Secondary">Pub/Sub change events</Small>
+    </Div>
+    <Button Color="Color.Secondary" Outline Clicked="RefreshFeedAsync" Disabled="_feedLoading">
+        <Icon Name="@AppIcons.Refresh" Class="me-1" /> Refresh
+    </Button>
+</Div>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is5.FromBottom">
     Google publishes entitlement and customer change events to a Cloud Pub/Sub topic. A background
     subscriber in the worker records them into a live feed so the console reacts to changes without
     polling. Each event deep-links to the customer or entitlement it concerns.
-    <MudTooltip Text="When the read-model is enabled, each change event also triggers a targeted refresh of the affected customer's synced data (seats, subscriptions, renewal, pricing) within seconds — so lists and dashboards update in near-real-time, with the periodic background sync as a backstop.">
-        <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Class="ml-1" Style="vertical-align:text-bottom" />
-    </MudTooltip>
-</MudText>
+    <Tooltip Text="When the read-model is enabled, each change event also triggers a targeted refresh of the affected customer's synced data (seats, subscriptions, renewal, pricing) within seconds — so lists and dashboards update in near-real-time, with the periodic background sync as a backstop." Multiline Inline>
+        <Icon Name="@AppIcons.Info" Class="ms-1" />
+    </Tooltip>
+</Paragraph>
 
 @if (!_feedLoading && _feed is not null && !_feed.SubscriberEnabled)
 {
-    <MudAlert Severity="Severity.Warning" Class="mb-4" Dense="true">
+    <Alert Color="Color.Warning" Visible Margin="Margin.Is4.FromBottom">
         The background Pub/Sub subscriber isn't running. Configure <code>GoogleChannel:PubSubProjectId</code>,
         <code>GoogleChannel:PubSubSubscriptionId</code> and a service-account key to start receiving events.
         Subscriber registration below still works.
-    </MudAlert>
+    </Alert>
 }
 
-<MudGrid>
-    <MudItem xs="12" md="7">
-        <MudText Typo="Typo.h6" Class="mb-2">Event feed</MudText>
+<Row>
+    <Column ColumnSize="ColumnSize.Is12.Is7.OnDesktop">
+        <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Event feed</Heading>
         @if (_feedLoading)
         {
             <LoadingPanel Title="Loading notifications…" Hint="Reading the recent Channel event feed." />
         }
         else if (_feed is { Notifications.Count: > 0 })
         {
-            <MudTable Items="_feed.Notifications" Hover="true" Elevation="2" Dense="true">
-                <HeaderContent>
-                    <MudTh>Kind</MudTh>
-                    <MudTh>Customer</MudTh>
-                    <MudTh>Event</MudTh>
-                    <MudTh>Received</MudTh>
-                    <MudTh Style="text-align:right">Open</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Kind">
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                 Color="@KindColor(context.Kind)">@context.Kind</MudChip>
-                    </MudTd>
-                    <MudTd DataLabel="Customer">
-                        @if (!string.IsNullOrEmpty(context.CustomerId))
+            <Card Shadow="Shadow.Small">
+                <Table Narrow Hoverable Responsive Margin="Margin.Is0">
+                    <TableHeader>
+                        <TableRow>
+                            <TableHeaderCell>Kind</TableHeaderCell>
+                            <TableHeaderCell>Customer</TableHeaderCell>
+                            <TableHeaderCell>Event</TableHeaderCell>
+                            <TableHeaderCell>Received</TableHeaderCell>
+                            <TableHeaderCell TextAlignment="TextAlignment.End">Open</TableHeaderCell>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        @foreach (var n in _feed.Notifications)
                         {
-                            <MudText Typo="Typo.body2">@CustomerLabel(context.CustomerId)</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.CustomerId</MudText>
+                            <TableRow>
+                                <TableRowCell><Badge Color="@KindColor(n.Kind)">@n.Kind</Badge></TableRowCell>
+                                <TableRowCell>
+                                    @if (!string.IsNullOrEmpty(n.CustomerId))
+                                    {
+                                        <div>@CustomerLabel(n.CustomerId)</div>
+                                        <Small TextColor="TextColor.Secondary">@n.CustomerId</Small>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                                <TableRowCell>
+                                    <div>@(n.EventType ?? "—")</div>
+                                    <Small TextColor="TextColor.Secondary">@n.ResourceName</Small>
+                                </TableRowCell>
+                                <TableRowCell>@n.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</TableRowCell>
+                                <TableRowCell TextAlignment="TextAlignment.End">
+                                    @if (!string.IsNullOrEmpty(n.CustomerId) && !string.IsNullOrEmpty(n.EntitlementId))
+                                    {
+                                        <Anchor To="@($"/customers/{n.CustomerId}/entitlements/{n.EntitlementId}")">Entitlement</Anchor>
+                                    }
+                                    else if (!string.IsNullOrEmpty(n.CustomerId))
+                                    {
+                                        <Anchor To="@($"/customers/{n.CustomerId}")">Customer</Anchor>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </TableRowCell>
+                            </TableRow>
                         }
-                        else
-                        {
-                            <MudText Typo="Typo.body2">—</MudText>
-                        }
-                    </MudTd>
-                    <MudTd DataLabel="Event">
-                        <MudText Typo="Typo.body2">@(context.EventType ?? "—")</MudText>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ResourceName</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Received">@context.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudTd>
-                    <MudTd DataLabel="Open" Style="text-align:right">
-                        @if (!string.IsNullOrEmpty(context.CustomerId) && !string.IsNullOrEmpty(context.EntitlementId))
-                        {
-                            <MudLink Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")">Entitlement</MudLink>
-                        }
-                        else if (!string.IsNullOrEmpty(context.CustomerId))
-                        {
-                            <MudLink Href="@($"/customers/{context.CustomerId}")">Customer</MudLink>
-                        }
-                        else
-                        {
-                            <span>—</span>
-                        }
-                    </MudTd>
-                </RowTemplate>
-            </MudTable>
+                    </TableBody>
+                </Table>
+            </Card>
         }
         else
         {
-            <MudAlert Severity="Severity.Info">No notifications received yet.</MudAlert>
+            <Alert Color="Color.Info" Visible>No notifications received yet.</Alert>
         }
-    </MudItem>
+    </Column>
 
-    <MudItem xs="12" md="5">
-        <MudText Typo="Typo.h6" Class="mb-2">Subscriber registration</MudText>
-        <MudCard Elevation="2">
-            <MudCardContent>
+    <Column ColumnSize="ColumnSize.Is12.Is5.OnDesktop">
+        <Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Subscriber registration</Heading>
+        <Card Shadow="Shadow.Small">
+            <CardBody>
                 @if (_registrationLoading)
                 {
-                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                    <Progress Indeterminate Color="Color.Primary" Size="Size.Small" Margin="Margin.Is2.OnY" />
                 }
                 else
                 {
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Topic</MudText>
-                    <MudText Typo="Typo.body2" Class="mb-3">@(_registration?.Topic ?? "— none registered —")</MudText>
+                    <Small TextColor="TextColor.Secondary" Display="Display.Block">Topic</Small>
+                    <Paragraph Margin="Margin.Is3.FromBottom">@(_registration?.Topic ?? "— none registered —")</Paragraph>
 
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Registered service accounts</MudText>
+                    <Small TextColor="TextColor.Secondary" Display="Display.Block">Registered service accounts</Small>
                     @if (_registration is { ServiceAccounts.Count: > 0 })
                     {
-                        <MudList T="string" Dense="true">
+                        <ListGroup Flush>
                             @foreach (var account in _registration.ServiceAccounts)
                             {
-                                <MudListItem T="string">
-                                    <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">@account</MudText>
-                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
-                                                       OnClick="@(() => UnregisterAsync(account))" Disabled="_saving" />
-                                    </div>
-                                </MudListItem>
+                                <ListGroupItem Padding="Padding.Is0.OnX.Is2.OnY">
+                                    <Div Flex="Flex.JustifyContent.Between.AlignItems.Center">
+                                        <span class="text-break">@account</span>
+                                        <Button Color="Color.Danger" Outline Size="Size.Small" Clicked="@(() => UnregisterAsync(account))" Disabled="_saving" aria-label="Unregister">
+                                            <Icon Name="@AppIcons.Delete" />
+                                        </Button>
+                                    </Div>
+                                </ListGroupItem>
                             }
-                        </MudList>
+                        </ListGroup>
                     }
                     else
                     {
-                        <MudText Typo="Typo.body2" Class="mb-2">None.</MudText>
+                        <Paragraph Margin="Margin.Is2.FromBottom">None.</Paragraph>
                     }
 
-                    <MudDivider Class="my-3" />
-                    <MudTextField @bind-Value="_newServiceAccount" Label="Service account email"
-                                  Variant="Variant.Outlined" Margin="Margin.Dense"
-                                  Placeholder="name@project.iam.gserviceaccount.com" />
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
-                               StartIcon="@Icons.Material.Filled.Add" OnClick="RegisterAsync"
-                               Disabled="@(string.IsNullOrWhiteSpace(_newServiceAccount) || _saving)">
-                        Register subscriber
-                    </MudButton>
+                    <Divider Margin="Margin.Is3.OnY" />
+                    <Field>
+                        <FieldLabel>Service account email</FieldLabel>
+                        <TextInput @bind-Value="_newServiceAccount" Placeholder="name@project.iam.gserviceaccount.com" />
+                    </Field>
+                    <Button Color="Color.Primary" Clicked="RegisterAsync" Disabled="@(string.IsNullOrWhiteSpace(_newServiceAccount) || _saving)">
+                        <Icon Name="@AppIcons.Add" Class="me-1" /> Register subscriber
+                    </Button>
                 }
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-</MudGrid>
+            </CardBody>
+        </Card>
+    </Column>
+</Row>
 
 @code {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(20);
@@ -186,7 +192,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load notifications: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load notifications: {ex.Message}", Severity.Error);
             _feed = new ChannelNotificationsResult();
         }
         finally
@@ -250,7 +256,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load subscriber registration: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load subscriber registration: {ex.Message}", Severity.Error);
             _registration = new SubscriberRegistration();
         }
         finally
@@ -273,11 +279,11 @@
         {
             _registration = await Api.RegisterSubscriberAsync(new RegisterSubscriberRequest { ServiceAccount = serviceAccount }, _cts.Token);
             _newServiceAccount = string.Empty;
-            Snackbar.Add("Subscriber registered.", Severity.Success);
+            await Snackbar.Add("Subscriber registered.", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to register subscriber: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to register subscriber: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -291,11 +297,11 @@
         try
         {
             _registration = await Api.UnregisterSubscriberAsync(serviceAccount, _cts.Token);
-            Snackbar.Add("Subscriber unregistered.", Severity.Success);
+            await Snackbar.Add("Subscriber unregistered.", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to unregister subscriber: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to unregister subscriber: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -337,7 +343,7 @@
     {
         "Entitlement" => Color.Primary,
         "Customer" => Color.Info,
-        _ => Color.Default
+        _ => Color.Secondary
     };
 
     public void Dispose()
@@ -353,3 +359,4 @@
         _cts.Dispose();
     }
 }
+

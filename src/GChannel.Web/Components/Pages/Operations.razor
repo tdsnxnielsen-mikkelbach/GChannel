@@ -1,200 +1,210 @@
 @page "/operations"
 @attribute [Authorize]
 @implements IDisposable
-@using MudBlazor
-@using Severity = MudBlazor.Severity
+@using Blazorise
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Operations · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
-    <div>
-        <MudText Typo="Typo.h4">Operations</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Long-running operations</MudText>
-    </div>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
-               OnClick="RefreshListAsync" Disabled="_listLoading">Refresh</MudButton>
-</div>
+<Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+    <Div>
+        <Heading Size="HeadingSize.Is3" Margin="Margin.Is0">Operations</Heading>
+        <Small TextColor="TextColor.Secondary">Long-running operations</Small>
+    </Div>
+    <Button Color="Color.Secondary" Outline Clicked="RefreshListAsync" Disabled="_listLoading">
+        <Icon Name="@AppIcons.Refresh" Class="me-1" /> Refresh
+    </Button>
+</Div>
 
-<MudText Typo="Typo.body1" Class="mb-3" Color="Color.Secondary">
+<Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
     Mutating Channel calls (entitlement create/change/state changes, transfers) run asynchronously and
     return an operation. Track one by id to watch it complete, then deep-link to the customer or
     entitlement it affected.
-</MudText>
+</Paragraph>
 
-<MudExpansionPanels Elevation="0" Class="mb-6">
-    <MudExpansionPanel Icon="@Icons.Material.Filled.HelpOutline" Text="How operations work &amp; examples">
-        <MudText Typo="Typo.subtitle2" Class="mb-1">Where the id comes from</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-            When you buy/change/suspend an entitlement or run a transfer, the API returns an operation name
-            like <code>operations/abc-123-def</code>. Paste that whole string, or just the
-            <code>abc-123-def</code> id segment, into the box below. You usually don't need this page for
-            small accounts — most actions finish in seconds — but it's handy for transfers and bulk changes
-            that stay <em>Running</em> for a while.
-        </MudText>
+<Accordion Margin="Margin.Is5.FromBottom">
+    <AccordionItem @bind-Visible="_helpOpen">
+        <AccordionHeader>
+            <Heading Size="HeadingSize.Is6" Margin="Margin.Is0">
+                <AccordionToggle><Icon Name="@AppIcons.HelpOutline" Class="me-2" />How operations work &amp; examples</AccordionToggle>
+            </Heading>
+        </AccordionHeader>
+        <AccordionBody>
+            <Strong Display="Display.Block" Margin="Margin.Is1.FromBottom">Where the id comes from</Strong>
+            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is3.FromBottom">
+                When you buy/change/suspend an entitlement or run a transfer, the API returns an operation name
+                like <code>operations/abc-123-def</code>. Paste that whole string, or just the
+                <code>abc-123-def</code> id segment, into the box below. You usually don't need this page for
+                small accounts — most actions finish in seconds — but it's handy for transfers and bulk changes
+                that stay <em>Running</em> for a while.
+            </Paragraph>
 
-        <MudText Typo="Typo.subtitle2" Class="mb-1">What you'll see</MudText>
-        <MudList T="string" Dense="true" Class="mb-3">
-            <MudListItem T="string" Icon="@Icons.Material.Filled.Sync">
-                <b>Running</b> — still processing; refresh or leave the chip polling until it settles.
-            </MudListItem>
-            <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle">
-                <b>Done</b> — finished; jump straight to the affected Customer or Entitlement.
-            </MudListItem>
-            <MudListItem T="string" Icon="@Icons.Material.Filled.Error">
-                <b>Failed</b> — shows the error message + code (e.g. quota, invalid state) so you can retry.
-            </MudListItem>
-        </MudList>
+            <Strong Display="Display.Block" Margin="Margin.Is1.FromBottom">What you'll see</Strong>
+            <ListGroup Flush Margin="Margin.Is3.FromBottom">
+                <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
+                    <Icon Name="@AppIcons.Sync" TextColor="TextColor.Secondary" Class="me-2" /><b>Running</b> — still processing; refresh or leave the badge polling until it settles.
+                </ListGroupItem>
+                <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
+                    <Icon Name="@AppIcons.CheckCircle" TextColor="TextColor.Success" Class="me-2" /><b>Done</b> — finished; jump straight to the affected Customer or Entitlement.
+                </ListGroupItem>
+                <ListGroupItem Padding="Padding.Is0.OnX.Is1.OnY" Class="border-0">
+                    <Icon Name="@AppIcons.Error" TextColor="TextColor.Danger" Class="me-2" /><b>Failed</b> — shows the error message + code (e.g. quota, invalid state) so you can retry.
+                </ListGroupItem>
+            </ListGroup>
 
-        <MudText Typo="Typo.subtitle2" Class="mb-1">Examples</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
-            • Purchase a Workspace SKU → track the op to confirm provisioning before assigning licenses.<br />
-            • Transfer customers from another reseller → watch the op finish, then open the entitlement.<br />
-            • Suspend/cancel/start-paid-service → confirm the state change actually applied.<br />
-            <em>Note:</em> Google's Channel API has no global "list all operations", so track by id rather
-            than browse — you can still cancel a still-running operation.
-        </MudText>
-    </MudExpansionPanel>
-</MudExpansionPanels>
+            <Strong Display="Display.Block" Margin="Margin.Is1.FromBottom">Examples</Strong>
+            <Paragraph TextColor="TextColor.Secondary" Margin="Margin.Is0">
+                • Purchase a Workspace SKU → track the op to confirm provisioning before assigning licenses.<br />
+                • Transfer customers from another reseller → watch the op finish, then open the entitlement.<br />
+                • Suspend/cancel/start-paid-service → confirm the state change actually applied.<br />
+                <em>Note:</em> Google's Channel API has no global "list all operations", so track by id rather
+                than browse — you can still cancel a still-running operation.
+            </Paragraph>
+        </AccordionBody>
+    </AccordionItem>
+</Accordion>
 
-<MudCard Elevation="2" Class="mb-6">
-    <MudCardContent>
-        <div class="d-flex gap-3 align-center flex-wrap">
-            <MudTextField @bind-Value="_lookupId" Label="Operation id" Variant="Variant.Outlined"
-                          Margin="Margin.Dense" Class="flex-grow-1"
-                          Placeholder="operations/… or the id segment" Immediate="false" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search"
-                       OnClick="TrackAsync" Disabled="@(string.IsNullOrWhiteSpace(_lookupId) || _tracking)">
-                Track
-            </MudButton>
-        </div>
+<Card Shadow="Shadow.Small" Margin="Margin.Is5.FromBottom">
+    <CardBody>
+        <Div Flex="Flex.AlignItems.Center.Wrap" Gap="Gap.Is3">
+            <TextInput @bind-Value="_lookupId" Placeholder="operations/… or the id segment" Class="flex-grow-1" aria-label="Operation id" />
+            <Button Color="Color.Primary" Clicked="TrackAsync" Disabled="@(string.IsNullOrWhiteSpace(_lookupId) || _tracking)" Loading="_tracking">
+                <Icon Name="@AppIcons.Search" Class="me-1" /> Track
+            </Button>
+        </Div>
 
         @if (_tracked is not null)
         {
-            <MudDivider Class="my-4" />
-            <div class="d-flex justify-space-between align-center mb-2">
-                <div>
-                    <MudText Typo="Typo.subtitle1">@(_tracked.OperationType ?? "Operation")</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">@_tracked.Name</MudText>
-                </div>
+            <Divider Margin="Margin.Is4.OnY" />
+            <Div Flex="Flex.JustifyContent.Between.AlignItems.Center" Margin="Margin.Is2.FromBottom">
+                <Div>
+                    <Strong Display="Display.Block">@(_tracked.OperationType ?? "Operation")</Strong>
+                    <Small TextColor="TextColor.Secondary">@_tracked.Name</Small>
+                </Div>
                 @if (_tracked.Done)
                 {
-                    <MudChip T="string" Size="Size.Small" Color="@(_tracked.Error is null ? Color.Success : Color.Error)"
-                             Icon="@(_tracked.Error is null ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)">
-                        @(_tracked.Error is null ? "Done" : "Failed")
-                    </MudChip>
+                    <Badge Color="@(_tracked.Error is null ? Color.Success : Color.Danger)">
+                        <Icon Name="@(_tracked.Error is null ? AppIcons.CheckCircle : AppIcons.Error)" Class="me-1" />@(_tracked.Error is null ? "Done" : "Failed")
+                    </Badge>
                 }
                 else
                 {
-                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Icon="@Icons.Material.Filled.Sync">
-                        Running
-                    </MudChip>
+                    <Badge Color="Color.Info"><Icon Name="@AppIcons.Sync" Class="me-1 fa-spin" />Running</Badge>
                 }
-            </div>
+            </Div>
 
             @if (!string.IsNullOrEmpty(_tracked.Error))
             {
-                <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">
+                <Alert Color="Color.Danger" Visible Margin="Margin.Is3.FromBottom">
                     @_tracked.Error @(_tracked.ErrorCode is { } code and not 0 ? $"(code {code})" : "")
-                </MudAlert>
+                </Alert>
             }
 
             @if (!string.IsNullOrEmpty(_tracked.CustomerId) || !string.IsNullOrEmpty(_tracked.EntitlementId))
             {
-                <div class="d-flex gap-2 mb-3 flex-wrap">
+                <Div Flex="Flex.Wrap" Gap="Gap.Is2" Margin="Margin.Is3.FromBottom">
                     @if (!string.IsNullOrEmpty(_tracked.CustomerId))
                     {
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Person"
-                                   Href="@($"/customers/{_tracked.CustomerId}")">Customer</MudButton>
+                        <Button Type="ButtonType.Link" To="@($"/customers/{_tracked.CustomerId}")" Color="Color.Secondary" Outline Size="Size.Small">
+                            <Icon Name="@AppIcons.Person" Class="me-1" /> Customer
+                        </Button>
                     }
                     @if (!string.IsNullOrEmpty(_tracked.CustomerId) && !string.IsNullOrEmpty(_tracked.EntitlementId))
                     {
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Subscriptions"
-                                   Href="@($"/customers/{_tracked.CustomerId}/entitlements/{_tracked.EntitlementId}")">Entitlement</MudButton>
+                        <Button Type="ButtonType.Link" To="@($"/customers/{_tracked.CustomerId}/entitlements/{_tracked.EntitlementId}")" Color="Color.Secondary" Outline Size="Size.Small">
+                            <Icon Name="@AppIcons.Subscriptions" Class="me-1" /> Entitlement
+                        </Button>
                     }
-                </div>
+                </Div>
             }
 
-            <div class="d-flex gap-2">
-                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh"
-                           OnClick="@(() => RefreshTrackedAsync(true))">Refresh</MudButton>
+            <Div Flex="Flex.Default" Gap="Gap.Is2">
+                <Button Color="Color.Primary" Size="Size.Small" Class="btn-link text-decoration-none" Clicked="@(() => RefreshTrackedAsync(true))">
+                    <Icon Name="@AppIcons.Refresh" Class="me-1" /> Refresh
+                </Button>
                 @if (!_tracked.Done)
                 {
-                    <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
-                               StartIcon="@Icons.Material.Filled.Cancel" OnClick="CancelAsync" Disabled="_cancelling">
-                        Cancel
-                    </MudButton>
+                    <Button Color="Color.Danger" Size="Size.Small" Class="btn-link text-decoration-none" Clicked="CancelAsync" Disabled="_cancelling">
+                        <Icon Name="@AppIcons.Cancel" Class="me-1" /> Cancel
+                    </Button>
                 }
-            </div>
+            </Div>
         }
-    </MudCardContent>
-</MudCard>
+    </CardBody>
+</Card>
 
-<MudText Typo="Typo.h6" Class="mb-2">Recent operations</MudText>
+<Heading Size="HeadingSize.Is5" Margin="Margin.Is2.FromBottom">Recent operations</Heading>
 @if (_listLoading)
 {
     <LoadingPanel Title="Loading operations…" Hint="Fetching long-running operations from the Channel API." />
 }
 else if (_listUnavailable)
 {
-    <MudAlert Severity="Severity.Info">
+    <Alert Color="Color.Info" Visible>
         Listing operations isn't available for this account. Track an operation by id using its name from a
         mutating call's response.
-    </MudAlert>
+    </Alert>
 }
 else if (_operations is { Count: > 0 })
 {
-    <MudTable Items="_operations" Hover="true" Elevation="2" Dense="true">
-        <HeaderContent>
-            <MudTh>Type</MudTh>
-            <MudTh>Id</MudTh>
-            <MudTh>State</MudTh>
-            <MudTh>Correlation</MudTh>
-            <MudTh Style="text-align:right">Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Type">@(context.OperationType ?? "—")</MudTd>
-            <MudTd DataLabel="Id"><code>@context.Id</code></MudTd>
-            <MudTd DataLabel="State">
-                @if (context.Done)
+    <Card Shadow="Shadow.Small">
+        <Table Narrow Hoverable Responsive Margin="Margin.Is0">
+            <TableHeader>
+                <TableRow>
+                    <TableHeaderCell>Type</TableHeaderCell>
+                    <TableHeaderCell>Id</TableHeaderCell>
+                    <TableHeaderCell>State</TableHeaderCell>
+                    <TableHeaderCell>Correlation</TableHeaderCell>
+                    <TableHeaderCell TextAlignment="TextAlignment.End">Actions</TableHeaderCell>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                @foreach (var op in _operations)
                 {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                             Color="@(context.Error is null ? Color.Success : Color.Error)">
-                        @(context.Error is null ? "Done" : "Failed")
-                    </MudChip>
+                    <TableRow>
+                        <TableRowCell>@(op.OperationType ?? "—")</TableRowCell>
+                        <TableRowCell><code>@op.Id</code></TableRowCell>
+                        <TableRowCell>
+                            @if (op.Done)
+                            {
+                                <Badge Color="@(op.Error is null ? Color.Success : Color.Danger)">@(op.Error is null ? "Done" : "Failed")</Badge>
+                            }
+                            else
+                            {
+                                <Badge Color="Color.Info">Running</Badge>
+                            }
+                        </TableRowCell>
+                        <TableRowCell>
+                            @if (!string.IsNullOrEmpty(op.CustomerId) && !string.IsNullOrEmpty(op.EntitlementId))
+                            {
+                                <Anchor To="@($"/customers/{op.CustomerId}/entitlements/{op.EntitlementId}")">Entitlement</Anchor>
+                            }
+                            else if (!string.IsNullOrEmpty(op.CustomerId))
+                            {
+                                <Anchor To="@($"/customers/{op.CustomerId}")">Customer</Anchor>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </TableRowCell>
+                        <TableRowCell TextAlignment="TextAlignment.End">
+                            <Tooltip Text="Track" Inline>
+                                <Button Size="Size.Small" Color="Color.Light" Clicked="@(() => TrackByIdAsync(op.Id))" aria-label="Track">
+                                    <Icon Name="@AppIcons.Visibility" />
+                                </Button>
+                            </Tooltip>
+                        </TableRowCell>
+                    </TableRow>
                 }
-                else
-                {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info">Running</MudChip>
-                }
-            </MudTd>
-            <MudTd DataLabel="Correlation">
-                @if (!string.IsNullOrEmpty(context.CustomerId) && !string.IsNullOrEmpty(context.EntitlementId))
-                {
-                    <MudLink Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")">Entitlement</MudLink>
-                }
-                else if (!string.IsNullOrEmpty(context.CustomerId))
-                {
-                    <MudLink Href="@($"/customers/{context.CustomerId}")">Customer</MudLink>
-                }
-                else
-                {
-                    <span>—</span>
-                }
-            </MudTd>
-            <MudTd DataLabel="Actions" Style="text-align:right">
-                <MudTooltip Text="Track">
-                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                                   OnClick="@(() => TrackByIdAsync(context.Id))" />
-                </MudTooltip>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
+            </TableBody>
+        </Table>
+    </Card>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">No recent operations.</MudAlert>
+    <Alert Color="Color.Info" Visible>No recent operations.</Alert>
 }
 
 @code {
@@ -206,6 +216,7 @@ else
     [SupplyParameterFromQuery(Name = "operation")]
     public string? OperationId { get; set; }
 
+    private bool _helpOpen;
     private string _lookupId = string.Empty;
     private ChannelOperation? _tracked;
     private bool _tracking;
@@ -280,7 +291,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load operation: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load operation: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -301,7 +312,7 @@ else
             _tracked = operation;
             if (notify && operation is not null)
             {
-                Snackbar.Add(operation.Done ? "Operation is done." : "Operation still running.", Severity.Info);
+                await Snackbar.Add(operation.Done ? "Operation is done." : "Operation still running.", Severity.Info);
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
@@ -310,7 +321,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to refresh operation: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to refresh operation: {ex.Message}", Severity.Error);
         }
     }
 
@@ -352,11 +363,11 @@ else
         try
         {
             _tracked = await Api.CancelOperationAsync(_tracked.Id, _cts.Token);
-            Snackbar.Add("Cancellation requested.", Severity.Success);
+            await Snackbar.Add("Cancellation requested.", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to cancel operation: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to cancel operation: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -377,3 +388,4 @@ else
         _cts.Dispose();
     }
 }
+
