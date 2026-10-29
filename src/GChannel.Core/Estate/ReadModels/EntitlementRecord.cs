@@ -170,8 +170,7 @@ public sealed class EntitlementRecord
         if (PendingOperationName == e.OperationName) { PendingOperationName = null; PendingAction = null; }
     }
 
-    public void Apply(ChannelNotificationReceived e)
-    {
-        // History only.
-    }
+    // No Apply(ChannelNotificationReceived): that event is also appended to customer streams, and an inline
+    // snapshot runs on every stream containing an event type it handles — even a no-op Apply would create a
+    // stray EntitlementRecord on each customer stream. Unhandled events stay in the stream as history.
 }

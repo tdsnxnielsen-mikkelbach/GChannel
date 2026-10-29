@@ -114,6 +114,13 @@ partner link against its current read model and appends only the differences:
   transaction as the appended events and queries never lag. Indexed properties (`CustomerId`,
   `OwningLinkId`, `State`, `Domain`, …) back the paged estate endpoints; Marten LINQ has no `GroupBy`, so
   rollups (`EstateRollups`, `DashboardReadModel`) aggregate in memory.
+- An inline snapshot runs on **every** stream containing an event type it handles; Marten does not filter by
+  stream prefix. A read model must therefore never handle an event that is also appended to another
+  aggregate's streams, not even with a no-op `Apply`. `ChannelNotificationReceived` goes to both customer
+  and entitlement streams, so it is deliberately unhandled and kept as history only. An earlier no-op
+  `Apply` created blank `CustomerRecord`/`EntitlementRecord` documents on the other type's streams, which
+  then violated the unique `CustomerId`/`EntitlementId` indexes. The worker's `StrayReadModelCleanup`
+  (Marten initial data, idempotent) deletes any such leftovers at startup.
 - Sync bookkeeping that is not business history (`LastSyncedUtc`, cursors, recurring-job state, dashboard
   refresh status, identity-check log, notification feed, billing documents) lives in plain Marten
   **documents** (`Persistence/Documents`), not events.
@@ -720,7 +727,7 @@ Pub/Sub message id becomes the Service Bus message id, so the topic's duplicate 
 redelivery), acking the Pub/Sub message once the Service Bus publish succeeds. The worker's
 `ChannelNotificationArrivedHandler` then stores a `ChannelNotificationRecord` document (the feed, trimmed
 to `PubSubMaxNotifications × 10` rows), appends `ChannelNotificationReceived` to the affected customer's
-stream and sends a `ProjectCustomer` command. `GET /api/notifications` serves the feed from Marten; the **Notifications**
+stream (and to the entitlement's stream when the notification names one) and sends a `ProjectCustomer` command. `GET /api/notifications` serves the feed from Marten; the **Notifications**
 page (`/notifications`) renders it (each row deep-linking to its customer/entitlement) and polls every
 20 s, alongside a subscriber-registration admin card.
 
