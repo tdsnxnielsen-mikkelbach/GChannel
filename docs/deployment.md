@@ -68,6 +68,13 @@ single replica (min = max = 1, no ingress); the API and web scale independently.
 Web app's public URL plus `/signin-google` to the authorized redirect URIs of your Google OAuth
 client.
 
+The API container app runs at **1 vCPU / 2 GiB**. The other two use the Container Apps default of 0.5 vCPU / 1 GiB.
+Right after a start, the API compiles Wolverine/Marten handler code with Roslyn on first use. With only
+1 GiB, the first few page loads pushed it past its memory limit, so it was OOM-killed (exit 137) and
+restarted in a loop. azd's generated container-app template has no `resources` block, so a `postdeploy` hook in
+`azure.yaml` re-applies the size after every `azd deploy` / `azd up` (one extra revision). Remove the
+hook once the API loads pre-generated code instead of compiling at runtime.
+
 ### Aspire dashboard in Azure
 
 `azd` provisions the **Container Apps environment with the managed Aspire dashboard enabled

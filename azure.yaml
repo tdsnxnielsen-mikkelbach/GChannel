@@ -33,3 +33,28 @@ hooks:
         application=gchannel `
         environment=$env:AZURE_ENV_NAME `
         managed-by=azd
+
+  # Stop-gap: azd's generated container-app template has no `resources` block, so every deploy resets
+  # apiservice to the 0.5 vCPU / 1 GiB default, which its cold start (runtime Wolverine/Marten code
+  # generation) exceeds, OOM-killing it in a loop. Re-apply 1 vCPU / 2 GiB after each deploy.
+  postdeploy:
+    shell: pwsh
+    continueOnError: false
+    interactive: false
+    run: |
+      $ErrorActionPreference = 'Stop'
+      $rg = $env:AZURE_RESOURCE_GROUP
+      if ([string]::IsNullOrWhiteSpace($rg)) {
+        $rg = az group list --tag "azd-env-name=$($env:AZURE_ENV_NAME)" --query "[0].name" -o tsv
+      }
+      if ([string]::IsNullOrWhiteSpace($rg)) {
+        throw "Could not resolve the resource group for environment '$($env:AZURE_ENV_NAME)'."
+      }
+      $memory = az containerapp show --name apiservice --resource-group $rg `
+        --query "properties.template.containers[0].resources.memory" -o tsv
+      if ($LASTEXITCODE -ne 0) { throw "Could not read the apiservice container app." }
+      if ($memory -ne '2Gi') {
+        Write-Host "Resizing apiservice from $memory to 1 vCPU / 2 GiB"
+        az containerapp update --name apiservice --resource-group $rg --cpu 1.0 --memory 2.0Gi --output none
+        if ($LASTEXITCODE -ne 0) { throw "Resizing apiservice failed." }
+      }
