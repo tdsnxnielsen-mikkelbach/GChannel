@@ -68,12 +68,24 @@ single replica (min = max = 1, no ingress); the API and web scale independently.
 Web app's public URL plus `/signin-google` to the authorized redirect URIs of your Google OAuth
 client.
 
-The API container app runs at **1 vCPU / 2 GiB**. The other two use the Container Apps default of 0.5 vCPU / 1 GiB.
-Right after a start, the API compiles Wolverine/Marten handler code with Roslyn on first use. With only
-1 GiB, the first few page loads pushed it past its memory limit, so it was OOM-killed (exit 137) and
-restarted in a loop. azd's generated container-app template has no `resources` block, so a `postdeploy` hook in
-`azure.yaml` re-applies the size after every `azd deploy` / `azd up` (one extra revision). Remove the
-hook once the API loads pre-generated code instead of compiling at runtime.
+### Pre-generated Wolverine code
+
+All three container apps use the Container Apps default of 0.5 vCPU / 1 GiB. In Production the API and
+the worker load **pre-generated** Wolverine handler and HTTP-endpoint code (`TypeLoadMode.Static`) instead
+of compiling it with Roslyn on first use. Runtime compilation pushed the API past 1 GiB within a few
+page loads (OOM-killed with exit 137, restarting in a loop); with pre-generated code it stays below about 300 MiB.
+
+- The `predeploy` hook in `azure.yaml` runs `codegen write` for both projects (Production environment,
+  ~20 s each, no connection strings needed). It writes the code to `Internal/Generated/` before azd builds
+  the images, so every `azd deploy` / `azd up` ships code that matches the source.
+- `Internal/Generated/` is git-ignored and compiled **only into Release builds** (what azd publishes). Debug
+  builds (local runs, tests) keep compiling at runtime, so leftover generated files never go stale there.
+- If a handler or endpoint type is missing, the host fails at startup rather than falling back to
+  runtime compilation. A container that won't start after a deploy therefore points at a skipped or failed codegen
+  step.
+- To inspect or regenerate the code by hand, run this from `src/GChannel.ApiService` or `src/GChannel.Worker`
+  with `$env:DOTNET_ENVIRONMENT = 'Production'` (and `ASPNETCORE_ENVIRONMENT` for the API):
+  `dotnet run --no-launch-profile -- codegen preview` or `-- codegen write`.
 
 ### Aspire dashboard in Azure
 

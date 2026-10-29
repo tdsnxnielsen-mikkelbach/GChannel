@@ -35,7 +35,7 @@ public static class WorkerHost
         builder.Services.AddSingleton<ServiceAccountChannelClientProvider>();
         builder.Services.AddSingleton<RecurringJobCatalog>();
 
-        builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-tests", MessagingRole.Worker, typeof(ProjectCustomerHandler).Assembly));
+        builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-tests", MessagingRole.Worker, typeof(ProjectCustomerHandler).Assembly, builder.Environment));
         builder.Services.DisableAllExternalWolverineTransports();
 
         configure?.Invoke(builder);

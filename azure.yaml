@@ -34,27 +34,29 @@ hooks:
         environment=$env:AZURE_ENV_NAME `
         managed-by=azd
 
-  # Stop-gap: azd's generated container-app template has no `resources` block, so every deploy resets
-  # apiservice to the 0.5 vCPU / 1 GiB default, which its cold start (runtime Wolverine/Marten code
-  # generation) exceeds, OOM-killing it in a loop. Re-apply 1 vCPU / 2 GiB after each deploy.
-  postdeploy:
+  # Pre-generate the Wolverine handler / HTTP endpoint code that Production loads in TypeLoadMode.Static instead
+  # of Roslyn-compiling it at runtime (docs/deployment.md). Internal/Generated is git-ignored and compiled only into
+  # the Release builds azd publishes. `codegen write` never deletes files of removed handlers/endpoints, so start
+  # from an empty folder; the Production environment makes the generated code match the deployed DI setup.
+  predeploy:
     shell: pwsh
     continueOnError: false
     interactive: false
     run: |
       $ErrorActionPreference = 'Stop'
-      $rg = $env:AZURE_RESOURCE_GROUP
-      if ([string]::IsNullOrWhiteSpace($rg)) {
-        $rg = az group list --tag "azd-env-name=$($env:AZURE_ENV_NAME)" --query "[0].name" -o tsv
-      }
-      if ([string]::IsNullOrWhiteSpace($rg)) {
-        throw "Could not resolve the resource group for environment '$($env:AZURE_ENV_NAME)'."
-      }
-      $memory = az containerapp show --name apiservice --resource-group $rg `
-        --query "properties.template.containers[0].resources.memory" -o tsv
-      if ($LASTEXITCODE -ne 0) { throw "Could not read the apiservice container app." }
-      if ($memory -ne '2Gi') {
-        Write-Host "Resizing apiservice from $memory to 1 vCPU / 2 GiB"
-        az containerapp update --name apiservice --resource-group $rg --cpu 1.0 --memory 2.0Gi --output none
-        if ($LASTEXITCODE -ne 0) { throw "Resizing apiservice failed." }
+      $env:DOTNET_ENVIRONMENT = 'Production'
+      $env:ASPNETCORE_ENVIRONMENT = 'Production'
+      foreach ($project in 'GChannel.ApiService', 'GChannel.Worker') {
+        $dir = Join-Path $PWD "src/$project"
+        $generated = Join-Path $dir 'Internal/Generated'
+        if (Test-Path $generated) { Remove-Item $generated -Recurse -Force }
+        Push-Location $dir
+        try {
+          $output = dotnet run --no-launch-profile -- codegen write 2>&1
+          if ($LASTEXITCODE -ne 0) { $output | Write-Host; throw "Wolverine codegen failed for $project." }
+        }
+        finally { Pop-Location }
+        $count = @(Get-ChildItem $generated -Recurse -Filter *.cs -ErrorAction SilentlyContinue).Count
+        if ($count -eq 0) { throw "Wolverine codegen wrote no files for $project." }
+        Write-Host "Pre-generated $count Wolverine code files for $project"
       }

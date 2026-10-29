@@ -4,6 +4,7 @@ using GChannel.Core.Persistence;
 using GChannel.Worker.Handlers;
 using GChannel.Worker.Infrastructure;
 using GChannel.Worker.Services;
+using JasperFx;
 using JasperFx.Events.Daemon;
 using Wolverine;
 
@@ -44,7 +45,9 @@ builder.Services.AddHostedService<NotificationDeadLetterReplay>();
 builder.Services.AddHostedService<ChannelNotificationsService>();
 
 // Wolverine: handlers for the estate-events subscription and the estate-sync / jobs / operations queues.
-builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-worker", MessagingRole.Worker, typeof(ProjectCustomerHandler).Assembly));
+builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-worker", MessagingRole.Worker, typeof(ProjectCustomerHandler).Assembly, builder.Environment));
 
 var host = builder.Build();
-host.Run();
+
+// Runs the host, or a JasperFx command such as `codegen write` (pre-generates the Wolverine code, see docs/deployment.md).
+return await host.RunJasperFxCommands(args);

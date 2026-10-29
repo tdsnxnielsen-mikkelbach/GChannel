@@ -4,6 +4,7 @@ using GChannel.Core.DependencyInjection;
 using GChannel.Core.GoogleApis;
 using GChannel.Core.Messaging;
 using GChannel.Core.Persistence;
+using JasperFx;
 using Wolverine;
 using Wolverine.Http;
 
@@ -36,7 +37,7 @@ builder.Services.AddScoped<IGoogleChannelClient, GoogleChannelClient>();
 
 // Wolverine: HTTP endpoints, the Service Bus transport (publishing CustomerChanged / OperationSubmitted /
 // … through the Marten outbox) and the api-cache subscription (Redis eviction on read-model updates).
-builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-api", MessagingRole.Api, typeof(ApiAssemblyMarker).Assembly));
+builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-api", MessagingRole.Api, typeof(ApiAssemblyMarker).Assembly, builder.Environment));
 builder.Services.AddWolverineHttp();
 
 var app = builder.Build();
@@ -46,7 +47,8 @@ app.UseExceptionHandler();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    await DevelopmentSeeding.SeedNotificationsAsync(app);
+    // Once the host is really serving — never during `codegen write` or other JasperFx commands.
+    app.Lifetime.ApplicationStarted.Register(() => _ = DevelopmentSeeding.SeedNotificationsAsync(app));
 }
 
 app.MapDefaultEndpoints();
@@ -58,4 +60,5 @@ app.MapWolverineEndpoints(opts =>
     opts.RejectUnparseableQueryValues = true;
 });
 
-app.Run();
+// Runs the host, or a JasperFx command such as `codegen write` (pre-generates the Wolverine code, see docs/deployment.md).
+return await app.RunJasperFxCommands(args);
