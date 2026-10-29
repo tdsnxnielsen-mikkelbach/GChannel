@@ -7,8 +7,10 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-10-28 · **branch:** `feature/critter-stack-blazorise` (22 commits ahead of `main`,
-**never pushed** — `origin` only has `main`) · **head:** the commit "Add session-handoff convention and today's handoff" (`git log -1`) · working tree clean.
+**Last updated:** 2026-10-29 · **branch:** `feature/critter-stack-radzen` (renamed from
+`feature/critter-stack-blazorise`; pushed, tracks `origin`) · **PR:** [#1](https://github.com/tdsnxnielsen-mikkelbach/GChannel/pull/1)
+→ `main`, open, mergeable, no CI checks (the repo has no workflows) · **head:** the commit "Update session
+handoff: branch pushed, PR #1 open" (`git log -1`) · working tree clean.
 
 ## Current state
 
@@ -56,9 +58,8 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Open items
 
-1. **Branch not pushed / no PR.** Production runs code that exists only on this machine. First thing
-   tomorrow: `git push -u origin feature/critter-stack-blazorise`, open a PR to `main` (consider renaming
-   the branch — it still says "blazorise").
+1. **PR #1 not merged.** Production runs this branch, not `main`. Merge once the signed-in smoke test
+   (item 6) passes and tick the PR's "Before merge" box.
 2. **Drop the orphaned `wolverine` schema** in `gchanneldb` (replaced by `wolverine_api` /
    `wolverine_worker`). Needs an Entra login on the server — currently only `mi-676wfhbuks6uu` is admin;
    add yourself with `az postgres flexible-server ad-admin create` or run it from a container app shell.
@@ -73,12 +74,13 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
    `RegionalAllocationFailed` (zone pinning removed; third retry succeeded). If it ever needs recreating,
    retry or temporarily use `Standard_B2s` / General Purpose.
 6. Authenticated UI pages were compile-verified and the shell was browser-tested (light/dark, no console
-   errors), but a signed-in click-through of the Radzen pages in Azure has not been done.
+   errors), but a signed-in click-through of the Radzen pages in Azure has not been done. The app needs a
+   Google sign-in, which the user must do in the integrated browser before an agent can click through.
 
 ## Next steps (suggested order)
 
-1. Push branch, open PR, merge to `main` after a signed-in smoke test of the dashboard, customers,
-   entitlements and billing pages on the Azure URL.
+1. Signed-in smoke test of the dashboard, customers, entitlements and billing pages on the Azure URL,
+   then merge PR #1 to `main`.
 2. Verify the three recurring-job re-arms (open item 3) and that `wolverine-dead-letter-queue` stays empty.
 3. Drop the old `wolverine` schema (open item 2).
 4. Optional hardening: per-app identities (open item 4); scale Postgres down/up as the estate grows.
@@ -112,9 +114,13 @@ holds secrets.
 - Radzen: muted text is `rz-text-secondary-color` (not `rz-color-secondary`); no `rz-gap-*` utilities
   (use `RadzenStack Gap`); `RadzenChip.ChipStyle` takes a `BadgeStyle`.
 - Running the AppHost locks DLLs → stop it before `dotnet build/test`.
+- `git push` authenticates through Git Credential Manager, but `gh` is **not** logged in and the GitHub MCP
+  server is read-only: create/merge PRs in the signed-in integrated browser, or run `gh auth login` first.
 
 ## Session log
 
 - **2026-10-28** — Critter Stack backend (Marten/Wolverine/PostgreSQL/Service Bus) done; UI MudBlazor →
   Blazorise → Radzen; Aspire 13.6.4 + packages; emulator removed; azd provision/deploy to Azure with
   managed identities; SQL/identity cleanup; messaging hardening (schemas, DLQ, timeouts, watchdog).
+- **2026-10-29** — Checklist green (build, 14/14 tests, worker Healthy); branch renamed to
+  `feature/critter-stack-radzen`, pushed, PR #1 opened.
