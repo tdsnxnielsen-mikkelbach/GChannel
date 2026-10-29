@@ -31,6 +31,11 @@
   declared in `AppHost.cs` and mirrored by `MessagingTopology`; Wolverine never auto-provisions. Add any
   new queue/topic in both places.
 - The API and the worker use separate Wolverine message-store schemas (`wolverine_api`, `wolverine_worker`).
+- Production loads **pre-generated** Wolverine code (`TypeLoadMode.Static`): the azd `predeploy` hook runs
+  `codegen write` into the git-ignored `Internal/Generated/` folders, which only Release builds compile. Never
+  commit them. If a host won't start after a deploy, check that codegen ran. Both hosts end with
+  `RunJasperFxCommands(args)`, so start-up side effects (e.g. dev seeding) belong in `ApplicationStarted`, not
+  top-level code.
 - UI pages must keep the `data-onboarding` / `data-walkthrough` attributes (Driver.js tours) and go through
   `UiNotifier` for toasts/confirms. Use Radzen `rz-*` utilities, not Bootstrap classes.
 - Show dates with `DisplayFormat.Date` / `DisplayFormat.Timestamp` (`dd-MM-yyyy` / `dd-MM-yyyy HH:mm`, UTC),

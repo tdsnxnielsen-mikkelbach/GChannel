@@ -154,7 +154,9 @@ local provisioning and `azd` — it is **not** auto-provisioned by Wolverine:
 All listeners use Wolverine's **durable inbox** (so a multi-minute job tick is not bound by the 5-minute
 lock duration) and the API/worker publish through the **durable outbox** inside the same Marten
 transaction (`IntegrateWithWolverine` + `AutoApplyTransactions`), so a saved event and its integration
-message are atomic. Handlers are generated with `WolverineFx.RuntimeCompilation`. HTTP 429s from Google
+message are atomic. Handler and HTTP-endpoint adapter code is compiled at runtime (`WolverineFx.RuntimeCompilation`)
+in Development and the tests. In Production it is **pre-generated** at deploy time and loaded statically
+(`TypeLoadMode.Static`); see [Pre-generated Wolverine code](deployment.md#pre-generated-wolverine-code). HTTP 429s from Google
 are retried with a backoff policy; poison messages are dead-lettered into the process's Postgres message store
 (`wolverine_worker.wolverine_dead_letters` / `wolverine_api.…`), where `IDeadLetters` can query and replay
 them — in practice the Service Bus dead-letter queue above stays empty. Because the
