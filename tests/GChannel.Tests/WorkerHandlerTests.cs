@@ -5,8 +5,10 @@ using GChannel.Core.Messaging;
 using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
 using GChannel.Tests.Fixtures;
+using GChannel.Worker.Infrastructure;
 using GChannel.Worker.Sagas;
 using Marten;
+using Marten.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Wolverine.Tracking;
@@ -36,12 +38,16 @@ public sealed class WorkerHandlerTests(PostgresFixture postgres) : IAsyncLifetim
     public async Task Channel_notification_is_recorded_in_the_feed_and_on_the_customer_stream()
     {
         var customerId = "N" + Guid.NewGuid().ToString("N")[..8];
+        var entitlementId = "E" + Guid.NewGuid().ToString("N")[..8];
         var observer = _host.Services.GetRequiredService<EstateObserver>();
         await using (var session = _store.LightweightSession())
         {
             await observer.ObserveCustomerAsync(session,
                 new Customer { Name = $"accounts/C0test/customers/{customerId}", Id = customerId, OrgDisplayName = "Notified Co", Domain = "notified.example" },
                 null, ObservationSource.Sync, DateTimeOffset.UtcNow, CancellationToken.None);
+            session.Events.StartStream<EntitlementRecord>(EstateStreams.Entitlement(entitlementId), new EntitlementDiscovered(
+                entitlementId, customerId, null, "prod", "sku", "offer", "ACTIVE", 5, 5, false,
+                null, null, null, null, null, ObservationSource.Sync));
             await session.SaveChangesAsync();
         }
 
@@ -50,9 +56,9 @@ public sealed class WorkerHandlerTests(PostgresFixture postgres) : IAsyncLifetim
         {
             Kind = "Entitlement",
             EventType = "LICENSE_ASSIGNMENT_CHANGED",
-            ResourceName = $"accounts/C0test/customers/{customerId}/entitlements/ent-1",
+            ResourceName = $"accounts/C0test/customers/{customerId}/entitlements/{entitlementId}",
             CustomerId = customerId,
-            EntitlementId = "ent-1",
+            EntitlementId = entitlementId,
             MessageId = messageId,
             ReceivedAt = DateTimeOffset.UtcNow,
         };
@@ -70,6 +76,50 @@ public sealed class WorkerHandlerTests(PostgresFixture postgres) : IAsyncLifetim
 
         var events = await query.Events.FetchStreamAsync(EstateStreams.Customer(customerId));
         events.Select(e => e.Data).OfType<ChannelNotificationReceived>().Single().MessageId.ShouldBe(messageId);
+
+        // The history-only event must leave the inline snapshots intact (not rebuild them from scratch) and must
+        // not project one aggregate's read model onto the other aggregate's stream.
+        var customer = await query.LoadAsync<CustomerRecord>(EstateStreams.Customer(customerId));
+        customer.ShouldNotBeNull();
+        customer.CustomerId.ShouldBe(customerId);
+        customer.OrgName.ShouldBe("Notified Co");
+        customer.Domain.ShouldBe("notified.example");
+
+        var entitlement = await query.LoadAsync<EntitlementRecord>(EstateStreams.Entitlement(entitlementId));
+        entitlement.ShouldNotBeNull();
+        entitlement.EntitlementId.ShouldBe(entitlementId);
+        entitlement.State.ShouldBe("ACTIVE");
+
+        (await query.LoadAsync<EntitlementRecord>(EstateStreams.Customer(customerId))).ShouldBeNull();
+        (await query.LoadAsync<CustomerRecord>(EstateStreams.Entitlement(entitlementId))).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Startup_cleanup_removes_read_models_left_on_the_other_aggregates_streams()
+    {
+        var customerId = "K" + Guid.NewGuid().ToString("N")[..8];
+        var strayCustomerId = EstateStreams.Entitlement("E" + Guid.NewGuid().ToString("N")[..8]);
+        var strayEntitlementId = EstateStreams.Customer("C" + Guid.NewGuid().ToString("N")[..8]);
+        var observer = _host.Services.GetRequiredService<EstateObserver>();
+        await using (var session = _store.LightweightSession())
+        {
+            await observer.ObserveCustomerAsync(session,
+                new Customer { Name = $"accounts/C0test/customers/{customerId}", Id = customerId, OrgDisplayName = "Kept Co", Domain = "kept.example" },
+                null, ObservationSource.Sync, DateTimeOffset.UtcNow, CancellationToken.None);
+            // What the old no-op Apply(ChannelNotificationReceived) projected: blank documents keyed by the other stream.
+            session.Store(new CustomerRecord { Id = strayCustomerId });
+            session.Store(new EntitlementRecord { Id = strayEntitlementId });
+            await session.SaveChangesAsync();
+        }
+
+        var cleanup = _host.Services.GetServices<IInitialData>().OfType<StrayReadModelCleanup>().ShouldHaveSingleItem();
+        await cleanup.Populate(_store, CancellationToken.None);
+        await cleanup.Populate(_store, CancellationToken.None); // idempotent
+
+        await using var query = _store.QuerySession();
+        (await query.LoadAsync<CustomerRecord>(strayCustomerId)).ShouldBeNull();
+        (await query.LoadAsync<EntitlementRecord>(strayEntitlementId)).ShouldBeNull();
+        (await query.LoadAsync<CustomerRecord>(EstateStreams.Customer(customerId))).ShouldNotBeNull().OrgName.ShouldBe("Kept Co");
     }
 
     [Fact]

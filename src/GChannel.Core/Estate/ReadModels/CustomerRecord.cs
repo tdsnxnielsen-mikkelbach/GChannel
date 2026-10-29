@@ -92,8 +92,7 @@ public sealed class CustomerRecord
         // Audit history only.
     }
 
-    public void Apply(ChannelNotificationReceived e)
-    {
-        // Notifications are history, not state: nothing to project.
-    }
+    // No Apply(ChannelNotificationReceived): that event is also appended to entitlement streams, and an
+    // inline snapshot runs on every stream containing an event type it handles — even a no-op Apply would
+    // create a stray CustomerRecord on each entitlement stream. Unhandled events stay in the stream as history.
 }

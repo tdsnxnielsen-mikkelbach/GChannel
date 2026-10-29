@@ -114,7 +114,8 @@
     ];
 
     private RadzenDataGrid<EstateEntitlement>? _grid;
-    private List<EstateEntitlement> _items = [];
+    // Must start null: RadzenDataGrid only invokes LoadData on first render while Data is null.
+    private List<EstateEntitlement>? _items;
     private int _total;
     private bool _loading = true;
     private string _state = "";

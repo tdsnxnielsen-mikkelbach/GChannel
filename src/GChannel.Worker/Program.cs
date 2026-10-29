@@ -16,7 +16,9 @@ builder.AddServiceDefaults();
 // "wolverine_worker" — the API has its own). The worker also runs Marten's async projection daemon (HotCold:
 // exactly one node owns it — leader election via Postgres).
 builder.AddGChannelMarten(messageStorageSchema: "wolverine_worker")
-    .AddAsyncDaemon(DaemonMode.HotCold);
+    .AddAsyncDaemon(DaemonMode.HotCold)
+    // Startup repair: removes read-model documents an earlier projection bug left on the wrong streams.
+    .InitializeWith<StrayReadModelCleanup>();
 
 // Redis (Aspire connection "cache"): the API's Google-response cache, which the worker warms (live dashboard
 // refresh) and invalidates (read-model dashboard keys). Entra ID auth for Azure Managed Redis.
