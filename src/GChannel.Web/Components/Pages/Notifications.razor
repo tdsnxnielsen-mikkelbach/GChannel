@@ -67,7 +67,7 @@
                             </Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="ChannelNotification" Title="Received" Width="150px">
-                            <Template Context="n">@n.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</Template>
+                            <Template Context="n">@DisplayFormat.Timestamp(n.ReceivedAt)</Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="ChannelNotification" Title="Open" TextAlign="TextAlign.End" Width="110px">
                             <Template Context="n">

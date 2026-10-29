@@ -105,7 +105,7 @@
                     {
                         <Tip Text="@(c.NextRenewalOfferName ?? "Next commitment renewal")">
                             <div>
-                                <div>@r.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)</div>
+                                <div>@DisplayFormat.Date(r)</div>
                                 @if (!string.IsNullOrEmpty(c.NextRenewalOfferName))
                                 {
                                     <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@c.NextRenewalOfferName</RadzenText>
@@ -164,7 +164,7 @@
                 </Template>
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="EstateCustomer" Property="@nameof(EstateCustomer.CreateTime)" SortProperty="created" Title="Created" Width="110px">
-                <Template Context="c">@(c.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                <Template Context="c">@DisplayFormat.Date(c.CreateTime)</Template>
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="EstateCustomer" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="230px">
                 <Template Context="c">
@@ -308,10 +308,7 @@
         _ => BadgeStyle.Light,
     };
 
-    private static string RenewalText(Entitlement e) =>
-        e.Commitment?.EndTime is { } end
-            ? end.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)
-            : "—";
+    private static string RenewalText(Entitlement e) => DisplayFormat.Date(e.Commitment?.EndTime);
 
     private static long SeatCount(Entitlement e)
     {

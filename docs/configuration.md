@@ -35,6 +35,11 @@
 The UI component library ([Radzen Blazor](https://blazor.radzen.com), MIT) needs no licence key or
 configuration; the chosen light/dark theme is persisted in a `GChannelTheme` cookie.
 
+Dates are shown in Danish/European format, `dd-MM-yyyy`, and timestamps as `dd-MM-yyyy HH:mm` (24-hour, UTC),
+via `DisplayFormat.Date` / `DisplayFormat.Timestamp` in GChannel.Web. Its `DisplayFormat.Culture` (the invariant
+culture with those date patterns, so numbers stay `1,234.56` and month names English) is the app's default
+culture, set in `Program.cs`; it is not configurable. Month labels keep the `MMM yyyy` form (`Oct 2026`).
+
 The three connection strings are injected by the Aspire AppHost (`WithReference(...)`) and consumed by
 name — `AddGChannelMarten` (`gchanneldb`), `UseAzureServiceBusUsingNamedConnection("messaging")` and the
 Redis client (`cache`) — so no connection string is ever typed into configuration by hand.

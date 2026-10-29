@@ -102,7 +102,7 @@ else if (_entitlements is { Count: > 0 })
                     </Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="Entitlement" Title="Created" Width="110px">
-                    <Template Context="e">@(e.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                    <Template Context="e">@DisplayFormat.Date(e.CreateTime)</Template>
                 </RadzenDataGridColumn>
                 <RadzenDataGridColumn TItem="Entitlement" Title="Actions" TextAlign="TextAlign.End" Width="110px">
                     <Template Context="e">

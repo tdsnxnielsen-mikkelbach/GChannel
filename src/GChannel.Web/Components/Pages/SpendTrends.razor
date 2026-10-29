@@ -62,7 +62,7 @@
                 </table>
                 @if (_topAsOf is { } asOf)
                 {
-                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">as of @asOf.LocalDateTime.ToString("g")</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">as of @DisplayFormat.Timestamp(asOf)</RadzenText>
                 }
             }
             else
@@ -162,7 +162,7 @@
                 }
                 @if (_trendAsOf is { } asOf)
                 {
-                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">as of @asOf.LocalDateTime.ToString("g")</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">as of @DisplayFormat.Timestamp(asOf)</RadzenText>
                 }
             }
             else
@@ -341,7 +341,7 @@
                 {
                     var items = byCurrency
                         .OrderBy(d => d.Day)
-                        .Select(d => new TrendItem(d.Day.ToString("MMM d", System.Globalization.CultureInfo.InvariantCulture), (decimal)d.Cost, d.IsSpike))
+                        .Select(d => new TrendItem(d.Day.ToString("dd-MM", System.Globalization.CultureInfo.InvariantCulture), (decimal)d.Cost, d.IsSpike))
                         .ToList();
                     _trendByCurrency.Add(new(byCurrency.Key, items));
                 }

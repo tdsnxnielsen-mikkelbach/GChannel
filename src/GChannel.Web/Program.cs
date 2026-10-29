@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Security.Claims;
 using ApexCharts;
+using GChannel.Web;
 using GChannel.Web.Components;
 using GChannel.Web.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -7,6 +9,11 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.HttpOverrides;
 using Radzen;
+
+// Danish / European dates (dd-MM-yyyy, 24-hour clock, Monday-first weeks) for every request and circuit, so
+// implicit formatting and Radzen components agree with DisplayFormat. Nothing sets a per-request culture.
+CultureInfo.DefaultThreadCurrentCulture = DisplayFormat.Culture;
+CultureInfo.DefaultThreadCurrentUICulture = DisplayFormat.Culture;
 
 var builder = WebApplication.CreateBuilder(args);
 

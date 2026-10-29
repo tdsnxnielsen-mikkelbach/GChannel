@@ -135,10 +135,10 @@
             @switch (id.AdvancedProtection)
             {
                 case AdvancedProtectionStatus.Enrolled:
-                    <Tip Text="@($"Enrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Enrolled" /></Tip>
+                    <Tip Text="@($"Enrolled (audit event {DisplayFormat.Date(id.AdvancedProtectionAsOf)}){keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Enrolled" /></Tip>
                     break;
                 case AdvancedProtectionStatus.NotEnrolled:
-                    <Tip Text="@($"Unenrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="Not enrolled" /></Tip>
+                    <Tip Text="@($"Unenrolled (audit event {DisplayFormat.Date(id.AdvancedProtectionAsOf)}){keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="Not enrolled" /></Tip>
                     break;
                 case AdvancedProtectionStatus.Unavailable:
                     <Tip Text="@($"Audit log not readable: {id.AdvancedProtectionError}{keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Danger" Text="Unavailable" /></Tip>
@@ -160,7 +160,7 @@
             @if (id.SecurityKeys is not null || id.Passkeys is not null)
             {
                 var (label, colorClass) = KeysLine(id);
-                <Tip Text="@($"From the user usage report for {id.KeysAsOf:yyyy-MM-dd} (accounts:num_security_keys / num_passkeys_enrolled).")">
+                <Tip Text="@($"From the user usage report for {DisplayFormat.Date(id.KeysAsOf)} (accounts:num_security_keys / num_passkeys_enrolled).")">
                     <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Span" class="@($"rz-m-0 rz-display-inline-flex rz-align-items-center {colorClass}")" Style="gap: 0.25rem">
                         <RadzenIcon Icon="@AppIcons.Key" Style="font-size: 1rem; width: auto; height: auto" />@label
                     </RadzenText>
@@ -173,7 +173,7 @@
     private static string KeysSummary(MemberIdentityInfo id) =>
         id.SecurityKeys is null && id.Passkeys is null
             ? ""
-            : $" Keys as of {id.KeysAsOf:yyyy-MM-dd}: {id.SecurityKeys ?? 0} security key(s), {id.Passkeys ?? 0} passkey(s).";
+            : $" Keys as of {DisplayFormat.Date(id.KeysAsOf)}: {id.SecurityKeys ?? 0} security key(s), {id.Passkeys ?? 0} passkey(s).";
 
     private static (string Label, string ColorClass) KeysLine(MemberIdentityInfo id)
     {

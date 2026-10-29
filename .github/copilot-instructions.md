@@ -33,6 +33,8 @@
 - The API and the worker use separate Wolverine message-store schemas (`wolverine_api`, `wolverine_worker`).
 - UI pages must keep the `data-onboarding` / `data-walkthrough` attributes (Driver.js tours) and go through
   `UiNotifier` for toasts/confirms. Use Radzen `rz-*` utilities, not Bootstrap classes.
+- Show dates with `DisplayFormat.Date` / `DisplayFormat.Timestamp` (`dd-MM-yyyy` / `dd-MM-yyyy HH:mm`, UTC),
+  never ad-hoc `ToString("…")` date formats or `LocalDateTime`.
 - Docs to keep in sync when behaviour changes: `docs/architecture.md`, `docs/configuration.md`,
   `docs/deployment.md`, `README.md`.
 - Commit messages: imperative subject, explanatory body, trailer

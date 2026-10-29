@@ -125,7 +125,7 @@ else
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="RepricingConfig" Property="@nameof(RepricingConfig.ConditionalOverrideCount)" Title="Overrides" Width="100px" />
                     <RadzenDataGridColumn TItem="RepricingConfig" Title="Updated" Width="110px">
-                        <Template Context="config">@(config.UpdateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                        <Template Context="config">@DisplayFormat.Date(config.UpdateTime)</Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="RepricingConfig" Title="Actions" TextAlign="TextAlign.End" Width="110px">
                         <Template Context="config">

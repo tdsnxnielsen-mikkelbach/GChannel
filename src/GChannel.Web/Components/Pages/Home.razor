@@ -638,7 +638,7 @@
                     Billed spend attributed to each customer's owning channel partner (Direct = account-owned).
                     @if (_spendAsOf is { } asOf)
                     {
-                        <span>As of @asOf.LocalDateTime.ToString("g").</span>
+                        <span>As of @(DisplayFormat.Timestamp(asOf)).</span>
                     }
                 </RadzenText>
             }

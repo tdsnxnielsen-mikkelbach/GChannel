@@ -11,7 +11,7 @@
         </div>
         @if (Result?.AsOf is { } asOf)
         {
-            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">scanned @asOf.LocalDateTime.ToString("g")</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">scanned @DisplayFormat.Timestamp(asOf)</RadzenText>
         }
     </RadzenStack>
 
@@ -73,7 +73,7 @@
                         </Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="MarketplaceOrder" Property="@nameof(MarketplaceOrder.CreateTime)" Title="Created">
-                        <Template Context="order">@(order.CreateTime?.LocalDateTime.ToString("d") ?? "—")</Template>
+                        <Template Context="order">@DisplayFormat.Date(order.CreateTime)</Template>
                     </RadzenDataGridColumn>
                 </Columns>
             </RadzenDataGrid>

@@ -67,7 +67,7 @@
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.CommitmentEndTime)" SortProperty="renewal" Title="Renewal" Width="130px">
                 <Template Context="e">
-                    @(e.CommitmentEndTime?.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "—")
+                    @DisplayFormat.Date(e.CommitmentEndTime)
                 </Template>
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="EstateEntitlement" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="90px">

@@ -120,7 +120,10 @@ partner link against its current read model and appends only the differences:
   and entitlement streams, so it is deliberately unhandled and kept as history only. An earlier no-op
   `Apply` created blank `CustomerRecord`/`EntitlementRecord` documents on the other type's streams, which
   then violated the unique `CustomerId`/`EntitlementId` indexes. The worker's `StrayReadModelCleanup`
-  (Marten initial data, idempotent) deletes any such leftovers at startup.
+  (Marten initial data, idempotent) deletes any such leftovers at startup, and `NotificationDeadLetterReplay`
+  (hosted service, 15 s after start) replays the `ChannelNotificationArrived` messages that were dead-lettered
+  with `DocumentAlreadyExistsException` back then; every other dead letter is left alone and only counted in
+  the log. Both are no-ops once the leftovers are gone.
 - Sync bookkeeping that is not business history (`LastSyncedUtc`, cursors, recurring-job state, dashboard
   refresh status, identity-check log, notification feed, billing documents) lives in plain Marten
   **documents** (`Persistence/Documents`), not events.
@@ -152,7 +155,9 @@ All listeners use Wolverine's **durable inbox** (so a multi-minute job tick is n
 lock duration) and the API/worker publish through the **durable outbox** inside the same Marten
 transaction (`IntegrateWithWolverine` + `AutoApplyTransactions`), so a saved event and its integration
 message are atomic. Handlers are generated with `WolverineFx.RuntimeCompilation`. HTTP 429s from Google
-are retried with a backoff policy; poison messages land in the dead-letter queue above. Because the
+are retried with a backoff policy; poison messages are dead-lettered into the process's Postgres message store
+(`wolverine_worker.wolverine_dead_letters` / `wolverine_api.…`), where `IDeadLetters` can query and replay
+them — in practice the Service Bus dead-letter queue above stays empty. Because the
 topology is fixed, Wolverine's per-node system queues (`wolverine.response.*`, `wolverine.retries.*`) are
 disabled — nothing uses remote request/reply, and scheduled retries live in the durable inbox. Every handler
 gets a 10-minute execution budget (Wolverine's default is 60 s — too short once a single 429 cooldown costs

@@ -12,7 +12,7 @@
         </div>
         @if (Summary?.AsOf is { } asOf)
         {
-            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">as of @asOf.LocalDateTime.ToString("g")</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">as of @DisplayFormat.Timestamp(asOf)</RadzenText>
         }
     </RadzenStack>
 
