@@ -1,53 +1,36 @@
-using GChannel.ApiService.Configuration;
-using GChannel.ApiService.Data;
+using GChannel.Core.Configuration;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
-using Microsoft.EntityFrameworkCore;
+using Marten;
 using Microsoft.Extensions.Options;
-using System.Globalization;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
 /// Native Google vs third-party (Marketplace / ISV / partner) views: spend split from the export's
-/// transaction_type / seller_name (CustomerSpendBySeller read-model) and Marketplace orders from the
-/// Consumer Procurement API (MarketplaceOrders read-model). Read-only; populated by the worker.
+/// transaction_type / seller_name (CustomerSpendBySeller documents) and Marketplace orders from the Consumer
+/// Procurement API (MarketplaceOrder documents). Read-only; populated by the worker.
 /// </summary>
 public static class SellerSpendEndpoints
 {
-    public static IEndpointRouteBuilder MapSellerSpendEndpoints(this IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/billing").WithTags("Billing sellers");
+    public const string OrdersCursorScope = "marketplace-orders";
 
-        group.MapGet("/spend/sellers", async (int? months, GChannelDbContext db, IOptions<GoogleBillingOptions> options, CancellationToken ct) =>
-                Results.Ok(await SummaryAsync(db, options.Value, customerId: null, months, ct)))
-            .WithName("SellerSpend")
-            .WithSummary("Estate-wide native Google vs third-party spend with per-seller / per-product breakdown.");
+    [WolverineGet("/api/billing/spend/sellers")]
+    public static Task<SellerSpendSummary> SellerSpend(int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken ct)
+        => SummaryAsync(session, options.Value, customerId: null, months, ct);
 
-        group.MapGet("/customers/{customerId}/spend/sellers", async (string customerId, int? months, GChannelDbContext db, IOptions<GoogleBillingOptions> options, CancellationToken ct) =>
-                Results.Ok(await SummaryAsync(db, options.Value, customerId, months, ct)))
-            .WithName("CustomerSellerSpend")
-            .WithSummary("One customer's native Google vs third-party spend with per-seller / per-product breakdown.");
+    [WolverineGet("/api/billing/customers/{customerId}/spend/sellers")]
+    public static Task<SellerSpendSummary> CustomerSellerSpend(
+        string customerId, int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken ct)
+        => SummaryAsync(session, options.Value, customerId, months, ct);
 
-        group.MapGet("/spend/sellers/customers", GetCustomerSplitsAsync)
-            .WithName("CustomerSellerSplits")
-            .WithSummary("Per-customer Google vs third-party split over the window.");
-
-        group.MapGet("/marketplace/orders", GetOrdersAsync)
-            .WithName("MarketplaceOrders")
-            .WithSummary("Marketplace orders (Consumer Procurement API) across billing accounts, optionally for one customer.");
-
-        return app;
-    }
-
-    private static string MinMonth(int? months, int def, int max) =>
-        DateTime.UtcNow.AddMonths(-(Math.Clamp(months ?? def, 1, max) - 1)).ToString("yyyyMM", CultureInfo.InvariantCulture);
-
-    private static async Task<SellerSpendSummary> SummaryAsync(GChannelDbContext db, GoogleBillingOptions opts, string? customerId, int? months, CancellationToken ct)
+    private static async Task<SellerSpendSummary> SummaryAsync(IQuerySession session, GoogleBillingOptions opts, string? customerId, int? months, CancellationToken ct)
     {
         if (!opts.BigQueryConfigured) { return new SellerSpendSummary { CustomerId = customerId, Unconfigured = true }; }
 
-        var minMonth = MinMonth(months, customerId is null ? 1 : 3, 36);
-        var query = db.CustomerSpendBySeller.AsNoTracking().Where(r => string.Compare(r.InvoiceMonth, minMonth) >= 0);
+        var window = BillingEndpoints.MonthKeys(Math.Clamp(months ?? (customerId is null ? 1 : 3), 1, 36));
+        var query = session.Query<CustomerSpendBySellerRecord>().Where(r => r.InvoiceMonth.IsOneOf(window));
         if (customerId is not null) { query = query.Where(r => r.CustomerId == customerId); }
         var rows = await query.ToListAsync(ct);
 
@@ -93,13 +76,14 @@ public static class SellerSpendEndpoints
         };
     }
 
-    private static async Task<IResult> GetCustomerSplitsAsync(int? months, GChannelDbContext db, IOptions<GoogleBillingOptions> options, CancellationToken ct)
+    [WolverineGet("/api/billing/spend/sellers/customers")]
+    public static async Task<CustomerSellerSplitResult> GetCustomerSplits(int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken ct)
     {
-        if (!options.Value.BigQueryConfigured) { return Results.Ok(new CustomerSellerSplitResult { Unconfigured = true }); }
+        if (!options.Value.BigQueryConfigured) { return new CustomerSellerSplitResult { Unconfigured = true }; }
 
-        var minMonth = MinMonth(months, 1, 36);
-        var rows = await db.CustomerSpendBySeller.AsNoTracking()
-            .Where(r => r.CustomerId != null && string.Compare(r.InvoiceMonth, minMonth) >= 0)
+        var window = BillingEndpoints.MonthKeys(Math.Clamp(months ?? 1, 1, 36));
+        var rows = await session.Query<CustomerSpendBySellerRecord>()
+            .Where(r => r.CustomerId != null && r.InvoiceMonth.IsOneOf(window))
             .ToListAsync(ct);
 
         var customers = rows
@@ -118,21 +102,21 @@ public static class SellerSpendEndpoints
             .ThenByDescending(c => c.TotalCost)
             .ToList();
 
-        return Results.Ok(new CustomerSellerSplitResult
-        {
-            Customers = customers,
-            AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null
-        });
+        return new CustomerSellerSplitResult { Customers = customers, AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null };
     }
 
-    private static async Task<IResult> GetOrdersAsync(string? customerId, GChannelDbContext db, IOptions<GoogleChannelOptions> channel, IOptions<GoogleBillingOptions> billing, CancellationToken ct)
+    [WolverineGet("/api/billing/marketplace/orders")]
+    public static async Task<MarketplaceOrdersResult> GetOrders(
+        string? customerId, IQuerySession session, IOptions<GoogleChannelOptions> channel, IOptions<GoogleBillingOptions> billing, CancellationToken ct)
     {
         var unconfigured = !billing.Value.MarketplaceOrdersEnabled || !channel.Value.HasServiceAccountCredential;
-        var query = db.MarketplaceOrders.AsNoTracking();
+        var query = session.Query<MarketplaceOrderRecord>().AsQueryable();
         if (customerId is not null) { query = query.Where(o => o.CustomerId == customerId); }
-        var rows = await query.OrderByDescending(o => o.Active).ThenBy(o => o.Provider).ThenBy(o => o.DisplayName).ToListAsync(ct);
+        var rows = (await query.ToListAsync(ct))
+            .OrderByDescending(o => o.Active).ThenBy(o => o.Provider).ThenBy(o => o.DisplayName)
+            .ToList();
 
-        var cursor = await db.SyncCursors.AsNoTracking().FirstOrDefaultAsync(c => c.Scope == "marketplace-orders", ct);
+        var cursor = await session.LoadAsync<SyncCursor>(OrdersCursorScope, ct);
         var errors = new Dictionary<string, string>();
         if (!string.IsNullOrEmpty(cursor?.Notes))
         {
@@ -143,7 +127,7 @@ public static class SellerSpendEndpoints
             }
         }
 
-        return Results.Ok(new MarketplaceOrdersResult
+        return new MarketplaceOrdersResult
         {
             Orders = rows.Select(r => new MarketplaceOrder
             {
@@ -162,7 +146,7 @@ public static class SellerSpendEndpoints
             Errors = errors,
             AsOf = cursor?.LastFullPassUtc,
             Unconfigured = unconfigured
-        });
+        };
     }
 
     private static IReadOnlyList<string> Split(string? csv) =>

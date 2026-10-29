@@ -1,39 +1,31 @@
-using System.Text.Json;
-using GChannel.ApiService.Configuration;
-using GChannel.ApiService.Data;
-using GChannel.ApiService.Services;
+using GChannel.Core.Configuration;
+using GChannel.Core.Messaging;
 using GChannel.Shared.Contracts;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.PubSub.V1;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
+using System.Text.Json;
+using Wolverine;
+using Wolverine.Runtime;
 
 namespace GChannel.Worker.Services;
 
 /// <summary>
-/// Background subscriber for Google Cloud Channel change notifications (§7). The Channel API publishes
-/// entitlement/customer change events to a Google-owned Pub/Sub topic (managed via
-/// <c>accounts.register</c>); the reseller creates a subscription to that topic in their own Google
-/// Cloud project. This service streams-pulls that subscription and records each event into a capped
-/// Redis list the UI reads as a live feed — so the app reacts to changes instead of polling.
+/// Bridge from Google Cloud Pub/Sub to the app's own messaging. The Channel API publishes entitlement /
+/// customer change events to a Google-owned Pub/Sub topic (managed via <c>accounts.register</c>); the
+/// reseller creates a subscription to that topic in their own Google Cloud project. This service streams-pulls
+/// that subscription, parses each message into a correlated <see cref="ChannelNotification"/> and publishes it
+/// as a <see cref="ChannelNotificationArrived"/> message on Azure Service Bus (durably, through Wolverine) —
+/// the handler then records it in the feed, on the event streams, and triggers the targeted re-projection.
+/// The message is acknowledged only after the publish succeeds (at-least-once); the Service Bus topic
+/// de-duplicates on the Pub/Sub message id.
 ///
-/// <para>Hosting: this runs in the dedicated worker container app (alongside the dashboard refresher
-/// and read-model sync). Pub/Sub load-balances messages across all
-/// subscribers, so when the worker scales to multiple replicas they share the subscription automatically
-/// and <em>no</em> distributed lock is required (unlike the dashboard compute, which must be
-/// single-flight). Authentication prefers Workload Identity Federation (the Azure managed identity
-/// mints short-lived federated Google tokens, no downloaded key) and falls back to a Google
-/// service-account key when WIF is not configured. Pub/Sub needs no domain-wide delegation, so unlike
-/// the background dashboard refresh this path can run entirely key-less. Disabled (no-op) unless a
-/// Pub/Sub project + subscription and a credential (WIF config or service-account key) are configured.</para>
+/// <para>Authentication prefers Workload Identity Federation (key-less) and falls back to a service-account
+/// key. Disabled (no-op) unless a Pub/Sub project + subscription and a credential are configured.</para>
 /// </summary>
 public sealed class ChannelNotificationsService(
     IOptions<GoogleChannelOptions> options,
-    IConnectionMultiplexer redis,
-    IServiceScopeFactory scopeFactory,
-    ReadModelProjector projector,
-    ILoggerFactory loggerFactory,
+    IWolverineRuntime runtime,
     ILogger<ChannelNotificationsService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -47,15 +39,12 @@ public sealed class ChannelNotificationsService(
             if (!opts.HasWorkloadIdentityCredential && !opts.HasServiceAccountCredential)
                 missing.Add("GoogleChannel:WorkloadIdentityCredentialJson (or ServiceAccountKeyJson/ServiceAccountKeyPath)");
 
-            logger.LogInformation(
-                "Channel Pub/Sub subscriber is disabled; missing configuration: {Missing}.",
-                string.Join(", ", missing));
+            logger.LogInformation("Channel Pub/Sub subscriber is disabled; missing configuration: {Missing}.", string.Join(", ", missing));
             return;
         }
 
         var subscriptionName = SubscriptionName.FromProjectSubscription(opts.PubSubProjectId, opts.PubSubSubscriptionId);
-        var builder = new SubscriberClientBuilder { SubscriptionName = subscriptionName };
-        builder.GoogleCredential = ResolveCredential(opts);
+        var builder = new SubscriberClientBuilder { SubscriptionName = subscriptionName, GoogleCredential = ResolveCredential(opts) };
 
         SubscriberClient subscriber;
         try
@@ -68,79 +57,27 @@ public sealed class ChannelNotificationsService(
             return;
         }
 
-        var db = redis.GetDatabase();
-        var maxItems = Math.Max(1, opts.PubSubMaxNotifications);
+        var bus = new MessageBus(runtime);
+        logger.LogInformation("Channel Pub/Sub subscriber listening on {Subscription}; bridging to Service Bus.", subscriptionName);
 
-        // §10 event-driven projection: when the read-model is enabled, a change event triggers a targeted
-        // refresh of just the affected customer (its metadata + entitlements) so the read-model and the UI
-        // it backs update within seconds of a change — the background poll is left as a reconciliation
-        // backstop. Projection needs a service-account credential with domain-wide delegation to read the
-        // Channel API (the Pub/Sub credential above may be key-less WIF without DWD), so it is built
-        // separately and only when the read-model sync is configured.
-        GoogleChannelClient? projectionClient = null;
-        if (opts.ReadModelSyncEnabled)
-        {
-            projectionClient = new GoogleChannelClient(
-                new ServiceAccountCredentialSource(opts), options, loggerFactory.CreateLogger<GoogleChannelClient>());
-            logger.LogInformation("Event-driven read-model projection enabled; change events will refresh the affected customer.");
-        }
-
-        logger.LogInformation("Channel Pub/Sub subscriber listening on {Subscription}.", subscriptionName);
-
-        // StartAsync completes when StopAsync is called (shutdown) or an unrecoverable fault occurs.
         var startTask = subscriber.StartAsync(async (message, cancellation) =>
         {
-            ChannelNotification notification;
             try
             {
-                notification = ParseNotification(message);
-                await db.ListLeftPushAsync(ChannelNotificationFeed.RedisKey, JsonSerializer.Serialize(notification));
-                await db.ListTrimAsync(ChannelNotificationFeed.RedisKey, 0, maxItems - 1);
-                logger.LogInformation(
-                    "Channel notification received: {Kind} {EventType} {Resource}",
-                    notification.Kind, notification.EventType, notification.ResourceName);
+                var notification = ParseNotification(message);
+                await bus.PublishAsync(new ChannelNotificationArrived(notification));
+                logger.LogInformation("Channel notification bridged: {Kind} {EventType} {Resource}", notification.Kind, notification.EventType, notification.ResourceName);
+                return SubscriberClient.Reply.Ack;
             }
             catch (Exception ex)
             {
-                // Recording failed (e.g. a transient Redis fault) — nack so Pub/Sub redelivers the
-                // message instead of dropping it, preserving at-least-once delivery to the feed.
-                logger.LogWarning(ex, "Failed to record a Channel notification (message {MessageId}); requeuing.", message.MessageId);
+                // Nack so Pub/Sub redelivers instead of dropping the message (at-least-once to the feed).
+                logger.LogWarning(ex, "Failed to bridge a Channel notification (message {MessageId}); requeuing.", message.MessageId);
                 return SubscriberClient.Reply.Nack;
             }
-
-            // Targeted read-model projection for the affected customer. Best-effort: a failure here must
-            // NOT nack (that would redeliver and duplicate the feed entry) — the projection is idempotent
-            // and re-reads live state, so duplicate/out-of-order events converge, and the poll reconciles
-            // anything missed. Runs on its own DbContext scope (the subscriber may process concurrently).
-            if (projectionClient is not null && !string.IsNullOrEmpty(notification.CustomerId))
-            {
-                try
-                {
-                    using var scope = scopeFactory.CreateScope();
-                    var projectDb = scope.ServiceProvider.GetRequiredService<GChannelDbContext>();
-                    await projector.ProjectCustomerAsync(
-                        projectDb, projectionClient, notification.CustomerId, DateTimeOffset.UtcNow, cancellation);
-                    logger.LogInformation(
-                        "Projected read-model refresh for customer {Customer} from a {Kind} event.",
-                        notification.CustomerId, notification.Kind);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    // Shutting down — leave the refresh for the poll backstop.
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Event-driven projection failed for customer {Customer}; the poll will reconcile.", notification.CustomerId);
-                }
-            }
-
-            return SubscriberClient.Reply.Ack;
         });
 
-        // Stop the subscriber when the host begins shutting down, then await a clean drain. The
-        // CancellationToken overload is marked obsolete, but it is the documented stop signal and the
-        // ShutdownOptions overload is not needed here (default WaitForProcessing behaviour is fine).
-#pragma warning disable CS0618 // Type or member is obsolete
+#pragma warning disable CS0618 // The CancellationToken overload is the documented stop signal.
         using (stoppingToken.Register(() => _ = subscriber.StopAsync(CancellationToken.None)))
 #pragma warning restore CS0618
         {
@@ -160,12 +97,8 @@ public sealed class ChannelNotificationsService(
     }
 
     /// <summary>
-    /// Resolves the Google credential the subscriber authenticates with. A Workload Identity Federation
-    /// configuration (Google's recommended key-less approach) is preferred when present — the
-    /// <c>external_account</c> JSON is loaded with auto type-detection so the host's own identity (e.g.
-    /// the Azure managed identity) mints short-lived federated tokens. Otherwise a downloaded
-    /// service-account key is used. Returns <c>null</c> only when nothing is configured, which the
-    /// <see cref="GoogleChannelOptions.PubSubEnabled"/> guard already prevents.
+    /// Prefers a Workload Identity Federation configuration (the <c>external_account</c> JSON, loaded with auto
+    /// type-detection so the host's own identity mints short-lived federated tokens), else a service-account key.
     /// </summary>
     private static GoogleCredential? ResolveCredential(GoogleChannelOptions opts)
     {
@@ -181,12 +114,11 @@ public sealed class ChannelNotificationsService(
     }
 
     /// <summary>
-    /// Parses a Cloud Channel Pub/Sub message into a correlated notification. The message data is a
-    /// JSON payload with a <c>customer_event</c> or <c>entitlement_event</c> object (snake_case, as Google
-    /// emits) carrying the affected resource name and an <c>event_type</c>; the message attributes also
-    /// echo <c>subscriber_event_type</c> (ENTITLEMENT_EVENT/CUSTOMER_EVENT) and <c>event_type</c>.
+    /// Parses a Cloud Channel Pub/Sub message: a JSON payload with a <c>customer_event</c> or <c>entitlement_event</c>
+    /// object carrying the affected resource name and an <c>event_type</c>; the attributes echo
+    /// <c>subscriber_event_type</c> and <c>event_type</c>.
     /// </summary>
-    private static ChannelNotification ParseNotification(PubsubMessage message)
+    internal static ChannelNotification ParseNotification(PubsubMessage message)
     {
         var json = message.Data?.ToStringUtf8();
         var kind = "Unknown";
@@ -220,8 +152,7 @@ public sealed class ChannelNotificationsService(
 
         if (message.Attributes is { } attributes)
         {
-            if (kind == "Unknown"
-                && attributes.TryGetValue("subscriber_event_type", out var subscriberEventType))
+            if (kind == "Unknown" && attributes.TryGetValue("subscriber_event_type", out var subscriberEventType))
             {
                 kind = subscriberEventType switch
                 {
@@ -254,7 +185,6 @@ public sealed class ChannelNotificationsService(
         };
     }
 
-    /// <summary>Returns the first matching property (supports both snake_case and camelCase keys).</summary>
     private static bool TryGetProperty(JsonElement element, out JsonElement value, params string[] names)
     {
         foreach (var name in names)
@@ -264,15 +194,12 @@ public sealed class ChannelNotificationsService(
                 return true;
             }
         }
-
         value = default;
         return false;
     }
 
     private static string? GetString(JsonElement element, params string[] names) =>
-        TryGetProperty(element, out var value, names) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
+        TryGetProperty(element, out var value, names) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     private static (string? CustomerId, string? EntitlementId) SplitResource(string? resourceName)
     {
@@ -295,7 +222,6 @@ public sealed class ChannelNotificationsService(
                 entitlementId = segments[i + 1];
             }
         }
-
         return (customerId, entitlementId);
     }
 }

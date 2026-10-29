@@ -1,0 +1,55 @@
+@namespace GChannel.Web.Components
+@implements IDisposable
+
+@* Debounced search field: raises ValueChanged once the user pauses typing (Radzen has no built-in debounce). *@
+<RadzenFormField Text="@Label" Variant="Variant.Outlined" Style="@Style" class="@Class">
+    <Start><RadzenIcon Icon="@AppIcons.Search" /></Start>
+    <ChildContent>
+        <RadzenTextBox Value="@_text" ValueChanged="OnInputAsync" Immediate="true" Placeholder="@Placeholder" Name="@Name" aria-label="@(Label ?? Placeholder ?? "Search")" />
+    </ChildContent>
+</RadzenFormField>
+
+@code {
+    private string? _text;
+    private string? _lastValue;
+    private CancellationTokenSource? _cts;
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; } = "Search";
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string Name { get; set; } = "search";
+    [Parameter] public int DebounceMs { get; set; } = 400;
+    [Parameter] public string? Style { get; set; } = "width: 100%; max-width: 360px";
+    [Parameter] public string? Class { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(Value, _lastValue, StringComparison.Ordinal))
+        {
+            _lastValue = Value;
+            _text = Value;
+        }
+    }
+
+    private async Task OnInputAsync(string value)
+    {
+        _text = value;
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        try
+        {
+            await Task.Delay(DebounceMs, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        _lastValue = value;
+        await ValueChanged.InvokeAsync(value);
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

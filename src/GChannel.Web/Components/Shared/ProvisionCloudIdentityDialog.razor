@@ -1,0 +1,92 @@
+@namespace GChannel.Web.Components
+@inject DialogService Dialogs
+@inject UiNotifier Snackbar
+
+@* Provision a brand-new Cloud Identity for a customer that has none. Opened with DialogService; closes with a
+   ProvisionCloudIdentityDialog.Result (or null when cancelled). *@
+<RadzenStack Gap="1rem">
+    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
+        Create a brand-new Cloud Identity for <b>@(Customer.OrgDisplayName ?? Customer.Domain)</b>.
+        This is a long-running operation — you'll be taken to the Operations page to watch it finish.
+    </RadzenText>
+
+    <RadzenRow Gap="1rem">
+        <RadzenColumn Size="12" SizeSM="6">
+            <RadzenFormField Text="Admin first name" Variant="Variant.Outlined" Style="width:100%">
+                <RadzenTextBox @bind-Value="_givenName" Name="givenName" />
+            </RadzenFormField>
+        </RadzenColumn>
+        <RadzenColumn Size="12" SizeSM="6">
+            <RadzenFormField Text="Admin last name" Variant="Variant.Outlined" Style="width:100%">
+                <RadzenTextBox @bind-Value="_familyName" Name="familyName" />
+            </RadzenFormField>
+        </RadzenColumn>
+    </RadzenRow>
+    <RadzenFormField Text="Admin email" Variant="Variant.Outlined">
+        <ChildContent><RadzenTextBox @bind-Value="_adminEmail" Name="adminEmail" type="email" /></ChildContent>
+        <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">@($"Within {Customer.Domain}, e.g. admin@{Customer.Domain}")</RadzenText></Helper>
+    </RadzenFormField>
+    <RadzenFormField Text="Alternate (recovery) email" Variant="Variant.Outlined">
+        <ChildContent><RadzenTextBox @bind-Value="_alternateEmail" Name="alternateEmail" type="email" /></ChildContent>
+        <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">Outside the customer's domain</RadzenText></Helper>
+    </RadzenFormField>
+    <RadzenFormField Text="Contact phone (optional)" Variant="Variant.Outlined">
+        <RadzenTextBox @bind-Value="_phoneNumber" Name="phone" type="tel" />
+    </RadzenFormField>
+    <RadzenFormField Text="Language code (optional)" Variant="Variant.Outlined">
+        <ChildContent><RadzenTextBox @bind-Value="_languageCode" Name="languageCode" /></ChildContent>
+        <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">e.g. en-US</RadzenText></Helper>
+    </RadzenFormField>
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenCheckBox TValue="bool" @bind-Value="_validateOnly" Name="validateOnly" />
+        <RadzenLabel Text="Validate only (don't provision yet)" Component="validateOnly" />
+    </RadzenStack>
+
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+        <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Click="@(() => Dialogs.Close(null))" Disabled="_busy" />
+        <RadzenButton Text="@(_validateOnly ? "Validate" : "Provision")" ButtonStyle="ButtonStyle.Primary" Click="SubmitAsync" IsBusy="_busy" BusyText="Submitting…" />
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    /// <summary>Outcome handed back to the opener.</summary>
+    public sealed record Result(bool ValidateOnly, ChannelOperation? Operation);
+
+    [Parameter, EditorRequired] public Customer Customer { get; set; } = null!;
+
+    /// <summary>The provisioning call to run.</summary>
+    [Parameter, EditorRequired] public Func<ProvisionCloudIdentityRequest, Task<ChannelOperation?>> Provision { get; set; } = null!;
+
+    private string? _givenName;
+    private string? _familyName;
+    private string? _adminEmail;
+    private string? _alternateEmail;
+    private string? _phoneNumber;
+    private string? _languageCode;
+    private bool _validateOnly;
+    private bool _busy;
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        try
+        {
+            var operation = await Provision(new ProvisionCloudIdentityRequest
+            {
+                ValidateOnly = _validateOnly,
+                AdminUser = new AdminUser { GivenName = _givenName, FamilyName = _familyName, Email = _adminEmail },
+                CloudIdentity = new CloudIdentityDetails { AlternateEmail = _alternateEmail, PhoneNumber = _phoneNumber, LanguageCode = _languageCode }
+            });
+
+            Dialogs.Close(new Result(_validateOnly, operation));
+        }
+        catch (Exception ex)
+        {
+            await Snackbar.Add($"Failed to provision Cloud Identity: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

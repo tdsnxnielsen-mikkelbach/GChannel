@@ -1,15 +1,15 @@
 @page "/catalog/products"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Products · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">Products</MudText>
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-2">Products</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     The products you are authorized to sell. Expand a product to load its SKUs, then jump to the
     offers for any SKU.
-</MudText>
+</RadzenText>
 
 @if (_loading)
 {
@@ -18,60 +18,62 @@
 }
 else if (_products is { Count: > 0 })
 {
-    <MudExpansionPanels MultiExpansion="true" Elevation="2">
-        @foreach (var product in _products)
-        {
-            <MudExpansionPanel Text="@(product.DisplayName ?? product.Id)"
-                               Expanded="_expanded.Contains(product.Id)"
-                               ExpandedChanged="expanded => OnProductExpanded(product, expanded)">
-                @if (!string.IsNullOrWhiteSpace(product.Description))
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">@product.Description</MudText>
-                }
+    <RadzenAccordion Multiple="true">
+        <Items>
+            @foreach (var product in _products)
+            {
+                <RadzenAccordionItem Text="@(product.DisplayName ?? product.Id)"
+                                     Selected="_expanded.Contains(product.Id)"
+                                     SelectedChanged="expanded => OnProductExpanded(product, expanded)">
+                    @if (!string.IsNullOrWhiteSpace(product.Description))
+                    {
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-3">@product.Description</RadzenText>
+                    }
 
-                @if (_skusByProduct.TryGetValue(product.Id, out var skus))
-                {
-                    @if (skus is null)
+                    @if (_skusByProduct.TryGetValue(product.Id, out var skus))
                     {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                        @if (skus is null)
+                        {
+                            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+                        }
+                        else if (skus.Count == 0)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">No SKUs found.</RadzenText>
+                        }
+                        else
+                        {
+                            <table class="gchannel-table gchannel-table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>SKU</th>
+                                        <th>Id</th>
+                                        <th>Related</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var sku in skus)
+                                    {
+                                        <tr class="@(IsDeepLinkedSku(sku) ? "selected" : null)">
+                                            <td><Tip Text="@sku.Id">@(sku.DisplayName ?? sku.Id)</Tip></td>
+                                            <td>@sku.Id</td>
+                                            <td>
+                                                <LinkButton To="@($"/catalog/offers?sku={sku.Id}")" Text="Offers" Icon="@AppIcons.LocalOffer"
+                                                            Variant="Variant.Text" Size="ButtonSize.Small" />
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
                     }
-                    else if (skus.Count == 0)
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">No SKUs found.</MudText>
-                    }
-                    else
-                    {
-                        <MudTable Items="skus" Dense="true" Hover="true" Elevation="0" RowStyleFunc="SkuRowStyle">
-                            <HeaderContent>
-                                <MudTh>SKU</MudTh>
-                                <MudTh>Id</MudTh>
-                                <MudTh>Related</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd DataLabel="SKU">
-                                    <MudTooltip Text="@context.Id">
-                                        <span>@(context.DisplayName ?? context.Id)</span>
-                                    </MudTooltip>
-                                </MudTd>
-                                <MudTd DataLabel="Id">@context.Id</MudTd>
-                                <MudTd DataLabel="Related">
-                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.LocalOffer"
-                                               Href="@($"/catalog/offers?sku={context.Id}")">
-                                        Offers
-                                    </MudButton>
-                                </MudTd>
-                            </RowTemplate>
-                        </MudTable>
-                    }
-                }
-            </MudExpansionPanel>
-        }
-    </MudExpansionPanels>
+                </RadzenAccordionItem>
+            }
+        </Items>
+    </RadzenAccordion>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">No products available.</MudAlert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No products available.</RadzenAlert>
 }
 
 @code {
@@ -96,7 +98,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load products: {ex.Message}", Severity.Error);
             _products = [];
         }
         finally
@@ -147,12 +149,11 @@ else
         catch (Exception ex)
         {
             _skusByProduct.Remove(product.Id);
-            Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load SKUs: {ex.Message}", Severity.Error);
         }
     }
 
-    private string SkuRowStyle(CatalogSku sku, int _) =>
-        !string.IsNullOrEmpty(SkuId) && string.Equals(sku.Id, SkuId, StringComparison.OrdinalIgnoreCase)
-            ? "background-color: var(--mud-palette-primary-hover);"
-            : string.Empty;
+    private bool IsDeepLinkedSku(CatalogSku sku) =>
+        !string.IsNullOrEmpty(SkuId) && string.Equals(sku.Id, SkuId, StringComparison.OrdinalIgnoreCase);
 }
+

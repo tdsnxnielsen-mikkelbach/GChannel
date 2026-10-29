@@ -1,14 +1,14 @@
 @page "/catalog/sku-groups"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>SKU groups · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">SKU groups</MudText>
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-2">SKU groups</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     Rebilling-supported SKU groups. Expand a group to load its billable SKUs.
-</MudText>
+</RadzenText>
 
 @if (_loading)
 {
@@ -17,70 +17,71 @@
 }
 else if (_groups is { Count: > 0 })
 {
-    <MudExpansionPanels MultiExpansion="true" Elevation="2">
-        @foreach (var grp in _groups)
-        {
-            <MudExpansionPanel Text="@(grp.DisplayName ?? grp.Id)"
-                               ExpandedChanged="expanded => OnGroupExpanded(grp, expanded)">
-                @if (_billableByGroup.TryGetValue(grp.Id, out var billables))
-                {
-                    @if (billables is null)
+    <RadzenAccordion Multiple="true">
+        <Items>
+            @foreach (var grp in _groups)
+            {
+                <RadzenAccordionItem Text="@(grp.DisplayName ?? grp.Id)"
+                                     Selected="_expanded.Contains(grp.Id)"
+                                     SelectedChanged="expanded => OnGroupExpanded(grp, expanded)">
+                    @if (_billableByGroup.TryGetValue(grp.Id, out var billables))
                     {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
-                    }
-                    else if (billables.Count == 0)
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">No billable SKUs found.</MudText>
-                    }
-                    else
-                    {
-                        <MudTable Items="billables" Dense="true" Hover="true" Elevation="0">
-                            <HeaderContent>
-                                <MudTh>SKU</MudTh>
-                                <MudTh>Service</MudTh>
-                                <MudTh>Related</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd DataLabel="SKU">
-                                    <MudTooltip Text="@(context.SkuId ?? context.Sku)">
-                                        <span>@(context.SkuDisplayName ?? context.SkuId ?? context.Sku)</span>
-                                    </MudTooltip>
-                                </MudTd>
-                                <MudTd DataLabel="Service">@(context.ServiceDisplayName ?? context.Service)</MudTd>
-                                <MudTd DataLabel="Related">
-                                    @if (!string.IsNullOrEmpty(context.ProductId))
+                        @if (billables is null)
+                        {
+                            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+                        }
+                        else if (billables.Count == 0)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">No billable SKUs found.</RadzenText>
+                        }
+                        else
+                        {
+                            <table class="gchannel-table gchannel-table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>SKU</th>
+                                        <th>Service</th>
+                                        <th>Related</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var sku in billables)
                                     {
-                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                                   StartIcon="@Icons.Material.Filled.Inventory2"
-                                                   Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
-                                            Product
-                                        </MudButton>
+                                        <tr>
+                                            <td><Tip Text="@(sku.SkuId ?? sku.Sku)">@(sku.SkuDisplayName ?? sku.SkuId ?? sku.Sku)</Tip></td>
+                                            <td>@(sku.ServiceDisplayName ?? sku.Service)</td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(sku.ProductId))
+                                                {
+                                                    <LinkButton To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")" Text="Product" Icon="@AppIcons.Inventory"
+                                                                Variant="Variant.Text" Size="ButtonSize.Small" />
+                                                }
+                                                @if (!string.IsNullOrEmpty(sku.SkuId))
+                                                {
+                                                    <LinkButton To="@($"/catalog/offers?sku={sku.SkuId}")" Text="Offers" Icon="@AppIcons.LocalOffer"
+                                                                Variant="Variant.Text" Size="ButtonSize.Small" />
+                                                }
+                                            </td>
+                                        </tr>
                                     }
-                                    @if (!string.IsNullOrEmpty(context.SkuId))
-                                    {
-                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                                   StartIcon="@Icons.Material.Filled.LocalOffer"
-                                                   Href="@($"/catalog/offers?sku={context.SkuId}")">
-                                            Offers
-                                        </MudButton>
-                                    }
-                                </MudTd>
-                            </RowTemplate>
-                        </MudTable>
+                                </tbody>
+                            </table>
+                        }
                     }
-                }
-            </MudExpansionPanel>
-        }
-    </MudExpansionPanels>
+                </RadzenAccordionItem>
+            }
+        </Items>
+    </RadzenAccordion>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">No SKU groups available.</MudAlert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No SKU groups available.</RadzenAlert>
 }
 
 @code {
     private IReadOnlyList<CatalogSkuGroup>? _groups;
     private readonly Dictionary<string, IReadOnlyList<CatalogBillableSku>?> _billableByGroup = [];
+    private readonly HashSet<string> _expanded = [];
     private bool _loading = true;
 
     protected override async Task OnInitializedAsync()
@@ -92,7 +93,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load SKU groups: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load SKU groups: {ex.Message}", Severity.Error);
             _groups = [];
         }
         finally
@@ -103,6 +104,15 @@ else
 
     private async Task OnGroupExpanded(CatalogSkuGroup group, bool expanded)
     {
+        if (expanded)
+        {
+            _expanded.Add(group.Id);
+        }
+        else
+        {
+            _expanded.Remove(group.Id);
+        }
+
         if (!expanded || _billableByGroup.ContainsKey(group.Id))
         {
             return;
@@ -118,7 +128,8 @@ else
         catch (Exception ex)
         {
             _billableByGroup.Remove(group.Id);
-            Snackbar.Add($"Failed to load billable SKUs: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load billable SKUs: {ex.Message}", Severity.Error);
         }
     }
 }
+

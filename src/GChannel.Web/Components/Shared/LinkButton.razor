@@ -1,0 +1,43 @@
+@namespace GChannel.Web.Components
+
+@* A navigation link styled exactly like a RadzenButton (same CSS classes), so links to pages and button actions
+   look identical while staying real anchors (Blazor enhanced navigation, middle-click, right-click → copy). *@
+<a href="@To" class="@CssClass" title="@Title" aria-label="@(Text ?? Title)" aria-disabled="@(Disabled ? "true" : null)" target="@Target">
+    <span class="rz-button-box">
+        @if (!string.IsNullOrEmpty(Icon))
+        {
+            <i class="notranslate rz-button-icon-left rzi" aria-hidden="true">@Icon</i>
+        }
+        @if (!string.IsNullOrEmpty(Text))
+        {
+            <span class="rz-button-text">@Text</span>
+        }
+    </span>
+</a>
+
+@code {
+    [Parameter, EditorRequired] public string To { get; set; } = "";
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Target { get; set; }
+    [Parameter] public ButtonStyle ButtonStyle { get; set; } = ButtonStyle.Primary;
+    [Parameter] public Variant Variant { get; set; } = Variant.Filled;
+    [Parameter] public ButtonSize Size { get; set; } = ButtonSize.Medium;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string CssClass =>
+        $"rz-button rz-button-{SizeClass} rz-variant-{Variant.ToString().ToLowerInvariant()} rz-{ButtonStyle.ToString().ToLowerInvariant()} rz-shade-default"
+        + (string.IsNullOrEmpty(Text) ? " rz-button-icon-only" : "")
+        + (Disabled ? " rz-state-disabled" : "")
+        + (string.IsNullOrEmpty(Class) ? "" : $" {Class}");
+
+    private string SizeClass => Size switch
+    {
+        ButtonSize.ExtraSmall => "xs",
+        ButtonSize.Small => "sm",
+        ButtonSize.Large => "lg",
+        _ => "md"
+    };
+}

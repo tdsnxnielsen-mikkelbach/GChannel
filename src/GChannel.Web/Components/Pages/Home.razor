@@ -1,257 +1,252 @@
-﻿@page "/"
+@page "/"
 @attribute [Authorize]
 @implements IDisposable
+@using ApexCharts
+@* ApexCharts and Radzen both export these names; the page uses the Radzen meaning except for Theme/Mode. *@
+@using Orientation = Radzen.Orientation
+@using Theme = ApexCharts.Theme
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Dashboard · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">Dashboard</MudText>
-<MudText Typo="Typo.body1" Class="mb-2" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-2">Dashboard</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-2">
     Reseller overview for your Google Cloud Channel estate.
-</MudText>
+</RadzenText>
 
 @if (_status is not null)
 {
-    <div class="d-flex align-center mb-6" style="gap: 8px;">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-6">
         @if (_status.IsRunning)
         {
-            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined"
-                     Icon="@Icons.Material.Filled.Sync">Refreshing…</MudChip>
+            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Refreshing…" />
         }
         else if (!_status.Enabled)
         {
-            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined"
-                     Icon="@Icons.Material.Filled.Bolt">On demand</MudChip>
+            <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="On demand" />
         }
         @if (_status.LastCompletedUtc is { } completed)
         {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
                 Updated @FormatAgo(completed)@(_status.LastDurationSeconds is { } secs ? $" · took {secs}s" : "")@(NextRefreshText is { } next ? $" · {next}" : "")
-            </MudText>
+            </RadzenText>
         }
         else if (_status is { Enabled: true, IsRunning: false })
         {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">Awaiting first background refresh…@(NextRefreshText is { } next ? $" ({next})" : "")</MudText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Awaiting first background refresh…@(NextRefreshText is { } next ? $" ({next})" : "")</RadzenText>
         }
-    </div>
+    </RadzenStack>
 }
 
 @if (_data is { SkippedCustomerCount: > 0 })
 {
-    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         <div>@_data.SkippedCustomerCount customer@(_data.SkippedCustomerCount == 1 ? "" : "s") couldn't be loaded; figures may be incomplete.</div>
         @if (!string.IsNullOrWhiteSpace(_data.IncompleteReason))
         {
-            <MudText Typo="Typo.caption">@_data.IncompleteReason</MudText>
+            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-m-0">@_data.IncompleteReason</RadzenText>
         }
         @if (_status is { Enabled: true })
         {
-            <MudText Typo="Typo.caption">These will be retrieved during the next background refresh; figures will fill in automatically.</MudText>
+            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-m-0">These will be retrieved during the next background refresh; figures will fill in automatically.</RadzenText>
         }
-    </MudAlert>
+    </RadzenAlert>
 }
 
 <OnboardingPanel CustomerCount="@(_overview?.CustomerCount ?? _data?.CustomerCount ?? 0)"
                  EntitlementCount="@EntitlementCount" />
 
-<MudGrid>
+<RadzenRow Gap="1rem" RowGap="1rem">
     @foreach (var card in Cards)
     {
-        <MudItem xs="12" sm="6" md="3">
-            <MudCard Elevation="2">
-                <MudCardContent>
-                    <div class="d-flex justify-space-between align-center">
-                        <div>
-                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">@card.Label</MudText>
-                            @if (card.Ready)
-                            {
-                                <MudText Typo="Typo.h5">@card.Value</MudText>
-                            }
-                            else
-                            {
-                                <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="@card.Color" Class="mt-1" />
-                            }
-                        </div>
-                        <MudIcon Icon="@card.Icon" Color="@card.Color" Size="Size.Large" />
+        <RadzenColumn Size="12" SizeMD="6" SizeLG="3">
+            <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <div>
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">@card.Label</RadzenText>
+                        @if (card.Ready)
+                        {
+                            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@card.Value</RadzenText>
+                        }
+                        else
+                        {
+                            <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.ExtraSmall" ShowValue="false" class="rz-mt-1" />
+                        }
                     </div>
+                    <RadzenIcon Icon="@card.Icon" IconColor="@card.Color" Style="font-size: 2.5rem; width: auto; height: auto" />
+                </RadzenStack>
 
-                    <MudButton Variant="Variant.Text" Size="Size.Small" Class="mt-1 px-1"
-                               Disabled="@(!card.Ready)"
-                               OnClick="@(() => ToggleDetails(card.Key))"
-                               EndIcon="@(IsExpanded(card.Key) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)">
-                        Details
-                    </MudButton>
+                <RadzenButton Text="Details" Icon="@(IsExpanded(card.Key) ? AppIcons.ExpandLess : AppIcons.ExpandMore)" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text"
+                              Disabled="@(!card.Ready)" Click="@(() => ToggleDetails(card.Key))" class="rz-mt-1" />
 
-                    <MudCollapse Expanded="@IsExpanded(card.Key)">
-                        <div class="mt-2">
-                            @switch (card.Key)
-                            {
-                                case "customers":
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        <b>Direct</b> = a reseller buying from us for their own use (a direct sale).
-                                        <b>Indirect</b> = your resellers' downstream end customers. Together they
-                                        make up your total customer estate.
-                                    </MudText>
-                                    <div class="d-flex justify-space-between align-center mt-2">
-                                        <MudText Typo="Typo.body2">Direct (reseller own use)</MudText>
-                                        <MudText Typo="Typo.body2"><b>@DirectEstate</b></MudText>
-                                    </div>
-                                    <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">Reseller end customers</MudText>
-                                        @if (IndirectLoaded)
-                                        {
-                                            <MudText Typo="Typo.body2"><b>@IndirectEstate</b></MudText>
-                                        }
-                                        else
-                                        {
-                                            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
-                                        }
-                                    </div>
+                @if (IsExpanded(card.Key))
+                {
+                    <div class="rz-mt-2">
+                        @switch (card.Key)
+                        {
+                            case "customers":
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    <b>Direct</b> = a reseller buying from us for their own use (a direct sale).
+                                    <b>Indirect</b> = your resellers' downstream end customers. Together they
+                                    make up your total customer estate.
+                                </RadzenText>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mt-2">
+                                    <span>Direct (reseller own use)</span>
+                                    <b>@DirectEstate</b>
+                                </RadzenStack>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                    <span>Reseller end customers</span>
                                     @if (IndirectLoaded)
                                     {
-                                        <MudDivider Class="my-1" />
-                                        <div class="d-flex justify-space-between align-center">
-                                            <MudText Typo="Typo.body2"><b>Total estate</b></MudText>
-                                            <MudText Typo="Typo.body2"><b>@TotalEstate</b></MudText>
-                                        </div>
-                                    }
-                                    break;
-
-                                case "skus":
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        Active entitlements (purchased SKUs) currently provisioned across all customers — direct and via resellers (indirect).
-                                    </MudText>
-                                    <div class="d-flex justify-space-between align-center mt-2">
-                                        <MudText Typo="Typo.body2">Active seats</MudText>
-                                        <MudText Typo="Typo.body2"><b>@(_data?.ActiveSeats ?? 0)</b></MudText>
-                                    </div>
-                                    @if (_products.Count > 0)
-                                    {
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">Top products</MudText>
-                                        @foreach (var slice in _products.Take(4))
-                                        {
-                                            <div class="d-flex justify-space-between align-center">
-                                                <MudText Typo="Typo.body2" Class="text-truncate" Style="max-width: 70%;">@slice.Product</MudText>
-                                                <MudText Typo="Typo.body2"><b>@slice.Count</b></MudText>
-                                            </div>
-                                        }
-                                    }
-                                    break;
-
-                                case "links":
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        Your linked indirect resellers (channel partners), grouped by link state.
-                                    </MudText>
-                                    @if (_overview?.ChannelLinkStates is { Count: > 0 } states)
-                                    {
-                                        @foreach (var state in states)
-                                        {
-                                            <div class="d-flex justify-space-between align-center mt-1">
-                                                <MudText Typo="Typo.body2">@Humanize(state.State)</MudText>
-                                                <MudText Typo="Typo.body2"><b>@state.Count</b></MudText>
-                                            </div>
-                                        }
+                                        <b>@IndirectEstate</b>
                                     }
                                     else
                                     {
-                                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">No channel partner links yet.</MudText>
+                                        <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.ExtraSmall" ShowValue="false" />
                                     }
-                                    break;
+                                </RadzenStack>
+                                @if (IndirectLoaded)
+                                {
+                                    <hr class="rz-my-1" />
+                                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                        <b>Total estate</b>
+                                        <b>@TotalEstate</b>
+                                    </RadzenStack>
+                                }
+                                break;
 
-                                case "suspended":
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        Entitlements that are paused (e.g. billing or admin action) and may need attention.
-                                        Shown alongside the rest of the entitlement lifecycle for context.
-                                        Numbers link to the matching entitlements across your whole estate.
-                                    </MudText>
-                                    <div class="d-flex justify-space-between align-center mt-2">
-                                        <MudText Typo="Typo.body2">Active</MudText>
-                                        <MudLink Href="/entitlements?state=active&amp;scope=all" Typo="Typo.body2"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></MudLink>
-                                    </div>
-                                    <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">Trial</MudText>
-                                        <MudLink Href="/entitlements?state=trial&amp;scope=all" Typo="Typo.body2"><b>@(_data?.TrialEntitlementCount ?? 0)</b></MudLink>
-                                    </div>
-                                    <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">Suspended</MudText>
-                                        <MudLink Href="/entitlements?state=suspended&amp;scope=all" Typo="Typo.body2"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></MudLink>
-                                    </div>
-                                    break;
-                            }
-                        </div>
-                    </MudCollapse>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
+                            case "skus":
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    Active entitlements (purchased SKUs) currently provisioned across all customers — direct and via resellers (indirect).
+                                </RadzenText>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mt-2">
+                                    <span>Active seats</span>
+                                    <b>@(_data?.ActiveSeats ?? 0)</b>
+                                </RadzenStack>
+                                @if (_products.Count > 0)
+                                {
+                                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-2 rz-mb-0">Top products</RadzenText>
+                                    @foreach (var slice in _products.Take(4))
+                                    {
+                                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                            <span class="rz-text-truncate" style="max-width: 70%;">@slice.Product</span>
+                                            <b>@slice.Count</b>
+                                        </RadzenStack>
+                                    }
+                                }
+                                break;
+
+                            case "links":
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    Your linked indirect resellers (channel partners), grouped by link state.
+                                </RadzenText>
+                                @if (_overview?.ChannelLinkStates is { Count: > 0 } states)
+                                {
+                                    @foreach (var state in states)
+                                    {
+                                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mt-1">
+                                            <span>@Humanize(state.State)</span>
+                                            <b>@state.Count</b>
+                                        </RadzenStack>
+                                    }
+                                }
+                                else
+                                {
+                                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-1 rz-mb-0">No channel partner links yet.</RadzenText>
+                                }
+                                break;
+
+                            case "suspended":
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                                    Entitlements that are paused (e.g. billing or admin action) and may need attention.
+                                    Shown alongside the rest of the entitlement lifecycle for context.
+                                    Numbers link to the matching entitlements across your whole estate.
+                                </RadzenText>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mt-2">
+                                    <span>Active</span>
+                                    <a href="/entitlements?state=active&scope=all"><b>@(_data?.ActiveEntitlementCount ?? 0)</b></a>
+                                </RadzenStack>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                    <span>Trial</span>
+                                    <a href="/entitlements?state=trial&scope=all"><b>@(_data?.TrialEntitlementCount ?? 0)</b></a>
+                                </RadzenStack>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                                    <span>Suspended</span>
+                                    <a href="/entitlements?state=suspended&scope=all"><b>@(_data?.SuspendedEntitlementCount ?? 0)</b></a>
+                                </RadzenStack>
+                                break;
+                        }
+                    </div>
+                }
+            </RadzenCard>
+        </RadzenColumn>
     }
 
     @if (_data?.EstateValue is { } estate)
     {
-        <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <div class="d-flex justify-space-between align-center">
-                    <MudText Typo="Typo.h6">Estimated estate value (monthly)</MudText>
-                    <div class="d-flex" style="gap: 4px; flex-wrap: wrap;">
+        <RadzenColumn Size="12">
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Estimated estate value (monthly)</RadzenText>
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.25rem" Wrap="FlexWrap.Wrap">
                         @foreach (var cur in estate.Currencies)
                         {
-                            <MudChip T="string" Size="Size.Small"
-                                     Color="@(cur.Currency == estate.Currency ? Color.Primary : Color.Default)"
-                                     Variant="Variant.Outlined">@cur.Currency</MudChip>
+                            <RadzenBadge BadgeStyle="@(cur.Currency == estate.Currency ? BadgeStyle.Primary : BadgeStyle.Light)" Text="@cur.Currency" />
                         }
-                    </div>
-                </div>
-                <MudGrid Class="mt-1">
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Wholesale cost</MudText>
+                    </RadzenStack>
+                </RadzenStack>
+                <RadzenRow Gap="1rem" RowGap="1rem" class="rz-mt-1">
+                    <RadzenColumn Size="12" SizeMD="4">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Wholesale cost</RadzenText>
                         @if (estate.Currencies.Count > 0)
                         {
                             @foreach (var cur in estate.Currencies)
                             {
-                                <MudText Typo="Typo.h5">@cur.Currency @cur.WholesaleMonthly.ToString("N2")</MudText>
+                                <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@cur.Currency @cur.WholesaleMonthly.ToString("N2")</RadzenText>
                             }
                         }
                         else
                         {
-                            <MudText Typo="Typo.h5">@estate.Currency @estate.WholesaleMonthly.ToString("N2")</MudText>
+                            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@estate.Currency @estate.WholesaleMonthly.ToString("N2")</RadzenText>
                         }
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">What you pay Google</MudText>
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Repriced revenue</MudText>
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">What you pay Google</RadzenText>
+                    </RadzenColumn>
+                    <RadzenColumn Size="12" SizeMD="4">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Repriced revenue</RadzenText>
                         @if (estate.Currencies.Count > 0)
                         {
                             @foreach (var cur in estate.Currencies)
                             {
-                                <MudText Typo="Typo.h5">@cur.Currency @cur.RevenueMonthly.ToString("N2")</MudText>
+                                <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@cur.Currency @cur.RevenueMonthly.ToString("N2")</RadzenText>
                             }
                         }
                         else
                         {
-                            <MudText Typo="Typo.h5">@estate.Currency @estate.RevenueMonthly.ToString("N2")</MudText>
+                            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@estate.Currency @estate.RevenueMonthly.ToString("N2")</RadzenText>
                         }
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">What end customers are billed</MudText>
-                    </MudItem>
-                    <MudItem xs="12" sm="4">
-                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Margin</MudText>
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">What end customers are billed</RadzenText>
+                    </RadzenColumn>
+                    <RadzenColumn Size="12" SizeMD="4">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Margin</RadzenText>
                         @if (estate.Currencies.Count > 0)
                         {
                             @foreach (var cur in estate.Currencies)
                             {
-                                <MudText Typo="Typo.h5" Color="@(cur.MarginMonthly >= 0 ? Color.Success : Color.Error)">@cur.Currency @cur.MarginMonthly.ToString("N2")</MudText>
+                                <RadzenText TextStyle="TextStyle.H5" class="@($"rz-m-0 {MarginClass(cur.MarginMonthly)}")">@cur.Currency @cur.MarginMonthly.ToString("N2")</RadzenText>
                             }
                         }
                         else
                         {
-                            <MudText Typo="Typo.h5" Color="@(estate.MarginMonthly >= 0 ? Color.Success : Color.Error)">@estate.Currency @estate.MarginMonthly.ToString("N2")</MudText>
+                            <RadzenText TextStyle="TextStyle.H5" class="@($"rz-m-0 {MarginClass(estate.MarginMonthly)}")">@estate.Currency @estate.MarginMonthly.ToString("N2")</RadzenText>
                         }
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">Revenue − wholesale</MudText>
-                    </MudItem>
-                </MudGrid>
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Revenue − wholesale</RadzenText>
+                    </RadzenColumn>
+                </RadzenRow>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-3 rz-mb-0" Style="font-weight:600">
                     By source@(estate.MixedCurrencies ? " & currency" : "")
-                </MudText>
-                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
+                </RadzenText>
+                <table class="gchannel-table gchannel-table-hover rz-mt-1">
                     <thead>
                         <tr>
                             @if (estate.MixedCurrencies)
@@ -259,10 +254,10 @@
                                 <th>Currency</th>
                             }
                             <th>Source</th>
-                            <th style="text-align:right">Wholesale cost</th>
-                            <th style="text-align:right">Repriced revenue</th>
-                            <th style="text-align:right">Margin</th>
-                            <th style="text-align:right">Subscriptions</th>
+                            <th class="num">Wholesale cost</th>
+                            <th class="num">Repriced revenue</th>
+                            <th class="num">Margin</th>
+                            <th class="num">Subscriptions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -274,10 +269,10 @@
                                     <td>@cur.Currency</td>
                                 }
                                 <td>Direct (reseller own use)</td>
-                                <td style="text-align:right">@cur.Direct.WholesaleMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@cur.Direct.RevenueMonthly.ToString("N2")</td>
-                                <td style="text-align:right" class="@(cur.Direct.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.Direct.MarginMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@cur.Direct.PricedEntitlementCount</td>
+                                <td class="num">@cur.Direct.WholesaleMonthly.ToString("N2")</td>
+                                <td class="num">@cur.Direct.RevenueMonthly.ToString("N2")</td>
+                                <td class="@($"num {MarginClass(cur.Direct.MarginMonthly)}")">@cur.Direct.MarginMonthly.ToString("N2")</td>
+                                <td class="num">@cur.Direct.PricedEntitlementCount</td>
                             </tr>
                             <tr>
                                 @if (estate.MixedCurrencies)
@@ -285,25 +280,25 @@
                                     <td></td>
                                 }
                                 <td>Via resellers (indirect)</td>
-                                <td style="text-align:right">@cur.Indirect.WholesaleMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@cur.Indirect.RevenueMonthly.ToString("N2")</td>
-                                <td style="text-align:right" class="@(cur.Indirect.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.Indirect.MarginMonthly.ToString("N2")</td>
-                                <td style="text-align:right">@cur.Indirect.PricedEntitlementCount</td>
+                                <td class="num">@cur.Indirect.WholesaleMonthly.ToString("N2")</td>
+                                <td class="num">@cur.Indirect.RevenueMonthly.ToString("N2")</td>
+                                <td class="@($"num {MarginClass(cur.Indirect.MarginMonthly)}")">@cur.Indirect.MarginMonthly.ToString("N2")</td>
+                                <td class="num">@cur.Indirect.PricedEntitlementCount</td>
                             </tr>
                         }
                     </tbody>
-                </MudSimpleTable>
+                </table>
                 @if (estate.Currencies.Count > 1)
                 {
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">By currency (total)</MudText>
-                    <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="mt-1">
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-3 rz-mb-0" Style="font-weight:600">By currency (total)</RadzenText>
+                    <table class="gchannel-table gchannel-table-hover rz-mt-1">
                         <thead>
                             <tr>
                                 <th>Currency</th>
-                                <th style="text-align:right">Wholesale cost</th>
-                                <th style="text-align:right">Repriced revenue</th>
-                                <th style="text-align:right">Margin</th>
-                                <th style="text-align:right">Subscriptions</th>
+                                <th class="num">Wholesale cost</th>
+                                <th class="num">Repriced revenue</th>
+                                <th class="num">Margin</th>
+                                <th class="num">Subscriptions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -311,56 +306,46 @@
                             {
                                 <tr>
                                     <td>@cur.Currency</td>
-                                    <td style="text-align:right">@cur.WholesaleMonthly.ToString("N2")</td>
-                                    <td style="text-align:right">@cur.RevenueMonthly.ToString("N2")</td>
-                                    <td style="text-align:right" class="@(cur.MarginMonthly >= 0 ? "mud-success-text" : "mud-error-text")">@cur.MarginMonthly.ToString("N2")</td>
-                                    <td style="text-align:right">@cur.PricedEntitlementCount</td>
+                                    <td class="num">@cur.WholesaleMonthly.ToString("N2")</td>
+                                    <td class="num">@cur.RevenueMonthly.ToString("N2")</td>
+                                    <td class="@($"num {MarginClass(cur.MarginMonthly)}")">@cur.MarginMonthly.ToString("N2")</td>
+                                    <td class="num">@cur.PricedEntitlementCount</td>
                                 </tr>
                             }
                         </tbody>
-                    </MudSimpleTable>
+                    </table>
                 }
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
+                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.P" class="rz-text-secondary-color rz-mt-2 rz-mb-0">
                     Estimates from offer <b>list</b> pricing × seats and configured repricing mark-ups — not invoiced amounts.
                     Based on @estate.PricedEntitlementCount priced active entitlement(s)@(estate.UnpricedEntitlementCount > 0 ? $"; {estate.UnpricedEntitlementCount} have no resolved offer price and are excluded" : "").@(estate.MixedCurrencies ? " Each currency is listed separately; the source split is broken out below." : "")
-                </MudText>
-            </MudPaper>
-        </MudItem>
+                </RadzenText>
+            </RadzenCard>
+        </RadzenColumn>
     }
 
-    <MudItem xs="12" md="8">
-        <MudPaper Class="pa-4" Elevation="2">
-            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+    <RadzenColumn Size="12" SizeLG="8">
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
                 <div>
-                    <MudText Typo="Typo.h6">Customers onboarded</MudText>
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Customers onboarded</RadzenText>
                     @if (_monthly.Count > 0 && MonthlyRangeTitle is { Length: > 0 } title)
                     {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">@title</MudText>
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@title</RadzenText>
                     }
                 </div>
                 @if (_allMonthly.Count > 1)
                 {
-                    <div class="d-flex align-center gap-2 flex-wrap">
-                        <MudSelect T="string" Value="_rangeFrom" ValueChanged="OnRangeFromChanged" Label="From"
-                                   Dense="true" Margin="Margin.Dense" Style="min-width:130px">
-                            @foreach (var m in _allMonthly)
-                            {
-                                <MudSelectItem Value="@m.Key">@m.Label</MudSelectItem>
-                            }
-                        </MudSelect>
-                        <MudSelect T="string" Value="_rangeTo" ValueChanged="OnRangeToChanged" Label="To"
-                                   Dense="true" Margin="Margin.Dense" Style="min-width:130px">
-                            @foreach (var m in _allMonthly)
-                            {
-                                <MudSelectItem Value="@m.Key">@m.Label</MudSelectItem>
-                            }
-                        </MudSelect>
-                        <MudTooltip Text="Show the whole available period">
-                            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="ResetRangeToAll">All</MudButton>
-                        </MudTooltip>
-                    </div>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                        <RadzenDropDown TValue="string" Data="_allMonthly" ValueProperty="@nameof(MonthlyPoint.Key)" TextProperty="@nameof(MonthlyPoint.Label)"
+                                        Value="@_rangeFrom" ValueChanged="OnRangeFromChanged" Style="min-width:130px" aria-label="From" Name="rangeFrom" />
+                        <RadzenDropDown TValue="string" Data="_allMonthly" ValueProperty="@nameof(MonthlyPoint.Key)" TextProperty="@nameof(MonthlyPoint.Label)"
+                                        Value="@_rangeTo" ValueChanged="OnRangeToChanged" Style="min-width:130px" aria-label="To" Name="rangeTo" />
+                        <Tip Text="Show the whole available period">
+                            <RadzenButton Text="All" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="ResetRangeToAll" />
+                        </Tip>
+                    </RadzenStack>
                 }
-            </div>
+            </RadzenStack>
             @if (_monthly.Count > 0)
             {
                 <ApexChart TItem="MonthlyPoint" Options="_monthlyOptions" @ref="_monthlyChart">
@@ -383,31 +368,30 @@
             }
             else if (_overviewLoading)
             {
-                <div class="d-flex align-center" style="height: 200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No customer history yet.</MudText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No customer history yet.</RadzenText>
             }
-        </MudPaper>
-    </MudItem>
+        </RadzenCard>
+    </RadzenColumn>
 
-    <MudItem xs="12" md="4">
-        <MudPaper Class="pa-4" Elevation="2">
-            <div class="d-flex align-center gap-1">
-                <MudText Typo="Typo.h6" GutterBottom="true">Product mix</MudText>
-                <MudTooltip Arrow="true" Placement="Placement.Top"
-                            Text="Slices are grouped by their catalog product name. A few entries may appear as a raw SKU or product ID when the marketing display name isn't available from the catalog — typically custom/negotiated offers, SKU groups, or products missing from the cached catalog.">
-                    <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Color="Color.Secondary" Class="mb-1" />
-                </MudTooltip>
-            </div>
+    <RadzenColumn Size="12" SizeLG="4">
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem" class="rz-mb-2">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Product mix</RadzenText>
+                <Tip Text="Slices are grouped by their catalog product name. A few entries may appear as a raw SKU or product ID when the marketing display name isn't available from the catalog — typically custom/negotiated offers, SKU groups, or products missing from the public catalog.">
+                    <RadzenIcon Icon="@AppIcons.Info" class="rz-text-secondary-color" />
+                </Tip>
+            </RadzenStack>
             @if (_indirectProducts.Count > 0)
             {
                 @* Both direct and reseller (indirect) business exists — show a donut for each so the
                    split is clear rather than blending them into one whole-estate chart. *@
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Direct (reseller own use)</MudText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Direct (reseller own use)</RadzenText>
                 @if (_directProducts.Count > 0)
                 {
                     <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_directProductOptions" @ref="_directProductChart">
@@ -421,9 +405,9 @@
                 }
                 else
                 {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">No direct active entitlements.</MudText>
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-2">No direct active entitlements.</RadzenText>
                 }
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mt-3">Via resellers (indirect)</MudText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mt-3 rz-mb-0" Style="font-weight:600">Via resellers (indirect)</RadzenText>
                 <ApexChart TItem="ProductSlice" Title="Active SKUs" Options="_indirectProductOptions" @ref="_indirectProductChart">
                     <ApexPointSeries TItem="ProductSlice"
                                      Items="_indirectProducts"
@@ -447,37 +431,32 @@
             }
             else if (_entitlementsLoading)
             {
-                <div class="d-flex align-center" style="height: 200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No active entitlements yet.</MudText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No active entitlements yet.</RadzenText>
             }
-        </MudPaper>
-    </MudItem>
+        </RadzenCard>
+    </RadzenColumn>
 
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2" Style="height:100%">
-            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
+    <RadzenColumn Size="12" SizeLG="6">
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
                 <div>
-                    <MudText Typo="Typo.h6">Onboarding by reseller</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Onboarding by reseller</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
                         Which reseller onboarded which customers in the selected month. "Direct" = account-owned.
-                    </MudText>
+                    </RadzenText>
                 </div>
                 @if (_onboardMonths.Count > 0)
                 {
-                    <MudSelect T="string" Value="_onboardMonth" Label="Month" Dense="true" Margin="Margin.Dense"
-                               Variant="Variant.Outlined" Style="max-width:170px" ValueChanged="OnOnboardMonthChanged">
-                        @foreach (var m in _onboardMonths)
-                        {
-                            <MudSelectItem Value="@m">@MonthLabel(m)</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <RadzenDropDown TValue="string" Data="MonthOptions(_onboardMonths)" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                                    Value="@_onboardMonth" ValueChanged="OnOnboardMonthChanged" Style="max-width:170px" aria-label="Month" Name="onboardMonth" />
                 }
-            </div>
+            </RadzenStack>
             @if (_onboardBars.Count > 0)
             {
                 <ApexChart TItem="OnboardBar" Options="_onboardOptions" @ref="_onboardChart">
@@ -485,50 +464,45 @@
                                      SeriesType="SeriesType.Bar"
                                      XValue="@(b => b.Reseller)" YValue="@(b => b.Count)" />
                 </ApexChart>
-                <div style="max-height:150px; overflow:auto" class="mt-2">
+                <div style="max-height:150px; overflow:auto" class="rz-mt-2">
                     @foreach (var g in OnboardDetail())
                     {
-                        <MudText Typo="Typo.caption" Class="d-block">
+                        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-m-0">
                             <strong>@g.Key</strong>: @string.Join(", ", g.Select(o => o.CustomerName))
-                        </MudText>
+                        </RadzenText>
                     }
                 </div>
             }
             else if (_entitlementsLoading)
             {
-                <div class="d-flex align-center" style="height:200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height:200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
                     No onboarding data yet. Attribution appears once the background read-model has synced.
-                </MudText>
+                </RadzenText>
             }
-        </MudPaper>
-    </MudItem>
+        </RadzenCard>
+    </RadzenColumn>
 
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2" Style="height:100%">
-            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
+    <RadzenColumn Size="12" SizeLG="6">
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
                 <div>
-                    <MudText Typo="Typo.h6">Partner links established</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Partner links established</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
                         When channel partner links were created, month by month. Pick a month to see with whom.
-                    </MudText>
+                    </RadzenText>
                 </div>
                 @if (_linkMonths.Count > 0)
                 {
-                    <MudSelect T="string" Value="_linkMonth" Label="Month" Dense="true" Margin="Margin.Dense"
-                               Variant="Variant.Outlined" Style="max-width:170px" ValueChanged="OnLinkMonthChanged">
-                        @foreach (var m in _linkMonths)
-                        {
-                            <MudSelectItem Value="@m">@MonthLabel(m)</MudSelectItem>
-                        }
-                    </MudSelect>
+                    <RadzenDropDown TValue="string" Data="MonthOptions(_linkMonths)" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                                    Value="@_linkMonth" ValueChanged="OnLinkMonthChanged" Style="max-width:170px" aria-label="Month" Name="linkMonth" />
                 }
-            </div>
+            </RadzenStack>
             @if (_linkSeries.Count > 0)
             {
                 <ApexChart TItem="LinkMonthPoint" Options="_linkOptions" @ref="_linkChart">
@@ -536,10 +510,10 @@
                                      SeriesType="SeriesType.Bar"
                                      XValue="@(p => p.Label)" YValue="@(p => p.Count)" />
                 </ApexChart>
-                <div style="max-height:150px; overflow:auto" class="mt-2">
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-1">
+                <div style="max-height:150px; overflow:auto" class="rz-mt-2">
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-1">
                         Established in @(_linkMonth is null ? "—" : MonthLabel(_linkMonth)):
-                    </MudText>
+                    </RadzenText>
                     @{
                         var linkDetail = LinkDetail();
                     }
@@ -547,55 +521,50 @@
                     {
                         @foreach (var l in linkDetail)
                         {
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                     Color="@LinkStateColor(l.LinkState)" Class="ma-1">@l.Reseller</MudChip>
+                            <RadzenBadge BadgeStyle="@LinkStateColor(l.LinkState)" Text="@l.Reseller" class="rz-m-1" />
                         }
                     }
                     else
                     {
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">No links established this month.</MudText>
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">No links established this month.</RadzenText>
                     }
                 </div>
             }
             else if (_entitlementsLoading)
             {
-                <div class="d-flex align-center" style="height:200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height:200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
                     No channel partner links established yet.
-                </MudText>
+                </RadzenText>
             }
-        </MudPaper>
-    </MudItem>
+        </RadzenCard>
+    </RadzenColumn>
 
-    <MudItem xs="12">
-        <MudPaper Class="pa-4" Elevation="2">
-            <div class="d-flex justify-space-between align-start mb-2 flex-wrap" style="gap:8px">
+    <RadzenColumn Size="12">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
                 <div>
-                    <MudText Typo="Typo.h6">Top indirect resellers</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Top indirect resellers</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
                         @(_resellerMetric switch
                         {
                             "avg" => "Ranked by average active seats per customer — a fairer comparison when one reseller dwarfs the rest. Parentheses show the customer count; each bar is labelled with its exact figure.",
                             "revenue" => "Ranked by estimated monthly revenue (repriced end-customer billing, from list pricing + repricing mark-ups). Parentheses show the customer count; each bar is labelled with its exact figure.",
                             _ => "Ranked by total active seats. Parentheses show the customer count; each bar is labelled with its exact seat count."
                         })
-                    </MudText>
+                    </RadzenText>
                 </div>
                 @if (_resellers.Count > 0)
                 {
-                    <MudSelect T="string" Value="_resellerMetric" Label="Rank by" Dense="true" Margin="Margin.Dense"
-                               Variant="Variant.Outlined" Style="max-width:220px" ValueChanged="OnResellerMetricChanged">
-                        <MudSelectItem Value="@("seats")">Total seats</MudSelectItem>
-                        <MudSelectItem Value="@("avg")">Avg seats / customer</MudSelectItem>
-                        <MudSelectItem Value="@("revenue")">Monthly revenue</MudSelectItem>
-                    </MudSelect>
+                    <RadzenDropDown TValue="string" Data="_resellerMetricOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                                    Value="@_resellerMetric" ValueChanged="OnResellerMetricChanged" Style="max-width:220px" aria-label="Rank by" Name="resellerMetric" />
                 }
-            </div>
+            </RadzenStack>
             @if (_resellers.Count > 0)
             {
                 <ApexChart TItem="ResellerSlice" Title="@_resellerTitle" Options="_resellerOptions" @ref="_resellerChart">
@@ -609,55 +578,54 @@
             }
             else if (_entitlementsLoading)
             {
-                <div class="d-flex align-center" style="height: 200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
                     No indirect resellers with customers yet. When a linked reseller owns downstream
                     customers, they'll appear here ranked by total active seats.
-                </MudText>
+                </RadzenText>
             }
-        </MudPaper>
-    </MudItem>
+        </RadzenCard>
+    </RadzenColumn>
 
-    <MudItem xs="12">
-        <MudPaper Class="pa-4" Elevation="2">
-            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+    <RadzenColumn Size="12">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
                 <div>
-                    <MudText Typo="Typo.h6">GCP &amp; Marketplace consumption (billed)</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">GCP &amp; Marketplace consumption (billed)</RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
                         Actual spend from the Cloud Billing → BigQuery export (last month) — real billed
                         figures, distinct from the list-price estimate above.
-                    </MudText>
+                    </RadzenText>
                 </div>
-                <MudButton Href="/billing/spend" Variant="Variant.Text" Size="Size.Small"
-                           EndIcon="@Icons.Material.Filled.ArrowForward">Spend trends</MudButton>
-            </div>
+                <LinkButton To="/billing/spend" Text="Spend trends" Icon="@AppIcons.ArrowForward" Variant="Variant.Text" Size="ButtonSize.Small" />
+            </RadzenStack>
 
             @if (_spendUnconfigured)
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">The BigQuery billing-export sync isn't configured.</MudText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">The BigQuery billing-export sync isn't configured.</RadzenText>
             }
             else if (_spendLoading)
             {
-                <div class="d-flex align-center" style="height: 200px;">
-                    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mx-auto" />
-                </div>
+                <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 200px;">
+                    <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" ShowValue="false" aria-label="Loading" />
+                </RadzenStack>
             }
             else if (_spendBars.Count > 0)
             {
-                <div class="d-flex flex-wrap mb-2" style="gap: 32px;">
+                <RadzenStack Orientation="Orientation.Horizontal" Gap="2rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
                     @foreach (var t in _spendTotals)
                     {
                         <div>
-                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total billed (@t.Currency)</MudText>
-                            <MudText Typo="Typo.h5">@t.Currency @t.Total.ToString("N2")</MudText>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Total billed (@t.Currency)</RadzenText>
+                            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@t.Currency @t.Total.ToString("N2")</RadzenText>
                         </div>
                     }
-                </div>
+                </RadzenStack>
                 <ApexChart TItem="SpendBar" Title="@_spendChartTitle" Options="_spendOptions" @ref="_spendChart">
                     <ApexPointSeries TItem="SpendBar"
                                      Items="_spendBars"
@@ -666,24 +634,24 @@
                                      XValue="@(b => b.Reseller)"
                                      YValue="@(b => b.Cost)" />
                 </ApexChart>
-                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
+                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.P" class="rz-text-secondary-color rz-mt-2 rz-mb-0">
                     Billed spend attributed to each customer's owning channel partner (Direct = account-owned).
                     @if (_spendAsOf is { } asOf)
                     {
                         <span>As of @asOf.LocalDateTime.ToString("g").</span>
                     }
-                </MudText>
+                </RadzenText>
             }
             else
             {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No billed spend recorded yet.</MudText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded yet.</RadzenText>
             }
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
 
 @code {
-    private record SummaryCard(string Key, string Label, string Value, string Icon, Color Color, bool Ready);
+    private record SummaryCard(string Key, string Label, string Value, string Icon, string Color, bool Ready);
     private record MonthlyPoint(string Key, string Label, decimal Direct, decimal Indirect);
     private record ProductSlice(string Product, decimal Count);
     private record ResellerSlice(string Reseller, decimal Customers, decimal Seats, decimal AvgSeats, decimal Revenue);
@@ -692,8 +660,19 @@
     private record SpendBar(string Reseller, decimal Cost);
     private record SpendTotal(string Currency, decimal Total);
 
+    private static readonly SelectOption[] _resellerMetricOptions =
+    [
+        new("seats", "Total seats"),
+        new("avg", "Avg seats / customer"),
+        new("revenue", "Monthly revenue"),
+    ];
+
+    private IEnumerable<SelectOption> MonthOptions(IEnumerable<string> months) => months.Select(m => new SelectOption(m, MonthLabel(m)));
+
+    private static string MarginClass(decimal margin) => margin >= 0 ? "rz-color-success" : "rz-color-danger";
+
     // Cascaded from MainLayout so the charts can follow the app's light/dark theme. ApexCharts renders
-    // its own axis/legend/title text in a fixed colour that ignores MudBlazor's theme, so without this
+    // its own axis/legend/title text in a fixed colour that ignores the Bootstrap colour mode, so without this
     // the labels stay dark and become invisible on the dark background.
     [CascadingParameter(Name = "IsDarkMode")]
     private bool IsDarkMode { get; set; }
@@ -809,13 +788,13 @@
     private SummaryCard[] Cards =>
     [
         new("customers", "Customers", (_overview?.CustomerCount ?? _data?.CustomerCount ?? 0).ToString(),
-            Icons.Material.Filled.Business, Color.Primary, _overview is not null || _data is not null),
+            AppIcons.Business, Colors.Primary, _overview is not null || _data is not null),
         new("skus", "Active SKUs", (_data?.ActiveEntitlementCount ?? 0).ToString(),
-            Icons.Material.Filled.Inventory2, Color.Success, _data is not null),
+            AppIcons.Inventory, Colors.Success, _data is not null),
         new("links", "Channel links", (_overview?.ChannelLinkCount ?? 0).ToString(),
-            Icons.Material.Filled.Hub, Color.Tertiary, _overview is not null),
+            AppIcons.Hub, Colors.Info, _overview is not null),
         new("suspended", "Suspended", (_data?.SuspendedEntitlementCount ?? 0).ToString(),
-            Icons.Material.Filled.PauseCircle, Color.Warning, _data is not null),
+            AppIcons.PauseCircle, Colors.Warning, _data is not null),
     ];
 
     // Tracks which KPI cards have their details panel expanded (keyed by SummaryCard.Key).
@@ -1209,12 +1188,12 @@
             ? d.ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)
             : key;
 
-    private static Color LinkStateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle LinkStateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "SUSPENDED" => Color.Warning,
-        "INVITED" => Color.Info,
-        _ => Color.Default
+        "ACTIVE" => BadgeStyle.Success,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "INVITED" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private async Task LoadOverviewAsync(CancellationToken cancellationToken)
@@ -1282,7 +1261,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load dashboard: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load dashboard: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -1467,3 +1446,4 @@
         _cts.Dispose();
     }
 }
+

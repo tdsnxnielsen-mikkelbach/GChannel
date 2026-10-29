@@ -1,80 +1,45 @@
-using GChannel.ApiService.Configuration;
-using GChannel.ApiService.Data;
-using GChannel.ApiService.Services;
+using GChannel.Core.DependencyInjection;
+using GChannel.Core.Messaging;
+using GChannel.Core.Persistence;
+using GChannel.Worker.Handlers;
+using GChannel.Worker.Infrastructure;
 using GChannel.Worker.Services;
-using Microsoft.EntityFrameworkCore;
+using JasperFx.Events.Daemon;
+using Wolverine;
 
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.AddServiceDefaults();
 
-// Azure SQL (serverless) via Aspire — connection name must match AppHost ("gchanneldb").
-// The serverless DB auto-pauses when idle; a single connection must survive the ~30-60s resume, so raise
-// the connect timeout well past the 15s default, and retry transient failures (incl. the -2 timeout).
-builder.AddSqlServerDbContext<GChannelDbContext>("gchanneldb",
-    configureSettings: settings =>
-    {
-        if (!string.IsNullOrWhiteSpace(settings.ConnectionString)
-            && !settings.ConnectionString.Contains("Connect Timeout", StringComparison.OrdinalIgnoreCase)
-            && !settings.ConnectionString.Contains("Connection Timeout", StringComparison.OrdinalIgnoreCase))
-        {
-            settings.ConnectionString += ";Connect Timeout=90";
-        }
-    },
-    configureDbContextOptions: options => options.UseSqlServer(sql =>
-        sql.EnableRetryOnFailure(maxRetryCount: 8, maxRetryDelay: TimeSpan.FromSeconds(20), errorNumbersToAdd: new[] { -2 })));
+// Azure Database for PostgreSQL via Aspire ("gchanneldb"; Microsoft Entra ID token auth in Azure) hosting the
+// Marten document store + event store and Wolverine's durable inbox/outbox + saga storage (schema
+// "wolverine_worker" — the API has its own). The worker also runs Marten's async projection daemon (HotCold:
+// exactly one node owns it — leader election via Postgres).
+builder.AddGChannelMarten(messageStorageSchema: "wolverine_worker")
+    .AddAsyncDaemon(DaemonMode.HotCold);
 
-// Redis client (IConnectionMultiplexer) + distributed cache via Aspire — connection name must match
-// AppHost ("cache"). WithAzureAuthentication enables Microsoft Entra ID (managed identity) auth for
-// Azure Managed Redis; it is a no-op for the local container cache (password). The multiplexer backs
-// the cluster-wide single-flight locks each worker takes so only one replica syncs per interval.
+// Redis (Aspire connection "cache"): the API's Google-response cache, which the worker warms (live dashboard
+// refresh) and invalidates (read-model dashboard keys). Entra ID auth for Azure Managed Redis.
 builder.AddRedisClientBuilder("cache")
     .WithAzureAuthentication()
     .WithDistributedCache();
 
-builder.Services
-    .AddOptions<GoogleChannelOptions>()
-    .Bind(builder.Configuration.GetSection(GoogleChannelOptions.SectionName));
+// Shared options + Google/Ion integration services (also registered by the API).
+builder.Services.AddGChannelCore(builder.Configuration);
 
-builder.Services
-    .AddOptions<GoogleBillingOptions>()
-    .Bind(builder.Configuration.GetSection(GoogleBillingOptions.SectionName));
+// The worker calls the Channel API with the service-account credential (domain-wide delegation).
+builder.Services.AddSingleton<ServiceAccountChannelClientProvider>();
 
-// Ion Gateway enrichment (used by the shared ReadModelProjector during entitlement sync).
-builder.Services
-    .AddOptions<IonGatewayOptions>()
-    .Bind(builder.Configuration.GetSection(IonGatewayOptions.SectionName));
-builder.Services.AddHttpClient(IonGatewayClient.HttpClientName);
-builder.Services.AddSingleton<IIonGatewayClient, IonGatewayClient>();
+// Recurring jobs (estate sync, live dashboard refresh, billing-export sync, posture scan) are self-rescheduling
+// Wolverine messages on the Service Bus "jobs" queue; the bootstrap starts/repairs their chains.
+builder.Services.AddSingleton<RecurringJobCatalog>();
+builder.Services.AddHostedService<RecurringJobsBootstrap>();
 
-// §10 read-model projection helper — shared by the bulk sync and the Pub/Sub event-driven projection
-// so every path denormalises identical fields. Stateless (takes the DbContext/client per call).
-builder.Services.AddSingleton<ReadModelProjector>();
-
-// Billing IAM security posture: Cloud Billing IAM + Admin SDK (DWD) identity/security resolution shared
-// with the API, used by the nightly BillingPostureSyncService.
-builder.Services.AddSingleton<IBillingBudgetsService, BillingBudgetsService>();
-builder.Services.AddSingleton<IWorkspaceUserSecurityService, WorkspaceUserSecurityService>();
-builder.Services.AddSingleton<MemberIdentityResolver>();
-builder.Services.AddHttpClient(MarketplaceOrdersService.HttpClientName);
-builder.Services.AddSingleton<IMarketplaceOrdersService, MarketplaceOrdersService>();
-
-// The estate/dashboard background workers, extracted from the API container so they scale on their
-// own axis (fixed single replica) instead of with HTTP traffic. Each is a no-op unless the relevant
-// GoogleChannel options + service-account credential are configured, and each takes a Redis lock so
-// extra replicas stay idle. Schema creation stays with the API on startup.
-builder.Services.AddHostedService<DashboardRefreshService>();
+// Google Pub/Sub → Service Bus bridge for Channel change notifications.
 builder.Services.AddHostedService<ChannelNotificationsService>();
-builder.Services.AddHostedService<ReadModelSyncService>();
 
-// §15 billing-export sync — materialises actual GCP/Marketplace spend from the BigQuery detailed cost
-// export into the CustomerSpend/SpendDaily read-model. No-op unless GoogleBilling:BigQueryEnabled + the
-// service-account credential are configured.
-builder.Services.AddHostedService<BillingSyncService>();
-
-// Nightly billing IAM security-posture scan (direct consumer admins, 2SV / Advanced Protection / key
-// compliance per member) into the BillingPosture read-model for the Security posture page.
-builder.Services.AddHostedService<BillingPostureSyncService>();
+// Wolverine: handlers for the estate-events subscription and the estate-sync / jobs / operations queues.
+builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-worker", MessagingRole.Worker, typeof(ProjectCustomerHandler).Assembly));
 
 var host = builder.Build();
 host.Run();

@@ -7,13 +7,17 @@
     <UserSecretsId>c8d2f7a1-4f3b-4f9d-9c2a-7e6b1a0d5e44</UserSecretsId>
     <!-- Worker SDK doesn't enable SDK container publish by default (Web SDK does); azd needs it. -->
     <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
-    <!-- References ApiService, whose appsettings.json collides with the worker's own; keep the worker's. -->
-    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Aspire.Microsoft.Azure.StackExchangeRedis" Version="13.6.4" />
+    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.6.4" />
+    <PackageReference Include="Aspire.StackExchange.Redis.DistributedCaching" Version="13.6.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GChannel.Core\GChannel.Core.csproj" />
     <ProjectReference Include="..\GChannel.ServiceDefaults\GChannel.ServiceDefaults.csproj" />
-    <ProjectReference Include="..\GChannel.ApiService\GChannel.ApiService.csproj" />
   </ItemGroup>
 
 </Project>

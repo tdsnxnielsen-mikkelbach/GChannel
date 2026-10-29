@@ -1,40 +1,26 @@
-using GChannel.ApiService.Services;
+using GChannel.Core.GoogleApis;
+using GChannel.Shared.Contracts;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
-/// Maps the long-running operation endpoints (§7). Mutating Channel calls (entitlement
-/// create/change/state changes, transfers) return an operation name; these endpoints let the UI poll
-/// an operation until it is <c>done</c> and request cancellation. Operations are volatile, so the
-/// responses are not cached.
+/// Long-running operation endpoints. Mutating Channel calls return an operation name; these let the UI
+/// poll an operation until it is <c>done</c> and request cancellation. Operations are volatile, so the
+/// responses are not cached. (The worker additionally tracks app-submitted operations through the
+/// <c>ChannelOperationSaga</c> and records their outcome on the entitlement's event stream.)
 /// </summary>
 public static class OperationsEndpoints
 {
-    public static IEndpointRouteBuilder MapOperationsEndpoints(this IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/operations").WithTags("Operations");
+    [WolverineGet("/api/operations")]
+    public static Task<ChannelOperationsResult> ListOperations(IGoogleChannelClient channel, CancellationToken cancellationToken)
+        => channel.ListOperationsAsync(cancellationToken);
 
-        group.MapGet("/", (IGoogleChannelClient channel, CancellationToken cancellationToken) =>
-                channel.ListOperationsAsync(cancellationToken))
-            .WithName("ListOperations")
-            .WithSummary("Lists recent long-running operations.");
+    [WolverineGet("/api/operations/{operationId}")]
+    public static Task<ChannelOperation> GetOperation(string operationId, IGoogleChannelClient channel, CancellationToken cancellationToken)
+        => channel.GetOperationAsync(operationId, cancellationToken);
 
-        group.MapGet("/{operationId}", (
-                string operationId,
-                IGoogleChannelClient channel,
-                CancellationToken cancellationToken) =>
-                channel.GetOperationAsync(operationId, cancellationToken))
-            .WithName("GetOperation")
-            .WithSummary("Gets a single long-running operation (poll until done).");
-
-        group.MapPost("/{operationId}/cancel", (
-                string operationId,
-                IGoogleChannelClient channel,
-                CancellationToken cancellationToken) =>
-                channel.CancelOperationAsync(operationId, cancellationToken))
-            .WithName("CancelOperation")
-            .WithSummary("Requests cancellation of a long-running operation.");
-
-        return app;
-    }
+    [WolverinePost("/api/operations/{operationId}/cancel")]
+    public static Task<ChannelOperation> CancelOperation(string operationId, IGoogleChannelClient channel, CancellationToken cancellationToken)
+        => channel.CancelOperationAsync(operationId, cancellationToken);
 }

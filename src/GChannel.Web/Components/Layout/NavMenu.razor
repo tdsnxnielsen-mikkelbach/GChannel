@@ -1,69 +1,68 @@
-﻿<MudNavMenu>
-    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard" data-onboarding="nav-dashboard">
-        Dashboard
-    </MudNavLink>
-    <MudNavGroup Title="Accounts" Icon="@Icons.Material.Filled.Group" Expanded="true" data-onboarding="nav-accounts">
-        <MudNavLink Href="accounts/cloud-identity" Icon="@Icons.Material.Filled.VerifiedUser">
-            Cloud Identity check
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Catalog" Icon="@Icons.Material.Filled.Storefront" Expanded="true" data-onboarding="nav-catalog">
-        <MudNavLink Href="catalog/products" Icon="@Icons.Material.Filled.Inventory2">
-            Products
-        </MudNavLink>
-        <MudNavLink Href="catalog/offers" Icon="@Icons.Material.Filled.LocalOffer">
-            Offers
-        </MudNavLink>
-        <MudNavLink Href="catalog/sku-groups" Icon="@Icons.Material.Filled.Category">
-            SKU groups
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Customers" Icon="@Icons.Material.Filled.People" Expanded="true" data-onboarding="nav-customers">
-        <MudNavLink Href="customers" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.PeopleAlt">
-            All customers
-        </MudNavLink>
-        <MudNavLink Href="customers/new" Icon="@Icons.Material.Filled.PersonAdd">
-            New customer
-        </MudNavLink>
-        <MudNavLink Href="entitlements" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Subscriptions">
-            Entitlements
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Channel partners" Icon="@Icons.Material.Filled.Hub" Expanded="true" data-onboarding="nav-partners">
-        <MudNavLink Href="channel-partner-links" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.AccountTree">
-            Partner links
-        </MudNavLink>
-        <MudNavLink Href="channel-partner-links/new" Icon="@Icons.Material.Filled.AddLink">
-            Invite partner
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Eventing" Icon="@Icons.Material.Filled.Notifications" Expanded="true" data-onboarding="nav-eventing">
-        <MudNavLink Href="operations" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Bolt">
-            Operations
-            <FeatureBeacon Id="operations-v1" MatchPath="operations" Tooltip="New: track long-running operations" />
-        </MudNavLink>
-        <MudNavLink Href="notifications" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.NotificationsActive">
-            Notifications
-            <FeatureBeacon Id="notifications-v1" MatchPath="notifications" Tooltip="New: live Pub/Sub notifications" />
-        </MudNavLink>
-        <MudNavLink Href="license-change-alerts" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.MarkEmailRead">
-            License change alerts
-            <FeatureBeacon Id="license-change-alerts-v1" MatchPath="license-change-alerts" Tooltip="New: email indirect resellers on license changes" />
-        </MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Billing" Icon="@Icons.Material.Filled.Payments" Expanded="true" data-onboarding="nav-billing">
-        <MudNavLink Href="billing/budgets" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Savings">
-            GCP budgets
-            <FeatureBeacon Id="gcp-budgets-v1" MatchPath="billing/budgets" Tooltip="New: view & set GCP billing budgets" />
-        </MudNavLink>
-        <MudNavLink Href="billing/spend" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ShowChart">
-            Spend trends
-            <FeatureBeacon Id="spend-trends-v1" MatchPath="billing/spend" Tooltip="New: actual GCP/Marketplace spend & trends" />
-        </MudNavLink>
-        <MudNavLink Href="billing/posture" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Security">
-            Security posture
-            <FeatureBeacon Id="billing-posture-v1" MatchPath="billing/posture" Tooltip="New: nightly 2SV / Advanced Protection / consumer-admin scan of all billing accounts" />
-        </MudNavLink>
-    </MudNavGroup>
-</MudNavMenu>
+@* Sidebar navigation. The data-onboarding attributes anchor the Driver.js product tour steps
+   (OnboardingTourService) and must stay on these elements. *@
+<RadzenPanelMenu Multiple="true" DisplayStyle="MenuItemDisplayStyle.IconAndText" class="gchannel-nav">
+    <RadzenPanelMenuItem Text="Dashboard" Icon="@AppIcons.Dashboard" Path="" Match="NavLinkMatch.All" data-onboarding="nav-dashboard" />
 
+    <RadzenPanelMenuItem Text="Accounts" Icon="@AppIcons.Group" Expanded="true" data-onboarding="nav-accounts">
+        <RadzenPanelMenuItem Text="Cloud Identity check" Icon="@AppIcons.VerifiedUser" Path="accounts/cloud-identity" />
+    </RadzenPanelMenuItem>
+
+    <RadzenPanelMenuItem Text="Catalog" Icon="@AppIcons.Storefront" Expanded="true" data-onboarding="nav-catalog">
+        <RadzenPanelMenuItem Text="Products" Icon="@AppIcons.Inventory" Path="catalog/products" />
+        <RadzenPanelMenuItem Text="Offers" Icon="@AppIcons.LocalOffer" Path="catalog/offers" />
+        <RadzenPanelMenuItem Text="SKU groups" Icon="@AppIcons.Category" Path="catalog/sku-groups" />
+    </RadzenPanelMenuItem>
+
+    <RadzenPanelMenuItem Text="Customers" Icon="@AppIcons.People" Expanded="true" data-onboarding="nav-customers">
+        <RadzenPanelMenuItem Text="All customers" Icon="@AppIcons.PeopleAlt" Path="customers" Match="NavLinkMatch.All" />
+        <RadzenPanelMenuItem Text="New customer" Icon="@AppIcons.PersonAdd" Path="customers/new" />
+        <RadzenPanelMenuItem Text="Entitlements" Icon="@AppIcons.Subscriptions" Path="entitlements" Match="NavLinkMatch.All" />
+    </RadzenPanelMenuItem>
+
+    <RadzenPanelMenuItem Text="Channel partners" Icon="@AppIcons.Hub" Expanded="true" data-onboarding="nav-partners">
+        <RadzenPanelMenuItem Text="Partner links" Icon="@AppIcons.AccountTree" Path="channel-partner-links" Match="NavLinkMatch.All" />
+        <RadzenPanelMenuItem Text="Invite partner" Icon="@AppIcons.AddLink" Path="channel-partner-links/new" />
+    </RadzenPanelMenuItem>
+
+    <RadzenPanelMenuItem Text="Eventing" Icon="@AppIcons.Notifications" Expanded="true" data-onboarding="nav-eventing">
+        <RadzenPanelMenuItem Path="operations" Match="NavLinkMatch.All" Icon="@AppIcons.Bolt">
+            <Template>
+                Operations
+                <FeatureBeacon Id="operations-v1" MatchPath="operations" Tooltip="New: track long-running operations" />
+            </Template>
+        </RadzenPanelMenuItem>
+        <RadzenPanelMenuItem Path="notifications" Match="NavLinkMatch.All" Icon="@AppIcons.NotificationsActive">
+            <Template>
+                Notifications
+                <FeatureBeacon Id="notifications-v1" MatchPath="notifications" Tooltip="New: live Pub/Sub notifications" />
+            </Template>
+        </RadzenPanelMenuItem>
+        <RadzenPanelMenuItem Path="license-change-alerts" Match="NavLinkMatch.All" Icon="@AppIcons.MarkEmailRead">
+            <Template>
+                License change alerts
+                <FeatureBeacon Id="license-change-alerts-v1" MatchPath="license-change-alerts" Tooltip="New: email indirect resellers on license changes" />
+            </Template>
+        </RadzenPanelMenuItem>
+    </RadzenPanelMenuItem>
+
+    <RadzenPanelMenuItem Text="Billing" Icon="@AppIcons.Payments" Expanded="true" data-onboarding="nav-billing">
+        <RadzenPanelMenuItem Path="billing/budgets" Match="NavLinkMatch.All" Icon="@AppIcons.Savings">
+            <Template>
+                GCP budgets
+                <FeatureBeacon Id="gcp-budgets-v1" MatchPath="billing/budgets" Tooltip="New: view & set GCP billing budgets" />
+            </Template>
+        </RadzenPanelMenuItem>
+        <RadzenPanelMenuItem Path="billing/spend" Icon="@AppIcons.ShowChart">
+            <Template>
+                Spend trends
+                <FeatureBeacon Id="spend-trends-v1" MatchPath="billing/spend" Tooltip="New: actual GCP/Marketplace spend & trends" />
+            </Template>
+        </RadzenPanelMenuItem>
+        <RadzenPanelMenuItem Path="billing/posture" Icon="@AppIcons.Security">
+            <Template>
+                Security posture
+                <FeatureBeacon Id="billing-posture-v1" MatchPath="billing/posture" Tooltip="New: nightly 2SV / Advanced Protection / consumer-admin scan of all billing accounts" />
+            </Template>
+        </RadzenPanelMenuItem>
+    </RadzenPanelMenuItem>
+</RadzenPanelMenu>

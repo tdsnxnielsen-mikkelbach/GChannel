@@ -2,154 +2,147 @@
 @attribute [Authorize]
 @implements IDisposable
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>License change alerts · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
     <div>
-        <MudText Typo="Typo.h4">License change alerts</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Notify indirect resellers when an end customer's license changes</MudText>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">License change alerts</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Notify indirect resellers when an end customer's license changes</RadzenText>
     </div>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
-               OnClick="LoadAsync" Disabled="_loading">Refresh</MudButton>
-</div>
+    <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="LoadAsync" Disabled="_loading" />
+</RadzenStack>
 
-<MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+<RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
     <b>Preview only.</b> This page showcases the reseller notification email. No mail is sent — the
     "Send" action is disabled by design.
-</MudAlert>
+</RadzenAlert>
 
-<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
-    License change events arrive live on the Channel <MudLink Href="/notifications">Pub/Sub feed</MudLink>.
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
+    License change events arrive live on the Channel <RadzenLink Path="/notifications" Text="Pub/Sub feed" />.
     Each entitlement event is matched to the end customer it concerns and to the indirect reseller that
     owns that customer, so the owning reseller can be emailed a summary of what changed.
-</MudText>
+</RadzenText>
 
 @if (!_loading && !_subscriberEnabled)
 {
-    <MudAlert Severity="Severity.Warning" Class="mb-4" Dense="true">
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         The background Pub/Sub subscriber isn't running, so no live change events are arriving. The rows
         below are illustrative samples. Configure the subscriber on the
-        <MudLink Href="/notifications">Notifications</MudLink> page to drive this from real events.
-    </MudAlert>
+        <RadzenLink Path="/notifications" Text="Notifications" /> page to drive this from real events.
+    </RadzenAlert>
 }
 else if (!_loading && _usingSamples)
 {
-    <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         No license change events have arrived yet — showing illustrative samples so you can preview the email.
-    </MudAlert>
+    </RadzenAlert>
 }
 
-<MudGrid>
-    <MudItem xs="12" md="7">
-        <MudText Typo="Typo.h6" Class="mb-2">Recent license changes</MudText>
+<RadzenRow Gap="1rem" RowGap="1rem">
+    <RadzenColumn Size="12" SizeLG="7">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Recent license changes</RadzenText>
         @if (_loading)
         {
             <LoadingPanel Title="Loading license changes…" Hint="Reading the live change feed and resolving owning resellers." />
         }
         else
         {
-            <MudTable Items="_events" Hover="true" Elevation="2" Dense="true"
-                      @bind-SelectedItem="_selected" T="LicenseChangeEvent" OnRowClick="OnRowClick">
-                <HeaderContent>
-                    <MudTh><MudTableSortLabel SortBy="new Func<LicenseChangeEvent, object>(e => e.ChangeType)">Change</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel SortBy="new Func<LicenseChangeEvent, object>(e => e.CustomerName)">End customer</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel InitialDirection="SortDirection.Ascending" SortBy="new Func<LicenseChangeEvent, object>(e => e.ResellerName)">Indirect reseller</MudTableSortLabel></MudTh>
-                    <MudTh>Reseller email</MudTh>
-                    <MudTh><MudTableSortLabel SortBy="new Func<LicenseChangeEvent, object>(e => e.OccurredAt)">When</MudTableSortLabel></MudTh>
-                    <MudTh Style="text-align:right">Preview</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Change">
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@ChangeColor(context.ChangeType)">
-                            @context.ChangeType
-                        </MudChip>
-                        @if (!string.IsNullOrEmpty(context.Detail))
-                        {
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@context.Detail</MudText>
-                        }
-                    </MudTd>
-                    <MudTd DataLabel="End customer">
-                        <MudText Typo="Typo.body2">@context.CustomerName</MudText>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">@(context.CustomerDomain ?? context.CustomerId)</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Indirect reseller">
-                        @if (context.IsIndirect)
-                        {
-                            <MudText Typo="Typo.body2">@context.ResellerName</MudText>
-                        }
-                        else
-                        {
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">Direct</MudChip>
-                        }
-                    </MudTd>
-                    <MudTd DataLabel="Reseller email">
-                        @if (context.IsIndirect)
-                        {
-                            <MudLink Href="@($"mailto:{context.ResellerEmail}")">@context.ResellerEmail</MudLink>
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
-                        }
-                    </MudTd>
-                    <MudTd DataLabel="When">@context.OccurredAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudTd>
-                    <MudTd DataLabel="Preview" Style="text-align:right">
-                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                   Disabled="!context.IsIndirect" OnClick="@(() => _selected = context)">Preview</MudButton>
-                    </MudTd>
-                </RowTemplate>
-                <NoRecordsContent>
-                    <MudText>No license changes to show.</MudText>
-                </NoRecordsContent>
-            </MudTable>
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenDataGrid TItem="LicenseChangeEvent" Data="_events" AllowPaging="false" AllowSorting="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true"
+                                SelectionMode="DataGridSelectionMode.Single" @bind-Value="_selectedRows" RowSelect="OnRowSelected" EmptyText="No license changes to show.">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.ChangeType)" Title="Change">
+                            <Template Context="e">
+                                <RadzenBadge BadgeStyle="@ChangeColor(e.ChangeType)" Text="@e.ChangeType" />
+                                @if (!string.IsNullOrEmpty(e.Detail))
+                                {
+                                    <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@e.Detail</RadzenText>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.CustomerName)" Title="End customer">
+                            <Template Context="e">
+                                <div>@e.CustomerName</div>
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@(e.CustomerDomain ?? e.CustomerId)</RadzenText>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.ResellerName)" Title="Indirect reseller" SortOrder="SortOrder.Ascending">
+                            <Template Context="e">
+                                @if (e.IsIndirect)
+                                {
+                                    <span>@e.ResellerName</span>
+                                }
+                                else
+                                {
+                                    <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Direct" />
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Title="Reseller email" Sortable="false">
+                            <Template Context="e">
+                                @if (e.IsIndirect)
+                                {
+                                    <a href="@($"mailto:{e.ResellerEmail}")">@e.ResellerEmail</a>
+                                }
+                                else
+                                {
+                                    <span class="rz-text-secondary-color">—</span>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.OccurredAt)" Title="When" Width="150px">
+                            <Template Context="e">@e.OccurredAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="LicenseChangeEvent" Title="Preview" Sortable="false" TextAlign="TextAlign.End" Width="100px">
+                            <Template Context="e">
+                                <RadzenButton Text="Preview" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text"
+                                              Disabled="!e.IsIndirect" Click="@(() => Select(e))" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
         }
-    </MudItem>
+    </RadzenColumn>
 
-    <MudItem xs="12" md="5">
-        <MudText Typo="Typo.h6" Class="mb-2">Email preview</MudText>
+    <RadzenColumn Size="12" SizeLG="5">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Email preview</RadzenText>
         @if (_selected is null || !_selected.IsIndirect)
         {
-            <MudAlert Severity="Severity.Info">Select an indirect reseller's license change to preview the email that would be sent.</MudAlert>
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">Select an indirect reseller's license change to preview the email that would be sent.</RadzenAlert>
         }
         else
         {
-            <MudCard Elevation="2">
-                <MudCardContent>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">To</MudText>
-                    <MudText Typo="Typo.body2" Class="mb-2">@_selected.ResellerName &lt;@_selected.ResellerEmail&gt;</MudText>
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">To</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-2">@_selected.ResellerName &lt;@_selected.ResellerEmail&gt;</RadzenText>
 
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Subject</MudText>
-                    <MudText Typo="Typo.body1" Class="mb-3"><b>@Subject(_selected)</b></MudText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Subject</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-3"><b>@Subject(_selected)</b></RadzenText>
 
-                    <MudDivider Class="mb-3" />
+                <hr class="rz-mb-3" />
 
-                    <MudText Typo="Typo.body2" Style="white-space:pre-line">@Body(_selected)</MudText>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                               StartIcon="@Icons.Material.Filled.Send" Disabled="true">
-                        Send (disabled in preview)
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-3" Style="white-space:pre-line">@Body(_selected)</RadzenText>
+                <RadzenButton Text="Send (disabled in preview)" Icon="@AppIcons.Send" ButtonStyle="ButtonStyle.Primary" Disabled="true" />
+            </RadzenCard>
         }
 
-        <MudText Typo="Typo.subtitle2" Class="mt-6 mb-1">How it works</MudText>
-        <MudList T="string" Dense="true">
-            <MudListItem T="string" Icon="@Icons.Material.Filled.Notifications">
-                A Channel entitlement change event arrives on the Pub/Sub feed.
-            </MudListItem>
-            <MudListItem T="string" Icon="@Icons.Material.Filled.Hub">
-                The affected customer is resolved to its owning channel partner (indirect reseller).
-            </MudListItem>
-            <MudListItem T="string" Icon="@Icons.Material.Filled.Email">
-                A summary email is composed and sent to the reseller's registered contact.
-            </MudListItem>
-        </MudList>
-    </MudItem>
-</MudGrid>
+        <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mt-6 rz-mb-1">How it works</RadzenText>
+        <RadzenStack Gap="0.25rem">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="@AppIcons.Notifications" class="rz-text-secondary-color" /><span>A Channel entitlement change event arrives on the Pub/Sub feed.</span>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="@AppIcons.Hub" class="rz-text-secondary-color" /><span>The affected customer is resolved to its owning channel partner (indirect reseller).</span>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="@AppIcons.Email" class="rz-text-secondary-color" /><span>A summary email is composed and sent to the reseller's registered contact.</span>
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenColumn>
+</RadzenRow>
 
 @code {
     private sealed record LicenseChangeEvent(
@@ -168,6 +161,7 @@ else if (!_loading && _usingSamples)
     private bool _subscriberEnabled;
     private bool _usingSamples;
     private LicenseChangeEvent? _selected;
+    private IList<LicenseChangeEvent>? _selectedRows;
     private List<LicenseChangeEvent> _events = [];
     private readonly CancellationTokenSource _cts = new();
 
@@ -268,7 +262,7 @@ else if (!_loading && _usingSamples)
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load license changes: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load license changes: {ex.Message}", Severity.Error);
             _events = Samples();
             _usingSamples = true;
         }
@@ -311,12 +305,23 @@ else if (!_loading && _usingSamples)
         }
     }
 
-    private void OnRowClick(TableRowClickEventArgs<LicenseChangeEvent> args)
+    // Grid row click: only indirect-reseller rows have an email to preview.
+    private void OnRowSelected(LicenseChangeEvent? item)
     {
-        if (args.Item is { IsIndirect: true })
+        if (item is { IsIndirect: true })
         {
-            _selected = args.Item;
+            _selected = item;
         }
+        else
+        {
+            _selectedRows = _selected is null ? null : [_selected];
+        }
+    }
+
+    private void Select(LicenseChangeEvent item)
+    {
+        _selected = item;
+        _selectedRows = [item];
     }
 
     // The concrete amount that changed, from the entitlement change history: the seat delta between the
@@ -375,13 +380,13 @@ else if (!_loading && _usingSamples)
         _ => "License change"
     };
 
-    private static Color ChangeColor(string changeType) => changeType switch
+    private static BadgeStyle ChangeColor(string changeType) => changeType switch
     {
-        "New license" or "Seats changed" or "Activated" or "Renewed" => Color.Success,
-        "Offer change" or "Renewal changed" or "Seat cap changed" => Color.Info,
-        "Suspended" => Color.Warning,
-        "Cancelled" => Color.Error,
-        _ => Color.Default
+        "New license" or "Seats changed" or "Activated" or "Renewed" => BadgeStyle.Success,
+        "Offer change" or "Renewal changed" or "Seat cap changed" => BadgeStyle.Info,
+        "Suspended" => BadgeStyle.Warning,
+        "Cancelled" => BadgeStyle.Danger,
+        _ => BadgeStyle.Light
     };
 
     private static string Subject(LicenseChangeEvent e) =>
@@ -429,3 +434,4 @@ else if (!_loading && _usingSamples)
         _cts.Dispose();
     }
 }
+

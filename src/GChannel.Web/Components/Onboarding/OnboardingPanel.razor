@@ -6,100 +6,82 @@
 
 @if (_state is not null && !_state.WelcomeDismissed)
 {
-    <MudOverlay Visible="true" DarkBackground="true" ZIndex="9999" Class="d-flex align-center justify-center">
-        <MudPaper Elevation="8" Class="pa-6" Style="max-width: 520px;">
-            <div class="d-flex align-center mb-3">
-                <MudIcon Icon="@Icons.Material.Filled.WavingHand" Color="Color.Primary" Size="Size.Large" Class="mr-3" />
-                <MudText Typo="Typo.h5">Welcome to GChannel</MudText>
-            </div>
-            <MudText Typo="Typo.body1" Class="mb-2">
+    <div class="gchannel-overlay" role="dialog" aria-modal="true" aria-labelledby="gchannel-welcome-title">
+        <RadzenCard Variant="Variant.Filled" Style="max-width: 36rem; width: 100%" class="rz-p-6 rz-shadow-6">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" class="rz-mb-3">
+                <RadzenIcon Icon="@AppIcons.WavingHand" IconColor="@Colors.Primary" Style="font-size: 2.5rem; width: auto; height: auto" />
+                <RadzenText TextStyle="TextStyle.H5" class="rz-m-0" id="gchannel-welcome-title">Welcome to GChannel</RadzenText>
+            </RadzenStack>
+            <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-2">
                 This console manages your Google Cloud reseller business — customers, catalog SKUs,
                 entitlements, transfers and eventing.
-            </MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            </RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-5">
                 We'll add a short checklist to your dashboard to help you complete the first key steps.
-            </MudText>
-            <div class="d-flex justify-end gap-2">
-                <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="SkipAsync">Skip onboarding</MudButton>
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="GetStartedAsync">Maybe later</MudButton>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Tour"
-                           OnClick="TakeTourAsync">Take a tour</MudButton>
-            </div>
-        </MudPaper>
-    </MudOverlay>
+            </RadzenText>
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                <RadzenButton Text="Skip onboarding" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Click="SkipAsync" />
+                <RadzenButton Text="Maybe later" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Click="GetStartedAsync" />
+                <RadzenButton Text="Take a tour" Icon="@AppIcons.Tour" ButtonStyle="ButtonStyle.Primary" Click="TakeTourAsync" />
+            </RadzenStack>
+        </RadzenCard>
+    </div>
 }
 
 @if (_state is not null && _state.WelcomeDismissed && !_state.ChecklistDismissed)
 {
-    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
-        <div class="d-flex align-center justify-space-between mb-2">
-            <div class="d-flex align-center">
-                <MudIcon Icon="@Icons.Material.Filled.Checklist" Color="Color.Primary" Class="mr-2" />
-                <MudText Typo="Typo.h6">Getting started</MudText>
-            </div>
-            <div class="d-flex align-center gap-2">
-                <MudText Typo="Typo.body2" Color="Color.Secondary">@CompletedCount of @Steps.Count done</MudText>
-                <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.Tour" OnClick="RestartTourAsync">
-                    Restart tour
-                </MudButton>
-                <MudTooltip Text="Hide this checklist">
-                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="DismissChecklistAsync" />
-                </MudTooltip>
-            </div>
-        </div>
+    <RadzenCard Variant="Variant.Filled" class="rz-mb-5">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenIcon Icon="@AppIcons.Checklist" IconColor="@Colors.Primary" />
+                <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Getting started</RadzenText>
+            </RadzenStack>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@CompletedCount of @Steps.Count done</RadzenText>
+                <RadzenButton Text="Restart tour" Icon="@AppIcons.Tour" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small" Click="RestartTourAsync" />
+                <Tip Text="Hide this checklist">
+                    <RadzenButton Icon="@AppIcons.Close" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Size="ButtonSize.Small" Click="DismissChecklistAsync" aria-label="Hide this checklist" />
+                </Tip>
+            </RadzenStack>
+        </RadzenStack>
 
-        <MudProgressLinear Value="ProgressValue" Color="Color.Primary" Rounded="true" Class="mb-3" />
+        <RadzenProgressBar Value="@Math.Round(ProgressValue)" ShowValue="false" ProgressBarStyle="ProgressBarStyle.Primary" Style="height: 6px" class="rz-mb-3" />
 
-        <MudList T="string" Dense="true">
+        <RadzenStack Gap="0">
             @foreach (var step in Steps)
             {
                 var done = IsDone(step);
-                <MudListItem T="string" Class="px-0">
-                    <div class="d-flex align-center justify-space-between" style="width: 100%;">
-                        <div class="d-flex align-center">
-                            @if (step.Manual)
-                            {
-                                <MudCheckBox T="bool" Value="done" ValueChanged="@(v => ToggleManualAsync(step, v))"
-                                             Color="Color.Primary" Dense="true" />
-                            }
-                            else
-                            {
-                                <MudIcon Icon="@(done ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.RadioButtonUnchecked)"
-                                         Color="@(done ? Color.Success : Color.Default)" Class="mr-3" />
-                            }
-                            <div>
-                                <MudText Typo="Typo.body1"
-                                         Style="@(done ? "text-decoration: line-through; opacity: 0.7;" : null)">
-                                    @step.Title
-                                </MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@step.Description</MudText>
-                            </div>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0.75rem" class="rz-py-2 rz-border-bottom rz-border-color-base-200 gchannel-checklist-item">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
+                        @if (step.Manual)
+                        {
+                            <RadzenCheckBox TValue="bool" Value="done" Change="@((bool v) => ToggleManualAsync(step, v))" aria-label="@step.Title" />
+                        }
+                        else
+                        {
+                            <RadzenIcon Icon="@(done ? AppIcons.CheckCircle : AppIcons.RadioButtonUnchecked)" IconColor="@(done ? Colors.Success : Colors.Base500)" />
+                        }
+                        <div>
+                            <RadzenText TextStyle="TextStyle.Body1" class="rz-m-0" Style="@(done ? "text-decoration: line-through; opacity: 0.7;" : null)">
+                                @step.Title
+                            </RadzenText>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@step.Description</RadzenText>
                         </div>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
-                                   EndIcon="@Icons.Material.Filled.ArrowForward"
-                                   OnClick="@(() => Nav.NavigateTo(step.Link))">
-                            @step.Action
-                        </MudButton>
-                    </div>
-                </MudListItem>
+                    </RadzenStack>
+                    <RadzenButton Text="@step.Action" Icon="@AppIcons.ArrowForward" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small"
+                                  Click="@(() => Nav.NavigateTo(step.Link))" class="rz-text-nowrap" />
+                </RadzenStack>
             }
-        </MudList>
-    </MudPaper>
+        </RadzenStack>
+    </RadzenCard>
 }
 
 @if (_state is not null && _state.WelcomeDismissed && _state.ChecklistDismissed)
 {
-    <div class="d-flex justify-end align-center gap-1 mb-4">
-        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small"
-                   StartIcon="@Icons.Material.Filled.Tour" OnClick="RestartTourAsync">
-            Take the product tour
-        </MudButton>
-        <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
-                   StartIcon="@Icons.Material.Filled.Checklist" OnClick="ShowChecklistAsync">
-            Show checklist
-        </MudButton>
-    </div>
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" AlignItems="AlignItems.Center" Gap="0.25rem" class="rz-mb-5">
+        <RadzenButton Text="Take the product tour" Icon="@AppIcons.Tour" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small" Click="RestartTourAsync" />
+        <RadzenButton Text="Show checklist" Icon="@AppIcons.Checklist" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Size="ButtonSize.Small" Click="ShowChecklistAsync" />
+    </RadzenStack>
 }
 
 @code {
@@ -218,14 +200,14 @@
 
     private Task RestartTourAsync() => Tour.StartAsync();
 
-    private async Task ToggleManualAsync(Step step, bool done)
+    private async Task ToggleManualAsync(Step step, bool value)
     {
         if (_state is null)
         {
             return;
         }
 
-        if (done)
+        if (value)
         {
             if (!_state.CompletedSteps.Contains(step.Key))
             {
@@ -240,3 +222,4 @@
         await Onboarding.SaveAsync(_state);
     }
 }
+

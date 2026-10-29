@@ -1,281 +1,159 @@
-using System.Text.Json;
-using GChannel.ApiService.Configuration;
-using GChannel.ApiService.Data;
-using GChannel.ApiService.Services;
+using GChannel.ApiService.Caching;
+using GChannel.ApiService.Http;
+using GChannel.Core.Configuration;
+using GChannel.Core.Estate;
+using GChannel.Core.Estate.ReadModels;
+using GChannel.Core.GoogleApis;
+using GChannel.Core.Messaging;
 using GChannel.Shared.Contracts;
-using Microsoft.EntityFrameworkCore;
+using Marten;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using Wolverine;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
-/// Maps the channel partner link endpoints (§5 — distributor / n-tier): managing the links
-/// (<c>list</c> / <c>get</c> / <c>create</c> / <c>patch</c>) plus listing the customers owned by a
-/// partner (<c>channelPartnerLinks.customers.list</c>). Links live at the account level, so they are
-/// rooted off <c>/api/channel-partner-links</c> rather than under a customer.
+/// Channel partner link endpoints (distributor / n-tier): managing the links (list / get / create / patch)
+/// plus the customers owned by a partner. Links live at the account level, so they are rooted off
+/// <c>/api/channel-partner-links</c> rather than under a customer.
 /// </summary>
 public static class ChannelPartnerLinksEndpoints
 {
-    public static IEndpointRouteBuilder MapChannelPartnerLinksEndpoints(this IEndpointRouteBuilder app)
+    [WolverineGet("/api/channel-partner-links")]
+    public static Task<IResult> ListChannelPartnerLinks(
+        IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, GoogleReadCache.ChannelPartnerLinksListKey, options.Value.CacheSeconds,
+            () => channel.ListChannelPartnerLinksAsync(cancellationToken), cancellationToken);
+
+    [WolverineGet("/api/channel-partner-links/{linkId}")]
+    public static Task<IResult> GetChannelPartnerLink(
+        string linkId, IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, GoogleReadCache.ChannelPartnerLinkKey(linkId), options.Value.CacheSeconds,
+            () => channel.GetChannelPartnerLinkAsync(linkId, cancellationToken), cancellationToken);
+
+    [WolverineGet("/api/channel-partner-links/{linkId}/customers")]
+    public static async Task<IResult> ListChannelPartnerCustomers(
+        string linkId, IGoogleChannelClient channel, IDistributedCache cache, IQuerySession session,
+        IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
     {
-        var group = app.MapGroup("/api/channel-partner-links").WithTags("ChannelPartnerLinks");
-
-        // Links change rarely, so list/get are cached briefly and invalidated on create/patch.
-        group.MapGet("/", (
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, ListCacheKey, options.Value.CacheSeconds,
-                    () => channel.ListChannelPartnerLinksAsync(cancellationToken), cancellationToken))
-            .WithName("ListChannelPartnerLinks")
-            .WithSummary("Lists the reseller account's channel partner links.");
-
-        group.MapGet("/{linkId}", (
-                string linkId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, GetCacheKey(linkId), options.Value.CacheSeconds,
-                    () => channel.GetChannelPartnerLinkAsync(linkId, cancellationToken), cancellationToken))
-            .WithName("GetChannelPartnerLink")
-            .WithSummary("Gets a single channel partner link.");
-
-        group.MapGet("/{linkId}/customers", async (
-                string linkId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                GChannelDbContext db,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
+        // Read model: when enabled and this link has observed customers, serve them from the projected
+        // documents so the contended ListCustomers quota stays reserved for the background sync. Falls back
+        // to a live (cached) call when the link has no customers yet (cold start, or genuinely zero).
+        if (options.Value.UseReadModel)
+        {
+            var rows = await session.Query<CustomerRecord>()
+                .Where(c => c.OwningLinkId == linkId && !c.IsDeleted)
+                .OrderBy(c => c.OrgName)
+                .ToListAsync(cancellationToken);
+            if (rows.Count > 0)
             {
-                // §10 read-model: when enabled and this link has synced customers, serve them from SQL so
-                // the contended ListCustomers quota stays reserved for the background sync. Falls back to
-                // a live (cached) call when the link has no synced customers yet (cold start), which also
-                // preserves correct behaviour for links that genuinely own zero customers.
-                if (options.Value.UseReadModel)
-                {
-                    var rows = await db.CustomerRecords.AsNoTracking()
-                        .Where(c => c.OwningLinkId == linkId && !c.IsDeleted)
-                        .OrderBy(c => c.OrgName)
-                        .ToListAsync(cancellationToken);
-                    if (rows.Count > 0)
-                    {
-                        return Results.Ok(new CustomersResult { Customers = rows.Select(c => MapCustomer(c, linkId)).ToList() });
-                    }
-                }
+                return Results.Ok(new CustomersResult { Customers = rows.Select(c => MapCustomer(c, linkId)).ToList() });
+            }
+        }
 
-                return await CachedAsync(cache, CustomersCacheKey(linkId), options.Value.CacheSeconds,
-                    () => channel.ListChannelPartnerCustomersAsync(linkId, cancellationToken), cancellationToken);
-            })
-            .WithName("ListChannelPartnerCustomers")
-            .WithSummary("Lists the customers owned by a channel partner link.");
-
-        group.MapGet("/{linkId}/customers/{customerId}", (
-                string linkId,
-                string customerId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, CustomerCacheKey(linkId, customerId), options.Value.CacheSeconds,
-                    () => channel.GetChannelPartnerCustomerAsync(linkId, customerId, cancellationToken), cancellationToken))
-            .WithName("GetChannelPartnerCustomer")
-            .WithSummary("Gets a single customer owned by a channel partner link.");
-
-        group.MapPost("/{linkId}/customers", async (
-                string linkId,
-                SaveCustomerRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                GChannelDbContext db,
-                ReadModelProjector projector,
-                IOptions<GoogleChannelOptions> options,
-                ILoggerFactory loggerFactory,
-                CancellationToken cancellationToken) =>
-            {
-                var created = await channel.CreateChannelPartnerCustomerAsync(linkId, request, cancellationToken);
-                await InvalidateCustomersAsync(cache, linkId, created.Id, cancellationToken);
-                await WriteThroughUpsertAsync(projector, db, options.Value, created, linkId, loggerFactory, cancellationToken);
-                return Results.Created($"/api/channel-partner-links/{linkId}/customers/{created.Id}", created);
-            })
-            .WithName("CreateChannelPartnerCustomer")
-            .WithSummary("Creates a customer under a channel partner link.");
-
-        group.MapPut("/{linkId}/customers/{customerId}", async (
-                string linkId,
-                string customerId,
-                SaveCustomerRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                GChannelDbContext db,
-                ReadModelProjector projector,
-                IOptions<GoogleChannelOptions> options,
-                ILoggerFactory loggerFactory,
-                CancellationToken cancellationToken) =>
-            {
-                var updated = await channel.UpdateChannelPartnerCustomerAsync(linkId, request with { Id = customerId }, cancellationToken);
-                await InvalidateCustomersAsync(cache, linkId, customerId, cancellationToken);
-                await WriteThroughUpsertAsync(projector, db, options.Value, updated, linkId, loggerFactory, cancellationToken);
-                return Results.Ok(updated);
-            })
-            .WithName("UpdateChannelPartnerCustomer")
-            .WithSummary("Updates a customer owned by a channel partner link.");
-
-        group.MapDelete("/{linkId}/customers/{customerId}", async (
-                string linkId,
-                string customerId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                GChannelDbContext db,
-                ReadModelProjector projector,
-                IOptions<GoogleChannelOptions> options,
-                ILoggerFactory loggerFactory,
-                CancellationToken cancellationToken) =>
-            {
-                await channel.DeleteChannelPartnerCustomerAsync(linkId, customerId, cancellationToken);
-                await InvalidateCustomersAsync(cache, linkId, customerId, cancellationToken);
-                await WriteThroughDeleteAsync(projector, db, options.Value, customerId, loggerFactory, cancellationToken);
-                return Results.NoContent();
-            })
-            .WithName("DeleteChannelPartnerCustomer")
-            .WithSummary("Deletes a customer owned by a channel partner link.");
-
-        group.MapPost("/{linkId}/customers/import", async (
-                string linkId,
-                ImportCustomerRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                GChannelDbContext db,
-                ReadModelProjector projector,
-                IOptions<GoogleChannelOptions> options,
-                ILoggerFactory loggerFactory,
-                CancellationToken cancellationToken) =>
-            {
-                var imported = await channel.ImportChannelPartnerCustomerAsync(linkId, request, cancellationToken);
-                await InvalidateCustomersAsync(cache, linkId, imported.Id, cancellationToken);
-                await WriteThroughUpsertAsync(projector, db, options.Value, imported, linkId, loggerFactory, cancellationToken);
-                return Results.Created($"/api/channel-partner-links/{linkId}/customers/{imported.Id}", imported);
-            })
-            .WithName("ImportChannelPartnerCustomer")
-            .WithSummary("Imports a pre-existing Cloud Identity customer under a channel partner link.");
-
-        group.MapPost("/", async (
-                CreateChannelPartnerLinkRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                var created = await channel.CreateChannelPartnerLinkAsync(request, cancellationToken);
-
-                // Remember the domain we invited (keyed by reseller Cloud Identity ID) so a later
-                // Cloud Identity check on the same domain can correlate this link even before Google
-                // populates the partner's primary domain on a freshly INVITED link.
-                if (!string.IsNullOrWhiteSpace(request.Domain))
-                {
-                    await cache.SetStringAsync(
-                        InvitedDomainCacheKey(request.ResellerCloudIdentityId),
-                        request.Domain.Trim(),
-                        new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(90) },
-                        cancellationToken);
-                }
-
-                await InvalidateAsync(cache, created.Id, cancellationToken);
-                return Results.Created($"/api/channel-partner-links/{created.Id}", created);
-            })
-            .WithName("CreateChannelPartnerLink")
-            .WithSummary("Invites a downstream reseller by creating a channel partner link.");
-
-        group.MapPut("/{linkId}/state", async (
-                string linkId,
-                UpdateChannelPartnerLinkRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                var updated = await channel.UpdateChannelPartnerLinkStateAsync(linkId, request, cancellationToken);
-                await InvalidateAsync(cache, linkId, cancellationToken);
-                return Results.Ok(updated);
-            })
-            .WithName("UpdateChannelPartnerLinkState")
-            .WithSummary("Updates a channel partner link's state.");
-
-        return app;
+        return await GoogleReadCache.CachedAsync(cache, GoogleReadCache.ChannelPartnerCustomersKey(linkId), options.Value.CacheSeconds,
+            () => channel.ListChannelPartnerCustomersAsync(linkId, cancellationToken), cancellationToken);
     }
 
-    private const string ListCacheKey = "channel-partner-links:list";
+    [WolverineGet("/api/channel-partner-links/{linkId}/customers/{customerId}")]
+    public static Task<IResult> GetChannelPartnerCustomer(
+        string linkId, string customerId, IGoogleChannelClient channel, IDistributedCache cache,
+        IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, GoogleReadCache.ChannelPartnerCustomerKey(linkId, customerId), options.Value.CacheSeconds,
+            () => channel.GetChannelPartnerCustomerAsync(linkId, customerId, cancellationToken), cancellationToken);
 
-    private static string GetCacheKey(string linkId) => $"channel-partner-links:get:{linkId}";
-
-    private static string CustomersCacheKey(string linkId) => $"channel-partner-links:{linkId}:customers";
-
-    private static string CustomerCacheKey(string linkId, string customerId) =>
-        $"channel-partner-links:{linkId}:customers:{customerId}";
-
-    /// <summary>Drops the cached partner-customer list and a specific customer after a mutation.</summary>
-    private static async Task InvalidateCustomersAsync(IDistributedCache cache, string linkId, string customerId, CancellationToken cancellationToken)
+    [WolverinePost("/api/channel-partner-links/{linkId}/customers")]
+    public static async Task<IResult> CreateChannelPartnerCustomer(
+        string linkId, SaveCustomerRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
     {
-        await cache.RemoveAsync(CustomersCacheKey(linkId), cancellationToken);
-        if (!string.IsNullOrEmpty(customerId))
+        var created = await channel.CreateChannelPartnerCustomerAsync(linkId, request, cancellationToken);
+        await InvalidateCustomersAsync(cache, linkId, created.Id, cancellationToken);
+        await RecordMutationAsync(session, bus, observer, created, linkId, "create", RequestUser.NameOf(http), cancellationToken);
+        return Results.Created($"/api/channel-partner-links/{linkId}/customers/{created.Id}", created);
+    }
+
+    [WolverinePut("/api/channel-partner-links/{linkId}/customers/{customerId}")]
+    public static async Task<IResult> UpdateChannelPartnerCustomer(
+        string linkId, string customerId, SaveCustomerRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+    {
+        var updated = await channel.UpdateChannelPartnerCustomerAsync(linkId, request with { Id = customerId }, cancellationToken);
+        await InvalidateCustomersAsync(cache, linkId, customerId, cancellationToken);
+        await RecordMutationAsync(session, bus, observer, updated, linkId, "update", RequestUser.NameOf(http), cancellationToken);
+        return Results.Ok(updated);
+    }
+
+    [WolverineDelete("/api/channel-partner-links/{linkId}/customers/{customerId}")]
+    public static async Task<IResult> DeleteChannelPartnerCustomer(
+        string linkId, string customerId, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+    {
+        await channel.DeleteChannelPartnerCustomerAsync(linkId, customerId, cancellationToken);
+        await InvalidateCustomersAsync(cache, linkId, customerId, cancellationToken);
+        var user = RequestUser.NameOf(http);
+        await observer.RecordCustomerMutationAsync(session, customerId, "delete", user, null, cancellationToken);
+        await observer.ObserveCustomerRemovedAsync(session, customerId, "Deleted through the app", ObservationSource.Mutation, cancellationToken);
+        await bus.PublishAsync(new CustomerReadModelUpdated(customerId, linkId, "delete"));
+        await session.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
+    [WolverinePost("/api/channel-partner-links/{linkId}/customers/import")]
+    public static async Task<IResult> ImportChannelPartnerCustomer(
+        string linkId, ImportCustomerRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+    {
+        var imported = await channel.ImportChannelPartnerCustomerAsync(linkId, request, cancellationToken);
+        await InvalidateCustomersAsync(cache, linkId, imported.Id, cancellationToken);
+        await RecordMutationAsync(session, bus, observer, imported, linkId, "import", RequestUser.NameOf(http), cancellationToken);
+        return Results.Created($"/api/channel-partner-links/{linkId}/customers/{imported.Id}", imported);
+    }
+
+    [WolverinePost("/api/channel-partner-links")]
+    public static async Task<IResult> CreateChannelPartnerLink(
+        CreateChannelPartnerLinkRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+    {
+        var created = await channel.CreateChannelPartnerLinkAsync(request, cancellationToken);
+
+        // Remember the domain we invited (keyed by reseller Cloud Identity ID) so a later Cloud Identity check
+        // on the same domain can correlate this link even before Google populates the partner's primary domain.
+        if (!string.IsNullOrWhiteSpace(request.Domain))
         {
-            await cache.RemoveAsync(CustomerCacheKey(linkId, customerId), cancellationToken);
+            await cache.SetStringAsync(
+                GoogleReadCache.InvitedDomainKey(request.ResellerCloudIdentityId),
+                request.Domain.Trim(),
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(90) },
+                cancellationToken);
         }
+
+        await InvalidateAsync(cache, created.Id, cancellationToken);
+        await observer.ObserveLinkAsync(session, created, ObservationSource.Mutation, cancellationToken);
+        await observer.RecordLinkMutationAsync(session, created.Id, "invite", RequestUser.NameOf(http), cancellationToken);
+        await session.SaveChangesAsync(cancellationToken);
+        return Results.Created($"/api/channel-partner-links/{created.Id}", created);
+    }
+
+    [WolverinePut("/api/channel-partner-links/{linkId}/state")]
+    public static async Task<IResult> UpdateChannelPartnerLinkState(
+        string linkId, UpdateChannelPartnerLinkRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+    {
+        var updated = await channel.UpdateChannelPartnerLinkStateAsync(linkId, request, cancellationToken);
+        await InvalidateAsync(cache, linkId, cancellationToken);
+        await observer.ObserveLinkAsync(session, updated, ObservationSource.Mutation, cancellationToken);
+        await observer.RecordLinkMutationAsync(session, linkId, $"state {request.LinkState}", RequestUser.NameOf(http), cancellationToken);
+        await session.SaveChangesAsync(cancellationToken);
+        return Results.Ok(updated);
     }
 
     /// <summary>
-    /// §10 read-model write-through: after a successful partner-customer create/import/update, upsert the
-    /// one changed customer row (owned by this link) so the partner-detail and estate lists reflect it
-    /// immediately. Best-effort, gated on <see cref="GoogleChannelOptions.UseReadModel"/>; a failure is
-    /// logged and left for the poll to reconcile.
-    /// </summary>
-    private static async Task WriteThroughUpsertAsync(
-        ReadModelProjector projector, GChannelDbContext db, GoogleChannelOptions options,
-        Customer customer, string? owningLinkId, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
-    {
-        if (!options.UseReadModel)
-        {
-            return;
-        }
-
-        try
-        {
-            await projector.UpsertCustomerAsync(db, customer, owningLinkId, DateTimeOffset.UtcNow, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            loggerFactory.CreateLogger("ReadModelWriteThrough")
-                .LogWarning(ex, "Read-model write-through upsert failed for partner customer {Customer}; the next sync will reconcile.", customer.Id);
-        }
-    }
-
-    /// <summary>§10 read-model write-through for a delete: soft-delete the customer (and its entitlements) immediately.</summary>
-    private static async Task WriteThroughDeleteAsync(
-        ReadModelProjector projector, GChannelDbContext db, GoogleChannelOptions options,
-        string customerId, ILoggerFactory loggerFactory, CancellationToken cancellationToken)
-    {
-        if (!options.UseReadModel)
-        {
-            return;
-        }
-
-        try
-        {
-            await projector.SoftDeleteCustomerAsync(db, customerId, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            loggerFactory.CreateLogger("ReadModelWriteThrough")
-                .LogWarning(ex, "Read-model write-through delete failed for partner customer {Customer}; the next sync will reconcile.", customerId);
-        }
-    }
-
-    /// <summary>
-    /// Projects a §10 read-model customer row owned by a partner link onto the shared
-    /// <see cref="Customer"/> contract. Only the columns the partner-detail customers table needs
-    /// (org / domain / cloud identity / created) are stored; full-fidelity fields (contact, address,
-    /// language) come from the live customer-detail call.
+    /// Projects a read-model customer owned by a partner link onto the shared <see cref="Customer"/> contract.
+    /// Full-fidelity fields (contact, address, language) come from the live customer-detail call.
     /// </summary>
     private static Customer MapCustomer(CustomerRecord r, string linkId) => new()
     {
@@ -288,49 +166,33 @@ public static class ChannelPartnerLinksEndpoints
         CreateTime = r.CreateTime,
     };
 
-    /// <summary>
-    /// Cache key for the domain we recorded when inviting a reseller, keyed by their Cloud Identity
-    /// ID. Read by the Cloud Identity check to cross-correlate a domain to a (possibly still pending)
-    /// partner link invitation.
-    /// </summary>
-    internal static string InvitedDomainCacheKey(string resellerCloudIdentityId) =>
-        $"cpl-invited-domain:{resellerCloudIdentityId.ToLowerInvariant()}";
+    private static async Task RecordMutationAsync(
+        IDocumentSession session, IMessageBus bus, EstateObserver observer, Customer customer, string linkId, string action, string? user,
+        CancellationToken cancellationToken)
+    {
+        await observer.ObserveCustomerAsync(session, customer, linkId, ObservationSource.Mutation, DateTimeOffset.UtcNow, cancellationToken);
+        await observer.RecordCustomerMutationAsync(session, customer.Id, action, user, null, cancellationToken);
+        await bus.PublishAsync(new CustomerChanged(customer.Id, linkId, action, user));
+        await session.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Drops the cached partner-customer list and a specific customer after a mutation.</summary>
+    private static async Task InvalidateCustomersAsync(IDistributedCache cache, string linkId, string customerId, CancellationToken cancellationToken)
+    {
+        await cache.RemoveAsync(GoogleReadCache.ChannelPartnerCustomersKey(linkId), cancellationToken);
+        if (!string.IsNullOrEmpty(customerId))
+        {
+            await cache.RemoveAsync(GoogleReadCache.ChannelPartnerCustomerKey(linkId, customerId), cancellationToken);
+        }
+    }
 
     /// <summary>Drops the cached link list and a specific link after a mutation.</summary>
     private static async Task InvalidateAsync(IDistributedCache cache, string linkId, CancellationToken cancellationToken)
     {
-        await cache.RemoveAsync(ListCacheKey, cancellationToken);
+        await cache.RemoveAsync(GoogleReadCache.ChannelPartnerLinksListKey, cancellationToken);
         if (!string.IsNullOrEmpty(linkId))
         {
-            await cache.RemoveAsync(GetCacheKey(linkId), cancellationToken);
+            await cache.RemoveAsync(GoogleReadCache.ChannelPartnerLinkKey(linkId), cancellationToken);
         }
-    }
-
-    /// <summary>Returns a cached JSON payload when present, otherwise invokes <paramref name="factory"/> and caches it.</summary>
-    private static async Task<IResult> CachedAsync<T>(
-        IDistributedCache cache,
-        string cacheKey,
-        int cacheSeconds,
-        Func<Task<T>> factory,
-        CancellationToken cancellationToken)
-    {
-        var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
-        if (cached is not null)
-        {
-            return Results.Ok(JsonSerializer.Deserialize<T>(cached));
-        }
-
-        var result = await factory();
-
-        await cache.SetStringAsync(
-            cacheKey,
-            JsonSerializer.Serialize(result),
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(cacheSeconds)
-            },
-            cancellationToken);
-
-        return Results.Ok(result);
     }
 }

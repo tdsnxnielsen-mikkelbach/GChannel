@@ -1,235 +1,167 @@
-using System.Globalization;
-using System.Text.Json;
-using GChannel.ApiService.Configuration;
-using GChannel.ApiService.Data;
-using GChannel.ApiService.Services;
+using GChannel.ApiService.Caching;
+using GChannel.ApiService.Http;
+using GChannel.Core.Configuration;
+using GChannel.Core.Estate;
+using GChannel.Core.Estate.ReadModels;
+using GChannel.Core.GoogleApis;
+using GChannel.Core.Messaging;
 using GChannel.Shared.Contracts;
-using Microsoft.EntityFrameworkCore;
+using Marten;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using System.Globalization;
+using Wolverine;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
-/// Maps the entitlement-lifecycle endpoints (the core selling flow): read paths (list / get /
-/// change history / offer lookup) plus the mutating purchase, modify and state-change calls.
-/// Entitlements are nested under a customer, mirroring the Cloud Channel resource hierarchy.
+/// Entitlement-lifecycle endpoints (the core selling flow): read paths (list / get / change history /
+/// offer lookup) plus the mutating purchase, modify and state-change calls. Entitlements are nested under
+/// a customer, mirroring the Cloud Channel resource hierarchy. Each mutation is recorded on the
+/// entitlement's event stream and its long-running operation handed to the worker's saga.
 /// </summary>
 public static class EntitlementsEndpoints
 {
-    public static IEndpointRouteBuilder MapEntitlementsEndpoints(this IEndpointRouteBuilder app)
+    [WolverineGet("/api/customers/{customerId}/entitlements")]
+    public static async Task<IResult> ListEntitlements(
+        string customerId, IGoogleChannelClient channel, IDistributedCache cache, IQuerySession session,
+        IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
     {
-        var group = app.MapGroup("/api/customers/{customerId}/entitlements").WithTags("Entitlements");
-
-        // Entitlements are mutable (state changes), so list/get are cached only briefly and the
-        // cache is invalidated on every mutation for the affected customer.
-        group.MapGet("/", async (
-                string customerId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                GChannelDbContext db,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
+        // Read model: when enabled and this customer has been observed, serve the list from the projected
+        // documents so the contended ListEntitlements quota stays reserved for the background sync. Falls
+        // back to a live (cached) call for customers not yet in the read model (cold start).
+        if (options.Value.UseReadModel)
+        {
+            var customer = await session.LoadAsync<CustomerRecord>(EstateStreams.Customer(customerId), cancellationToken);
+            if (customer is { IsDeleted: false })
             {
-                // §10 read-model: when enabled and this customer has been synced, serve the list from
-                // SQL so the contended ListEntitlements quota stays reserved for the background sync.
-                // Falls back to a live (cached) call for customers not yet in the read-model (cold start).
-                if (options.Value.UseReadModel
-                    && await db.CustomerRecords.AsNoTracking()
-                        .AnyAsync(c => c.CustomerId == customerId && !c.IsDeleted, cancellationToken))
-                {
-                    var rows = await db.EntitlementRecords.AsNoTracking()
-                        .Where(r => r.CustomerId == customerId && !r.IsDeleted)
-                        .OrderByDescending(r => r.CreateTime)
-                        .ToListAsync(cancellationToken);
-                    return Results.Ok(new EntitlementsResult { Entitlements = rows.Select(MapEntitlement).ToList() });
-                }
+                var rows = await session.Query<EntitlementRecord>()
+                    .Where(r => r.CustomerId == customerId && !r.IsDeleted)
+                    .OrderByDescending(r => r.CreateTime)
+                    .ToListAsync(cancellationToken);
+                return Results.Ok(new EntitlementsResult { Entitlements = rows.Select(MapEntitlement).ToList() });
+            }
+        }
 
-                return await CachedAsync(cache, ListCacheKey(customerId), options.Value.CacheSeconds,
-                    () => channel.ListEntitlementsAsync(customerId, cancellationToken), cancellationToken);
-            })
-            .WithName("ListEntitlements")
-            .WithSummary("Lists a customer's entitlements.");
-
-        group.MapGet("/{entitlementId}", async (
-                string customerId,
-                string entitlementId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                GChannelDbContext db,
-                CancellationToken cancellationToken) =>
-            {
-                // The live Channel API get is cached; Ion cost/margin (which it doesn't carry) is merged
-                // fresh from the read-model each call so it stays current even when the live get is cached.
-                var cacheKey = GetCacheKey(customerId, entitlementId);
-                Entitlement? entitlement;
-                var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
-                if (cached is not null)
-                {
-                    entitlement = JsonSerializer.Deserialize<Entitlement>(cached);
-                }
-                else
-                {
-                    entitlement = await channel.GetEntitlementAsync(customerId, entitlementId, cancellationToken);
-                    await cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(entitlement),
-                        new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(options.Value.CacheSeconds) },
-                        cancellationToken);
-                }
-
-                if (entitlement is null)
-                {
-                    return Results.NotFound();
-                }
-
-                var rec = await db.EntitlementRecords.AsNoTracking()
-                    .FirstOrDefaultAsync(r => r.EntitlementId == entitlementId && r.CustomerId == customerId, cancellationToken);
-                if (rec is not null)
-                {
-                    entitlement = entitlement with
-                    {
-                        IonCostPerSeat = rec.IonCostPerSeat,
-                        IonMarginPercent = rec.IonMarginPercent,
-                        IonCurrency = rec.IonCurrency,
-                    };
-                }
-                return Results.Ok(entitlement);
-            })
-            .WithName("GetEntitlement")
-            .WithSummary("Gets a single entitlement.");
-
-        group.MapGet("/{entitlementId}/changes", (
-                string customerId,
-                string entitlementId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, $"entitlements:{customerId}:{entitlementId}:changes", options.Value.CacheSeconds,
-                    () => channel.ListEntitlementChangesAsync(customerId, entitlementId, cancellationToken), cancellationToken))
-            .WithName("ListEntitlementChanges")
-            .WithSummary("Lists an entitlement's change history.");
-
-        group.MapGet("/{entitlementId}/offer", (
-                string customerId,
-                string entitlementId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, $"entitlements:{customerId}:{entitlementId}:offer", options.Value.CacheSeconds,
-                    () => channel.LookupEntitlementOfferAsync(customerId, entitlementId, cancellationToken), cancellationToken))
-            .WithName("LookupEntitlementOffer")
-            .WithSummary("Looks up the Offer backing an entitlement.");
-
-        // Purchase (create). Returns a long-running operation; the cache for this customer is dropped
-        // so the new entitlement shows up once Google finishes provisioning.
-        group.MapPost("/", async (
-                string customerId,
-                PurchaseEntitlementRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                var operation = await channel.CreateEntitlementAsync(customerId, request, cancellationToken);
-                await InvalidateAsync(cache, customerId, null, cancellationToken);
-                return Results.Accepted(value: operation);
-            })
-            .WithName("CreateEntitlement")
-            .WithSummary("Purchases (creates) an entitlement.");
-
-        group.MapPost("/{entitlementId}/change-offer", (
-                string customerId,
-                string entitlementId,
-                ChangeOfferRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-                MutateAsync(cache, customerId, entitlementId,
-                    () => channel.ChangeEntitlementOfferAsync(customerId, entitlementId, request, cancellationToken), cancellationToken))
-            .WithName("ChangeEntitlementOffer")
-            .WithSummary("Changes the Offer of an entitlement.");
-
-        group.MapPost("/{entitlementId}/change-parameters", (
-                string customerId,
-                string entitlementId,
-                ChangeParametersRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-                MutateAsync(cache, customerId, entitlementId,
-                    () => channel.ChangeEntitlementParametersAsync(customerId, entitlementId, request, cancellationToken), cancellationToken))
-            .WithName("ChangeEntitlementParameters")
-            .WithSummary("Changes the parameters (e.g. seats) of an entitlement.");
-
-        group.MapPost("/{entitlementId}/change-renewal", (
-                string customerId,
-                string entitlementId,
-                ChangeRenewalSettingsRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-                MutateAsync(cache, customerId, entitlementId,
-                    () => channel.ChangeEntitlementRenewalAsync(customerId, entitlementId, request, cancellationToken), cancellationToken))
-            .WithName("ChangeEntitlementRenewal")
-            .WithSummary("Changes the renewal settings of an entitlement.");
-
-        group.MapPost("/{entitlementId}/activate", (
-                string customerId,
-                string entitlementId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-                MutateAsync(cache, customerId, entitlementId,
-                    () => channel.ActivateEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken))
-            .WithName("ActivateEntitlement")
-            .WithSummary("Activates a suspended entitlement.");
-
-        group.MapPost("/{entitlementId}/suspend", (
-                string customerId,
-                string entitlementId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-                MutateAsync(cache, customerId, entitlementId,
-                    () => channel.SuspendEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken))
-            .WithName("SuspendEntitlement")
-            .WithSummary("Suspends an entitlement.");
-
-        group.MapPost("/{entitlementId}/cancel", (
-                string customerId,
-                string entitlementId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-                MutateAsync(cache, customerId, entitlementId,
-                    () => channel.CancelEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken))
-            .WithName("CancelEntitlement")
-            .WithSummary("Cancels an entitlement.");
-
-        group.MapPost("/{entitlementId}/start-paid-service", (
-                string customerId,
-                string entitlementId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-                MutateAsync(cache, customerId, entitlementId,
-                    () => channel.StartPaidServiceAsync(customerId, entitlementId, cancellationToken), cancellationToken))
-            .WithName("StartPaidService")
-            .WithSummary("Starts paid service for a trial entitlement.");
-
-        return app;
+        return await GoogleReadCache.CachedAsync(cache, GoogleReadCache.EntitlementsListKey(customerId), options.Value.CacheSeconds,
+            () => channel.ListEntitlementsAsync(customerId, cancellationToken), cancellationToken);
     }
 
-    private static string ListCacheKey(string customerId) => $"entitlements:{customerId}:list";
+    [WolverineGet("/api/customers/{customerId}/entitlements/{entitlementId}")]
+    public static async Task<IResult> GetEntitlement(
+        string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache, IQuerySession session,
+        IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+    {
+        // The live Channel API get is cached; Ion cost/margin (which it doesn't carry) is merged fresh from
+        // the read model each call so it stays current even when the live get is cached.
+        var entitlement = await GoogleReadCache.GetOrSetAsync(cache, GoogleReadCache.EntitlementKey(customerId, entitlementId),
+            options.Value.CacheSeconds, () => channel.GetEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken);
+        if (entitlement is null)
+        {
+            return Results.NotFound();
+        }
+
+        var rec = await session.LoadAsync<EntitlementRecord>(EstateStreams.Entitlement(entitlementId), cancellationToken);
+        if (rec is not null && rec.CustomerId == customerId)
+        {
+            entitlement = entitlement with
+            {
+                IonCostPerSeat = rec.IonCostPerSeat,
+                IonMarginPercent = rec.IonMarginPercent,
+                IonCurrency = rec.IonCurrency,
+            };
+        }
+        return Results.Ok(entitlement);
+    }
+
+    [WolverineGet("/api/customers/{customerId}/entitlements/{entitlementId}/changes")]
+    public static Task<IResult> ListEntitlementChanges(
+        string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
+        IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, GoogleReadCache.EntitlementChangesKey(customerId, entitlementId), options.Value.CacheSeconds,
+            () => channel.ListEntitlementChangesAsync(customerId, entitlementId, cancellationToken), cancellationToken);
+
+    [WolverineGet("/api/customers/{customerId}/entitlements/{entitlementId}/offer")]
+    public static Task<IResult> LookupEntitlementOffer(
+        string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
+        IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, GoogleReadCache.EntitlementOfferKey(customerId, entitlementId), options.Value.CacheSeconds,
+            () => channel.LookupEntitlementOfferAsync(customerId, entitlementId, cancellationToken), cancellationToken);
+
+    // Purchase (create). Returns a long-running operation; the new entitlement's id is only known once Google
+    // finishes, so the request is recorded on the customer stream and the saga triggers a re-projection.
+    [WolverinePost("/api/customers/{customerId}/entitlements")]
+    public static async Task<IResult> CreateEntitlement(
+        string customerId, PurchaseEntitlementRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+    {
+        var operation = await channel.CreateEntitlementAsync(customerId, request, cancellationToken);
+        await InvalidateAsync(cache, customerId, null, cancellationToken);
+        var user = RequestUser.NameOf(http);
+        await observer.RecordCustomerMutationAsync(session, customerId, $"purchase offer {request.OfferId}", user, operation.OperationName, cancellationToken);
+        await PublishAsync(bus, customerId, null, "create", operation, user);
+        await session.SaveChangesAsync(cancellationToken);
+        return Results.Accepted(value: operation);
+    }
+
+    [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/change-offer")]
+    public static Task<IResult> ChangeEntitlementOffer(
+        string customerId, string entitlementId, ChangeOfferRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "changeOffer", $"offer {request.OfferId}",
+            () => channel.ChangeEntitlementOfferAsync(customerId, entitlementId, request, cancellationToken), cancellationToken);
+
+    [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/change-parameters")]
+    public static Task<IResult> ChangeEntitlementParameters(
+        string customerId, string entitlementId, ChangeParametersRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "changeParameters",
+            string.Join(", ", request.Parameters.Select(p => $"{p.Name}={p.IntValue?.ToString(CultureInfo.InvariantCulture) ?? p.StringValue}")),
+            () => channel.ChangeEntitlementParametersAsync(customerId, entitlementId, request, cancellationToken), cancellationToken);
+
+    [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/change-renewal")]
+    public static Task<IResult> ChangeEntitlementRenewal(
+        string customerId, string entitlementId, ChangeRenewalSettingsRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "changeRenewalSettings", $"enableRenewal={request.EnableRenewal}",
+            () => channel.ChangeEntitlementRenewalAsync(customerId, entitlementId, request, cancellationToken), cancellationToken);
+
+    [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/activate")]
+    public static Task<IResult> ActivateEntitlement(
+        string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "activate", null,
+            () => channel.ActivateEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken);
+
+    [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/suspend")]
+    public static Task<IResult> SuspendEntitlement(
+        string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "suspend", null,
+            () => channel.SuspendEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken);
+
+    [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/cancel")]
+    public static Task<IResult> CancelEntitlement(
+        string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "cancel", null,
+            () => channel.CancelEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken);
+
+    [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/start-paid-service")]
+    public static Task<IResult> StartPaidService(
+        string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "startPaidService", null,
+            () => channel.StartPaidServiceAsync(customerId, entitlementId, cancellationToken), cancellationToken);
 
     /// <summary>
-    /// Projects a §10 read-model entitlement row onto the shared <see cref="Entitlement"/> contract.
-    /// Display names, create time and seat count are denormalised at sync time, so the list renders
-    /// identically to the live path. The seat total is re-exposed as a <c>num_units</c> parameter so
-    /// the UI's existing seat-resolution logic works unchanged.
+    /// Projects a read-model entitlement onto the shared <see cref="Entitlement"/> contract. Display names,
+    /// create time and seat count are denormalised at sync time, so the list renders identically to the live
+    /// path; the seat total is re-exposed as a <c>num_units</c> parameter so the UI's seat logic is unchanged.
     /// </summary>
-    private static Entitlement MapEntitlement(EntitlementRecord r) => new()
+    internal static Entitlement MapEntitlement(EntitlementRecord r) => new()
     {
         Name = $"customers/{r.CustomerId}/entitlements/{r.EntitlementId}",
         Id = r.EntitlementId,
@@ -259,59 +191,47 @@ public static class EntitlementsEndpoints
             : [],
     };
 
-    private static string GetCacheKey(string customerId, string entitlementId) =>
-        $"entitlements:{customerId}:get:{entitlementId}";
-
-    /// <summary>Runs a mutating entitlement call, invalidates the affected caches and returns the operation.</summary>
+    /// <summary>Runs a mutating entitlement call, invalidates the affected caches, records the request and returns the operation.</summary>
     private static async Task<IResult> MutateAsync(
-        IDistributedCache cache,
-        string customerId,
-        string entitlementId,
-        Func<Task<EntitlementOperation>> mutation,
-        CancellationToken cancellationToken)
+        IDistributedCache cache, IDocumentSession session, IMessageBus bus, EstateObserver observer, HttpContext http,
+        string customerId, string entitlementId, string action, string? details,
+        Func<Task<EntitlementOperation>> mutation, CancellationToken cancellationToken)
     {
         var operation = await mutation();
         await InvalidateAsync(cache, customerId, entitlementId, cancellationToken);
+        var user = RequestUser.NameOf(http);
+        await observer.RecordEntitlementChangeRequestedAsync(session, customerId, entitlementId, action, user, operation.OperationName, details, cancellationToken);
+        await PublishAsync(bus, customerId, entitlementId, action, operation, user);
+        await session.SaveChangesAsync(cancellationToken);
         return Results.Accepted(value: operation);
     }
 
-    /// <summary>Drops the cached entitlement list and (optionally) a specific entitlement after a mutation.</summary>
-    private static async Task InvalidateAsync(IDistributedCache cache, string customerId, string? entitlementId, CancellationToken cancellationToken)
+    private static async Task PublishAsync(IMessageBus bus, string customerId, string? entitlementId, string action, EntitlementOperation operation, string? user)
     {
-        await cache.RemoveAsync(ListCacheKey(customerId), cancellationToken);
-        if (!string.IsNullOrEmpty(entitlementId))
+        if (entitlementId is not null)
         {
-            await cache.RemoveAsync(GetCacheKey(customerId, entitlementId), cancellationToken);
-            await cache.RemoveAsync($"entitlements:{customerId}:{entitlementId}:changes", cancellationToken);
-            await cache.RemoveAsync($"entitlements:{customerId}:{entitlementId}:offer", cancellationToken);
+            await bus.PublishAsync(new EntitlementChanged(customerId, entitlementId, action, user));
+        }
+        if (!string.IsNullOrEmpty(operation.OperationName) && !operation.Done)
+        {
+            await bus.PublishAsync(new OperationSubmitted(operation.OperationName, customerId, entitlementId, action, user, DateTimeOffset.UtcNow));
+        }
+        else
+        {
+            // Completed inline (or no operation to track): re-project right away so the read model catches up.
+            await bus.PublishAsync(new CustomerChanged(customerId, null, action, user));
         }
     }
 
-    /// <summary>Returns a cached JSON payload when present, otherwise invokes <paramref name="factory"/> and caches it.</summary>
-    private static async Task<IResult> CachedAsync<T>(
-        IDistributedCache cache,
-        string cacheKey,
-        int cacheSeconds,
-        Func<Task<T>> factory,
-        CancellationToken cancellationToken)
+    /// <summary>Drops the cached entitlement list (and the specific entitlement's get/changes/offer entries) after a mutation.</summary>
+    private static async Task InvalidateAsync(IDistributedCache cache, string customerId, string? entitlementId, CancellationToken cancellationToken)
     {
-        var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
-        if (cached is not null)
+        await cache.RemoveAsync(GoogleReadCache.EntitlementsListKey(customerId), cancellationToken);
+        if (!string.IsNullOrEmpty(entitlementId))
         {
-            return Results.Ok(JsonSerializer.Deserialize<T>(cached));
+            await cache.RemoveAsync(GoogleReadCache.EntitlementKey(customerId, entitlementId), cancellationToken);
+            await cache.RemoveAsync(GoogleReadCache.EntitlementChangesKey(customerId, entitlementId), cancellationToken);
+            await cache.RemoveAsync(GoogleReadCache.EntitlementOfferKey(customerId, entitlementId), cancellationToken);
         }
-
-        var result = await factory();
-
-        await cache.SetStringAsync(
-            cacheKey,
-            JsonSerializer.Serialize(result),
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(cacheSeconds)
-            },
-            cancellationToken);
-
-        return Results.Ok(result);
     }
 }

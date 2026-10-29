@@ -1,68 +1,56 @@
 @page "/channel-partner-links/new"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Invite channel partner · GChannel</PageTitle>
 
-<div class="d-flex align-center mb-4" style="gap: 8px;">
-    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/channel-partner-links" />
-    <MudText Typo="Typo.h4">Invite channel partner</MudText>
-</div>
+<RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-4">
+    <LinkButton To="/channel-partner-links" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="Back to channel partner links" />
+    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Invite channel partner</RadzenText>
+</RadzenStack>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     Link a downstream reseller to your distributor account. Enter the reseller's Cloud Identity ID;
     the link starts in the <strong>INVITED</strong> state and the partner accepts it via the
     invitation link shown afterwards.
-</MudText>
+</RadzenText>
 
-<MudPaper Class="pa-6" Elevation="2" Style="max-width: 640px;">
-    <MudForm @ref="_form">
-        <MudTextField @bind-Value="_resellerCloudIdentityId"
-                      Label="Reseller Cloud Identity ID"
-                      Required="true" RequiredError="A reseller Cloud Identity ID is required."
-                      HelperText="The downstream reseller's Cloud Identity customer ID."
-                      Variant="Variant.Outlined" Class="mb-4" />
+<RadzenCard Variant="Variant.Filled" Style="max-width: 640px;">
+    <RadzenTemplateForm TItem="InviteModel" Data="_model" Submit="SubmitAsync">
+        <RadzenStack Gap="1rem">
+            <RadzenFormField Text="Reseller Cloud Identity ID" Variant="Variant.Outlined" Style="width:100%">
+                <ChildContent><RadzenTextBox @bind-Value="_model.ResellerCloudIdentityId" Name="ResellerCloudIdentityId" /></ChildContent>
+                <Helper>
+                    <RadzenRequiredValidator Component="ResellerCloudIdentityId" Text="A reseller Cloud Identity ID is required." />
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">The downstream reseller's Cloud Identity customer ID.</RadzenText>
+                </Helper>
+            </RadzenFormField>
 
-        <MudTextField @bind-Value="_resellerDomain"
-                      Label="Reseller domain (optional)"
-                      HelperText="Recorded so a later Cloud Identity check on this domain can find this invitation."
-                      Variant="Variant.Outlined" Class="mb-4" />
+            <RadzenFormField Text="Reseller domain (optional)" Variant="Variant.Outlined" Style="width:100%">
+                <ChildContent><RadzenTextBox @bind-Value="_model.ResellerDomain" Name="ResellerDomain" /></ChildContent>
+                <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">Recorded so a later Cloud Identity check on this domain can find this invitation.</RadzenText></Helper>
+            </RadzenFormField>
 
-        <div class="d-flex gap-2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.AddLink"
-                       OnClick="SubmitAsync" Disabled="_submitting">
-                @(_submitting ? "Inviting…" : "Invite partner")
-            </MudButton>
-            <MudButton Variant="Variant.Outlined" Href="/channel-partner-links" Disabled="_submitting">
-                Cancel
-            </MudButton>
-        </div>
-    </MudForm>
-</MudPaper>
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                <RadzenButton ButtonType="ButtonType.Submit" Text="Invite partner" Icon="@AppIcons.AddLink" ButtonStyle="ButtonStyle.Primary" IsBusy="_submitting" BusyText="Inviting…" />
+                <LinkButton To="/channel-partner-links" Text="Cancel" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Disabled="_submitting" />
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenTemplateForm>
+</RadzenCard>
 
 @code {
-    private MudForm? _form;
-    private string _resellerCloudIdentityId = string.Empty;
-    private string _resellerDomain = string.Empty;
+    private readonly InviteModel _model = new();
     private bool _submitting;
 
+    // Only called by RadzenTemplateForm once the required-field validator passes.
     private async Task SubmitAsync()
     {
-        if (_form is not null)
+        if (string.IsNullOrWhiteSpace(_model.ResellerCloudIdentityId))
         {
-            await _form.ValidateAsync();
-            if (!_form.IsValid)
-            {
-                return;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(_resellerCloudIdentityId))
-        {
-            Snackbar.Add("A reseller Cloud Identity ID is required.", Severity.Warning);
+            await Snackbar.Add("A reseller Cloud Identity ID is required.", Severity.Warning);
             return;
         }
 
@@ -71,11 +59,11 @@
         {
             var created = await Api.CreateChannelPartnerLinkAsync(new CreateChannelPartnerLinkRequest
             {
-                ResellerCloudIdentityId = _resellerCloudIdentityId.Trim(),
-                Domain = string.IsNullOrWhiteSpace(_resellerDomain) ? null : _resellerDomain.Trim()
+                ResellerCloudIdentityId = _model.ResellerCloudIdentityId.Trim(),
+                Domain = string.IsNullOrWhiteSpace(_model.ResellerDomain) ? null : _model.ResellerDomain.Trim()
             });
 
-            Snackbar.Add("Channel partner link created.", Severity.Success);
+            await Snackbar.Add("Channel partner link created.", Severity.Success);
             if (created is not null)
             {
                 Nav.NavigateTo($"/channel-partner-links/{created.Id}");
@@ -87,11 +75,17 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to create channel partner link: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to create channel partner link: {ex.Message}", Severity.Error);
         }
         finally
         {
             _submitting = false;
         }
+    }
+
+    private sealed class InviteModel
+    {
+        public string ResellerCloudIdentityId { get; set; } = string.Empty;
+        public string ResellerDomain { get; set; } = string.Empty;
     }
 }

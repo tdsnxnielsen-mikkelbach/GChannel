@@ -1,23 +1,22 @@
 @page "/catalog/offers"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Offers · GChannel</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">Offers</MudText>
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-2">Offers</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     The offers you can sell to customers. Prices shown are estimated wholesale list pricing from the
     catalog — not invoiced amounts; per-seat resource shown.
-</MudText>
+</RadzenText>
 
 @if (!string.IsNullOrEmpty(SkuFilter))
 {
-    <MudChip T="string" Color="Color.Primary" Variant="Variant.Text"
-             OnClose="ClearSkuFilter" CloseIcon="@Icons.Material.Filled.Close" Class="mb-4">
-        Filtered by SKU: @FilterLabel
-    </MudChip>
+    <div class="rz-mb-4">
+        <RadzenChip Text="@($"Filtered by SKU: {FilterLabel}")" ChipStyle="BadgeStyle.Primary" Icon="@AppIcons.FilterAlt" Close="ClearSkuFilter" RemoveChipTitle="Clear filter" />
+    </div>
 }
 
 @if (_loading)
@@ -27,46 +26,44 @@
 }
 else if (_offers is { Count: > 0 })
 {
-    <MudTable Items="_offers" Dense="true" Hover="true" Elevation="2" Filter="Matches">
-        <ToolBarContent>
-            <MudTextField @bind-Value="_search" Placeholder="Search offers"
-                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                          IconSize="Size.Medium" Class="mt-0" Immediate="true" />
-        </ToolBarContent>
-        <HeaderContent>
-            <MudTh>Offer</MudTh>
-            <MudTh>SKU</MudTh>
-            <MudTh>Price (est. list)</MudTh>
-            <MudTh>Deal code</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Offer">
-                <MudTooltip Text="@(context.OfferId ?? context.Name)">
-                    <span>@(context.DisplayName ?? context.OfferId ?? context.Name)</span>
-                </MudTooltip>
-            </MudTd>
-            <MudTd DataLabel="SKU">
-                @if (!string.IsNullOrEmpty(context.ProductId))
-                {
-                    <MudTooltip Text="@(context.SkuId ?? context.SkuName)">
-                        <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
-                            @(context.SkuDisplayName ?? context.SkuId ?? context.SkuName)
-                        </MudLink>
-                    </MudTooltip>
-                }
-                else
-                {
-                    @(context.SkuDisplayName ?? context.SkuName)
-                }
-            </MudTd>
-            <MudTd DataLabel="Price (est. list)">@PriceLabel(context)</MudTd>
-            <MudTd DataLabel="Deal code">@context.DealCode</MudTd>
-        </RowTemplate>
-    </MudTable>
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenFormField Text="Search offers" Variant="Variant.Outlined" Style="width:100%; max-width:28rem" class="rz-mb-3">
+            <Start><RadzenIcon Icon="@AppIcons.Search" /></Start>
+            <ChildContent><RadzenTextBox @bind-Value="_search" Immediate="true" Name="search" /></ChildContent>
+        </RadzenFormField>
+        <RadzenDataGrid TItem="CatalogOffer" Data="_offers.Where(Matches)" AllowSorting="true" AllowPaging="true" PageSize="50" PageSizeOptions="_pageSizes"
+                        ShowPagingSummary="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true" EmptyText="No offers match the search.">
+            <Columns>
+                <RadzenDataGridColumn TItem="CatalogOffer" Property="@nameof(CatalogOffer.DisplayName)" Title="Offer">
+                    <Template Context="offer">
+                        <Tip Text="@(offer.OfferId ?? offer.Name)">@(offer.DisplayName ?? offer.OfferId ?? offer.Name)</Tip>
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="CatalogOffer" Property="@nameof(CatalogOffer.SkuDisplayName)" Title="SKU">
+                    <Template Context="offer">
+                        @if (!string.IsNullOrEmpty(offer.ProductId))
+                        {
+                            <Tip Text="@(offer.SkuId ?? offer.SkuName)">
+                                <RadzenLink Path="@($"/catalog/products?product={offer.ProductId}&sku={offer.SkuId}")" Text="@(offer.SkuDisplayName ?? offer.SkuId ?? offer.SkuName)" />
+                            </Tip>
+                        }
+                        else
+                        {
+                            @(offer.SkuDisplayName ?? offer.SkuName)
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="CatalogOffer" Title="Price (est. list)" Sortable="false">
+                    <Template Context="offer">@PriceLabel(offer)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="CatalogOffer" Property="@nameof(CatalogOffer.DealCode)" Title="Deal code" />
+            </Columns>
+        </RadzenDataGrid>
+    </RadzenCard>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">No offers available.</MudAlert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No offers available.</RadzenAlert>
 }
 
 @code {
@@ -74,6 +71,7 @@ else
     public string? SkuFilter { get; set; }
 
     private IReadOnlyList<CatalogOffer>? _offers;
+    private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
     private bool _loading = true;
     private string _search = string.Empty;
 
@@ -86,7 +84,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
             _offers = [];
         }
         finally
@@ -109,7 +107,7 @@ else
         return $"{price.EffectivePrice.Display}{cycle}";
     }
 
-    // Friendly SKU name for the active filter chip, falling back to the raw id.
+    // Friendly SKU name for the active filter badge, falling back to the raw id.
     private string FilterLabel =>
         _offers?.FirstOrDefault(o => string.Equals(o.SkuId, SkuFilter, StringComparison.OrdinalIgnoreCase))?.SkuDisplayName
         ?? SkuFilter
@@ -134,3 +132,4 @@ else
             || (offer.DealCode?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false);
     }
 }
+

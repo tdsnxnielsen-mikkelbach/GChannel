@@ -1,8 +1,11 @@
 # Architecture
 
 GChannel is built with **.NET Aspire** so the front end, back-end API and background worker run as
-three independently scalable **Azure Container Apps**, with **Azure SQL (serverless)** storage and
-**Azure Managed Redis** caching.
+three independently scalable **Azure Container Apps**, with **Azure Database for PostgreSQL flexible
+server** (the [Marten](https://martendb.io) event store + document database), **Azure Service Bus**
+(the [Wolverine](https://wolverinefx.net) message transport) and **Azure Managed Redis** caching.
+Together Marten and Wolverine are the "Critter Stack": the API and worker share one Core library of
+events, read models, documents, handlers and messaging topology.
 
 ## Solution layout
 
@@ -10,37 +13,43 @@ three independently scalable **Azure Container Apps**, with **Azure SQL (serverl
 GChannel.slnx                     # solution (root)
 azure.yaml                        # azd → Aspire AppHost
 src/
-  GChannel.AppHost                # Aspire orchestrator: resources + wiring
+  GChannel.AppHost                # Aspire orchestrator: resources + wiring (Postgres, Service Bus topology, Redis, Key Vault)
   GChannel.ServiceDefaults        # OpenTelemetry, health checks, resilience
   GChannel.Shared                 # DTOs/contracts shared by Web + API
-  GChannel.ApiService             # Web API + Google Channel client (internal ingress)
-  GChannel.Worker                 # background jobs: refresh, Pub/Sub, read-model sync (no ingress)
-  GChannel.Web                    # Blazor (MudBlazor + ApexCharts), Google login (external ingress)
+  GChannel.Core                   # Critter Stack core: Google clients, Marten events/read models/documents, EstateObserver, Wolverine messages + topology
+  GChannel.ApiService             # Wolverine.HTTP endpoints + Google Channel client (internal ingress)
+  GChannel.Worker                 # Wolverine handlers/sagas: estate sync, projections, Pub/Sub bridge, billing jobs (no ingress)
+  GChannel.Web                    # Blazor (Radzen Blazor components + Material Symbols + ApexCharts), Google login (external ingress)
+tests/
+  GChannel.Tests                  # xUnit v3 integration tests on Testcontainers PostgreSQL (Alba for the API, Wolverine tracked sessions for the worker)
 ```
 
 ## Why three container apps?
 
 `GChannel.Web` (the UI), `GChannel.ApiService` (the Google integration + data/cache) and
-`GChannel.Worker` (the scheduled/streamed background jobs) are separate Container Apps so they scale
+`GChannel.Worker` (the message-driven background jobs) are separate Container Apps so they scale
 on independent axes. The UI is the only one with **external** ingress; the API service is **internal**
 and reached over the Container Apps network; the worker has **no ingress** at all. Splitting the
 workers out lets the API scale on HTTP traffic (and down to zero) while the worker stays pinned at a
-single replica — its cluster-wide Redis locks make extra replicas redundant, and `min-replicas = 1`
-keeps the Pub/Sub subscriber consuming. The worker reuses the API's client/data/options assemblies via
-a project reference; the API still owns schema creation on startup.
+single replica — the Channel API per-minute quotas are the bottleneck, so a second consumer would only
+compete for them, and `min-replicas = 1` keeps the Pub/Sub bridge consuming. Both services reference
+`GChannel.Core`; Marten applies schema changes on startup in whichever process starts first.
 
 ## Diagram
 
 ```mermaid
 flowchart LR
-    User[[Reseller]] -- Google sign-in --> Web[GChannel.Web<br/>Blazor / MudBlazor<br/>external ingress]
-    Web -- Bearer: Google access token --> Api[GChannel.ApiService<br/>internal ingress]
+    User[[Reseller]] -- Google sign-in --> Web[GChannel.Web<br/>Blazor / Radzen<br/>external ingress]
+    Web -- Bearer: Google access token --> Api[GChannel.ApiService<br/>Wolverine.HTTP, internal ingress]
     Api -- typed client --> Google[(Google Cloud<br/>Channel API)]
-    Worker[GChannel.Worker<br/>no ingress, 1 replica] -- typed client --> Google
-    Api --> Sql[(Azure SQL<br/>serverless, auto-pause)]
-    Api --> Redis[(Azure Managed Redis<br/>Balanced B0)]
-    Worker --> Sql
+    Worker[GChannel.Worker<br/>Wolverine handlers, 1 replica] -- typed client --> Google
+    Api --> Pg[(Azure Database for PostgreSQL<br/>Marten events + documents<br/>Wolverine inbox/outbox)]
+    Api --> Redis[(Azure Managed Redis<br/>Google-response cache)]
+    Api <-- Service Bus --> Worker
+    Worker --> Pg
     Worker --> Redis
+    Api -. publish / consume .-> Sb[(Azure Service Bus<br/>estate-events topic, queues)]
+    Worker -. consume / publish .-> Sb
     Web -. managed identity .-> Kv[(Azure Key Vault<br/>OAuth client secret)]
 ```
 
@@ -69,6 +78,95 @@ deployment manifest or as plain-text Container Apps configuration. The Web app r
 its **managed identity** (granted `Key Vault Secrets User`). Non-secret settings (client id,
 reseller account id) are passed as normal parameters/environment variables.
 
+## Persistence &amp; messaging (Critter Stack)
+
+**Database.** One Azure Database for PostgreSQL flexible server (`Standard_B1ms` Burstable, PostgreSQL 16,
+32 GiB, 7-day backups, no HA, no availability-zone pinning so the platform can place it where the SKU has
+capacity) hosts a single database, `gchanneldb`, with three schemas: `gchannel` (Marten) plus one Wolverine
+message store **per host** — `wolverine_api` and `wolverine_worker` (durable inbox/outbox, scheduled
+messages, node registry). The two processes are separate Wolverine applications; with a shared schema a
+topic message fanned out to both subscriptions would be rejected as a duplicate envelope by whichever host
+persisted it second. Authentication
+is **Microsoft Entra ID only** — the Bicep sets `passwordAuth: Disabled`, each container app's managed
+identity is an Entra principal on the server, and `Aspire.Azure.Npgsql` acquires the token; locally the
+AppHost runs a `postgres` container with a generated password. Schema is created/updated by
+`ApplyAllDatabaseChangesOnStartup()` — there are no hand-written migrations. The database is **not**
+migrated from the previous Azure SQL store: the estate is rebuilt from Google by the first sync cycles.
+
+**Event sourcing (Marten).** Google remains the source of truth; the event store records *what the app
+observed and did*. `EstateObserver` (Core) diffs every observation of a customer, entitlement or channel
+partner link against its current read model and appends only the differences:
+
+- Streams are string-keyed with a type prefix (`cust:{id}`, `ent:{id}`, `link:{id}`; `EstateStreams`).
+- Events (Core `Estate/Events`): `CustomerDiscovered` / `CustomerDetailsChanged` /
+  `CustomerOwnershipChanged` / `CustomerClassified` / `CustomerRemovedObserved` / `CustomerRestoredObserved` /
+  `CustomerMutationRequested` / `CustomerOperationCompleted`; `EntitlementDiscovered` /
+  `EntitlementSeatsChanged` / `EntitlementStateChanged` / `EntitlementOfferChanged` /
+  `EntitlementCommitmentChanged` / `EntitlementOwnershipChanged` / `EntitlementBillingChanged` /
+  `EntitlementCatalogResolved` / `EntitlementPriced` / `EntitlementIonCostResolved` /
+  `EntitlementRemovedObserved` / `EntitlementRestoredObserved` / `EntitlementChangeRequested` /
+  `EntitlementChangeCompleted` / `EntitlementChangeFailed`; `LinkDiscovered` / `LinkDetailsChanged` /
+  `LinkStateChanged` / `LinkRemovedObserved` / `LinkRestoredObserved` / `LinkMutationRequested` /
+  `ChannelNotificationReceived`. Observed events carry an `ObservationSource` (Sync, Mutation,
+  Notification).
+- Read models (`CustomerRecord`, `EntitlementRecord`, `ResellerLinkRecord`) are **inline single-stream
+  snapshots** (`Snapshot<T>(SnapshotLifecycle.Inline)`), so the document is updated in the same
+  transaction as the appended events and queries never lag. Indexed properties (`CustomerId`,
+  `OwningLinkId`, `State`, `Domain`, …) back the paged estate endpoints; Marten LINQ has no `GroupBy`, so
+  rollups (`EstateRollups`, `DashboardReadModel`) aggregate in memory.
+- Sync bookkeeping that is not business history (`LastSyncedUtc`, cursors, recurring-job state, dashboard
+  refresh status, identity-check log, notification feed, billing documents) lives in plain Marten
+  **documents** (`Persistence/Documents`), not events.
+- The account-level customer list also returns partner-managed customers (with `ChannelPartnerId`);
+  the observer attributes those to their link so the direct pass and the per-link passes agree and no
+  ownership "flapping" events are appended.
+
+**Messaging (Wolverine on Azure Service Bus).** Wolverine wires both processes
+(`ConfigureGChannelMessaging` in Core, with a `MessagingRole` of Api or Worker) to the `messaging`
+Service Bus namespace (Standard tier, local-auth disabled, `UseAzureServiceBusUsingNamedConnection`:
+Aspire hands out the namespace host name and Wolverine authenticates with `DefaultAzureCredential` — the
+developer's Azure CLI sign-in locally, the container app's managed identity in Azure). There is **no
+emulator**: locally, Aspire's run-mode Azure provisioning creates a namespace in the developer's own
+subscription (`Azure:SubscriptionId` / `Azure:Location` in the AppHost user secrets), so every environment
+runs against real Service Bus. The topology is declared once in the AppHost and emitted as Bicep for both
+local provisioning and `azd` — it is **not** auto-provisioned by Wolverine:
+
+| Entity | Kind | Purpose |
+| --- | --- | --- |
+| `estate-events` | topic (duplicate detection, 10 min) | integration events: `CustomerChanged`, `EntitlementChanged`, `ChannelNotificationArrived`, `OperationSubmitted`, `CustomerReadModelUpdated` |
+| `worker-estate` | subscription | the worker's projections / targeted refreshes |
+| `api-cache` | subscription | the API's Redis cache invalidation (`CustomerReadModelUpdatedHandler`) |
+| `estate-sync` | queue | `ProjectCustomer` commands (targeted customer refresh: a mutation, a Pub/Sub event or a manual resync), consumed sequentially so Channel API quotas can be paced |
+| `jobs` | queue | self-rescheduling recurring job ticks (`RunEstateSyncCycle`, `RefreshDashboardSnapshot`, `RunBillingSyncCycle`, `RunBillingPostureScan`) |
+| `operations` | queue | Google long-running-operation saga timeouts (`CheckChannelOperation`) |
+| `wolverine-dead-letter-queue` | queue | Wolverine's shared dead-letter queue: a message that exhausts its retries is sent here (inspect / resubmit with Service Bus Explorer) |
+
+All listeners use Wolverine's **durable inbox** (so a multi-minute job tick is not bound by the 5-minute
+lock duration) and the API/worker publish through the **durable outbox** inside the same Marten
+transaction (`IntegrateWithWolverine` + `AutoApplyTransactions`), so a saved event and its integration
+message are atomic. Handlers are generated with `WolverineFx.RuntimeCompilation`. HTTP 429s from Google
+are retried with a backoff policy; poison messages land in the dead-letter queue above. Because the
+topology is fixed, Wolverine's per-node system queues (`wolverine.response.*`, `wolverine.retries.*`) are
+disabled — nothing uses remote request/reply, and scheduled retries live in the durable inbox. Every handler
+gets a 10-minute execution budget (Wolverine's default is 60 s — too short once a single 429 cooldown costs
+30 s); the recurring-job ticks carry larger `[MessageTimeout]` budgets (`RecurringJobs.*BudgetSeconds`).
+
+**Recurring jobs.** The previous `BackgroundService` timers and cluster-wide Redis locks are gone. Each
+recurring job (`RecurringJobCatalog`) is a Wolverine message that reschedules itself when it completes
+(`RecurringJobRunner` guards each run with a `RunId` stored in the `RecurringJobState` document, so a
+duplicate or stale tick is a no-op) and a watchdog (`RecurringJobsBootstrap`) re-arms any job that is
+overdue by more than the grace period, that has been running longer than its execution budget, or whose
+run was started by a previous worker process (the worker is a single replica, so such a run cannot still be
+executing). The single-replica worker plus the `RunId` guard give the single-flight behaviour the Redis
+lock used to provide.
+
+**Long-running operations** are tracked by a Wolverine **saga** (`ChannelOperationSaga`, keyed by the
+operation name): `OperationSubmitted` starts it, `CheckChannelOperation` timeouts poll Google until `done`,
+and completion appends `CustomerOperationCompleted` to the customer's stream and refreshes it.
+
+**Redis** is now only the Google-response cache (catalog, customers, dashboard snapshots, identity
+checks); nothing takes locks and no feed lives there.
+
 ## Resilience &amp; throttling (HTTP 429)
 
 The Channel API enforces per-project quotas, so bursts of reads can return **429 Too Many
@@ -95,7 +193,7 @@ default (10s/30s). Calls that fan out to the Channel API can legitimately exceed
 (credential setup plus exponential back-off retries), so the default would otherwise surface as
 *"The operation didn't complete within the allowed timeout of '00:00:30'"*.
 
-**Cloud Identity checks** are additionally **persisted** to Azure SQL (`IdentityCheckLogs`) as an
+**Cloud Identity checks** are additionally **persisted** as Marten `IdentityCheckLog` documents as an
 audit trail. The check endpoint serves the cached result by default; passing `?refresh=true`
 (surfaced as the **recheck** button in the UI) bypasses the cache and re-queries Google, then
 refreshes the cache. A history endpoint returns the latest result per domain so the UI can show a
@@ -360,14 +458,14 @@ states render when there are no customers/entitlements.
 worker's long-lived `dashboard:summary` snapshot. Because that aggregation is cheap (indexed SQL, no
 Channel API fan-out), it runs on the request path behind a **short** cache under distinct keys
 (`dashboard:summary:live` / `dashboard:overview:live`, TTL `ReadModelDashboardCacheSeconds`, default
-20s). This means the dashboard always reflects the **full estate already persisted in SQL** — including
+20s). This means the dashboard always reflects the **full estate already persisted in Marten** — including
 **immediately after a redeploy** — instead of whatever partial/stale snapshot the worker last warmed;
 the short cache only deduplicates bursts of concurrent loads/polls. The read-model itself survives
-redeploys (SQL, `EnsureCreated` never drops) and the sync worker only ever adds **deltas** (incremental
-upserts), so a redeploy never "starts over" — the worker resumes its staleness rotation and the
-dashboard shows everything collected so far. The `DashboardRefreshService` still runs on this path (it
-pre-warms the same live keys with the short TTL and keeps the long-lived `:last` fallback + the
-`dashboard:refresh:status` chip fresh), but it is no longer the *source* of the figures. The live
+redeploys (PostgreSQL; Marten only ever adds schema) and the sync worker only ever appends **deltas**
+(diff events), so a redeploy never "starts over" — the worker resumes its staleness rotation and the
+dashboard shows everything collected so far. On this path the estate sync evicts the `dashboard:*:live`
+keys when it completes and writes the `DashboardRefreshState` document that feeds the status chip; the
+live `RefreshDashboardSnapshot` job does not run. The live
 fan-out path (`UseReadModel` off) is unchanged: it keeps serving the long-lived worker-warmed
 `dashboard:summary` key to avoid the expensive per-request aggregation.
 
@@ -390,19 +488,17 @@ The user endpoint then serves a ready-made, complete result instead of running t
 on demand — solving the large-estate case where even the time-budgeted on-demand path returns only a
 partial. Because it runs off the HTTP request (no attempt timeout), the background path calls
 `GetDashboardSummaryAsync(..., applyTimeBudget: false)` so it runs **unbounded** and produces a
-complete result; the time budget applies only to the on-demand request path. These hosted services
-(`DashboardRefreshService`, `ChannelNotificationsService`, `ReadModelSyncService`) run in the
-separate **GChannel.Worker** container app rather than inside the API process, so the API scales on
-HTTP traffic (and to zero) without spawning duplicate timers; the worker is pinned to a single
-replica. To keep it
-single-flight, each tick first takes a best-effort Redis lock (`dashboard:refresh:lock`, set with
-`When.NotExists` and a TTL of one interval); only the replica that wins recomputes, and the key is
-left to expire so it doubles as an "already refreshed this interval" marker. The worker is a no-op
-(logs and exits) unless fully configured, so on-demand remains the default. Because the unbounded
-refresh can outrun its interval on a large estate (the lock set at the start would then expire mid-run
-and let the next tick re-run it immediately, saturating the Channel API and starving interactive
-calls), a refresh that runs longer than its interval re-arms the lock on completion to enforce at
-least one interval of cooldown. Set the interval comfortably **longer than a full run takes** — paced
+complete result; the time budget applies only to the on-demand request path. These jobs (the
+`RefreshDashboardSnapshot` tick handled by `DashboardRefreshHandler`, the Pub/Sub bridge
+`ChannelNotificationsService`, and the `RunEstateSyncCycle` tick handled by `EstateSyncHandler`) run in
+the separate **GChannel.Worker** container app rather than inside the API process, so the API scales on
+HTTP traffic (and to zero) without spawning duplicate timers; the worker is pinned to a single replica.
+Each tick is a Wolverine message that **reschedules itself** only when its run completes, guarded by the
+`RunId` stored in its `RecurringJobState` document (a stale or duplicate tick is a no-op) — so a run can
+never overlap itself and a run that outlasts its interval simply delays the next one by that interval
+(no Redis lock is involved any more). The job is a no-op (logs and reschedules) unless fully configured,
+so on-demand remains the default. When the read-model is enabled the dashboard summary is derived from
+Marten instead (`DashboardReadModel`), and the live aggregation job only runs in live mode. Set the interval comfortably **longer than a full run takes** — paced
 aggregation processes roughly `DashboardRequestsPerMinute` customers per minute, so a few hundred
 customers can take minutes; an interval like 60s would run essentially continuously and drain the
 shared project quota that on-demand calls need. A value of **900s (15 min) or more** is a safe
@@ -431,7 +527,7 @@ keep the last good render and never raise a toast.
 
 **Read-model sync cadence (metadata vs entitlements).** A cycle does cheap **metadata** work first and
 rations the **contended** entitlement quota separately, so the two never starve each other. Each cycle
-`ReadModelSyncService`: (1) lists direct customers and upserts their `CustomerRecords` *metadata only*;
+`EstateSyncHandler` (`RunEstateSyncCycle`): (1) lists direct customers and observes their `CustomerRecord` *metadata only*;
 (2) lists the channel-partner-link roster and upserts `ResellerLinks`; (3) fans out the **stalest**
 `ReadModelLinksPerCycle` ACTIVE links (`channelPartnerLinks.customers.list`), upserting each link's
 indirect `CustomerRecords` and stamping the link's `CustomerCount`. The direct list and the per-link
@@ -444,8 +540,8 @@ indirect estate populates fully in one cycle. None of those steps touch the
 link is fanned out** — the dashboard's "Via indirect resellers" count and "Top indirect resellers" list
 fill in independent of (and without waiting on) entitlement syncing. Then (4) a **single, unified
 entitlement pass** refreshes the stalest `ReadModelCustomersPerCycle` customers across the *whole* estate
-(direct **and** indirect), ordered by `CustomerRecords.LastSyncedUtc` (which now tracks *entitlement*
-freshness — new rows start at `MinValue`, the head of the queue). Each customer's `LastSyncedUtc` is
+(direct **and** indirect), ordered by `CustomerSyncState.LastSyncedUtc` (which tracks *entitlement*
+freshness — new customers start at `MinValue`, the head of the queue). Each customer's `LastSyncedUtc` is
 stamped after its entitlements are synced **or** skipped (a 429 rotates it to the back rather than
 blocking the queue), so the pass round-robins fairly and a throttled customer can't stall the cycle.
 This replaced an earlier ordering where the direct-customer entitlement fan-out ran inline before the
@@ -453,26 +549,25 @@ indirect fan-out and, under the ~24/min `ListEntitlements` quota, could consume 
 indirect estate never synced. The unified-pass size is the `GoogleChannel:ReadModelCustomersPerCycle`
 knob (default 60).
 
-**Per-unit `DbContext` scoping.** Each save-unit in a sync cycle (direct upsert, link-roster upsert, each
-link's customer fan-out, each customer's entitlement sync, the cursor write) runs on its **own
-short-lived `GChannelDbContext`** created from a fresh DI scope (a small `WithDbAsync` helper), rather than
-one long-lived context shared across the whole multi-minute cycle. A single shared context accumulated
-thousands of tracked entities and, if any `SaveChanges` failed or was cancelled mid-batch, left a
-*Detached* entry that poisoned every subsequent save with `Unexpected entry.EntityState: Detached` —
-aborting the entire cycle (so links never persisted their customer counts and the entitlement pass never
-ran) and bloating worker memory. Fresh per-unit contexts keep each change tracker tiny, isolate a bad
-save to its own unit, and bound memory across a long pass.
+**Per-unit session scoping.** Each save-unit in a sync cycle (direct observation, link-roster
+observation, each link's customer fan-out, each customer's entitlement sync, the cursor write) runs in
+its **own short-lived Marten `IDocumentSession`** (a small `WithSessionAsync` helper) rather than one
+long-lived session shared across the whole multi-minute cycle: each unit's appended events, inline
+snapshots and outbox messages commit together, a failed unit is isolated to itself, and memory stays
+bounded across a long pass.
 
 **Write-through &amp; event-driven projection (near-real-time freshness).** The per-customer projection
-logic (metadata + entitlements with seat/price/name/renewal/repricing denormalisation) lives in a shared
-`ReadModelProjector` (`GChannel.ApiService/Services`) so three callers denormalise identical fields:
-(1) the background `ReadModelSyncService` bulk sync (passes a pre-built per-cycle offer catalog);
+logic (metadata + entitlements with seat/price/name/renewal/repricing denormalisation) lives in the shared
+`EstateObserver` (`GChannel.Core/Estate`) so three callers append identical diff events:
+(1) the background `EstateSyncHandler` bulk sync (passes a pre-built per-cycle offer catalog);
 (2) **write-through** — the customer mutation endpoints (direct `CustomersEndpoints` and n-tier
 `ChannelPartnerLinksEndpoints`) upsert the one changed `CustomerRecord` immediately after a successful
 create/import/update (soft-delete on delete), using the **mutation result** with no extra Channel API
 call, gated on `UseReadModel` and best-effort (a failure logs and is left for the poll — it never fails
-the already-successful mutation); (3) **event-driven projection** — `ChannelNotificationsService`, on each
-Pub/Sub change event, triggers a **targeted refresh of the affected customer** (`ProjectCustomerAsync`:
+the already-successful mutation); (3) **event-driven projection** — `ChannelNotificationsService` bridges each
+Pub/Sub change event onto Service Bus (`ChannelNotificationArrived` → `ChannelNotificationArrivedHandler`
+records it and sends `ProjectCustomer`), which triggers a **targeted refresh of the affected customer**
+(`ProjectCustomerHandler` → `EstateObserver.RefreshCustomerAsync`:
 metadata + all entitlements, priced/named via the per-entitlement `lookupOffer` fallback so an empty
 catalog still resolves everything). The projection **re-reads live state** rather than applying the event
 payload, so duplicate / out-of-order events converge on current truth, and a projection failure never
@@ -486,11 +581,11 @@ tracks the periodic full sync) is therefore usually *older* than the data it lab
 
 **Estimated estate value (pricing).** When the §10 read-model is enabled, the worker also denormalises
 pricing onto each synced entitlement so the dashboard can show an estimated monetary rollup without any
-per-request Channel API calls. Once per sync cycle `ReadModelSyncService` builds an
+per-request Channel API calls. Once per sync cycle `EstateSyncHandler` builds an
 offer-id→(effective seat price, currency) lookup from a single `offers.list`, and resolves the §6
 repricing mark-up per entitlement (a per-customer `customerRepricingConfigs` override wins, else the
 owning link's `CHANNEL_PARTNER`-granularity `channelPartnerRepricingConfigs` mark-up, else 0 / pass-through);
-both are stored on `EntitlementRecord` (`UnitPrice`, `Currency`, `RepricingPercent`). All of this is
+both are recorded as `EntitlementPriced` events and projected onto `EntitlementRecord` (`UnitPrice`, `Currency`, `RepricingPercent`). All of this is
 best-effort, so a pricing/repricing failure never blocks the estate sync. **Per-month normalisation:**
 an offer's effective price is quoted per **payment cycle** (an annual offer's price is the *yearly*
 per-seat amount), but `UnitPrice` is a **per-month** figure — every rollup multiplies `UnitPrice × seats`
@@ -499,11 +594,8 @@ and labels the result "monthly". The sync therefore divides the offer price by t
 divisor the entitlement **detail** page applies. Without this an annual offer showed **12×** its true
 monthly figure everywhere the read-model feeds (customers list, customer/reseller/estate value panels,
 dashboard estate value); the detail page was already correct because it prices live via `lookupOffer`
-and divides by the cycle. A one-time, marker-guarded reset in `ReadModelSyncService`
-(`ResetPricesForMonthlyNormalisationOnceAsync`, `SyncCursors` scope `unitprice-monthly-reset`) zeroes
-any pre-existing stored prices on first startup so the immediate cycle re-prices every row on the
-per-month paths — needed because cached legacy/education offers on the `lookupOffer` preserve path (see
-below) would otherwise keep their old per-cycle value. **`lookupOffer` price fallback:**
+and divides by the cycle. The Marten store starts empty (nothing is migrated from the old
+SQL read model), so every entitlement is priced on the per-month path from its first observation. **`lookupOffer` price fallback:**
 the account-wide `offers.list` sometimes doesn't contain the specific offer a customer's entitlement was
 purchased on (offer churn / legacy / sub-reseller), so those entitlements would otherwise store
 `UnitPrice = 0` and show blank *Est. monthly* everywhere the read-model feeds — even though the
@@ -620,21 +712,22 @@ accounts don't support `operations.list`, so the page falls back to lookup-by-id
 **Change notifications (Pub/Sub).** The notification *source* is mandatorily **Google Cloud
 Pub/Sub**: Google publishes entitlement/customer events to a Google-owned topic, and
 `accounts.register` grants a service account subscriber access to it (`listSubscribers`/`unregister`
-manage the set). There is **no Azure messaging** in the path — on Azure the app's managed identity
-only reads the Google service-account key from Key Vault, and that key authenticates to Pub/Sub. A
-hosted `ChannelNotificationsService` (a `BackgroundService`, like the dashboard refresher) streams the
-reseller's subscription and writes each parsed `ChannelNotification` into a **capped Redis list**
-(`channel:notifications`, `LPUSH` + `LTRIM` to `PubSubMaxNotifications`). It uses Redis rather than a
-SQL table because the app provisions its schema with `EnsureCreated` (no migrations), so a new table
-wouldn't apply to existing databases. `GET /api/notifications` serves the feed; the **Notifications**
+manage the set). On Azure the worker's managed identity reads the Google service-account key from
+Key Vault, and that key authenticates to Pub/Sub. The hosted `ChannelNotificationsService` in the worker
+is a thin **bridge**: it streams the reseller's subscription and republishes each parsed
+`ChannelNotification` onto the Service Bus `estate-events` topic as `ChannelNotificationArrived` (the
+Pub/Sub message id becomes the Service Bus message id, so the topic's duplicate detection drops a
+redelivery), acking the Pub/Sub message once the Service Bus publish succeeds. The worker's
+`ChannelNotificationArrivedHandler` then stores a `ChannelNotificationRecord` document (the feed, trimmed
+to `PubSubMaxNotifications × 10` rows), appends `ChannelNotificationReceived` to the affected customer's
+stream and sends a `ProjectCustomer` command. `GET /api/notifications` serves the feed from Marten; the **Notifications**
 page (`/notifications`) renders it (each row deep-linking to its customer/entitlement) and polls every
 20 s, alongside a subscriber-registration admin card.
 
-Unlike the dashboard refresher, the subscriber needs **no distributed lock**: Pub/Sub load-balances
-delivery across all connected subscribers, so when the API scales to multiple replicas they share the
-subscription automatically and each message is processed once. The only requirement is API
-`min-replicas ≥ 1`, and **no separate container** is introduced — the subscriber lives inside the
-existing API container app. It authenticates with the same service-account key as the background
+The bridge needs **no distributed lock**: Pub/Sub load-balances delivery across all connected
+subscribers and Service Bus duplicate detection absorbs redeliveries, so each notification is processed
+once. The only requirement is worker `min-replicas ≥ 1` — the bridge lives inside the existing worker
+container app. It authenticates with the same service-account key as the background
 refresh (Pub/Sub uses the key directly; no domain-wide delegation), and is a **no-op** unless
 `GoogleChannel:PubSubProjectId` + `PubSubSubscriptionId` + a service-account key are configured. Local
 F5 behaves identically using the key from user-secrets. On shutdown the service stops the subscriber
@@ -662,9 +755,11 @@ surfacing as a benign `TaskCanceledException` (innermost `SocketException: "...a
 
 ## Local development persistence
 
-The AppHost runs SQL Server and Redis as containers with a **persistent lifetime**
-(`ContainerLifetime.Persistent`) and named **data volumes** (`gchannel-sql-data`,
-`gchannel-redis-data`; Redis also enables RDB snapshots). The containers therefore stay running and
-keep their data **between debug sessions**, so the database isn't re-seeded and the cache stays warm
-on each `F5` — which also removes the cold-start latency that previously tripped the request timeout.
-To wipe and reseed, remove the volumes: `docker volume rm gchannel-sql-data gchannel-redis-data`.
+The AppHost runs PostgreSQL and Redis as containers with a **persistent lifetime**
+(`ContainerLifetime.Persistent`) and named **data volumes** (`gchannel-pg-data`, `gchannel-redis-data`;
+Redis also enables RDB snapshots). The containers therefore stay running and keep their data **between
+debug sessions**, so the estate isn't re-synced from Google and the cache stays warm on each `F5`. To wipe
+and resync, remove the volumes: `docker volume rm gchannel-pg-data gchannel-redis-data`. Service Bus is
+**not** containerised — it is a real namespace that Aspire provisions into the developer's Azure
+subscription on first run and reuses afterwards (see [deployment.md](deployment.md#run-locally)); the
+Key Vault is only part of the model when publishing, so nothing else is created in Azure for local runs.

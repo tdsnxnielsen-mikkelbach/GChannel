@@ -1,34 +1,34 @@
 @* Native Google vs third-party (Marketplace / partner) split of billed spend, from the export's
    transaction_type / seller_name. Used estate-wide on Spend trends and per customer on the detail page. *@
 
-<MudPaper Class="pa-4" Elevation="2">
-    <div class="d-flex justify-space-between align-center mb-1">
+<RadzenCard Variant="Variant.Filled">
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
         <div>
-            <MudText Typo="Typo.h6">Google Cloud vs Marketplace / partners</MudText>
+            <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Google Cloud vs Marketplace / partners</RadzenText>
             @if (Subtitle is not null)
             {
-                <MudText Typo="Typo.caption" Color="Color.Secondary">@Subtitle</MudText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@Subtitle</RadzenText>
             }
         </div>
         @if (Summary?.AsOf is { } asOf)
         {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">as of @asOf.LocalDateTime.ToString("g")</MudText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">as of @asOf.LocalDateTime.ToString("g")</RadzenText>
         }
-    </div>
+    </RadzenStack>
 
     @if (Loading)
     {
-        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+        <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
     }
     else if (Summary is null || Summary.Unconfigured)
     {
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Billing export not configured.</MudText>
+        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">Billing export not configured.</RadzenText>
     }
     else if (Summary.ByCategory.Count == 0)
     {
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
+        <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color">
             No seller breakdown yet — it is populated by the next billing-export sync.
-        </MudText>
+        </RadzenText>
     }
     else
     {
@@ -38,81 +38,90 @@
             var total = lines.Sum(l => l.Cost);
             var google = lines.Where(l => l.Category == SellerCategory.Google).Sum(l => l.Cost);
             var third = lines.Where(l => SellerCategories.IsThirdParty(l.Category)).Sum(l => l.Cost);
-            var other = total - google - third;
             var pctThird = total == 0 ? 0 : (double)(third / total) * 100;
 
-            <div class="mb-3">
-                <div class="d-flex align-baseline gap-2 mb-1">
-                    <MudText Typo="Typo.h5">@third.ToString("N0") <span style="font-size:0.7em">@currency</span></MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">third-party · @pctThird.ToString("0.#")% of @total.ToString("N0")</MudText>
-                </div>
-                <MudProgressLinear Value="@pctThird" Color="Color.Secondary" Rounded="true" Size="Size.Small" Class="mb-2" />
-                <MudSimpleTable Dense="true" Elevation="0" Hover="true">
+            <div class="rz-mb-4">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.End" Gap="0.5rem" class="rz-mb-1">
+                    <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@third.ToString("N0") <span style="font-size:0.7em">@currency</span></RadzenText>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">third-party · @pctThird.ToString("0.#")% of @total.ToString("N0")</RadzenText>
+                </RadzenStack>
+                <RadzenProgressBar Value="@Math.Round(pctThird)" ShowValue="false" ProgressBarStyle="ProgressBarStyle.Secondary" Style="height: 6px" class="rz-mb-2" />
+                <table class="gchannel-table gchannel-table-hover">
                     <tbody>
                         @foreach (var l in lines.OrderBy(l => l.Category))
                         {
                             <tr>
-                                <td>
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(CategoryColor(l.Category))">@SellerCategories.Label(l.Category)</MudChip>
-                                </td>
-                                <td style="text-align:right">@l.Cost.ToString("N2")</td>
-                                <td style="text-align:right">
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@(total == 0 ? "—" : $"{(double)(l.Cost / total) * 100:0.#}%")</MudText>
-                                </td>
+                                <td><RadzenBadge BadgeStyle="@CategoryStyle(l.Category)" IsPill="true" Text="@SellerCategories.Label(l.Category)" /></td>
+                                <td class="num">@l.Cost.ToString("N2")</td>
+                                <td class="num rz-text-secondary-color">@(total == 0 ? "—" : $"{(double)(l.Cost / total) * 100:0.#}%")</td>
                             </tr>
                         }
                     </tbody>
-                </MudSimpleTable>
+                </table>
             </div>
         }
 
         @if (Summary.ThirdPartySellers.Count > 0)
         {
-            <MudText Typo="Typo.subtitle2" Class="mt-2 mb-1">Third-party sellers</MudText>
-            <MudSimpleTable Dense="true" Elevation="0" Hover="true">
-                <thead><tr><th>Seller</th><th>Via</th><th style="text-align:right">Net cost</th><th>Currency</th></tr></thead>
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mt-2 rz-mb-1">Third-party sellers</RadzenText>
+            <table class="gchannel-table gchannel-table-hover">
+                <thead>
+                    <tr>
+                        <th>Seller</th>
+                        <th>Via</th>
+                        <th class="num">Net cost</th>
+                        <th>Currency</th>
+                    </tr>
+                </thead>
                 <tbody>
                     @foreach (var s in Summary.ThirdPartySellers.Take(MaxRows))
                     {
                         <tr>
                             <td>@s.SellerName</td>
-                            <td><MudText Typo="Typo.caption" Color="Color.Secondary">@SellerCategories.Label(s.Category)</MudText></td>
-                            <td style="text-align:right">@s.Cost.ToString("N2")</td>
+                            <td class="rz-text-secondary-color">@SellerCategories.Label(s.Category)</td>
+                            <td class="num">@s.Cost.ToString("N2")</td>
                             <td>@s.Currency</td>
                         </tr>
                     }
                 </tbody>
-            </MudSimpleTable>
+            </table>
         }
 
         @if (ShowProducts && Summary.ThirdPartyProducts.Count > 0)
         {
-            <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Third-party products</MudText>
-            <MudSimpleTable Dense="true" Elevation="0" Hover="true">
-                <thead><tr><th>Product</th><th>Seller</th><th style="text-align:right">Net cost</th><th>Currency</th></tr></thead>
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mt-4 rz-mb-1">Third-party products</RadzenText>
+            <table class="gchannel-table gchannel-table-hover">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Seller</th>
+                        <th class="num">Net cost</th>
+                        <th>Currency</th>
+                    </tr>
+                </thead>
                 <tbody>
                     @foreach (var p in Summary.ThirdPartyProducts.Take(MaxRows))
                     {
                         <tr>
                             <td>@p.ServiceDescription</td>
-                            <td><MudText Typo="Typo.caption" Color="Color.Secondary">@p.SellerName</MudText></td>
-                            <td style="text-align:right">@p.Cost.ToString("N2")</td>
+                            <td class="rz-text-secondary-color">@p.SellerName</td>
+                            <td class="num">@p.Cost.ToString("N2")</td>
                             <td>@p.Currency</td>
                         </tr>
                     }
                 </tbody>
-            </MudSimpleTable>
+            </table>
         }
 
-        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 d-block">
+        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.P" class="rz-text-secondary-color rz-mt-2 rz-mb-0">
             Split by the export's <code>transaction_type</code>: GOOGLE = native Google Cloud; THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY = Marketplace, ISV and partner products. "Unclassified" covers taxes, adjustments and rows without a type.
             @if (Summary.InvoiceMonths.Count > 0)
             {
                 <span> Window: @FormatMonth(Summary.InvoiceMonths.First())@(Summary.InvoiceMonths.Count > 1 ? $" – {FormatMonth(Summary.InvoiceMonths.Last())}" : "").</span>
             }
-        </MudText>
+        </RadzenText>
     }
-</MudPaper>
+</RadzenCard>
 
 @code {
     [Parameter] public SellerSpendSummary? Summary { get; set; }
@@ -121,12 +130,12 @@
     [Parameter] public bool ShowProducts { get; set; } = true;
     [Parameter] public int MaxRows { get; set; } = 10;
 
-    private static Color CategoryColor(SellerCategory c) => c switch
+    private static BadgeStyle CategoryStyle(SellerCategory c) => c switch
     {
-        SellerCategory.Google => Color.Primary,
-        SellerCategory.ThirdPartyReseller => Color.Secondary,
-        SellerCategory.ThirdPartyAgency => Color.Tertiary,
-        _ => Color.Default
+        SellerCategory.Google => BadgeStyle.Primary,
+        SellerCategory.ThirdPartyReseller => BadgeStyle.Secondary,
+        SellerCategory.ThirdPartyAgency => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private static string FormatMonth(string yyyymm) =>

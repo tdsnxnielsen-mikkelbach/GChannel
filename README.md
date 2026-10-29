@@ -4,9 +4,11 @@ A .NET 10 / Blazor dashboard for Google distributors and resellers. Users sign i
 Google account and the UI abstracts the **Google Cloud Channel API** behind point-and-click
 actions — they never see the underlying REST calls.
 
-Built with **.NET Aspire**: the front end and back-end services run as two independently
-scalable **Azure Container Apps**, backed by **Azure SQL (serverless)** and **Azure Managed
-Redis**. Deployment is handled by the **Azure Developer CLI (`azd`)**.
+Built with **.NET Aspire** on the **Critter Stack** ([Marten](https://martendb.io) event store +
+[Wolverine](https://wolverinefx.net) messaging): the front end (Blazor + [Radzen](https://blazor.radzen.com) components), the API and the
+worker run as three independently scalable **Azure Container Apps**, backed by **Azure Database for
+PostgreSQL flexible server**, **Azure Service Bus** and **Azure Managed Redis**. Deployment is handled by
+the **Azure Developer CLI (`azd`)**.
 
 ## Quick start
 
@@ -29,6 +31,7 @@ Open the `webfrontend` endpoint from the Aspire dashboard.
 | Deploying a new country/region instance | [docs/regional-deployment.md](docs/regional-deployment.md) |
 | Implemented API surface | [docs/api-surface.md](docs/api-surface.md) |
 | Roadmap & future work | [docs/todo.md](docs/todo.md) |
+| Session handoff (where work stopped, what's deployed, next steps) | [docs/session-handoff.md](docs/session-handoff.md) |
 
 ## Solution layout
 

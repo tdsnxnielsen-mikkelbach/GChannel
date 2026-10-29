@@ -1,33 +1,33 @@
 @page "/billing/posture"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Security posture · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
     <div>
-        <MudText Typo="Typo.h4">Billing security posture</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Billing security posture</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
             Nightly scan of every billing (sub-)account's IAM members — consumer admins, 2-Step Verification,
             Advanced Protection and passkeys / security keys.
-        </MudText>
+        </RadzenText>
     </div>
-    <div class="d-flex align-center gap-3">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
         @if (_summary?.AsOf is { } asOf)
         {
-            <MudText Typo="Typo.caption" Color="Color.Secondary">Scanned @asOf.ToLocalTime().ToString("g")</MudText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">Scanned @asOf.ToLocalTime().ToString("g")</RadzenText>
         }
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Disabled="_loading">Reload</MudButton>
-    </div>
-</div>
+        <RadzenButton Text="Reload" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="LoadAsync" Disabled="_loading" />
+    </RadzenStack>
+</RadzenStack>
 
-<MudText Typo="Typo.body2" Class="mb-4" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
     <strong>Best practice</strong> for every assessable member: 2SV on, Advanced Protection enrolled, and at
     least one passkey or security key. Members are <em>assessable</em> when their tenant is readable — our own
     Workspace, or a resold customer we hold reseller admin access to. Consumer Google Accounts and unreadable
     tenants are reported separately, never counted as compliant.
-</MudText>
+</RadzenText>
 
 @if (_loading && _summary is null)
 {
@@ -35,187 +35,201 @@
 }
 else if (_summary is null)
 {
-    <MudAlert Severity="Severity.Error">Couldn't load the posture summary.</MudAlert>
+    <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">Couldn't load the posture summary.</RadzenAlert>
 }
 else
 {
     @if (_summary.Unconfigured)
     {
-        <MudAlert Severity="Severity.Warning" Class="mb-4">
+        <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
             The nightly posture scan isn't configured. It needs <code>GoogleChannel:ServiceAccountKeyJson</code>,
             <code>GoogleChannel:ImpersonateUser</code> and <code>GoogleBilling:PostureScanEnabled</code>.
-        </MudAlert>
+        </RadzenAlert>
     }
     else if (_summary.AsOf is null)
     {
-        <MudAlert Severity="Severity.Info" Class="mb-4">
+        <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
             The first nightly scan hasn't completed yet (it runs at the configured UTC hour, or shortly after the
             worker starts when no scan exists). @(_summary.LastRunError is null ? "" : $"Last attempt failed: {_summary.LastRunError}")
-        </MudAlert>
+        </RadzenAlert>
     }
     else if (_summary.LastRunError is not null)
     {
-        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4">
+        <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
             The most recent scan attempt failed (@_summary.LastRunError); showing the last successful scan.
-        </MudAlert>
+        </RadzenAlert>
     }
 
     @* ---- Headline KPIs ---- *@
-    <MudGrid Class="mb-2">
-        <MudItem xs="6" md="3">
-            @Kpi("Billing accounts scanned", _summary.AccountsScanned.ToString(), Color.Default,
+    <RadzenRow Gap="1rem" RowGap="1rem" class="rz-mb-2">
+        <RadzenColumn Size="6" SizeLG="3">
+            @Kpi("Billing accounts scanned", _summary.AccountsScanned.ToString(), null,
                  _summary.AccountsWithErrors > 0 ? $"{_summary.AccountsWithErrors} with unreadable IAM policy" : "all policies readable")
-        </MudItem>
-        <MudItem xs="6" md="3">
+        </RadzenColumn>
+        <RadzenColumn Size="6" SizeLG="3">
             @Kpi("Accounts with a direct consumer admin", _summary.AccountsWithDirectConsumerAdmin.ToString(),
-                 _summary.AccountsWithDirectConsumerAdmin > 0 ? Color.Error : Color.Success,
+                 _summary.AccountsWithDirectConsumerAdmin > 0 ? "rz-color-danger" : "rz-color-success",
                  "gmail / unmanaged account holding Billing Account Administrator directly")
-        </MudItem>
-        <MudItem xs="6" md="3">
+        </RadzenColumn>
+        <RadzenColumn Size="6" SizeLG="3">
             @Kpi("Accounts with non-compliant direct members", _summary.AccountsWithNonCompliantDirect.ToString(),
-                 _summary.AccountsWithNonCompliantDirect > 0 ? Color.Warning : Color.Success,
+                 _summary.AccountsWithNonCompliantDirect > 0 ? "rz-color-warning" : "rz-color-success",
                  "at least one assessable direct member failing a rule")
-        </MudItem>
-        <MudItem xs="6" md="3">
+        </RadzenColumn>
+        <RadzenColumn Size="6" SizeLG="3">
             @Kpi("Accounts with non-compliant inherited members", _summary.AccountsWithNonCompliantInherited.ToString(),
-                 _summary.AccountsWithNonCompliantInherited > 0 ? Color.Warning : Color.Success,
+                 _summary.AccountsWithNonCompliantInherited > 0 ? "rz-color-warning" : "rz-color-success",
                  "inherited from the master billing account")
-        </MudItem>
-    </MudGrid>
+        </RadzenColumn>
+    </RadzenRow>
 
     @* ---- Member compliance, direct vs inherited ---- *@
-    <MudGrid Class="mb-4">
-        <MudItem xs="12" md="6">@BucketCard("Direct members", "Granted on individual sub-accounts (distinct email + role)", _summary.Direct)</MudItem>
-        <MudItem xs="12" md="6">@BucketCard("Inherited members", "Granted on master billing accounts — apply to every sub-account (distinct email + role)", _summary.Inherited)</MudItem>
-    </MudGrid>
+    <RadzenRow Gap="1rem" RowGap="1rem" class="rz-mb-4">
+        <RadzenColumn Size="12" SizeLG="6">@BucketCard("Direct members", "Granted on individual sub-accounts (distinct email + role)", _summary.Direct)</RadzenColumn>
+        <RadzenColumn Size="12" SizeLG="6">@BucketCard("Inherited members", "Granted on master billing accounts — apply to every sub-account (distinct email + role)", _summary.Inherited)</RadzenColumn>
+    </RadzenRow>
 
-    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
-        <MudTabPanel Text="Accounts" Icon="@Icons.Material.Filled.AccountBalance">
-            <div class="d-flex align-center gap-4 mb-2">
-                <MudSwitch T="bool" @bind-Value="_onlyProblems" Label="Only accounts with findings" Color="Color.Primary" Dense="true" />
-                <MudTextField T="string" @bind-Value="_accountSearch" Placeholder="Filter by name / id / customer" Immediate="true"
-                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Margin="Margin.Dense" Variant="Variant.Outlined" Class="flex-grow-1" />
-            </div>
-            <MudTable Items="FilteredAccounts" Dense="true" Hover="true" Elevation="0" T="BillingPostureAccount" Breakpoint="Breakpoint.None"
-                      SortLabel="Sort" RowsPerPage="25">
-                <HeaderContent>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => a.DisplayName ?? a.BillingAccountId)">Billing account</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)(a.HasDirectConsumerAdmin ? 0 : 1))">Consumer admin</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)a.Direct.Members)">Direct</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)(-a.Direct.NonCompliant))">Direct non-compliant</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)a.Inherited.Members)">Inherited</MudTableSortLabel></MudTh>
-                    <MudTh><MudTableSortLabel T="BillingPostureAccount" SortBy="@(a => (object)(-a.Inherited.NonCompliant))">Inherited non-compliant</MudTableSortLabel></MudTh>
-                    <MudTh></MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Billing account">
-                        <div class="d-flex flex-column">
-                            <span>@(context.DisplayName ?? context.BillingAccountId)</span>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                @context.BillingAccountId
-                                @if (!context.IsSubaccount) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-1">master</MudChip> }
-                                @if (context.CustomerId is not null) { <span> · </span><MudLink Href="@($"/customers/{context.CustomerId}")" Typo="Typo.caption">customer</MudLink> }
-                            </MudText>
-                            @if (context.Error is not null)
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Error">IAM policy unreadable: @context.Error</MudText>
-                            }
-                        </div>
-                    </MudTd>
-                    <MudTd DataLabel="Consumer admin">
-                        @if (context.HasDirectConsumerAdmin)
-                        {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Warning">@context.Direct.ConsumerAdmins</MudChip>
-                        }
-                        else { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> }
-                    </MudTd>
-                    <MudTd DataLabel="Direct">@context.Direct.Members</MudTd>
-                    <MudTd DataLabel="Direct non-compliant">@NonCompliantCell(context.Direct)</MudTd>
-                    <MudTd DataLabel="Inherited">@context.Inherited.Members</MudTd>
-                    <MudTd DataLabel="Inherited non-compliant">@NonCompliantCell(context.Inherited)</MudTd>
-                    <MudTd Style="text-align:right">
-                        <MudButton Size="Size.Small" Variant="Variant.Text" EndIcon="@Icons.Material.Filled.ChevronRight"
-                                   OnClick="@(() => OpenAccountAsync(context))">Members</MudButton>
-                    </MudTd>
-                </RowTemplate>
-                <NoRecordsContent><MudText>No accounts match.</MudText></NoRecordsContent>
-                <PagerContent><MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" /></PagerContent>
-            </MudTable>
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenTabs @bind-SelectedIndex="_selectedTab" RenderMode="TabRenderMode.Client">
+            <Tabs>
+                <RadzenTabsItem Text="Accounts" Icon="@AppIcons.AccountBalance">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-my-3">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-text-nowrap">
+                            <RadzenSwitch @bind-Value="_onlyProblems" Name="onlyProblems" />
+                            <RadzenLabel Text="Only accounts with findings" Component="onlyProblems" />
+                        </RadzenStack>
+                        <SearchBox Value="@_accountSearch" ValueChanged="@(v => _accountSearch = v ?? "")" Label="Filter by name / id / customer" DebounceMs="200" Style="flex: 1 1 16rem" />
+                    </RadzenStack>
+                    <RadzenDataGrid TItem="BillingPostureAccount" Data="FilteredAccounts" AllowSorting="true" AllowPaging="true" PageSize="25" PageSizeOptions="_accountPageSizes" ShowPagingSummary="true"
+                                    Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true" EmptyText="No accounts match.">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="BillingPostureAccount" Property="@nameof(BillingPostureAccount.DisplayName)" Title="Billing account">
+                                <Template Context="a">
+                                    <div>
+                                        <span>@(a.DisplayName ?? a.BillingAccountId)</span>
+                                        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">
+                                            @a.BillingAccountId
+                                            @if (!a.IsSubaccount) { <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="master" class="rz-ms-1" /> }
+                                            @if (a.CustomerId is not null) { <span> · </span><RadzenLink Path="@($"/customers/{a.CustomerId}")" Text="customer" /> }
+                                        </RadzenText>
+                                        @if (a.Error is not null)
+                                        {
+                                            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-color-danger rz-m-0">IAM policy unreadable: @a.Error</RadzenText>
+                                        }
+                                    </div>
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="BillingPostureAccount" Property="@nameof(BillingPostureAccount.HasDirectConsumerAdmin)" Title="Consumer admin" Width="140px">
+                                <Template Context="a">
+                                    @if (a.HasDirectConsumerAdmin)
+                                    {
+                                        <RadzenBadge BadgeStyle="BadgeStyle.Danger" Text="@a.Direct.ConsumerAdmins.ToString()" />
+                                    }
+                                    else { <span class="rz-text-secondary-color">—</span> }
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="BillingPostureAccount" Property="Direct.Members" Title="Direct" Width="90px" />
+                            <RadzenDataGridColumn TItem="BillingPostureAccount" Property="Direct.NonCompliant" Title="Direct non-compliant" Width="170px">
+                                <Template Context="a">@NonCompliantCell(a.Direct)</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="BillingPostureAccount" Property="Inherited.Members" Title="Inherited" Width="100px" />
+                            <RadzenDataGridColumn TItem="BillingPostureAccount" Property="Inherited.NonCompliant" Title="Inherited non-compliant" Width="190px">
+                                <Template Context="a">@NonCompliantCell(a.Inherited)</Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="BillingPostureAccount" Title=" " Sortable="false" TextAlign="TextAlign.End" Width="130px">
+                                <Template Context="a">
+                                    <RadzenButton Text="Members" Icon="@AppIcons.ChevronRight" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Click="@(() => OpenAccountAsync(a))" class="rz-text-nowrap" />
+                                </Template>
+                            </RadzenDataGridColumn>
+                        </Columns>
+                    </RadzenDataGrid>
 
-            @if (_openAccount is not null)
-            {
-                <MudPaper Class="pa-3 mt-4" Elevation="1">
-                    <div class="d-flex justify-space-between align-center mb-2">
-                        <MudText Typo="Typo.subtitle1">@(_openAccount.DisplayName ?? _openAccount.BillingAccountId) — members</MudText>
-                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => { _openAccount = null; _openMembers = null; })" />
-                    </div>
-                    @if (_openMembers is null)
+                    @if (_openAccount is not null)
                     {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                        <RadzenCard Variant="Variant.Outlined" class="rz-mt-4">
+                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+                                <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-m-0" Style="font-weight:600">@(_openAccount.DisplayName ?? _openAccount.BillingAccountId) — members</RadzenText>
+                                <RadzenButton Icon="@AppIcons.Close" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => { _openAccount = null; _openMembers = null; })" aria-label="Close" />
+                            </RadzenStack>
+                            @if (_openMembers is null)
+                            {
+                                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" />
+                            }
+                            else
+                            {
+                                @MemberTable(_openMembers.Members)
+                            }
+                        </RadzenCard>
+                    }
+                </RadzenTabsItem>
+
+                <RadzenTabsItem Text="Action list" Icon="@AppIcons.Checklist">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-my-3">
+                        <RadzenDropDown TValue="string" Data="_scopeOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                                        Value="@_findingsScope" ValueChanged="OnScopeChangedAsync" Style="width: 220px" aria-label="Scope" Name="findingsScope" />
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                            Distinct members that are consumer admins or fail at least one best-practice rule, with the accounts they hold a role on.
+                        </RadzenText>
+                    </RadzenStack>
+                    @if (_findings is null)
+                    {
+                        <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" />
                     }
                     else
                     {
-                        @MemberTable(_openMembers.Members, showAccount: false)
+                        <RadzenDataGrid TItem="BillingPostureFinding" Data="_findings.Findings" AllowSorting="true" AllowPaging="true" PageSize="50" PageSizeOptions="_findingPageSizes" ShowPagingSummary="true"
+                                        Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true" EmptyText="No findings — every assessable member in this scope is compliant.">
+                            <Columns>
+                                <RadzenDataGridColumn TItem="BillingPostureFinding" Property="Member.Email" Title="Member">
+                                    <Template Context="f">@MemberCell(f.Member)</Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="BillingPostureFinding" Title="Role" Sortable="false">
+                                    <Template Context="f"><span class="rz-text-nowrap">@f.Member.RoleDisplayName</span></Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="BillingPostureFinding" Property="Member.Inherited" Title="Grant" Width="100px">
+                                    <Template Context="f">@(f.Member.Inherited ? "inherited" : "direct")</Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="BillingPostureFinding" Title="Account" Sortable="false">
+                                    <Template Context="f">@AccountKindChip(f.Member)</Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="BillingPostureFinding" Property="Member.TwoSvOk" Title="2SV">
+                                    <Template Context="f">@TwoSvChip(f.Member)</Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="BillingPostureFinding" Property="Member.AdvancedProtectionOk" Title="Adv. Protection">
+                                    <Template Context="f">@AppChip(f.Member)</Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="BillingPostureFinding" Property="Member.KeysOk" Title="Keys">
+                                    <Template Context="f">@KeysChip(f.Member)</Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="BillingPostureFinding" Property="BillingAccountIds.Count" Title="Billing accounts" Width="140px">
+                                    <Template Context="f">
+                                        <Tip Text="@string.Join(", ", f.BillingAccountIds)">@f.BillingAccountIds.Count</Tip>
+                                    </Template>
+                                </RadzenDataGridColumn>
+                            </Columns>
+                        </RadzenDataGrid>
                     }
-                </MudPaper>
-            }
-        </MudTabPanel>
-
-        <MudTabPanel Text="Action list" Icon="@Icons.Material.Filled.Checklist">
-            <div class="d-flex align-center gap-4 mb-2">
-                <MudSelect T="string" Value="_findingsScope" ValueChanged="OnScopeChangedAsync" Label="Scope" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 220px;">
-                    <MudSelectItem Value="@("all")">Direct + inherited</MudSelectItem>
-                    <MudSelectItem Value="@("direct")">Direct only</MudSelectItem>
-                    <MudSelectItem Value="@("inherited")">Inherited only</MudSelectItem>
-                </MudSelect>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Distinct members that are consumer admins or fail at least one best-practice rule, with the accounts they hold a role on.
-                </MudText>
-            </div>
-            @if (_findings is null)
-            {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
-            }
-            else
-            {
-                <MudTable Items="_findings.Findings" Dense="true" Hover="true" Elevation="0" T="BillingPostureFinding" Breakpoint="Breakpoint.None" RowsPerPage="50">
-                    <HeaderContent>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => f.Member.Email)">Member</MudTableSortLabel></MudTh>
-                        <MudTh>Role</MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)(f.Member.Inherited ? 1 : 0))">Grant</MudTableSortLabel></MudTh>
-                        <MudTh>Account</MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)TwoSvRank(f.Member))">2SV</MudTableSortLabel></MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)AppRank(f.Member))">Adv. Protection</MudTableSortLabel></MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)KeysRank(f.Member))">Keys</MudTableSortLabel></MudTh>
-                        <MudTh><MudTableSortLabel T="BillingPostureFinding" SortBy="@(f => (object)(-f.BillingAccountIds.Count))">Billing accounts</MudTableSortLabel></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Member">@MemberCell(context.Member)</MudTd>
-                        <MudTd DataLabel="Role" Style="white-space: nowrap;">@context.Member.RoleDisplayName</MudTd>
-                        <MudTd DataLabel="Grant">@(context.Member.Inherited ? "inherited" : "direct")</MudTd>
-                        <MudTd DataLabel="Account">@AccountKindChip(context.Member)</MudTd>
-                        <MudTd DataLabel="2SV">@TwoSvChip(context.Member)</MudTd>
-                        <MudTd DataLabel="Adv. Protection">@AppChip(context.Member)</MudTd>
-                        <MudTd DataLabel="Keys">@KeysChip(context.Member)</MudTd>
-                        <MudTd DataLabel="Billing accounts">
-                            <MudTooltip Text="@string.Join(", ", context.BillingAccountIds)">
-                                <span>@context.BillingAccountIds.Count</span>
-                            </MudTooltip>
-                        </MudTd>
-                    </RowTemplate>
-                    <NoRecordsContent><MudText>No findings — every assessable member in this scope is compliant.</MudText></NoRecordsContent>
-                    <PagerContent><MudTablePager PageSizeOptions="new[] { 50, 100, 200 }" /></PagerContent>
-                </MudTable>
-            }
-        </MudTabPanel>
-    </MudTabs>
+                </RadzenTabsItem>
+            </Tabs>
+        </RadzenTabs>
+    </RadzenCard>
 }
 
 @code {
+    private static readonly IEnumerable<int> _accountPageSizes = [25, 50, 100];
+    private static readonly IEnumerable<int> _findingPageSizes = [50, 100, 200];
+    private static readonly SelectOption[] _scopeOptions =
+    [
+        new("all", "Direct + inherited"),
+        new("direct", "Direct only"),
+        new("inherited", "Inherited only"),
+    ];
+
     private bool _loading = true;
     private BillingPostureSummary? _summary;
     private BillingPostureFindingsResult? _findings;
     private string _findingsScope = "all";
+    private int _selectedTab;
     private bool _onlyProblems = true;
     private string _accountSearch = "";
     private BillingPostureAccount? _openAccount;
@@ -244,7 +258,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load posture: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load posture: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -257,7 +271,7 @@ else
         _findingsScope = scope;
         _findings = null;
         try { _findings = await Api.GetBillingPostureFindingsAsync(scope); }
-        catch (Exception ex) { Snackbar.Add($"Failed to load findings: {ex.Message}", Severity.Error); _findings = new(); }
+        catch (Exception ex) { await Snackbar.Add($"Failed to load findings: {ex.Message}", Severity.Error); _findings = new(); }
     }
 
     private async Task OpenAccountAsync(BillingPostureAccount account)
@@ -265,150 +279,143 @@ else
         _openAccount = account;
         _openMembers = null;
         try { _openMembers = await Api.GetBillingPostureMembersAsync(account.BillingAccountId); }
-        catch (Exception ex) { Snackbar.Add($"Failed to load members: {ex.Message}", Severity.Error); _openMembers = new() { BillingAccountId = account.BillingAccountId }; }
+        catch (Exception ex) { await Snackbar.Add($"Failed to load members: {ex.Message}", Severity.Error); _openMembers = new() { BillingAccountId = account.BillingAccountId }; }
     }
 
     // ---- render helpers ----
 
-    private RenderFragment Kpi(string label, string value, Color color, string? hint) => __builder =>
+    private RenderFragment Kpi(string label, string value, string? colorClass, string? hint) => __builder =>
     {
-        <MudPaper Class="pa-3" Elevation="2">
-            <MudText Typo="Typo.caption" Color="Color.Secondary">@label</MudText>
-            <MudText Typo="Typo.h4" Color="color">@value</MudText>
-            @if (hint is not null) { <MudText Typo="Typo.caption" Color="Color.Secondary">@hint</MudText> }
-        </MudPaper>
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@label</RadzenText>
+            <RadzenText TextStyle="TextStyle.H4" class="@($"rz-m-0 {colorClass}")">@value</RadzenText>
+            @if (hint is not null) { <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@hint</RadzenText> }
+        </RadzenCard>
     };
 
     private RenderFragment BucketCard(string title, string subtitle, PostureBucket b) => __builder =>
     {
-        <MudPaper Class="pa-3" Elevation="2">
-            <MudText Typo="Typo.h6">@title</MudText>
-            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">@subtitle</MudText>
-            <div class="d-flex align-baseline gap-2 mb-1">
-                <MudText Typo="Typo.h4" Color="@(b.Assessable == 0 ? Color.Default : b.CompliancePercent >= 90 ? Color.Success : b.CompliancePercent >= 60 ? Color.Warning : Color.Error)">
+        var pctClass = b.Assessable == 0 ? "rz-text-secondary-color" : b.CompliancePercent >= 90 ? "rz-color-success" : b.CompliancePercent >= 60 ? "rz-color-warning" : "rz-color-danger";
+        <RadzenCard Variant="Variant.Filled" class="rz-h-100">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">@title</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-2">@subtitle</RadzenText>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.End" Gap="0.5rem" class="rz-mb-1">
+                <RadzenText TextStyle="TextStyle.H4" class="@($"rz-m-0 {pctClass}")">
                     @(b.Assessable == 0 ? "—" : $"{b.CompliancePercent:0}%")
-                </MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">compliant · @b.Compliant of @b.Assessable assessable (@b.Members total)</MudText>
-            </div>
-            <MudProgressLinear Value="@b.CompliancePercent" Color="Color.Success" Class="mb-3" Rounded="true" Size="Size.Small" />
-            <MudSimpleTable Dense="true" Elevation="0" Hover="true">
+                </RadzenText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">compliant · @b.Compliant of @b.Assessable assessable (@b.Members total)</RadzenText>
+            </RadzenStack>
+            <RadzenProgressBar Value="@Math.Round(b.CompliancePercent)" ShowValue="false" ProgressBarStyle="ProgressBarStyle.Success" Style="height: 6px" class="rz-mb-3" />
+            <table class="gchannel-table gchannel-table-hover">
                 <tbody>
-                    <tr><td>2SV off</td><td class="text-right">@Count(b.TwoSvOff)</td></tr>
-                    <tr><td>Not enrolled in Advanced Protection</td><td class="text-right">@Count(b.NoAdvancedProtection)</td></tr>
-                    <tr><td>No passkey or security key</td><td class="text-right">@Count(b.NoKeys)</td></tr>
-                    <tr><td>Failing any rule</td><td class="text-right"><strong>@Count(b.NonCompliant)</strong></td></tr>
-                    <tr><td>Consumer Google Accounts</td><td class="text-right">@Count(b.ConsumerAccounts, b.ConsumerAdmins > 0 ? $"{b.ConsumerAdmins} as billing admin" : null)</td></tr>
-                    <tr><td>Managed, tenant not readable</td><td class="text-right"><MudText Typo="Typo.body2" Color="Color.Secondary">@b.Unassessable</MudText></td></tr>
+                    <tr><td>2SV off</td><td class="num">@Count(b.TwoSvOff)</td></tr>
+                    <tr><td>Not enrolled in Advanced Protection</td><td class="num">@Count(b.NoAdvancedProtection)</td></tr>
+                    <tr><td>No passkey or security key</td><td class="num">@Count(b.NoKeys)</td></tr>
+                    <tr><td>Failing any rule</td><td class="num"><strong>@Count(b.NonCompliant)</strong></td></tr>
+                    <tr><td>Consumer Google Accounts</td><td class="num">@Count(b.ConsumerAccounts, b.ConsumerAdmins > 0 ? $"{b.ConsumerAdmins} as billing admin" : null)</td></tr>
+                    <tr><td>Managed, tenant not readable</td><td class="num"><span class="rz-text-secondary-color">@b.Unassessable</span></td></tr>
                 </tbody>
-            </MudSimpleTable>
-        </MudPaper>
+            </table>
+        </RadzenCard>
     };
 
     private static RenderFragment Count(int n, string? note = null) => __builder =>
     {
-        <MudText Typo="Typo.body2" Color="@(n == 0 ? Color.Success : Color.Error)" Style="font-weight:600; display:inline">@n</MudText>
-        @if (note is not null) { <MudText Typo="Typo.caption" Color="Color.Secondary" Style="display:inline"> (@note)</MudText> }
+        <span class="@(n == 0 ? "rz-color-success" : "rz-color-danger")" style="font-weight:600">@n</span>
+        @if (note is not null) { <small class="rz-text-secondary-color"> (@note)</small> }
     };
 
     private static RenderFragment NonCompliantCell(PostureBucket b) => __builder =>
     {
-        if (b.Assessable == 0) { <MudText Typo="Typo.caption" Color="Color.Secondary">n/a</MudText> return; }
-        <MudTooltip Text="@($"2SV off: {b.TwoSvOff} · no Adv. Protection: {b.NoAdvancedProtection} · no keys: {b.NoKeys} · of {b.Assessable} assessable")">
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(b.NonCompliant == 0 ? Color.Success : Color.Warning)">
-                @b.NonCompliant / @b.Assessable
-            </MudChip>
-        </MudTooltip>
+        if (b.Assessable == 0) { <span class="rz-text-secondary-color">—</span> return; }
+        <Tip Text="@($"2SV off: {b.TwoSvOff} · no Adv. Protection: {b.NoAdvancedProtection} · no keys: {b.NoKeys} · of {b.Assessable} assessable")">
+            <RadzenBadge BadgeStyle="@(b.NonCompliant == 0 ? BadgeStyle.Success : BadgeStyle.Warning)" Text="@($"{b.NonCompliant} / {b.Assessable}")" />
+        </Tip>
     };
 
-    private RenderFragment MemberTable(IReadOnlyList<BillingPostureMember> rows, bool showAccount) => __builder =>
+    private RenderFragment MemberTable(IReadOnlyList<BillingPostureMember> rows) => __builder =>
     {
-        <MudTable Items="rows" Dense="true" Hover="true" Elevation="0" T="BillingPostureMember" Breakpoint="Breakpoint.None">
-            <HeaderContent>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => m.Email)">Member</MudTableSortLabel></MudTh>
-                <MudTh>Role</MudTh>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => (object)(m.Inherited ? 1 : 0))">Grant</MudTableSortLabel></MudTh>
-                <MudTh>Account</MudTh>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => (object)TwoSvRank(m))">2SV</MudTableSortLabel></MudTh>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => (object)AppRank(m))">Adv. Protection</MudTableSortLabel></MudTh>
-                <MudTh><MudTableSortLabel T="BillingPostureMember" SortBy="@(m => (object)KeysRank(m))">Keys</MudTableSortLabel></MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Member">@MemberCell(context)</MudTd>
-                <MudTd DataLabel="Role" Style="white-space: nowrap;">@context.RoleDisplayName</MudTd>
-                <MudTd DataLabel="Grant">@(context.Inherited ? "inherited" : "direct")</MudTd>
-                <MudTd DataLabel="Account">@AccountKindChip(context)</MudTd>
-                <MudTd DataLabel="2SV">@TwoSvChip(context)</MudTd>
-                <MudTd DataLabel="Adv. Protection">@AppChip(context)</MudTd>
-                <MudTd DataLabel="Keys">@KeysChip(context)</MudTd>
-            </RowTemplate>
-            <NoRecordsContent><MudText Typo="Typo.body2">No members.</MudText></NoRecordsContent>
-        </MudTable>
+        <RadzenDataGrid TItem="BillingPostureMember" Data="rows" AllowSorting="true" AllowPaging="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true" EmptyText="No members.">
+            <Columns>
+                <RadzenDataGridColumn TItem="BillingPostureMember" Property="@nameof(BillingPostureMember.Email)" Title="Member">
+                    <Template Context="m">@MemberCell(m)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillingPostureMember" Title="Role" Sortable="false">
+                    <Template Context="m"><span class="rz-text-nowrap">@m.RoleDisplayName</span></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillingPostureMember" Property="@nameof(BillingPostureMember.Inherited)" Title="Grant" Width="100px">
+                    <Template Context="m">@(m.Inherited ? "inherited" : "direct")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillingPostureMember" Title="Account" Sortable="false">
+                    <Template Context="m">@AccountKindChip(m)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillingPostureMember" Property="@nameof(BillingPostureMember.TwoSvOk)" Title="2SV">
+                    <Template Context="m">@TwoSvChip(m)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillingPostureMember" Property="@nameof(BillingPostureMember.AdvancedProtectionOk)" Title="Adv. Protection">
+                    <Template Context="m">@AppChip(m)</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BillingPostureMember" Property="@nameof(BillingPostureMember.KeysOk)" Title="Keys">
+                    <Template Context="m">@KeysChip(m)</Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
     };
 
     private static RenderFragment MemberCell(BillingPostureMember m) => __builder =>
     {
-        <div class="d-flex align-center gap-1">
-            <MudIcon Icon="@(m.MemberType switch { "user" => Icons.Material.Filled.Person, "group" => Icons.Material.Filled.Groups, "serviceAccount" => Icons.Material.Filled.SmartToy, _ => Icons.Material.Filled.HelpOutline })" Size="Size.Small" />
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem" Wrap="FlexWrap.Wrap">
+            <RadzenIcon Icon="@(m.MemberType switch { "user" => AppIcons.Person, "group" => AppIcons.Groups, "serviceAccount" => AppIcons.SmartToy, _ => AppIcons.HelpOutline })" class="rz-text-secondary-color" />
             <span>@m.Email</span>
-            @if (m.IsConsumerAdmin) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled" Class="ml-1">consumer admin</MudChip> }
-            @if (m.IsAdmin == true) { <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined" Class="ml-1">ws admin</MudChip> }
-            @if (m.Suspended == true) { <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined" Class="ml-1">suspended</MudChip> }
-        </div>
+            @if (m.IsConsumerAdmin) { <RadzenBadge BadgeStyle="BadgeStyle.Danger" Text="consumer admin" class="rz-ms-1" /> }
+            @if (m.IsAdmin == true) { <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="ws admin" class="rz-ms-1" /> }
+            @if (m.Suspended == true) { <RadzenBadge BadgeStyle="BadgeStyle.Danger" Text="suspended" class="rz-ms-1" /> }
+        </RadzenStack>
     };
 
     private static RenderFragment AccountKindChip(BillingPostureMember m) => __builder =>
     {
-        var (label, color) = m.AccountKind switch
+        var (label, style) = m.AccountKind switch
         {
-            GoogleAccountKind.Managed => (m.SecurityVisible ? "Managed" : "Managed · unreadable", m.SecurityVisible ? Color.Success : Color.Default),
-            GoogleAccountKind.ManagedTeam => ("Managed (team)", Color.Warning),
-            GoogleAccountKind.Consumer => ("Consumer", Color.Error),
-            _ => ("Unknown", Color.Default)
+            GoogleAccountKind.Managed => (m.SecurityVisible ? "Managed" : "Managed · unreadable", m.SecurityVisible ? BadgeStyle.Success : BadgeStyle.Light),
+            GoogleAccountKind.ManagedTeam => ("Managed (team)", BadgeStyle.Warning),
+            GoogleAccountKind.Consumer => ("Consumer", BadgeStyle.Danger),
+            _ => ("Unknown", BadgeStyle.Light)
         };
-        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="color">@label</MudChip>
+        <RadzenBadge BadgeStyle="@style" Text="@label" />
     };
 
     private static RenderFragment TwoSvChip(BillingPostureMember m) => __builder =>
     {
-        if (!m.Assessable) { <MudText Typo="Typo.caption" Color="Color.Secondary">n/a</MudText> return; }
+        if (!m.Assessable) { <span class="rz-text-secondary-color">n/a</span> return; }
         var on = m.TwoSvOk;
-        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(on ? Color.Success : Color.Error)"
-                 Icon="@(on ? Icons.Material.Filled.VerifiedUser : Icons.Material.Filled.GppBad)">
-            @(on ? (m.TwoStepVerificationEnforced == true ? "On · enforced" : "On") : "Off")
-        </MudChip>
+        <RadzenBadge BadgeStyle="@(on ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(on ? (m.TwoStepVerificationEnforced == true ? "On · enforced" : "On") : "Off")" />
     };
 
     private static RenderFragment AppChip(BillingPostureMember m) => __builder =>
     {
-        if (!m.Assessable) { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> return; }
+        if (!m.Assessable) { <span class="rz-text-secondary-color">—</span> return; }
         switch (m.AdvancedProtection)
         {
             case AdvancedProtectionStatus.Enrolled:
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Icon="@Icons.Material.Filled.Shield">Enrolled</MudChip>
+                <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Enrolled" />
                 break;
             case AdvancedProtectionStatus.Unavailable:
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">Unavailable</MudChip>
+                <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Unavailable" />
                 break;
             default:
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">Not enrolled</MudChip>
+                <RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="Not enrolled" />
                 break;
         }
     };
 
     private static RenderFragment KeysChip(BillingPostureMember m) => __builder =>
     {
-        if (!m.Assessable) { <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText> return; }
-        if (m.SecurityKeys is null && m.Passkeys is null) { <MudText Typo="Typo.caption" Color="Color.Secondary">unknown</MudText> return; }
+        if (!m.Assessable) { <span class="rz-text-secondary-color">—</span> return; }
+        if (m.SecurityKeys is null && m.Passkeys is null) { <span class="rz-text-secondary-color">unknown</span> return; }
         var parts = new List<string>();
         if (m.SecurityKeys is > 0) parts.Add($"{m.SecurityKeys} key{(m.SecurityKeys == 1 ? "" : "s")}");
         if (m.Passkeys is > 0) parts.Add($"{m.Passkeys} passkey{(m.Passkeys == 1 ? "" : "s")}");
-        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(m.KeysOk ? Color.Success : Color.Error)" Icon="@Icons.Material.Filled.Key">
-            @(m.KeysOk ? string.Join(" · ", parts) : "none")
-        </MudChip>
+        <RadzenBadge BadgeStyle="@(m.KeysOk ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(m.KeysOk ? string.Join(" · ", parts) : "none")" />
     };
-
-    // Sort ranks: ascending = weakest first.
-    private static int TwoSvRank(BillingPostureMember m) => !m.Assessable ? 9 : m.TwoSvOk ? 1 : 0;
-    private static int AppRank(BillingPostureMember m) => !m.Assessable ? 9 : m.AdvancedProtectionOk ? 1 : 0;
-    private static int KeysRank(BillingPostureMember m) => !m.Assessable ? 9 : m.KeysOk ? 1 : 0;
 }

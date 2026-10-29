@@ -2,9 +2,13 @@
   <Folder Name="/src/">
     <Project Path="src/GChannel.ApiService/GChannel.ApiService.csproj" />
     <Project Path="src/GChannel.AppHost/GChannel.AppHost.csproj" />
+    <Project Path="src/GChannel.Core/GChannel.Core.csproj" />
     <Project Path="src/GChannel.ServiceDefaults/GChannel.ServiceDefaults.csproj" />
     <Project Path="src/GChannel.Shared/GChannel.Shared.csproj" />
     <Project Path="src/GChannel.Web/GChannel.Web.csproj" />
     <Project Path="src/GChannel.Worker/GChannel.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GChannel.Tests/GChannel.Tests.csproj" />
   </Folder>
 </Solution>

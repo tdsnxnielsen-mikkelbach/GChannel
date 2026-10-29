@@ -1,21 +1,20 @@
 @namespace GChannel.Web.Components
 
 @*
-    Shared loading indicator. Replaces a bare top-of-page progress bar with a centered spinner plus
-    a short title and an optional explanatory hint so the user knows what is being fetched and why
-    it might take a moment (some Channel API aggregations are slow).
+    Shared loading indicator: a centered spinner plus a short title and an optional explanatory hint so the
+    user knows what is being fetched and why it might take a moment (some Channel API aggregations are slow).
 *@
 
-<MudPaper Elevation="0" Class="@($"d-flex flex-column align-center justify-center pa-8 my-4 {Class}")">
-    <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
-    <MudText Typo="Typo.subtitle1" Class="mt-4">@Title</MudText>
+<RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.75rem" class="@($"rz-p-8 rz-my-6 {Class}")">
+    <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Large" ShowValue="false" aria-label="Loading" />
+    <RadzenText TextStyle="TextStyle.H6" TagName="TagName.P" class="rz-m-0">@Title</RadzenText>
     @if (!string.IsNullOrWhiteSpace(Hint))
     {
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="MudBlazor.Align.Center" Class="mt-1" Style="max-width:32rem">
+        <RadzenText TextStyle="TextStyle.Body2" TagName="TagName.P" TextAlign="TextAlign.Center" class="rz-text-secondary-color rz-m-0" Style="max-width:32rem">
             @Hint
-        </MudText>
+        </RadzenText>
     }
-</MudPaper>
+</RadzenStack>
 
 @code {
     /// <summary>Short headline describing what is loading, e.g. "Loading customers…".</summary>

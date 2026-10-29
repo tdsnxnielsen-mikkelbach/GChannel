@@ -1,0 +1,94 @@
+namespace GChannel.Web;
+
+/// <summary>
+/// Material Symbols icon names used across the UI (Radzen renders them as ligatures from its bundled icon font):
+/// <c>&lt;RadzenIcon Icon="@AppIcons.X" /&gt;</c> or <c>&lt;RadzenButton Icon="@AppIcons.X" /&gt;</c>.
+/// </summary>
+public static class AppIcons
+{
+    public const string AccountBalance = "account_balance";
+    public const string AccountTree = "account_tree";
+    public const string Add = "add";
+    public const string AddBusiness = "add_business";
+    public const string AddLink = "add_link";
+    public const string AddShoppingCart = "add_shopping_cart";
+    public const string ArrowBack = "arrow_back";
+    public const string ArrowForward = "arrow_forward";
+    public const string Autorenew = "autorenew";
+    public const string Block = "block";
+    public const string Bolt = "bolt";
+    public const string Business = "business";
+    public const string Cancel = "cancel";
+    public const string Category = "category";
+    public const string Check = "check";
+    public const string CheckCircle = "check_circle";
+    public const string Checklist = "checklist";
+    public const string ChevronRight = "chevron_right";
+    public const string Close = "close";
+    public const string CloudDownload = "cloud_download";
+    public const string DarkMode = "dark_mode";
+    public const string Dashboard = "dashboard";
+    public const string Delete = "delete";
+    public const string Edit = "edit";
+    public const string Email = "mail";
+    public const string Error = "error";
+    public const string ErrorOutline = "error";
+    public const string Event = "event";
+    public const string ExpandLess = "expand_less";
+    public const string ExpandMore = "expand_more";
+    public const string FilterAlt = "filter_alt";
+    public const string GppBad = "gpp_bad";
+    public const string Group = "group";
+    public const string Groups = "groups";
+    public const string HelpOutline = "help";
+    public const string Hub = "hub";
+    public const string Info = "info";
+    public const string Inventory = "inventory_2";
+    public const string Key = "key";
+    public const string KeyboardArrowDown = "keyboard_arrow_down";
+    public const string KeyboardArrowUp = "keyboard_arrow_up";
+    public const string Language = "language";
+    public const string Lightbulb = "lightbulb";
+    public const string LightMode = "light_mode";
+    public const string LocalOffer = "sell";
+    public const string Login = "login";
+    public const string Logout = "logout";
+    public const string MarkEmailRead = "mark_email_read";
+    public const string Menu = "menu";
+    public const string MoreVert = "more_vert";
+    public const string MoveToInbox = "move_to_inbox";
+    public const string Notifications = "notifications";
+    public const string NotificationsActive = "notifications_active";
+    public const string OpenInNew = "open_in_new";
+    public const string Paid = "paid";
+    public const string Pause = "pause";
+    public const string PauseCircle = "pause_circle";
+    public const string Payments = "payments";
+    public const string People = "group";
+    public const string PeopleAlt = "groups";
+    public const string Percent = "percent";
+    public const string Person = "person";
+    public const string PersonAdd = "person_add";
+    public const string PlayArrow = "play_arrow";
+    public const string RadioButtonUnchecked = "radio_button_unchecked";
+    public const string Refresh = "refresh";
+    public const string Savings = "savings";
+    public const string Schedule = "schedule";
+    public const string Search = "search";
+    public const string Security = "security";
+    public const string Send = "send";
+    public const string Shield = "shield";
+    public const string ShoppingCartCheckout = "shopping_cart_checkout";
+    public const string ShowChart = "show_chart";
+    public const string SmartToy = "smart_toy";
+    public const string Storefront = "storefront";
+    public const string Subscriptions = "subscriptions";
+    public const string SwapHoriz = "swap_horiz";
+    public const string Sync = "sync";
+    public const string Tour = "tour";
+    public const string Tune = "tune";
+    public const string VerifiedUser = "verified_user";
+    public const string Visibility = "visibility";
+    public const string Warning = "warning";
+    public const string WavingHand = "waving_hand";
+}

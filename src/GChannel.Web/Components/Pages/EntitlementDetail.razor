@@ -1,8 +1,7 @@
 @page "/customers/{CustomerId}/entitlements/{Id}"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
-@inject IDialogService DialogService
+@inject UiNotifier Snackbar
 
 <PageTitle>Entitlement · GChannel</PageTitle>
 
@@ -13,290 +12,244 @@
 }
 else if (_entitlement is null)
 {
-    <MudAlert Severity="Severity.Error">Entitlement not found.</MudAlert>
-    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="@($"/customers/{CustomerId}/entitlements")"
-               StartIcon="@Icons.Material.Filled.ArrowBack">Back to entitlements</MudButton>
+    <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">Entitlement not found.</RadzenAlert>
+    <LinkButton To="@($"/customers/{CustomerId}/entitlements")" Text="Back to entitlements" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Class="rz-mt-4" />
 }
 else
 {
-    <div class="d-flex justify-space-between align-center mb-4">
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-4">
         <div>
-            <MudText Typo="Typo.h4">@(_entitlement.SkuDisplayName ?? _entitlement.OfferDisplayName ?? _entitlement.OfferId ?? _entitlement.Id)</MudText>
-            <div class="d-flex gap-2 align-center mt-1">
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(_entitlement.ProvisioningState)">
-                    @(_entitlement.ProvisioningState ?? "—")
-                </MudChip>
+            <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">@(_entitlement.SkuDisplayName ?? _entitlement.OfferDisplayName ?? _entitlement.OfferId ?? _entitlement.Id)</RadzenText>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mt-1">
+                <RadzenBadge BadgeStyle="@StateColor(_entitlement.ProvisioningState)" Text="@(_entitlement.ProvisioningState ?? "—")" />
                 @if (_entitlement.IsTrial)
                 {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">Trial</MudChip>
+                    <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Trial" />
                 }
-            </div>
+            </RadzenStack>
         </div>
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
-                   Href="@($"/customers/{CustomerId}/entitlements")">Entitlements</MudButton>
-    </div>
+        <LinkButton To="@($"/customers/{CustomerId}/entitlements")" Text="Entitlements" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+    </RadzenStack>
 
-    <MudGrid>
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Details</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
-                    <MudSimpleTable Dense="true" Elevation="0">
-                        <tbody>
-                            <tr><td><strong>Entitlement id</strong></td><td>@_entitlement.Id</td></tr>
-                            <tr>
-                                <td><strong>Offer</strong></td>
-                                <td>
-                                    @if (!string.IsNullOrEmpty(_entitlement.SkuId))
-                                    {
-                                        <MudLink Href="@($"/catalog/offers?sku={_entitlement.SkuId}")">@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")</MudLink>
-                                    }
-                                    else { <span>@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")</span> }
-                                    @if (!string.IsNullOrEmpty(_entitlement.OfferId) && !string.IsNullOrEmpty(_entitlement.OfferDisplayName))
-                                    {
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@_entitlement.OfferId</MudText>
-                                    }
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><strong>Product / SKU</strong></td>
-                                <td>
-                                    @if (!string.IsNullOrEmpty(_entitlement.ProductId))
-                                    {
-                                        <MudLink Href="@($"/catalog/products?product={_entitlement.ProductId}&sku={_entitlement.SkuId}")">
-                                            @(_entitlement.ProductDisplayName ?? _entitlement.ProductId) / @(_entitlement.SkuDisplayName ?? _entitlement.SkuId)
-                                        </MudLink>
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@(_entitlement.ProductId) / @(_entitlement.SkuId)</MudText>
-                                    }
-                                    else { <span>—</span> }
-                                </td>
-                            </tr>
-                            <tr><td><strong>Seats</strong></td><td>@(Seats(_entitlement) ?? "—")</td></tr>
-                            <tr><td><strong>Purchase order</strong></td><td>@(_entitlement.PurchaseOrderId ?? "—")</td></tr>
-                            <tr>
-                                <td><strong>Billing account</strong></td>
-                                <td>
-                                    @if (!string.IsNullOrEmpty(_entitlement.BillingAccount))
-                                    {
-                                        <span>@(BillingAccountId ?? _entitlement.BillingAccount)</span>
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">@_entitlement.BillingAccount</MudText>
-                                    }
-                                    else { <span>—</span> }
-                                </td>
-                            </tr>
-                            <tr><td><strong>Created</strong></td><td>@(_entitlement.CreateTime?.ToString("u") ?? "—")</td></tr>
-                            <tr><td><strong>Updated</strong></td><td>@(_entitlement.UpdateTime?.ToString("u") ?? "—")</td></tr>
-                            @if (_entitlement.IsTrial && _entitlement.TrialEndTime is not null)
-                            {
-                                <tr><td><strong>Trial ends</strong></td><td>@_entitlement.TrialEndTime.Value.ToString("u")</td></tr>
-                            }
-                            @if (_entitlement.SuspensionReasons.Count > 0)
-                            {
-                                <tr><td><strong>Suspension reasons</strong></td><td>@string.Join(", ", _entitlement.SuspensionReasons)</td></tr>
-                            }
-                        </tbody>
-                    </MudSimpleTable>
-                </MudCardContent>
-            </MudCard>
-
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Commitment &amp; renewal</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
-                    <MudSimpleTable Dense="true" Elevation="0" Class="mb-2">
-                        <tbody>
-                            <tr><td><strong>Payment plan</strong></td><td>@(_entitlement.Commitment?.PaymentPlan ?? "—")</td></tr>
-                            <tr><td><strong>Commitment start</strong></td><td>@(_entitlement.Commitment?.StartTime?.ToString("u") ?? "—")</td></tr>
-                            <tr><td><strong>Commitment end</strong></td><td>@(_entitlement.Commitment?.EndTime?.ToString("u") ?? "—")</td></tr>
-                        </tbody>
-                    </MudSimpleTable>
-                    <div class="d-flex align-center gap-4">
-                        <MudSwitch T="bool" @bind-Value="_renewalEnabled" Color="Color.Primary" Label="Auto-renew" />
-                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="_busy" OnClick="SaveRenewalAsync">
-                            Save renewal
-                        </MudButton>
-                    </div>
-                </MudCardContent>
-            </MudCard>
-
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Licenses</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
-                    <MudSimpleTable Dense="true" Elevation="0">
-                        <tbody>
-                            <tr><td><strong>Total licenses</strong></td><td>@SeatCount</td></tr>
-                            <tr>
-                                <td><strong>Assigned</strong></td>
-                                <td>
-                                    <MudTooltip Text="Assigned-seat counts aren't exposed by the Channel API — they live in each customer's own Workspace tenant (Enterprise License Manager / Admin SDK), which needs per-customer authorization.">
-                                        <span>— <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-inline">(not available)</MudText></span>
-                                    </MudTooltip>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </MudSimpleTable>
-                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" Href="#modify"
-                               StartIcon="@Icons.Material.Filled.Tune">Manage licenses</MudButton>
-                </MudCardContent>
-            </MudCard>
-
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Payment &amp; pricing (estimated)</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
-                    @if (_pricingLoading)
+    <RadzenRow Gap="1rem" RowGap="1rem">
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Details</RadzenText>
+                <RadzenStack Gap="0.5rem">
+                    <DetailRow Label="Entitlement id">@_entitlement.Id</DetailRow>
+                    <DetailRow Label="Offer">
+                        @if (!string.IsNullOrEmpty(_entitlement.SkuId))
+                        {
+                            <RadzenLink Path="@($"/catalog/offers?sku={_entitlement.SkuId}")" Text="@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")" />
+                        }
+                        else { <span>@(_entitlement.OfferDisplayName ?? _entitlement.OfferId ?? "—")</span> }
+                        @if (!string.IsNullOrEmpty(_entitlement.OfferId) && !string.IsNullOrEmpty(_entitlement.OfferDisplayName))
+                        {
+                            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@_entitlement.OfferId</RadzenText>
+                        }
+                    </DetailRow>
+                    <DetailRow Label="Product / SKU">
+                        @if (!string.IsNullOrEmpty(_entitlement.ProductId))
+                        {
+                            <RadzenLink Path="@($"/catalog/products?product={_entitlement.ProductId}&sku={_entitlement.SkuId}")"
+                                        Text="@($"{_entitlement.ProductDisplayName ?? _entitlement.ProductId} / {_entitlement.SkuDisplayName ?? _entitlement.SkuId}")" />
+                            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@(_entitlement.ProductId) / @(_entitlement.SkuId)</RadzenText>
+                        }
+                        else { <span>—</span> }
+                    </DetailRow>
+                    <DetailRow Label="Seats">@(Seats(_entitlement) ?? "—")</DetailRow>
+                    <DetailRow Label="Purchase order">@(_entitlement.PurchaseOrderId ?? "—")</DetailRow>
+                    <DetailRow Label="Billing account">
+                        @if (!string.IsNullOrEmpty(_entitlement.BillingAccount))
+                        {
+                            <span>@(BillingAccountId ?? _entitlement.BillingAccount)</span>
+                            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@_entitlement.BillingAccount</RadzenText>
+                        }
+                        else { <span>—</span> }
+                    </DetailRow>
+                    <DetailRow Label="Created">@(_entitlement.CreateTime?.ToString("u") ?? "—")</DetailRow>
+                    <DetailRow Label="Updated">@(_entitlement.UpdateTime?.ToString("u") ?? "—")</DetailRow>
+                    @if (_entitlement.IsTrial && _entitlement.TrialEndTime is not null)
                     {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                        <DetailRow Label="Trial ends">@_entitlement.TrialEndTime.Value.ToString("u")</DetailRow>
                     }
-                    else if (SeatPrice is { } seat)
+                    @if (_entitlement.SuspensionReasons.Count > 0)
                     {
-                        <MudSimpleTable Dense="true" Elevation="0">
-                            <tbody>
-                                <tr><td><strong>Billing cycle</strong></td><td>@(string.IsNullOrEmpty(_offerCycle) ? "—" : _offerCycle)</td></tr>
-                                <tr><td><strong>Wholesale / seat</strong></td><td>@seat.Display@(string.IsNullOrEmpty(_offerCycle) ? "" : $" · {_offerCycle.ToLowerInvariant()}")</td></tr>
-                                <tr><td><strong>Seats</strong></td><td>@SeatCount</td></tr>
-                                <tr><td><strong>Wholesale total</strong></td><td>@($"{seat.CurrencyCode} {WholesaleTotal:0.00}")</td></tr>
-                                @if (_entitlement.IonCostPerSeat is { } ionCost)
-                                {
-                                    <tr><td><strong>Ion cost / seat (actual)</strong></td><td>@($"{_entitlement.IonCurrency ?? seat.CurrencyCode} {ionCost:0.00}")</td></tr>
-                                    @if (_entitlement.IonMarginPercent is { } ionMp)
-                                    {
-                                        <tr><td><strong>Ion margin</strong></td><td>@ionMp.ToString("0.0")%</td></tr>
-                                    }
-                                }
-                                @if (_repricingPercent is { } pct)
-                                {
-                                    <tr><td><strong>Repricing</strong></td><td>@(pct >= 0 ? "+" : "")@pct.ToString("0.##")%</td></tr>
-                                    <tr><td><strong>Computed price</strong></td><td>@($"{seat.CurrencyCode} {ComputedTotal:0.00}")</td></tr>
-                                    <tr><td><strong>Est. margin</strong></td><td>@($"{seat.CurrencyCode} {(ComputedTotal - WholesaleTotal):0.00}")</td></tr>
-                                }
-                                <tr><td><strong>Estimated / month</strong></td><td>@($"{seat.CurrencyCode} {ComputedMonthly:0.00}")@(MonthsInCycle() > 1 ? $" (≈ {seat.CurrencyCode} {ComputedTotal:0.00} ÷ {MonthsInCycle()} mo)" : "")</td></tr>
-                                <tr><td><strong>Renewal</strong></td><td>@RenewalTermText()</td></tr>
-                            </tbody>
-                        </MudSimpleTable>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                            Estimated wholesale list pricing × seats, normalised to a monthly figure@(_repricingPercent is null ? " (no repricing config; computed price = wholesale)" : "") — not an invoiced amount.
-                            @if (_entitlement.IonCostPerSeat is not null)
+                        <DetailRow Label="Suspension reasons">@string.Join(", ", _entitlement.SuspensionReasons)</DetailRow>
+                    }
+                </RadzenStack>
+            </RadzenCard>
+
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Commitment &amp; renewal</RadzenText>
+                <RadzenStack Gap="0.5rem" class="rz-mb-3">
+                    <DetailRow Label="Payment plan">@(_entitlement.Commitment?.PaymentPlan ?? "—")</DetailRow>
+                    <DetailRow Label="Commitment start">@(_entitlement.Commitment?.StartTime?.ToString("u") ?? "—")</DetailRow>
+                    <DetailRow Label="Commitment end">@(_entitlement.Commitment?.EndTime?.ToString("u") ?? "—")</DetailRow>
+                </RadzenStack>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenSwitch @bind-Value="_renewalEnabled" Name="renewal" />
+                        <RadzenLabel Text="Auto-renew" Component="renewal" />
+                    </RadzenStack>
+                    <RadzenButton Text="Save renewal" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Disabled="_busy" Click="SaveRenewalAsync" />
+                </RadzenStack>
+            </RadzenCard>
+
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Licenses</RadzenText>
+                <RadzenStack Gap="0.5rem" class="rz-mb-2">
+                    <DetailRow Label="Total licenses">@SeatCount</DetailRow>
+                    <DetailRow Label="Assigned">
+                        <Tip Text="Assigned-seat counts aren't exposed by the Channel API — they live in each customer's own Workspace tenant (Enterprise License Manager / Admin SDK), which needs per-customer authorization.">
+                            <span>— <span class="rz-text-secondary-color">(not available)</span></span>
+                        </Tip>
+                    </DetailRow>
+                </RadzenStack>
+                <LinkButton To="#modify" Text="Manage licenses" Icon="@AppIcons.Tune" Variant="Variant.Text" Size="ButtonSize.Small" />
+            </RadzenCard>
+
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Payment &amp; pricing (estimated)</RadzenText>
+                @if (_pricingLoading)
+                {
+                    <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+                }
+                else if (SeatPrice is { } seat)
+                {
+                    <RadzenStack Gap="0.5rem" class="rz-mb-2">
+                        <DetailRow Label="Billing cycle">@(string.IsNullOrEmpty(_offerCycle) ? "—" : _offerCycle)</DetailRow>
+                        <DetailRow Label="Wholesale / seat">@seat.Display@(string.IsNullOrEmpty(_offerCycle) ? "" : $" · {_offerCycle.ToLowerInvariant()}")</DetailRow>
+                        <DetailRow Label="Seats">@SeatCount</DetailRow>
+                        <DetailRow Label="Wholesale total">@($"{seat.CurrencyCode} {WholesaleTotal:0.00}")</DetailRow>
+                        @if (_entitlement.IonCostPerSeat is { } ionCost)
+                        {
+                            <DetailRow Label="Ion cost / seat (actual)">@($"{_entitlement.IonCurrency ?? seat.CurrencyCode} {ionCost:0.00}")</DetailRow>
+                            @if (_entitlement.IonMarginPercent is { } ionMp)
                             {
-                                <span> The <b>Ion</b> rows are <b>actual</b> transacted cost/margin from TD SYNNEX StreamOne; all other figures are estimated from Google list pricing.</span>
+                                <DetailRow Label="Ion margin">@ionMp.ToString("0.0")%</DetailRow>
                             }
-                        </MudText>
+                        }
+                        @if (_repricingPercent is { } pct)
+                        {
+                            <DetailRow Label="Repricing">@(pct >= 0 ? "+" : "")@pct.ToString("0.##")%</DetailRow>
+                            <DetailRow Label="Computed price">@($"{seat.CurrencyCode} {ComputedTotal:0.00}")</DetailRow>
+                            <DetailRow Label="Est. margin">@($"{seat.CurrencyCode} {(ComputedTotal - WholesaleTotal):0.00}")</DetailRow>
+                        }
+                        <DetailRow Label="Estimated / month">@($"{seat.CurrencyCode} {ComputedMonthly:0.00}")@(MonthsInCycle() > 1 ? $" (≈ {seat.CurrencyCode} {ComputedTotal:0.00} ÷ {MonthsInCycle()} mo)" : "")</DetailRow>
+                        <DetailRow Label="Renewal">@RenewalTermText()</DetailRow>
+                    </RadzenStack>
+                    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+                        Estimated wholesale list pricing × seats, normalised to a monthly figure@(_repricingPercent is null ? " (no repricing config; computed price = wholesale)" : "") — not an invoiced amount.
+                        @if (_entitlement.IonCostPerSeat is not null)
+                        {
+                            <span> The <b>Ion</b> rows are <b>actual</b> transacted cost/margin from TD SYNNEX StreamOne; all other figures are estimated from Google list pricing.</span>
+                        }
+                    </RadzenText>
+                }
+                else
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No list pricing available for this offer.</RadzenText>
+                }
+            </RadzenCard>
+        </RadzenColumn>
+
+        <RadzenColumn Size="12" SizeLG="6">
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4" id="modify">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Modify</RadzenText>
+                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Seats</RadzenText>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-4">
+                    <RadzenFormField Text="num_units" Variant="Variant.Outlined" Style="max-width:160px">
+                        <RadzenNumeric TValue="int" @bind-Value="_newSeats" Min="1" Name="seats" />
+                    </RadzenFormField>
+                    <RadzenButton Text="Update seats" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Disabled="_busy" Click="ChangeSeatsAsync" />
+                </RadzenStack>
+
+                <hr class="rz-my-3" />
+
+                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Change offer</RadzenText>
+                @if (_offers is null)
+                {
+                    <RadzenButton Text="@(_offersLoading ? "Loading offers…" : "Load eligible offers")" Icon="@AppIcons.SwapHoriz" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Click="LoadOffersAsync" Disabled="_offersLoading" />
+                }
+                else if (_offers.Count == 0)
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No alternative offers available for this SKU.</RadzenText>
+                }
+                else
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                        <RadzenFormField Text="New offer" Variant="Variant.Outlined" Style="width:100%; max-width:320px">
+                            <RadzenDropDown TValue="string" @bind-Value="_changeOfferName" Data="_offers" ValueProperty="@nameof(PurchasableOffer.OfferName)" TextProperty="@nameof(PurchasableOffer.DisplayName)"
+                                            AllowClear="true" Placeholder="Choose an offer…" Name="newOffer">
+                                <Template Context="o">@(o.DisplayName ?? o.OfferName)</Template>
+                            </RadzenDropDown>
+                        </RadzenFormField>
+                        <RadzenButton Text="Change" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Disabled="@(_busy || string.IsNullOrEmpty(_changeOfferName))" Click="ChangeOfferAsync" />
+                    </RadzenStack>
+                }
+            </RadzenCard>
+
+            <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Lifecycle</RadzenText>
+                <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+                    @if (IsSuspended(_entitlement))
+                    {
+                        <RadzenButton Text="Activate" Icon="@AppIcons.PlayArrow" ButtonStyle="ButtonStyle.Success" Variant="Variant.Outlined" Disabled="_busy" Click="ActivateAsync" />
                     }
                     else
                     {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">No list pricing available for this offer.</MudText>
+                        <RadzenButton Text="Suspend" Icon="@AppIcons.Pause" ButtonStyle="ButtonStyle.Warning" Variant="Variant.Outlined" Disabled="_busy" Click="SuspendAsync" />
                     }
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2" Class="mb-4" id="modify">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Modify</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
-                    <MudText Typo="Typo.subtitle2" Class="mb-1">Seats</MudText>
-                    <div class="d-flex align-center gap-4 mb-4">
-                        <MudNumericField T="int" @bind-Value="_newSeats" Label="num_units" Min="1" Style="max-width:160px" />
-                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="_busy" OnClick="ChangeSeatsAsync">
-                            Update seats
-                        </MudButton>
-                    </div>
-
-                    <MudDivider Class="my-3" />
-
-                    <MudText Typo="Typo.subtitle2" Class="mb-1">Change offer</MudText>
-                    @if (_offers is null)
+                    @if (_entitlement.IsTrial)
                     {
-                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.SwapHoriz" OnClick="LoadOffersAsync" Disabled="_offersLoading">
-                            @(_offersLoading ? "Loading offers…" : "Load eligible offers")
-                        </MudButton>
+                        <RadzenButton Text="Start paid service" Icon="@AppIcons.Paid" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Disabled="_busy" Click="StartPaidAsync" />
                     }
-                    else if (_offers.Count == 0)
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">No alternative offers available for this SKU.</MudText>
-                    }
-                    else
-                    {
-                        <div class="d-flex align-center gap-4">
-                            <MudSelect T="string" Label="New offer" @bind-Value="_changeOfferName" Dense="true" Style="max-width:320px">
-                                @foreach (var offer in _offers)
-                                {
-                                    <MudSelectItem Value="@offer.OfferName">@(offer.DisplayName ?? offer.OfferName)</MudSelectItem>
-                                }
-                            </MudSelect>
-                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="@(_busy || string.IsNullOrEmpty(_changeOfferName))"
-                                       OnClick="ChangeOfferAsync">Change</MudButton>
-                        </div>
-                    }
-                </MudCardContent>
-            </MudCard>
+                    <RadzenButton Text="Cancel" Icon="@AppIcons.Cancel" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Disabled="_busy" Click="CancelAsync" />
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
 
-            <MudCard Elevation="2" Class="mb-4">
-                <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Lifecycle</MudText></CardHeaderContent></MudCardHeader>
-                <MudCardContent>
-                    <div class="d-flex flex-wrap gap-2">
-                        @if (IsSuspended(_entitlement))
-                        {
-                            <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.PlayArrow"
-                                       Disabled="_busy" OnClick="ActivateAsync">Activate</MudButton>
-                        }
-                        else
-                        {
-                            <MudButton Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Pause"
-                                       Disabled="_busy" OnClick="SuspendAsync">Suspend</MudButton>
-                        }
-                        @if (_entitlement.IsTrial)
-                        {
-                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Paid"
-                                       Disabled="_busy" OnClick="StartPaidAsync">Start paid service</MudButton>
-                        }
-                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Cancel"
-                                   Disabled="_busy" OnClick="CancelAsync">Cancel</MudButton>
-                    </div>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-    </MudGrid>
-
-    <MudCard Elevation="2" Class="mt-2">
-        <MudCardHeader><CardHeaderContent><MudText Typo="Typo.h6">Change history</MudText></CardHeaderContent></MudCardHeader>
-        <MudCardContent>
-            @if (_changes is null)
-            {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
-            }
-            else if (_changes.Count == 0)
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No recorded changes.</MudText>
-            }
-            else
-            {
-                <MudTable Items="_changes" Dense="true" Hover="true" Elevation="0">
-                    <HeaderContent>
-                        <MudTh>When</MudTh>
-                        <MudTh>Change</MudTh>
-                        <MudTh>Offer</MudTh>
-                        <MudTh>By</MudTh>
-                        <MudTh>Reason</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="When">@(context.CreateTime?.ToString("u") ?? "—")</MudTd>
-                        <MudTd DataLabel="Change">@(context.ChangeType ?? "—")</MudTd>
-                        <MudTd DataLabel="Offer">
-                            @if (!string.IsNullOrEmpty(context.OfferId))
+    <RadzenCard Variant="Variant.Filled" class="rz-mt-2">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Change history</RadzenText>
+        @if (_changes is null)
+        {
+            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+        }
+        else if (_changes.Count == 0)
+        {
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No recorded changes.</RadzenText>
+        }
+        else
+        {
+            <RadzenDataGrid TItem="EntitlementChange" Data="_changes" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="When" Width="190px">
+                        <Template Context="change">@(change.CreateTime?.ToString("u") ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="Change">
+                        <Template Context="change">@(change.ChangeType ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="Offer">
+                        <Template Context="change">
+                            @if (!string.IsNullOrEmpty(change.OfferId))
                             {
-                                <MudTooltip Text="@context.OfferId">
-                                    <MudLink Href="@($"/catalog/offers?sku={_entitlement.SkuId}")">@(context.OfferDisplayName ?? context.OfferId)</MudLink>
-                                </MudTooltip>
+                                <Tip Text="@change.OfferId"><RadzenLink Path="@($"/catalog/offers?sku={_entitlement.SkuId}")" Text="@(change.OfferDisplayName ?? change.OfferId)" /></Tip>
                             }
                             else { <span>—</span> }
-                        </MudTd>
-                        <MudTd DataLabel="By">@(context.OperatorType ?? "—")</MudTd>
-                        <MudTd DataLabel="Reason">@(context.Reason ?? "—")</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            }
-        </MudCardContent>
-    </MudCard>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="By">
+                        <Template Context="change">@(change.OperatorType ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="EntitlementChange" Title="Reason">
+                        <Template Context="change">@(change.Reason ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </RadzenCard>
 }
 
 @code {
@@ -386,7 +339,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load entitlement: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load entitlement: {ex.Message}", Severity.Error);
             _entitlement = null;
         }
         finally
@@ -403,7 +356,7 @@ else
             }
             catch (Exception ex)
             {
-                Snackbar.Add($"Failed to load change history: {ex.Message}", Severity.Error);
+                await Snackbar.Add($"Failed to load change history: {ex.Message}", Severity.Error);
                 _changes = [];
             }
 
@@ -441,7 +394,7 @@ else
     {
         if (_entitlement is null || string.IsNullOrEmpty(_entitlement.ProductId) || string.IsNullOrEmpty(_entitlement.SkuId))
         {
-            Snackbar.Add("This entitlement has no resolvable product/SKU to look up offers.", Severity.Warning);
+            await Snackbar.Add("This entitlement has no resolvable product/SKU to look up offers.", Severity.Warning);
             return;
         }
 
@@ -453,7 +406,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load offers: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -503,8 +456,8 @@ else
 
     private async Task ConfirmMutateAsync(string action, string confirm, Func<Task<EntitlementOperation?>> call)
     {
-        var confirmed = await DialogService.ShowMessageBoxAsync($"{action} entitlement", confirm, yesText: action, cancelText: "Cancel");
-        if (confirmed == true)
+        var confirmed = await Snackbar.ConfirmAsync($"{action} entitlement", confirm, yesText: action, cancelText: "Cancel");
+        if (confirmed)
         {
             await MutateAsync(action, call);
         }
@@ -518,11 +471,11 @@ else
             var op = await call();
             if (!string.IsNullOrEmpty(op?.Error))
             {
-                Snackbar.Add($"{action} failed: {op!.Error}", Severity.Error);
+                await Snackbar.Add($"{action} failed: {op!.Error}", Severity.Error);
                 return;
             }
 
-            Snackbar.Add(op?.Done == true
+            await Snackbar.Add(op?.Done == true
                 ? $"{action} completed."
                 : $"{action} submitted — Google is processing it, this may take a moment.",
                 op?.Done == true ? Severity.Success : Severity.Info);
@@ -530,7 +483,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"{action} failed: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"{action} failed: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -541,16 +494,17 @@ else
     private static bool IsSuspended(Entitlement e) =>
         string.Equals(e.ProvisioningState, "SUSPENDED", StringComparison.OrdinalIgnoreCase);
 
-    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle StateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "SUSPENDED" => Color.Warning,
-        "CANCELLED" or "CANCELED" => Color.Error,
-        "PENDING" => Color.Info,
-        _ => Color.Default
+        "ACTIVE" => BadgeStyle.Success,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "CANCELLED" or "CANCELED" => BadgeStyle.Danger,
+        "PENDING" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private static string? Seats(Entitlement e) =>
         e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "num_units", StringComparison.OrdinalIgnoreCase))?.Value
         ?? e.Parameters.FirstOrDefault(p => string.Equals(p.Name, "max_units", StringComparison.OrdinalIgnoreCase))?.Value;
 }
+

@@ -1,51 +1,31 @@
-using GChannel.ApiService.Configuration;
-using GChannel.ApiService.Data;
+using GChannel.Core.Configuration;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
-using Microsoft.EntityFrameworkCore;
+using Marten;
 using Microsoft.Extensions.Options;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
-/// Billing IAM security posture — read-only views over the BillingPostureAccounts / BillingPostureMembers
-/// read-model the worker's nightly <c>BillingPostureSyncService</c> populates. No Google calls here.
+/// Billing IAM security posture — read-only views over the BillingPostureAccount / BillingPostureMember
+/// documents the worker's nightly posture scan populates. No Google calls here.
 /// </summary>
 public static class BillingPostureEndpoints
 {
-    private const string CursorScope = "billing-posture";
+    public const string CursorScope = "billing-posture";
 
-    public static IEndpointRouteBuilder MapBillingPostureEndpoints(this IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/billing/posture").WithTags("Billing posture");
-
-        group.MapGet("", GetSummaryAsync)
-            .WithName("BillingPostureSummary")
-            .WithSummary("Estate-wide billing IAM security KPIs + per-account roll-up from the nightly scan.");
-
-        group.MapGet("/accounts/{billingAccountId}/members", GetMembersAsync)
-            .WithName("BillingPostureMembers")
-            .WithSummary("Scanned members with posture for one billing account.");
-
-        group.MapGet("/findings", GetFindingsAsync)
-            .WithName("BillingPostureFindings")
-            .WithSummary("Flat action list of non-compliant members and consumer admins across all accounts.");
-
-        return app;
-    }
-
-    private static async Task<IResult> GetSummaryAsync(
-        GChannelDbContext db,
-        IOptions<GoogleChannelOptions> channelOptions,
-        IOptions<GoogleBillingOptions> billingOptions,
-        CancellationToken ct)
+    [WolverineGet("/api/billing/posture")]
+    public static async Task<BillingPostureSummary> GetSummary(
+        IQuerySession session, IOptions<GoogleChannelOptions> channelOptions, IOptions<GoogleBillingOptions> billingOptions, CancellationToken ct)
     {
         var unconfigured = !billingOptions.Value.PostureScanEnabled
             || !channelOptions.Value.HasServiceAccountCredential
             || string.IsNullOrWhiteSpace(channelOptions.Value.ImpersonateUser);
 
-        var cursor = await db.SyncCursors.AsNoTracking().FirstOrDefaultAsync(c => c.Scope == CursorScope, ct);
-        var accounts = await db.BillingPostureAccounts.AsNoTracking().ToListAsync(ct);
-        var members = (await db.BillingPostureMembers.AsNoTracking().ToListAsync(ct)).Select(ToContract).ToList();
+        var cursor = await session.LoadAsync<SyncCursor>(CursorScope, ct);
+        var accounts = await session.Query<BillingPostureAccountRecord>().ToListAsync(ct);
+        var members = (await session.Query<BillingPostureMemberRecord>().ToListAsync(ct)).Select(ToContract).ToList();
 
         var byAccount = members.ToLookup(m => m.BillingAccountId, StringComparer.OrdinalIgnoreCase);
         var accountRows = accounts
@@ -74,7 +54,7 @@ public static class BillingPostureEndpoints
         var distinctDirect = members.Where(m => !m.Inherited).DistinctBy(m => (m.Email.ToLowerInvariant(), m.Role));
         var distinctInherited = members.Where(m => m.Inherited).DistinctBy(m => (m.Email.ToLowerInvariant(), m.Role));
 
-        return Results.Ok(new BillingPostureSummary
+        return new BillingPostureSummary
         {
             AsOf = cursor?.LastFullPassUtc,
             Unconfigured = unconfigured,
@@ -87,18 +67,18 @@ public static class BillingPostureEndpoints
             Direct = Bucket(distinctDirect),
             Inherited = Bucket(distinctInherited),
             Accounts = accountRows
-        });
+        };
     }
 
-    private static async Task<IResult> GetMembersAsync(string billingAccountId, GChannelDbContext db, CancellationToken ct)
+    [WolverineGet("/api/billing/posture/accounts/{billingAccountId}/members")]
+    public static async Task<BillingPostureMembersResult> GetMembers(string billingAccountId, IQuerySession session, CancellationToken ct)
     {
-        var account = await db.BillingPostureAccounts.AsNoTracking()
-            .FirstOrDefaultAsync(a => a.BillingAccountId == billingAccountId, ct);
-        var rows = await db.BillingPostureMembers.AsNoTracking()
+        var account = await session.LoadAsync<BillingPostureAccountRecord>(billingAccountId, ct);
+        var rows = await session.Query<BillingPostureMemberRecord>()
             .Where(m => m.BillingAccountId == billingAccountId)
             .ToListAsync(ct);
 
-        return Results.Ok(new BillingPostureMembersResult
+        return new BillingPostureMembersResult
         {
             BillingAccountId = billingAccountId,
             Members = rows.Select(ToContract)
@@ -108,13 +88,14 @@ public static class BillingPostureEndpoints
                 .ThenBy(m => m.Email, StringComparer.OrdinalIgnoreCase)
                 .ToList(),
             AsOf = account?.LastSyncedUtc
-        });
+        };
     }
 
-    private static async Task<IResult> GetFindingsAsync(string? scope, GChannelDbContext db, CancellationToken ct)
+    [WolverineGet("/api/billing/posture/findings")]
+    public static async Task<BillingPostureFindingsResult> GetFindings(string? scope, IQuerySession session, CancellationToken ct)
     {
-        var cursor = await db.SyncCursors.AsNoTracking().FirstOrDefaultAsync(c => c.Scope == CursorScope, ct);
-        var query = db.BillingPostureMembers.AsNoTracking();
+        var cursor = await session.LoadAsync<SyncCursor>(CursorScope, ct);
+        var query = session.Query<BillingPostureMemberRecord>().AsQueryable();
         query = scope?.ToLowerInvariant() switch
         {
             "direct" => query.Where(m => !m.Inherited),
@@ -139,7 +120,7 @@ public static class BillingPostureEndpoints
             .ThenBy(f => f.Member.Email, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return Results.Ok(new BillingPostureFindingsResult { Findings = findings, AsOf = cursor?.LastFullPassUtc });
+        return new BillingPostureFindingsResult { Findings = findings, AsOf = cursor?.LastFullPassUtc };
     }
 
     private static PostureBucket Bucket(IEnumerable<BillingPostureMember> source)
@@ -161,7 +142,7 @@ public static class BillingPostureEndpoints
         };
     }
 
-    private static BillingPostureMember ToContract(BillingPostureMemberRecord r) => new()
+    internal static BillingPostureMember ToContract(BillingPostureMemberRecord r) => new()
     {
         BillingAccountId = r.BillingAccountId,
         Email = r.Email,

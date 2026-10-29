@@ -1,110 +1,123 @@
 @page "/channel-partner-links"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Channel partner links · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-4">
-    <MudText Typo="Typo.h4">Channel partner links</MudText>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.AddLink"
-               Href="/channel-partner-links/new">
-        Invite partner
-    </MudButton>
-</div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-4">
+    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Channel partner links</RadzenText>
+    <LinkButton To="/channel-partner-links/new" Text="Invite partner" Icon="@AppIcons.AddLink" />
+</RadzenStack>
 
-<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
     Downstream resellers (channel partners) linked to your distributor account. Paging, sorting and
     search run server-side against the synced read-model. Open a link to view its details and customers.
-</MudText>
+</RadzenText>
 
-<div class="d-flex justify-space-between align-center mb-2">
-    <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
-                  OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search domain, cloud id, link id…"
-                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                  Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:360px" />
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <SearchBox Value="@_search" ValueChanged="OnSearchChanged" Label="Search domain, cloud id, link id…" />
     <AsOfBadge AsOf="_asOf" />
-</div>
+</RadzenStack>
 
-<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="false" RowsPerPage="25">
-    <HeaderContent>
-        <MudTh><MudTableSortLabel SortLabel="domain" T="EstateReseller">Reseller Cloud Identity</MudTableSortLabel></MudTh>
-        <MudTh>Customers</MudTh>
-        <MudTh>Billed (last month)</MudTh>
-        <MudTh><MudTableSortLabel SortLabel="state" T="EstateReseller">State</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel SortLabel="created" T="EstateReseller">Created</MudTableSortLabel></MudTh>
-        <MudTh Style="text-align:right">Actions</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Reseller Cloud Identity">@(context.PrimaryDomain ?? context.ResellerCloudId ?? context.LinkId)</MudTd>
-        <MudTd DataLabel="Customers">@context.CustomerCount</MudTd>
-        <MudTd DataLabel="Billed (last month)">
-            @if (BilledLabel(context.LinkId) is { } billed)
+<RadzenCard Variant="Variant.Filled">
+    <RadzenDataGrid @ref="_grid" TItem="EstateReseller" Data="_items" Count="_total" LoadData="OnLoadData" IsLoading="_loading"
+                    AllowPaging="true" PageSize="25" PageSizeOptions="_pageSizes" ShowPagingSummary="true"
+                    AllowSorting="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+        <Columns>
+            <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.PrimaryDomain)" SortProperty="domain" Title="Reseller Cloud Identity">
+                <Template Context="r">@(r.PrimaryDomain ?? r.ResellerCloudId ?? r.LinkId)</Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.CustomerCount)" Title="Customers" Sortable="false" Width="110px" />
+            <RadzenDataGridColumn TItem="EstateReseller" Title="Billed (last month)" Sortable="false">
+                <Template Context="r">
+                    @if (BilledLabel(r.LinkId) is { } billed)
+                    {
+                        <Tip Text="Actual billed GCP/Marketplace spend across this reseller's customers (BigQuery cost export).">@billed</Tip>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.LinkState)" SortProperty="state" Title="State">
+                <Template Context="r">
+                    <RadzenBadge BadgeStyle="@StateColor(r.LinkState)" Text="@(string.IsNullOrEmpty(r.LinkState) ? "—" : r.LinkState)" />
+                    @if (!string.IsNullOrEmpty(r.SyncError))
+                    {
+                        <Tip Text="@r.SyncError">
+                            <RadzenIcon Icon="@AppIcons.Warning" IconColor="@Colors.Warning" class="rz-ms-1" />
+                        </Tip>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.CreateTime)" SortProperty="created" Title="Created" Width="110px">
+                <Template Context="r">@(r.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateReseller" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="110px">
+                <Template Context="r">
+                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.25rem" class="rz-text-nowrap">
+                        <Tip Text="Refresh now">
+                            <RadzenButton Icon="@AppIcons.Sync" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => ResyncAsync(r))" aria-label="Refresh now" />
+                        </Tip>
+                        <Tip Text="View">
+                            <LinkButton To="@($"/channel-partner-links/{r.LinkId}")" Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="View" />
+                        </Tip>
+                    </RadzenStack>
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+        <EmptyTemplate>
+            @if (_loading)
             {
-                <MudTooltip Text="Actual billed GCP/Marketplace spend across this reseller's customers (BigQuery cost export).">
-                    <span>@billed</span>
-                </MudTooltip>
+                <LoadingPanel Title="Loading channel partner links…" Hint="Querying the synced read-model." />
             }
             else
             {
-                <span>—</span>
+                <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-3">No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.</RadzenAlert>
             }
-        </MudTd>
-        <MudTd DataLabel="State">
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.LinkState)">
-                @(string.IsNullOrEmpty(context.LinkState) ? "—" : context.LinkState)
-            </MudChip>
-            @if (!string.IsNullOrEmpty(context.SyncError))
-            {
-                <MudTooltip Text="@context.SyncError">
-                    <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
-                </MudTooltip>
-            }
-        </MudTd>
-        <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-        <MudTd DataLabel="Actions" Style="text-align:right">
-            <MudTooltip Text="Refresh now">
-                <MudIconButton Icon="@Icons.Material.Filled.Sync" Size="Size.Small"
-                               OnClick="@(() => ResyncAsync(context))" />
-            </MudTooltip>
-            <MudTooltip Text="View">
-                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                               Href="@($"/channel-partner-links/{context.LinkId}")" />
-            </MudTooltip>
-        </MudTd>
-    </RowTemplate>
-    <NoRecordsContent>
-        <MudAlert Severity="Severity.Info">No channel partner links yet. Use <strong>Invite partner</strong> to link a downstream reseller.</MudAlert>
-    </NoRecordsContent>
-    <PagerContent>
-        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" />
-    </PagerContent>
-</MudTable>
+        </EmptyTemplate>
+    </RadzenDataGrid>
+</RadzenCard>
 
 @code {
-    private MudTable<EstateReseller>? _table;
+    private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
+    private RadzenDataGrid<EstateReseller>? _grid;
+    private List<EstateReseller> _items = [];
+    private int _total;
+    private bool _loading = true;
     private string? _search;
     private DateTimeOffset? _asOf;
 
-    private async Task<TableData<EstateReseller>> LoadServerData(TableState state, CancellationToken token)
+    // Server-side read: Radzen gives Skip/Top, the API takes a 0-based page; sort keys come from SortProperty.
+    private async Task OnLoadData(LoadDataArgs args)
     {
+        _loading = true;
+        var pageSize = args.Top ?? 25;
+        var page = pageSize == 0 ? 0 : (args.Skip ?? 0) / pageSize;
+        var sort = args.Sorts?.FirstOrDefault();
         try
         {
-            await EnsureBilledAsync(token);
+            await EnsureBilledAsync(CancellationToken.None);
             var result = await Api.ListEstateResellersAsync(
-                state.Page, state.PageSize, state.SortLabel,
-                state.SortDirection == SortDirection.Descending,
-                _search, state: null, token);
+                page, pageSize, sort?.Property,
+                sort?.SortOrder == SortOrder.Descending,
+                _search, state: null, CancellationToken.None);
 
+            _items = result?.Items?.ToList() ?? [];
+            _total = result?.Total ?? 0;
             _asOf = result?.AsOf;
-            await InvokeAsync(StateHasChanged); // re-render the parent so the As-of badge reflects the loaded data
-            return new TableData<EstateReseller> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load channel partner links: {ex.Message}", Severity.Error);
-            return new TableData<EstateReseller> { Items = [], TotalItems = 0 };
+            await Snackbar.Add($"Failed to load channel partner links: {ex.Message}", Severity.Error);
+            _items = [];
+            _total = 0;
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 
@@ -138,27 +151,31 @@
             ? $"{v.Currency} {v.Cost.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}"
             : null;
 
-    private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
+    private async Task OnSearchChanged(string? value)
+    {
+        _search = value;
+        await (_grid?.FirstPage(true) ?? Task.CompletedTask);
+    }
 
     private async Task ResyncAsync(EstateReseller link)
     {
         try
         {
             await Api.ResyncLinkAsync(link.LinkId);
-            Snackbar.Add("Queued for refresh — data updates on the next sync cycle.", Severity.Info);
+            await Snackbar.Add("Queued for refresh — data updates on the next sync cycle.", Severity.Info);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to queue refresh: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to queue refresh: {ex.Message}", Severity.Error);
         }
     }
 
-    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle StateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "INVITED" => Color.Info,
-        "SUSPENDED" => Color.Warning,
-        "REVOKED" => Color.Error,
-        _ => Color.Default
+        "ACTIVE" => BadgeStyle.Success,
+        "INVITED" => BadgeStyle.Info,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "REVOKED" => BadgeStyle.Danger,
+        _ => BadgeStyle.Light
     };
 }

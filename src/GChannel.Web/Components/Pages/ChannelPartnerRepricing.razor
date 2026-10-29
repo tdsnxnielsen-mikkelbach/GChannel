@@ -1,7 +1,7 @@
 @page "/channel-partner-links/{Id}/repricing"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Repricing · Channel partner · GChannel</PageTitle>
 
@@ -12,131 +12,120 @@
 }
 else if (_link is null)
 {
-    <MudAlert Severity="Severity.Error">Channel partner link not found.</MudAlert>
-    <MudButton Class="mt-4" Variant="Variant.Outlined" Href="/channel-partner-links" StartIcon="@Icons.Material.Filled.ArrowBack">
-        Back to links
-    </MudButton>
+    <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">Channel partner link not found.</RadzenAlert>
+    <LinkButton To="/channel-partner-links" Text="Back to links" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Class="rz-mt-4" />
 }
 else
 {
-    <div class="d-flex justify-space-between align-center mb-4">
-        <div class="d-flex align-center" style="gap: 8px;">
-            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="@($"/channel-partner-links/{Id}")" />
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-4">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            <LinkButton To="@($"/channel-partner-links/{Id}")" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="Back to link" />
             <div>
-                <MudText Typo="Typo.h4">Repricing margin</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Repricing margin</RadzenText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
                     @(_link.ChannelPartner?.PrimaryDomain ?? _link.ResellerCloudIdentityId ?? _link.Id)
-                </MudText>
+                </RadzenText>
             </div>
-        </div>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
-                   OnClick="@(() => BeginEdit(null))" Disabled="_editing">
-            New config
-        </MudButton>
-    </div>
+        </RadzenStack>
+        <RadzenButton Text="New config" Icon="@AppIcons.Add" ButtonStyle="ButtonStyle.Primary" Click="@(() => BeginEdit(null))" Disabled="_editing" />
+    </RadzenStack>
 
-    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-4">
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         A channel partner repricing config marks up (positive %) or discounts (negative %) the whole
         downstream reseller's bill, starting from the chosen invoice month. Configs can only be created
         or edited for the current or a future invoice month.
-    </MudAlert>
+    </RadzenAlert>
 
     @if (_editing)
     {
-        <MudCard Elevation="2" Class="mb-4">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">@(_editingId is null ? "New repricing config" : "Edit repricing config")</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            <MudCardContent>
-                <MudGrid>
-                    <MudItem xs="12" md="6">
-                        <div class="d-flex align-center">
-                            <MudSelect T="string" Label="Rebilling basis" @bind-Value="_form.RebillingBasis" Required="true" Class="flex-grow-1">
-                                <MudSelectItem Value="@RebillingBases.CostAtList">List price (cost at list)</MudSelectItem>
-                                <MudSelectItem Value="@RebillingBases.DirectCustomerCost">Direct customer cost</MudSelectItem>
-                            </MudSelect>
-                            <MudTooltip Text="The price your adjustment is applied to. List price = Google's published list price; Direct customer cost = what a direct customer would pay.">
-                                <MudIcon Icon="@Icons.Material.Outlined.Info" Color="Color.Default" Class="ml-2" />
-                            </MudTooltip>
-                        </div>
-                    </MudItem>
-                    <MudItem xs="12" md="6">
-                        <MudNumericField T="decimal" Label="Adjustment" @bind-Value="_form.Percentage"
-                                         Adornment="Adornment.End" AdornmentText="%" Step="0.5M"
-                                         HelperText="Positive marks up, negative discounts, 0 passes through." />
-                    </MudItem>
-                    <MudItem xs="6" md="3">
-                        <MudNumericField T="int" Label="Effective year" @bind-Value="_form.Year" Min="2000" Max="2100" />
-                    </MudItem>
-                    <MudItem xs="6" md="3">
-                        <MudNumericField T="int" Label="Effective month" @bind-Value="_form.Month" Min="1" Max="12" />
-                    </MudItem>
-                </MudGrid>
-            </MudCardContent>
-            <MudCardActions>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_busy">
-                    @(_editingId is null ? "Create" : "Save")
-                </MudButton>
-                <MudButton Variant="Variant.Text" OnClick="CancelEdit" Disabled="_busy" Class="ml-2">Cancel</MudButton>
-            </MudCardActions>
-        </MudCard>
+        <RadzenCard Variant="Variant.Filled" class="rz-mb-4">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">@(_editingId is null ? "New repricing config" : "Edit repricing config")</RadzenText>
+            <RadzenRow Gap="1rem" RowGap="1rem">
+                <RadzenColumn Size="12" SizeLG="6">
+                    <RadzenFormField Text="Rebilling basis" Variant="Variant.Outlined" Style="width:100%">
+                        <ChildContent>
+                            <RadzenDropDown TValue="string" @bind-Value="_form.RebillingBasis" Data="_basisOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)" Name="basis" />
+                        </ChildContent>
+                        <End>
+                            <Tip Text="The price your adjustment is applied to. List price = Google's published list price; Direct customer cost = what a direct customer would pay.">
+                                <RadzenIcon Icon="@AppIcons.Info" class="rz-text-secondary-color" />
+                            </Tip>
+                        </End>
+                    </RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeLG="6">
+                    <RadzenFormField Text="Adjustment" Variant="Variant.Outlined" Style="width:100%">
+                        <ChildContent><RadzenNumeric TValue="decimal" @bind-Value="_form.Percentage" Step="0.5" Format="0.##" Name="percentage" /></ChildContent>
+                        <End><span class="rz-text-secondary-color rz-px-2">%</span></End>
+                        <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">Positive marks up, negative discounts, 0 passes through.</RadzenText></Helper>
+                    </RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="6" SizeLG="3">
+                    <RadzenFormField Text="Effective year" Variant="Variant.Outlined" Style="width:100%">
+                        <RadzenNumeric TValue="int" @bind-Value="_form.Year" Min="2000" Max="2100" Name="year" />
+                    </RadzenFormField>
+                </RadzenColumn>
+                <RadzenColumn Size="6" SizeLG="3">
+                    <RadzenFormField Text="Effective month" Variant="Variant.Outlined" Style="width:100%">
+                        <RadzenNumeric TValue="int" @bind-Value="_form.Month" Min="1" Max="12" Name="month" />
+                    </RadzenFormField>
+                </RadzenColumn>
+            </RadzenRow>
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" class="rz-mt-4">
+                <RadzenButton Text="@(_editingId is null ? "Create" : "Save")" ButtonStyle="ButtonStyle.Primary" Click="SaveAsync" IsBusy="_busy" />
+                <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Click="CancelEdit" Disabled="_busy" />
+            </RadzenStack>
+        </RadzenCard>
     }
 
-    <MudCard Elevation="2">
-        <MudCardHeader>
-            <CardHeaderContent>
-                <MudText Typo="Typo.h6">Configured margins</MudText>
-            </CardHeaderContent>
-        </MudCardHeader>
-        <MudCardContent>
-            @if (_configsLoading)
-            {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
-            }
-            else if (_configs is { Count: > 0 })
-            {
-                <MudTable Items="_configs" Hover="true" Elevation="0" Dense="true">
-                    <HeaderContent>
-                        <MudTh>Scope</MudTh>
-                        <MudTh>Effective month</MudTh>
-                        <MudTh Style="text-align:right">Adjustment</MudTh>
-                        <MudTh>Rebilling basis</MudTh>
-                        <MudTh>Overrides</MudTh>
-                        <MudTh>Updated</MudTh>
-                        <MudTh Style="text-align:right">Actions</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Scope">@ScopeLabel(context)</MudTd>
-                        <MudTd DataLabel="Effective month">@FormatMonth(context.EffectiveInvoiceYear, context.EffectiveInvoiceMonth)</MudTd>
-                        <MudTd DataLabel="Adjustment" Style="text-align:right">
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@AdjustmentColor(context.PercentageAdjustment)">
-                                @FormatPercent(context.PercentageAdjustment)
-                            </MudChip>
-                        </MudTd>
-                        <MudTd DataLabel="Rebilling basis">@RebillingLabel(context.RebillingBasis)</MudTd>
-                        <MudTd DataLabel="Overrides">@context.ConditionalOverrideCount</MudTd>
-                        <MudTd DataLabel="Updated">@(context.UpdateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-                        <MudTd DataLabel="Actions" Style="text-align:right">
-                            <MudTooltip Text="Edit">
-                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                               OnClick="@(() => BeginEdit(context))" Disabled="_editing" />
-                            </MudTooltip>
-                            <MudTooltip Text="Delete">
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
-                                               OnClick="@(() => DeleteAsync(context))" Disabled="_busy" />
-                            </MudTooltip>
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No repricing configs for this channel partner.</MudText>
-            }
-        </MudCardContent>
-    </MudCard>
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Configured margins</RadzenText>
+        @if (_configsLoading)
+        {
+            <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+        }
+        else if (_configs is { Count: > 0 })
+        {
+            <RadzenDataGrid TItem="RepricingConfig" Data="_configs" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="RepricingConfig" Title="Scope">
+                        <Template Context="config">@ScopeLabel(config)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="RepricingConfig" Title="Effective month">
+                        <Template Context="config">@FormatMonth(config.EffectiveInvoiceYear, config.EffectiveInvoiceMonth)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="RepricingConfig" Title="Adjustment" TextAlign="TextAlign.End">
+                        <Template Context="config">
+                            <RadzenBadge BadgeStyle="@AdjustmentColor(config.PercentageAdjustment)" Text="@FormatPercent(config.PercentageAdjustment)" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="RepricingConfig" Title="Rebilling basis">
+                        <Template Context="config">@RebillingLabel(config.RebillingBasis)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="RepricingConfig" Property="@nameof(RepricingConfig.ConditionalOverrideCount)" Title="Overrides" Width="100px" />
+                    <RadzenDataGridColumn TItem="RepricingConfig" Title="Updated" Width="110px">
+                        <Template Context="config">@(config.UpdateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="RepricingConfig" Title="Actions" TextAlign="TextAlign.End" Width="110px">
+                        <Template Context="config">
+                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.25rem" class="rz-text-nowrap">
+                                <Tip Text="Edit">
+                                    <RadzenButton Icon="@AppIcons.Edit" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => BeginEdit(config))" Disabled="_editing" aria-label="Edit" />
+                                </Tip>
+                                <Tip Text="Delete">
+                                    <RadzenButton Icon="@AppIcons.Delete" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Click="@(() => DeleteAsync(config))" Disabled="_busy" aria-label="Delete" />
+                                </Tip>
+                            </RadzenStack>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+        else
+        {
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No repricing configs for this channel partner.</RadzenText>
+        }
+    </RadzenCard>
 }
 
 @code {
@@ -150,6 +139,12 @@ else
     private bool _busy;
     private string? _editingId;
     private readonly RepricingForm _form = new();
+
+    private static readonly SelectOption[] _basisOptions =
+    [
+        new(RebillingBases.CostAtList, "List price (cost at list)"),
+        new(RebillingBases.DirectCustomerCost, "Direct customer cost"),
+    ];
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -169,7 +164,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load channel partner link: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load channel partner link: {ex.Message}", Severity.Error);
             _link = null;
         }
         finally
@@ -194,7 +189,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load repricing configs: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load repricing configs: {ex.Message}", Severity.Error);
             _configs = [];
         }
         finally
@@ -248,12 +243,12 @@ else
             if (_editingId is null)
             {
                 await Api.CreateChannelPartnerRepricingConfigAsync(Id, request);
-                Snackbar.Add("Repricing config created.", Severity.Success);
+                await Snackbar.Add("Repricing config created.", Severity.Success);
             }
             else
             {
                 await Api.UpdateChannelPartnerRepricingConfigAsync(Id, _editingId, request);
-                Snackbar.Add("Repricing config updated.", Severity.Success);
+                await Snackbar.Add("Repricing config updated.", Severity.Success);
             }
 
             _editing = false;
@@ -262,7 +257,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to save repricing config: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to save repricing config: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -276,12 +271,12 @@ else
         try
         {
             await Api.DeleteChannelPartnerRepricingConfigAsync(Id, config.Id);
-            Snackbar.Add("Repricing config deleted.", Severity.Success);
+            await Snackbar.Add("Repricing config deleted.", Severity.Success);
             await LoadConfigsAsync();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to delete repricing config: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to delete repricing config: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -308,8 +303,8 @@ else
     private static string FormatPercent(decimal value) =>
         value > 0 ? $"+{value:0.##}%" : $"{value:0.##}%";
 
-    private static Color AdjustmentColor(decimal value) =>
-        value > 0 ? Color.Success : value < 0 ? Color.Warning : Color.Default;
+    private static BadgeStyle AdjustmentColor(decimal value) =>
+        value > 0 ? BadgeStyle.Success : value < 0 ? BadgeStyle.Warning : BadgeStyle.Light;
 
     private static string RebillingLabel(string? basis) => basis switch
     {
@@ -326,3 +321,4 @@ else
         public string RebillingBasis { get; set; } = RebillingBases.CostAtList;
     }
 }
+

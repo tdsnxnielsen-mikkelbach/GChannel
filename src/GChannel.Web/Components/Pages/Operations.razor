@@ -2,197 +2,181 @@
 @attribute [Authorize]
 @implements IDisposable
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Operations · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
     <div>
-        <MudText Typo="Typo.h4">Operations</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Long-running operations</MudText>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Operations</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Long-running operations</RadzenText>
     </div>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
-               OnClick="RefreshListAsync" Disabled="_listLoading">Refresh</MudButton>
-</div>
+    <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="RefreshListAsync" Disabled="_listLoading" />
+</RadzenStack>
 
-<MudText Typo="Typo.body1" Class="mb-3" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-3">
     Mutating Channel calls (entitlement create/change/state changes, transfers) run asynchronously and
     return an operation. Track one by id to watch it complete, then deep-link to the customer or
     entitlement it affected.
-</MudText>
+</RadzenText>
 
-<MudExpansionPanels Elevation="0" Class="mb-6">
-    <MudExpansionPanel Icon="@Icons.Material.Filled.HelpOutline" Text="How operations work &amp; examples">
-        <MudText Typo="Typo.subtitle2" Class="mb-1">Where the id comes from</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-            When you buy/change/suspend an entitlement or run a transfer, the API returns an operation name
-            like <code>operations/abc-123-def</code>. Paste that whole string, or just the
-            <code>abc-123-def</code> id segment, into the box below. You usually don't need this page for
-            small accounts — most actions finish in seconds — but it's handy for transfers and bulk changes
-            that stay <em>Running</em> for a while.
-        </MudText>
+<RadzenAccordion class="rz-mb-6">
+    <Items>
+        <RadzenAccordionItem Text="How operations work &amp; examples" Icon="@AppIcons.HelpOutline" @bind-Selected="_helpOpen">
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Where the id comes from</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-3">
+                When you buy/change/suspend an entitlement or run a transfer, the API returns an operation name
+                like <code>operations/abc-123-def</code>. Paste that whole string, or just the
+                <code>abc-123-def</code> id segment, into the box below. You usually don't need this page for
+                small accounts — most actions finish in seconds — but it's handy for transfers and bulk changes
+                that stay <em>Running</em> for a while.
+            </RadzenText>
 
-        <MudText Typo="Typo.subtitle2" Class="mb-1">What you'll see</MudText>
-        <MudList T="string" Dense="true" Class="mb-3">
-            <MudListItem T="string" Icon="@Icons.Material.Filled.Sync">
-                <b>Running</b> — still processing; refresh or leave the chip polling until it settles.
-            </MudListItem>
-            <MudListItem T="string" Icon="@Icons.Material.Filled.CheckCircle">
-                <b>Done</b> — finished; jump straight to the affected Customer or Entitlement.
-            </MudListItem>
-            <MudListItem T="string" Icon="@Icons.Material.Filled.Error">
-                <b>Failed</b> — shows the error message + code (e.g. quota, invalid state) so you can retry.
-            </MudListItem>
-        </MudList>
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">What you'll see</RadzenText>
+            <RadzenStack Gap="0.25rem" class="rz-mb-3">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="@AppIcons.Sync" class="rz-text-secondary-color" /><span><b>Running</b> — still processing; refresh or leave the badge polling until it settles.</span>
+                </RadzenStack>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="@AppIcons.CheckCircle" IconColor="@Colors.Success" /><span><b>Done</b> — finished; jump straight to the affected Customer or Entitlement.</span>
+                </RadzenStack>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenIcon Icon="@AppIcons.Error" IconColor="@Colors.Danger" /><span><b>Failed</b> — shows the error message + code (e.g. quota, invalid state) so you can retry.</span>
+                </RadzenStack>
+            </RadzenStack>
 
-        <MudText Typo="Typo.subtitle2" Class="mb-1">Examples</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
-            • Purchase a Workspace SKU → track the op to confirm provisioning before assigning licenses.<br />
-            • Transfer customers from another reseller → watch the op finish, then open the entitlement.<br />
-            • Suspend/cancel/start-paid-service → confirm the state change actually applied.<br />
-            <em>Note:</em> Google's Channel API has no global "list all operations", so track by id rather
-            than browse — you can still cancel a still-running operation.
-        </MudText>
-    </MudExpansionPanel>
-</MudExpansionPanels>
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Examples</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
+                • Purchase a Workspace SKU → track the op to confirm provisioning before assigning licenses.<br />
+                • Transfer customers from another reseller → watch the op finish, then open the entitlement.<br />
+                • Suspend/cancel/start-paid-service → confirm the state change actually applied.<br />
+                <em>Note:</em> Google's Channel API has no global "list all operations", so track by id rather
+                than browse — you can still cancel a still-running operation.
+            </RadzenText>
+        </RadzenAccordionItem>
+    </Items>
+</RadzenAccordion>
 
-<MudCard Elevation="2" Class="mb-6">
-    <MudCardContent>
-        <div class="d-flex gap-3 align-center flex-wrap">
-            <MudTextField @bind-Value="_lookupId" Label="Operation id" Variant="Variant.Outlined"
-                          Margin="Margin.Dense" Class="flex-grow-1"
-                          Placeholder="operations/… or the id segment" Immediate="false" />
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Search"
-                       OnClick="TrackAsync" Disabled="@(string.IsNullOrWhiteSpace(_lookupId) || _tracking)">
-                Track
-            </MudButton>
-        </div>
+<RadzenCard Variant="Variant.Filled" class="rz-mb-6">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap">
+        <RadzenTextBox @bind-Value="_lookupId" Placeholder="operations/… or the id segment" Style="flex: 1 1 16rem" aria-label="Operation id" Name="operationId" />
+        <RadzenButton Text="Track" Icon="@AppIcons.Search" ButtonStyle="ButtonStyle.Primary" Click="TrackAsync" Disabled="@string.IsNullOrWhiteSpace(_lookupId)" IsBusy="_tracking" />
+    </RadzenStack>
 
-        @if (_tracked is not null)
+    @if (_tracked is not null)
+    {
+        <hr class="rz-my-4" />
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
+            <div>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-m-0" Style="font-weight:600">@(_tracked.OperationType ?? "Operation")</RadzenText>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@_tracked.Name</RadzenText>
+            </div>
+            @if (_tracked.Done)
+            {
+                <RadzenBadge BadgeStyle="@(_tracked.Error is null ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(_tracked.Error is null ? "Done" : "Failed")" />
+            }
+            else
+            {
+                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Running" />
+            }
+        </RadzenStack>
+
+        @if (!string.IsNullOrEmpty(_tracked.Error))
         {
-            <MudDivider Class="my-4" />
-            <div class="d-flex justify-space-between align-center mb-2">
-                <div>
-                    <MudText Typo="Typo.subtitle1">@(_tracked.OperationType ?? "Operation")</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">@_tracked.Name</MudText>
-                </div>
-                @if (_tracked.Done)
-                {
-                    <MudChip T="string" Size="Size.Small" Color="@(_tracked.Error is null ? Color.Success : Color.Error)"
-                             Icon="@(_tracked.Error is null ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)">
-                        @(_tracked.Error is null ? "Done" : "Failed")
-                    </MudChip>
-                }
-                else
-                {
-                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Icon="@Icons.Material.Filled.Sync">
-                        Running
-                    </MudChip>
-                }
-            </div>
-
-            @if (!string.IsNullOrEmpty(_tracked.Error))
-            {
-                <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">
-                    @_tracked.Error @(_tracked.ErrorCode is { } code and not 0 ? $"(code {code})" : "")
-                </MudAlert>
-            }
-
-            @if (!string.IsNullOrEmpty(_tracked.CustomerId) || !string.IsNullOrEmpty(_tracked.EntitlementId))
-            {
-                <div class="d-flex gap-2 mb-3 flex-wrap">
-                    @if (!string.IsNullOrEmpty(_tracked.CustomerId))
-                    {
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Person"
-                                   Href="@($"/customers/{_tracked.CustomerId}")">Customer</MudButton>
-                    }
-                    @if (!string.IsNullOrEmpty(_tracked.CustomerId) && !string.IsNullOrEmpty(_tracked.EntitlementId))
-                    {
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Subscriptions"
-                                   Href="@($"/customers/{_tracked.CustomerId}/entitlements/{_tracked.EntitlementId}")">Entitlement</MudButton>
-                    }
-                </div>
-            }
-
-            <div class="d-flex gap-2">
-                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Refresh"
-                           OnClick="@(() => RefreshTrackedAsync(true))">Refresh</MudButton>
-                @if (!_tracked.Done)
-                {
-                    <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
-                               StartIcon="@Icons.Material.Filled.Cancel" OnClick="CancelAsync" Disabled="_cancelling">
-                        Cancel
-                    </MudButton>
-                }
-            </div>
+            <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-3">
+                @_tracked.Error @(_tracked.ErrorCode is { } code and not 0 ? $"(code {code})" : "")
+            </RadzenAlert>
         }
-    </MudCardContent>
-</MudCard>
 
-<MudText Typo="Typo.h6" Class="mb-2">Recent operations</MudText>
+        @if (!string.IsNullOrEmpty(_tracked.CustomerId) || !string.IsNullOrEmpty(_tracked.EntitlementId))
+        {
+            <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-3">
+                @if (!string.IsNullOrEmpty(_tracked.CustomerId))
+                {
+                    <LinkButton To="@($"/customers/{_tracked.CustomerId}")" Text="Customer" Icon="@AppIcons.Person" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Size="ButtonSize.Small" />
+                }
+                @if (!string.IsNullOrEmpty(_tracked.CustomerId) && !string.IsNullOrEmpty(_tracked.EntitlementId))
+                {
+                    <LinkButton To="@($"/customers/{_tracked.CustomerId}/entitlements/{_tracked.EntitlementId}")" Text="Entitlement" Icon="@AppIcons.Subscriptions" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Size="ButtonSize.Small" />
+                }
+            </RadzenStack>
+        }
+
+        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+            <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small" Click="@(() => RefreshTrackedAsync(true))" />
+            @if (!_tracked.Done)
+            {
+                <RadzenButton Text="Cancel" Icon="@AppIcons.Cancel" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Text" Size="ButtonSize.Small" Click="CancelAsync" Disabled="_cancelling" />
+            }
+        </RadzenStack>
+    }
+</RadzenCard>
+
+<RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Recent operations</RadzenText>
 @if (_listLoading)
 {
     <LoadingPanel Title="Loading operations…" Hint="Fetching long-running operations from the Channel API." />
 }
 else if (_listUnavailable)
 {
-    <MudAlert Severity="Severity.Info">
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
         Listing operations isn't available for this account. Track an operation by id using its name from a
         mutating call's response.
-    </MudAlert>
+    </RadzenAlert>
 }
 else if (_operations is { Count: > 0 })
 {
-    <MudTable Items="_operations" Hover="true" Elevation="2" Dense="true">
-        <HeaderContent>
-            <MudTh>Type</MudTh>
-            <MudTh>Id</MudTh>
-            <MudTh>State</MudTh>
-            <MudTh>Correlation</MudTh>
-            <MudTh Style="text-align:right">Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Type">@(context.OperationType ?? "—")</MudTd>
-            <MudTd DataLabel="Id"><code>@context.Id</code></MudTd>
-            <MudTd DataLabel="State">
-                @if (context.Done)
-                {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                             Color="@(context.Error is null ? Color.Success : Color.Error)">
-                        @(context.Error is null ? "Done" : "Failed")
-                    </MudChip>
-                }
-                else
-                {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info">Running</MudChip>
-                }
-            </MudTd>
-            <MudTd DataLabel="Correlation">
-                @if (!string.IsNullOrEmpty(context.CustomerId) && !string.IsNullOrEmpty(context.EntitlementId))
-                {
-                    <MudLink Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")">Entitlement</MudLink>
-                }
-                else if (!string.IsNullOrEmpty(context.CustomerId))
-                {
-                    <MudLink Href="@($"/customers/{context.CustomerId}")">Customer</MudLink>
-                }
-                else
-                {
-                    <span>—</span>
-                }
-            </MudTd>
-            <MudTd DataLabel="Actions" Style="text-align:right">
-                <MudTooltip Text="Track">
-                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                                   OnClick="@(() => TrackByIdAsync(context.Id))" />
-                </MudTooltip>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenDataGrid TItem="ChannelOperation" Data="_operations" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+            <Columns>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Type">
+                    <Template Context="op">@(op.OperationType ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Id">
+                    <Template Context="op"><code>@op.Id</code></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="State" Width="110px">
+                    <Template Context="op">
+                        @if (op.Done)
+                        {
+                            <RadzenBadge BadgeStyle="@(op.Error is null ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(op.Error is null ? "Done" : "Failed")" />
+                        }
+                        else
+                        {
+                            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Running" />
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Correlation">
+                    <Template Context="op">
+                        @if (!string.IsNullOrEmpty(op.CustomerId) && !string.IsNullOrEmpty(op.EntitlementId))
+                        {
+                            <RadzenLink Path="@($"/customers/{op.CustomerId}/entitlements/{op.EntitlementId}")" Text="Entitlement" />
+                        }
+                        else if (!string.IsNullOrEmpty(op.CustomerId))
+                        {
+                            <RadzenLink Path="@($"/customers/{op.CustomerId}")" Text="Customer" />
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Actions" TextAlign="TextAlign.End" Width="90px">
+                    <Template Context="op">
+                        <Tip Text="Track">
+                            <RadzenButton Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => TrackByIdAsync(op.Id))" aria-label="Track" />
+                        </Tip>
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </RadzenCard>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">No recent operations.</MudAlert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No recent operations.</RadzenAlert>
 }
 
 @code {
@@ -204,6 +188,7 @@ else
     [SupplyParameterFromQuery(Name = "operation")]
     public string? OperationId { get; set; }
 
+    private bool _helpOpen;
     private string _lookupId = string.Empty;
     private ChannelOperation? _tracked;
     private bool _tracking;
@@ -278,7 +263,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load operation: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load operation: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -299,7 +284,7 @@ else
             _tracked = operation;
             if (notify && operation is not null)
             {
-                Snackbar.Add(operation.Done ? "Operation is done." : "Operation still running.", Severity.Info);
+                await Snackbar.Add(operation.Done ? "Operation is done." : "Operation still running.", Severity.Info);
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
@@ -308,7 +293,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to refresh operation: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to refresh operation: {ex.Message}", Severity.Error);
         }
     }
 
@@ -350,11 +335,11 @@ else
         try
         {
             _tracked = await Api.CancelOperationAsync(_tracked.Id, _cts.Token);
-            Snackbar.Add("Cancellation requested.", Severity.Success);
+            await Snackbar.Add("Cancellation requested.", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to cancel operation: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to cancel operation: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -375,3 +360,4 @@ else
         _cts.Dispose();
     }
 }
+

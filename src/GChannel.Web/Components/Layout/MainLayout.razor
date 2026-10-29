@@ -1,59 +1,58 @@
-﻿@inherits LayoutComponentBase
-@inject IJSRuntime JS
+@inherits LayoutComponentBase
+@implements IDisposable
 @inject OnboardingTourService Tour
+@inject ThemeService Theme
+@inject CookieThemeService CookieTheme
 
-<MudThemeProvider @ref="_mudThemeProvider" Theme="_theme" @bind-IsDarkMode="_isDarkMode" />
-<MudPopoverProvider />
-<MudDialogProvider />
-<MudSnackbarProvider />
+@* Radzen's dialog / notification / tooltip / context-menu hosts, rendered once and driven from any page through
+   their services. CookieThemeService is injected (not otherwise used) so it starts persisting the chosen theme. *@
+<RadzenComponents @rendermode="InteractiveServer" />
 
-<MudLayout>
-    <MudAppBar Elevation="1">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
-                       OnClick="@(() => _drawerOpen = !_drawerOpen)" />
-        <MudText Typo="Typo.h6" Class="ml-2">GChannel</MudText>
-        <MudSpacer />
-        <MudTooltip Text="Take the product tour">
-            <MudIconButton Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Inherit"
-                           OnClick="StartTourAsync" data-onboarding="appbar-help" />
-        </MudTooltip>
-        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                       Color="Color.Inherit" OnClick="ToggleDarkModeAsync" data-onboarding="appbar-theme" />
-        <AuthorizeView>
-            <Authorized>
-                <MudText Typo="Typo.body2" Class="mx-3">@context.User.Identity?.Name</MudText>
-                <form action="/account/logout" method="post">
-                    <AntiforgeryToken />
-                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined"
-                               Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Logout">
-                        Sign out
-                    </MudButton>
-                </form>
-            </Authorized>
-            <NotAuthorized>
-                <MudButton Href="/account/login" Variant="Variant.Outlined" Color="Color.Inherit"
-                           StartIcon="@Icons.Material.Filled.Login">
-                    Sign in with Google
-                </MudButton>
-            </NotAuthorized>
-        </AuthorizeView>
-    </MudAppBar>
-
-    <MudDrawer @bind-Open="_drawerOpen" Elevation="1" ClipMode="DrawerClipMode.Always">
-        <MudDrawerHeader>
-            <MudText Typo="Typo.h6">Channel Partner</MudText>
-        </MudDrawerHeader>
+@* Plain wrapper so the scoped CSS (::deep selectors) in MainLayout.razor.css reaches the Radzen markup. *@
+<div class="gchannel-shell">
+<RadzenLayout>
+    <RadzenHeader>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-px-3" Style="height: 100%">
+            <RadzenSidebarToggle Click="@(() => _sidebarExpanded = !_sidebarExpanded)" />
+            <RadzenText TextStyle="TextStyle.H6" TagName="TagName.Span" class="rz-m-0">GChannel</RadzenText>
+            <span style="flex: 1 1 auto"></span>
+            <Tip Text="Take the product tour" Position="TooltipPosition.Bottom">
+                <RadzenButton Icon="@AppIcons.HelpOutline" Variant="Variant.Text" ButtonStyle="ButtonStyle.Base" Click="StartTourAsync"
+                              data-onboarding="appbar-help" aria-label="Take the product tour" />
+            </Tip>
+            <span data-onboarding="appbar-theme">
+                <RadzenAppearanceToggle />
+            </span>
+            <AuthorizeView>
+                <Authorized>
+                    <RadzenText TextStyle="TextStyle.Body2" TagName="TagName.Span" class="rz-mx-2 rz-display-none rz-display-md-inline-block">@context.User.Identity?.Name</RadzenText>
+                    <form action="/account/logout" method="post" class="rz-display-inline">
+                        <AntiforgeryToken />
+                        <RadzenButton ButtonType="ButtonType.Submit" Text="Sign out" Icon="@AppIcons.Logout" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Size="ButtonSize.Small" />
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <LinkButton To="/account/login" Text="Sign in with Google" Icon="@AppIcons.Login" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small" />
+                </NotAuthorized>
+            </AuthorizeView>
+        </RadzenStack>
+    </RadzenHeader>
+    <RadzenSidebar @bind-Expanded="_sidebarExpanded" class="gchannel-sidebar">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="gchannel-brand rz-px-4 rz-py-3">
+            <RadzenIcon Icon="@AppIcons.Hub" />
+            <RadzenLink Path="" Text="Channel Partner" class="gchannel-brand-link" />
+        </RadzenStack>
         <NavMenu />
-    </MudDrawer>
-
-    <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-6">
+    </RadzenSidebar>
+    <RadzenBody>
+        <div class="gchannel-content">
             <CascadingValue Name="IsDarkMode" Value="_isDarkMode">
                 @Body
             </CascadingValue>
-        </MudContainer>
-    </MudMainContent>
-</MudLayout>
+        </div>
+    </RadzenBody>
+</RadzenLayout>
+</div>
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
@@ -62,47 +61,29 @@
 </div>
 
 @code {
-    // Browser localStorage key the chosen theme is persisted under so it survives a page refresh.
-    private const string ThemeStorageKey = "gchannel-theme";
-
-    private bool _drawerOpen = true;
+    private bool _sidebarExpanded = true;
     private bool _isDarkMode;
-    private MudThemeProvider _mudThemeProvider = null!;
 
-    // Descriptive page subtitles, loading text and KPI labels use Color.Secondary as "muted" text.
-    // MudBlazor's default Secondary palette is a pink/red accent, which wrongly reads as an error, so
-    // remap Secondary to the neutral muted-text colour for each mode — keeping it theme-aware.
-    private readonly MudTheme _theme = new()
+    protected override void OnInitialized()
     {
-        PaletteLight = new PaletteLight { Secondary = "rgba(0,0,0,0.54)" },
-        PaletteDark = new PaletteDark { Secondary = "rgba(255,255,255,0.5)" },
-    };
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender)
-        {
-            return;
-        }
-
-        // localStorage is only reachable once the interactive circuit is connected (not during the
-        // static prerender), so restore the saved preference here and re-render with the right theme.
-        var stored = await JS.InvokeAsync<string?>("localStorage.getItem", ThemeStorageKey);
-        _isDarkMode = stored switch
-        {
-            "dark" => true,
-            "light" => false,
-            // No saved choice yet: honour the operating-system / browser preference.
-            _ => await _mudThemeProvider.GetSystemDarkModeAsync()
-        };
-        StateHasChanged();
+        _isDarkMode = IsDark(Theme.Theme);
+        Theme.ThemeChanged += OnThemeChanged;
     }
 
-    private async Task ToggleDarkModeAsync()
+    // Cascaded to the pages so ApexCharts (which paints its own axis/legend text) follows the Radzen theme.
+    private static bool IsDark(string? theme) => theme?.EndsWith("-dark", StringComparison.OrdinalIgnoreCase) == true || string.Equals(theme, "dark", StringComparison.OrdinalIgnoreCase);
+
+    private void OnThemeChanged()
     {
-        _isDarkMode = !_isDarkMode;
-        await JS.InvokeVoidAsync("localStorage.setItem", ThemeStorageKey, _isDarkMode ? "dark" : "light");
+        var dark = IsDark(Theme.Theme);
+        if (dark != _isDarkMode)
+        {
+            _isDarkMode = dark;
+            _ = InvokeAsync(StateHasChanged);
+        }
     }
 
     private Task StartTourAsync() => Tour.StartAsync();
+
+    public void Dispose() => Theme.ThemeChanged -= OnThemeChanged;
 }

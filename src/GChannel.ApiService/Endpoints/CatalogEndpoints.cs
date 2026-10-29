@@ -1,98 +1,42 @@
-using System.Text.Json;
-using GChannel.ApiService.Configuration;
-using GChannel.ApiService.Services;
+using GChannel.ApiService.Caching;
+using GChannel.Core.Configuration;
+using GChannel.Core.GoogleApis;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
-/// <summary>Maps the read-only Catalog endpoints (products, SKUs, offers, SKU groups).</summary>
+/// <summary>Read-only Catalog endpoints (products, SKUs, offers, SKU groups). Idempotent reads cached in Redis.</summary>
 public static class CatalogEndpoints
 {
-    public static IEndpointRouteBuilder MapCatalogEndpoints(this IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/catalog").WithTags("Catalog");
+    [WolverineGet("/api/catalog/products")]
+    public static Task<IResult> ListProducts(
+        IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, "catalog:products", options.Value.CacheSeconds,
+            () => channel.ListProductsAsync(cancellationToken), cancellationToken);
 
-        group.MapGet("/products", (
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, "catalog:products", options.Value.CacheSeconds,
-                    () => channel.ListProductsAsync(cancellationToken), cancellationToken))
-            .WithName("ListProducts")
-            .WithSummary("Lists the products the reseller is authorized to sell.");
+    [WolverineGet("/api/catalog/products/{productId}/skus")]
+    public static Task<IResult> ListSkus(
+        string productId, IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, $"catalog:skus:{productId}", options.Value.CacheSeconds,
+            () => channel.ListSkusAsync(productId, cancellationToken), cancellationToken);
 
-        group.MapGet("/products/{productId}/skus", (
-                string productId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, $"catalog:skus:{productId}", options.Value.CacheSeconds,
-                    () => channel.ListSkusAsync(productId, cancellationToken), cancellationToken))
-            .WithName("ListSkus")
-            .WithSummary("Lists the SKUs for a product.");
+    [WolverineGet("/api/catalog/offers")]
+    public static Task<IResult> ListOffers(
+        IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, "catalog:offers", options.Value.CacheSeconds,
+            () => channel.ListOffersAsync(cancellationToken), cancellationToken);
 
-        group.MapGet("/offers", (
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, "catalog:offers", options.Value.CacheSeconds,
-                    () => channel.ListOffersAsync(cancellationToken), cancellationToken))
-            .WithName("ListOffers")
-            .WithSummary("Lists the offers the reseller can sell.");
+    [WolverineGet("/api/catalog/sku-groups")]
+    public static Task<IResult> ListSkuGroups(
+        IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, "catalog:skugroups", options.Value.CacheSeconds,
+            () => channel.ListSkuGroupsAsync(cancellationToken), cancellationToken);
 
-        group.MapGet("/sku-groups", (
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, "catalog:skugroups", options.Value.CacheSeconds,
-                    () => channel.ListSkuGroupsAsync(cancellationToken), cancellationToken))
-            .WithName("ListSkuGroups")
-            .WithSummary("Lists the rebilling-supported SKU groups.");
-
-        group.MapGet("/sku-groups/{skuGroupId}/billable-skus", (
-                string skuGroupId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, $"catalog:billableskus:{skuGroupId}", options.Value.CacheSeconds,
-                    () => channel.ListBillableSkusAsync(skuGroupId, cancellationToken), cancellationToken))
-            .WithName("ListBillableSkus")
-            .WithSummary("Lists the billable SKUs in a SKU group.");
-
-        return app;
-    }
-
-    /// <summary>Returns a cached JSON payload when present, otherwise invokes <paramref name="factory"/> and caches it.</summary>
-    private static async Task<IResult> CachedAsync<T>(
-        IDistributedCache cache,
-        string cacheKey,
-        int cacheSeconds,
-        Func<Task<T>> factory,
-        CancellationToken cancellationToken)
-    {
-        var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
-        if (cached is not null)
-        {
-            return Results.Ok(JsonSerializer.Deserialize<T>(cached));
-        }
-
-        var result = await factory();
-
-        await cache.SetStringAsync(
-            cacheKey,
-            JsonSerializer.Serialize(result),
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(cacheSeconds)
-            },
-            cancellationToken);
-
-        return Results.Ok(result);
-    }
+    [WolverineGet("/api/catalog/sku-groups/{skuGroupId}/billable-skus")]
+    public static Task<IResult> ListBillableSkus(
+        string skuGroupId, IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, $"catalog:billableskus:{skuGroupId}", options.Value.CacheSeconds,
+            () => channel.ListBillableSkusAsync(skuGroupId, cancellationToken), cancellationToken);
 }

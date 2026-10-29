@@ -1,32 +1,29 @@
 @page "/customers/{CustomerId}/entitlements"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
-@inject IDialogService DialogService
+@inject UiNotifier Snackbar
+@inject ContextMenuService ContextMenus
 
 <PageTitle>Entitlements · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
     <div>
-        <MudText Typo="Typo.h4">Entitlements</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Entitlements</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
             @(_customer?.OrgDisplayName ?? CustomerId)@(string.IsNullOrEmpty(_customer?.Domain) ? "" : $" · {_customer!.Domain}")
-        </MudText>
+        </RadzenText>
     </div>
-    <div class="d-flex gap-2">
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack"
-                   Href="@($"/customers/{CustomerId}")">Customer</MudButton>
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.SwapHoriz"
-                   Href="@($"/customers/{CustomerId}/transfer")">Transfer in</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddShoppingCart"
-                   Href="@($"/customers/{CustomerId}/entitlements/new")">Purchase</MudButton>
-    </div>
-</div>
+    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+        <LinkButton To="@($"/customers/{CustomerId}")" Text="Customer" Icon="@AppIcons.ArrowBack" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+        <LinkButton To="@($"/customers/{CustomerId}/transfer")" Text="Transfer in" Icon="@AppIcons.SwapHoriz" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+        <LinkButton To="@($"/customers/{CustomerId}/entitlements/new")" Text="Purchase" Icon="@AppIcons.AddShoppingCart" />
+    </RadzenStack>
+</RadzenStack>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     The subscriptions this customer holds. Each entitlement maps to a Catalog SKU/Offer; use the
     actions menu to modify or change its lifecycle state.
-</MudText>
+</RadzenText>
 
 @if (_loading)
 {
@@ -35,112 +32,98 @@
 }
 else if (_entitlements is { Count: > 0 })
 {
-    <MudTable Items="_entitlements" Hover="true" Elevation="2" Dense="false">
-        <HeaderContent>
-            <MudTh>Offer / SKU</MudTh>
-            <MudTh>Product</MudTh>
-            <MudTh>State</MudTh>
-            <MudTh>Seats</MudTh>
-            <MudTh>Est. monthly</MudTh>
-            <MudTh>Ion cost / margin</MudTh>
-            <MudTh>Created</MudTh>
-            <MudTh Style="text-align:right">Actions</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Offer / SKU">
-                @if (!string.IsNullOrEmpty(context.SkuId))
-                {
-                    <MudTooltip Text="@(context.OfferId ?? context.Id)">
-                        <MudLink Href="@($"/catalog/offers?sku={context.SkuId}")">@OfferLabel(context)</MudLink>
-                    </MudTooltip>
-                }
-                else
-                {
-                    @OfferLabel(context)
-                }
-            </MudTd>
-            <MudTd DataLabel="Product">
-                @if (!string.IsNullOrEmpty(context.ProductId))
-                {
-                    <MudTooltip Text="@context.ProductId">
-                        <MudLink Href="@($"/catalog/products?product={context.ProductId}&sku={context.SkuId}")">
-                            @(context.ProductDisplayName ?? context.ProductId)
-                        </MudLink>
-                    </MudTooltip>
-                }
-                else
-                {
-                    <span>—</span>
-                }
-            </MudTd>
-            <MudTd DataLabel="State">
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context.ProvisioningState)">
-                    @(context.ProvisioningState ?? "—")
-                </MudChip>
-                @if (context.IsTrial)
-                {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">Trial</MudChip>
-                }
-            </MudTd>
-            <MudTd DataLabel="Seats">@(Seats(context) ?? "—")</MudTd>
-            <MudTd DataLabel="Est. monthly">
-                @if (MonthlyEstimate(context) is { } v)
-                {
-                    <MudTooltip Text="@EstimateBreakdown(context)">
-                        <span>@FormatMoney(v, context.PriceCurrency)</span>
-                    </MudTooltip>
-                }
-                else
-                {
-                    <span>—</span>
-                }
-            </MudTd>
-            <MudTd DataLabel="Ion cost / margin">
-                @if (context.IonCostPerSeat is { } ionCost)
-                {
-                    <MudTooltip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)">
-                        <span>@FormatMoney(ionCost, context.IonCurrency)</span>
-                    </MudTooltip>
-                    @if (context.IonMarginPercent is { } mp)
-                    {
-                        <MudText Typo="Typo.caption" Color="@(mp >= 0 ? Color.Success : Color.Error)" Class="d-block">@mp.ToString("0.0")% margin</MudText>
-                    }
-                }
-                else
-                {
-                    <span>—</span>
-                }
-            </MudTd>
-            <MudTd DataLabel="Created">@(context.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
-            <MudTd DataLabel="Actions" Style="text-align:right">
-                <MudTooltip Text="View">
-                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                                   Href="@($"/customers/{CustomerId}/entitlements/{context.Id}")" />
-                </MudTooltip>
-                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
-                    @if (IsSuspended(context))
-                    {
-                        <MudMenuItem Icon="@Icons.Material.Filled.PlayArrow" OnClick="@(() => ActivateAsync(context))">Activate</MudMenuItem>
-                    }
-                    else
-                    {
-                        <MudMenuItem Icon="@Icons.Material.Filled.Pause" OnClick="@(() => SuspendAsync(context))">Suspend</MudMenuItem>
-                    }
-                    @if (context.IsTrial)
-                    {
-                        <MudMenuItem Icon="@Icons.Material.Filled.Paid" OnClick="@(() => StartPaidAsync(context))">Start paid service</MudMenuItem>
-                    }
-                    <MudMenuItem Icon="@Icons.Material.Filled.Cancel" IconColor="Color.Error" OnClick="@(() => CancelAsync(context))">Cancel</MudMenuItem>
-                </MudMenu>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
+    <RadzenCard Variant="Variant.Filled">
+        <RadzenDataGrid TItem="Entitlement" Data="_entitlements" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+            <Columns>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Offer / SKU">
+                    <Template Context="e">
+                        @if (!string.IsNullOrEmpty(e.SkuId))
+                        {
+                            <Tip Text="@(e.OfferId ?? e.Id)"><RadzenLink Path="@($"/catalog/offers?sku={e.SkuId}")" Text="@OfferLabel(e)" /></Tip>
+                        }
+                        else
+                        {
+                            @OfferLabel(e)
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Product">
+                    <Template Context="e">
+                        @if (!string.IsNullOrEmpty(e.ProductId))
+                        {
+                            <Tip Text="@e.ProductId">
+                                <RadzenLink Path="@($"/catalog/products?product={e.ProductId}&sku={e.SkuId}")" Text="@(e.ProductDisplayName ?? e.ProductId)" />
+                            </Tip>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="State">
+                    <Template Context="e">
+                        <RadzenBadge BadgeStyle="@StateColor(e.ProvisioningState)" Text="@(e.ProvisioningState ?? "—")" />
+                        @if (e.IsTrial)
+                        {
+                            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Trial" class="rz-ms-1" />
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Seats" Width="80px">
+                    <Template Context="e">@(Seats(e) ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Est. monthly">
+                    <Template Context="e">
+                        @if (MonthlyEstimate(e) is { } v)
+                        {
+                            <Tip Text="@EstimateBreakdown(e)">@FormatMoney(v, e.PriceCurrency)</Tip>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Ion cost / margin">
+                    <Template Context="e">
+                        @if (e.IonCostPerSeat is { } ionCost)
+                        {
+                            <Tip Text="Actual per-seat cost from Ion (TD SYNNEX StreamOne)">@FormatMoney(ionCost, e.IonCurrency)</Tip>
+                            @if (e.IonMarginPercent is { } mp)
+                            {
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="@($"rz-m-0 {(mp >= 0 ? "rz-color-success" : "rz-color-danger")}")">@mp.ToString("0.0")% margin</RadzenText>
+                            }
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Created" Width="110px">
+                    <Template Context="e">@(e.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="Entitlement" Title="Actions" TextAlign="TextAlign.End" Width="110px">
+                    <Template Context="e">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" AlignItems="AlignItems.Center" Gap="0.25rem" class="rz-text-nowrap">
+                            <Tip Text="View">
+                                <LinkButton To="@($"/customers/{CustomerId}/entitlements/{e.Id}")" Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="View" />
+                            </Tip>
+                            <RadzenButton Icon="@AppIcons.MoreVert" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" aria-label="Actions"
+                                          Click="@(args => OpenActionsMenu(args, e))" />
+                        </RadzenStack>
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
+    </RadzenCard>
 }
 else
 {
-    <MudAlert Severity="Severity.Info">
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
         No entitlements yet. Use <strong>Purchase</strong> to sell this customer their first SKU.
-    </MudAlert>
+    </RadzenAlert>
 }
 
 @code {
@@ -171,7 +154,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
             _entitlements = [];
         }
         finally
@@ -187,13 +170,13 @@ else
     private static string OfferLabel(Entitlement e) =>
         e.SkuDisplayName ?? e.OfferDisplayName ?? e.OfferId ?? e.Id;
 
-    private static Color StateColor(string? state) => state?.ToUpperInvariant() switch
+    private static BadgeStyle StateColor(string? state) => state?.ToUpperInvariant() switch
     {
-        "ACTIVE" => Color.Success,
-        "SUSPENDED" => Color.Warning,
-        "CANCELLED" or "CANCELED" => Color.Error,
-        "PENDING" => Color.Info,
-        _ => Color.Default
+        "ACTIVE" => BadgeStyle.Success,
+        "SUSPENDED" => BadgeStyle.Warning,
+        "CANCELLED" or "CANCELED" => BadgeStyle.Danger,
+        "PENDING" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     private static string? Seats(Entitlement e) =>
@@ -227,6 +210,42 @@ else
             ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
             : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
 
+    // Row "⋮" menu: Radzen context menus are service-driven, so build the items for this entitlement on click.
+    private void OpenActionsMenu(MouseEventArgs args, Entitlement e)
+    {
+        var items = new List<ContextMenuItem>();
+        if (IsSuspended(e))
+        {
+            items.Add(new ContextMenuItem { Text = "Activate", Value = "activate", Icon = AppIcons.PlayArrow });
+        }
+        else
+        {
+            items.Add(new ContextMenuItem { Text = "Suspend", Value = "suspend", Icon = AppIcons.Pause });
+        }
+
+        if (e.IsTrial)
+        {
+            items.Add(new ContextMenuItem { Text = "Start paid service", Value = "paid", Icon = AppIcons.Paid });
+        }
+
+        items.Add(new ContextMenuItem { Text = "Cancel", Value = "cancel", Icon = AppIcons.Cancel, IconColor = Colors.Danger });
+
+        ContextMenus.Open(args, items, async menu =>
+        {
+            ContextMenus.Close();
+            var task = menu.Value switch
+            {
+                "activate" => ActivateAsync(e),
+                "suspend" => SuspendAsync(e),
+                "paid" => StartPaidAsync(e),
+                "cancel" => CancelAsync(e),
+                _ => Task.CompletedTask
+            };
+            await task;
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
     private Task ActivateAsync(Entitlement e) =>
         RunAsync(e, "Activate", $"Activate entitlement '{e.OfferId ?? e.Id}'?",
             () => Api.ActivateEntitlementAsync(CustomerId, e.Id));
@@ -245,13 +264,13 @@ else
 
     private async Task RunAsync(Entitlement e, string action, string confirm, Func<Task<EntitlementOperation?>> call, bool destructive = false)
     {
-        var confirmed = await DialogService.ShowMessageBoxAsync(
+        var confirmed = await Snackbar.ConfirmAsync(
             $"{action} entitlement",
             confirm,
             yesText: action,
             cancelText: "Cancel");
 
-        if (confirmed != true)
+        if (!confirmed)
         {
             return;
         }
@@ -259,12 +278,12 @@ else
         try
         {
             var op = await call();
-            Snackbar.Add(OperationMessage(action, op), op?.Done == true ? Severity.Success : Severity.Info);
+            await Snackbar.Add(OperationMessage(action, op), op?.Done == true ? Severity.Success : Severity.Info);
             await LoadAsync();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"{action} failed: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"{action} failed: {ex.Message}", Severity.Error);
         }
     }
 
@@ -285,3 +304,4 @@ else
             : $"{action} submitted — Google is processing it, this may take a moment.";
     }
 }
+

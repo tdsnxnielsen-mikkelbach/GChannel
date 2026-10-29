@@ -2,146 +2,138 @@
 @attribute [Authorize]
 @implements IDisposable
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 
 <PageTitle>Notifications · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2">
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" class="rz-mb-2">
     <div>
-        <MudText Typo="Typo.h4">Notifications</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary">Pub/Sub change events</MudText>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Notifications</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Pub/Sub change events</RadzenText>
     </div>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh"
-               OnClick="RefreshFeedAsync" Disabled="_feedLoading">Refresh</MudButton>
-</div>
+    <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="RefreshFeedAsync" Disabled="_feedLoading" />
+</RadzenStack>
 
-<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
     Google publishes entitlement and customer change events to a Cloud Pub/Sub topic. A background
     subscriber in the worker records them into a live feed so the console reacts to changes without
     polling. Each event deep-links to the customer or entitlement it concerns.
-    <MudTooltip Text="When the read-model is enabled, each change event also triggers a targeted refresh of the affected customer's synced data (seats, subscriptions, renewal, pricing) within seconds — so lists and dashboards update in near-real-time, with the periodic background sync as a backstop.">
-        <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Class="ml-1" Style="vertical-align:text-bottom" />
-    </MudTooltip>
-</MudText>
+    <Tip Text="When the read-model is enabled, each change event also triggers a targeted refresh of the affected customer's synced data (seats, subscriptions, renewal, pricing) within seconds — so lists and dashboards update in near-real-time, with the periodic background sync as a backstop.">
+        <RadzenIcon Icon="@AppIcons.Info" Style="font-size: 1.1rem; width: auto; height: auto; vertical-align: text-bottom" class="rz-ms-1" />
+    </Tip>
+</RadzenText>
 
 @if (!_feedLoading && _feed is not null && !_feed.SubscriberEnabled)
 {
-    <MudAlert Severity="Severity.Warning" Class="mb-4" Dense="true">
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
         The background Pub/Sub subscriber isn't running. Configure <code>GoogleChannel:PubSubProjectId</code>,
         <code>GoogleChannel:PubSubSubscriptionId</code> and a service-account key to start receiving events.
         Subscriber registration below still works.
-    </MudAlert>
+    </RadzenAlert>
 }
 
-<MudGrid>
-    <MudItem xs="12" md="7">
-        <MudText Typo="Typo.h6" Class="mb-2">Event feed</MudText>
+<RadzenRow Gap="1rem" RowGap="1rem">
+    <RadzenColumn Size="12" SizeLG="7">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Event feed</RadzenText>
         @if (_feedLoading)
         {
             <LoadingPanel Title="Loading notifications…" Hint="Reading the recent Channel event feed." />
         }
         else if (_feed is { Notifications.Count: > 0 })
         {
-            <MudTable Items="_feed.Notifications" Hover="true" Elevation="2" Dense="true">
-                <HeaderContent>
-                    <MudTh>Kind</MudTh>
-                    <MudTh>Customer</MudTh>
-                    <MudTh>Event</MudTh>
-                    <MudTh>Received</MudTh>
-                    <MudTh Style="text-align:right">Open</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Kind">
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                                 Color="@KindColor(context.Kind)">@context.Kind</MudChip>
-                    </MudTd>
-                    <MudTd DataLabel="Customer">
-                        @if (!string.IsNullOrEmpty(context.CustomerId))
-                        {
-                            <MudText Typo="Typo.body2">@CustomerLabel(context.CustomerId)</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.CustomerId</MudText>
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.body2">—</MudText>
-                        }
-                    </MudTd>
-                    <MudTd DataLabel="Event">
-                        <MudText Typo="Typo.body2">@(context.EventType ?? "—")</MudText>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ResourceName</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Received">@context.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</MudTd>
-                    <MudTd DataLabel="Open" Style="text-align:right">
-                        @if (!string.IsNullOrEmpty(context.CustomerId) && !string.IsNullOrEmpty(context.EntitlementId))
-                        {
-                            <MudLink Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")">Entitlement</MudLink>
-                        }
-                        else if (!string.IsNullOrEmpty(context.CustomerId))
-                        {
-                            <MudLink Href="@($"/customers/{context.CustomerId}")">Customer</MudLink>
-                        }
-                        else
-                        {
-                            <span>—</span>
-                        }
-                    </MudTd>
-                </RowTemplate>
-            </MudTable>
+            <RadzenCard Variant="Variant.Filled">
+                <RadzenDataGrid TItem="ChannelNotification" Data="_feed.Notifications" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Kind" Width="120px">
+                            <Template Context="n"><RadzenBadge BadgeStyle="@KindColor(n.Kind)" Text="@n.Kind" /></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Customer">
+                            <Template Context="n">
+                                @if (!string.IsNullOrEmpty(n.CustomerId))
+                                {
+                                    <div>@CustomerLabel(n.CustomerId)</div>
+                                    <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@n.CustomerId</RadzenText>
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Event">
+                            <Template Context="n">
+                                <div>@(n.EventType ?? "—")</div>
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0" Style="overflow-wrap: anywhere">@n.ResourceName</RadzenText>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Received" Width="150px">
+                            <Template Context="n">@n.ReceivedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ChannelNotification" Title="Open" TextAlign="TextAlign.End" Width="110px">
+                            <Template Context="n">
+                                @if (!string.IsNullOrEmpty(n.CustomerId) && !string.IsNullOrEmpty(n.EntitlementId))
+                                {
+                                    <RadzenLink Path="@($"/customers/{n.CustomerId}/entitlements/{n.EntitlementId}")" Text="Entitlement" />
+                                }
+                                else if (!string.IsNullOrEmpty(n.CustomerId))
+                                {
+                                    <RadzenLink Path="@($"/customers/{n.CustomerId}")" Text="Customer" />
+                                }
+                                else
+                                {
+                                    <span>—</span>
+                                }
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
         }
         else
         {
-            <MudAlert Severity="Severity.Info">No notifications received yet.</MudAlert>
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No notifications received yet.</RadzenAlert>
         }
-    </MudItem>
+    </RadzenColumn>
 
-    <MudItem xs="12" md="5">
-        <MudText Typo="Typo.h6" Class="mb-2">Subscriber registration</MudText>
-        <MudCard Elevation="2">
-            <MudCardContent>
-                @if (_registrationLoading)
+    <RadzenColumn Size="12" SizeLG="5">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Subscriber registration</RadzenText>
+        <RadzenCard Variant="Variant.Filled">
+            @if (_registrationLoading)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Topic</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-3" Style="overflow-wrap: anywhere">@(_registration?.Topic ?? "— none registered —")</RadzenText>
+
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Registered service accounts</RadzenText>
+                @if (_registration is { ServiceAccounts.Count: > 0 })
                 {
-                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-2" />
+                    <RadzenStack Gap="0">
+                        @foreach (var account in _registration.ServiceAccounts)
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-py-2 rz-border-bottom rz-border-color-base-200">
+                                <span style="overflow-wrap: anywhere">@account</span>
+                                <RadzenButton Icon="@AppIcons.Delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small" Click="@(() => UnregisterAsync(account))" Disabled="_saving" aria-label="Unregister" />
+                            </RadzenStack>
+                        }
+                    </RadzenStack>
                 }
                 else
                 {
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Topic</MudText>
-                    <MudText Typo="Typo.body2" Class="mb-3">@(_registration?.Topic ?? "— none registered —")</MudText>
-
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Registered service accounts</MudText>
-                    @if (_registration is { ServiceAccounts.Count: > 0 })
-                    {
-                        <MudList T="string" Dense="true">
-                            @foreach (var account in _registration.ServiceAccounts)
-                            {
-                                <MudListItem T="string">
-                                    <div class="d-flex justify-space-between align-center">
-                                        <MudText Typo="Typo.body2">@account</MudText>
-                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
-                                                       OnClick="@(() => UnregisterAsync(account))" Disabled="_saving" />
-                                    </div>
-                                </MudListItem>
-                            }
-                        </MudList>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2" Class="mb-2">None.</MudText>
-                    }
-
-                    <MudDivider Class="my-3" />
-                    <MudTextField @bind-Value="_newServiceAccount" Label="Service account email"
-                                  Variant="Variant.Outlined" Margin="Margin.Dense"
-                                  Placeholder="name@project.iam.gserviceaccount.com" />
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
-                               StartIcon="@Icons.Material.Filled.Add" OnClick="RegisterAsync"
-                               Disabled="@(string.IsNullOrWhiteSpace(_newServiceAccount) || _saving)">
-                        Register subscriber
-                    </MudButton>
+                    <RadzenText TextStyle="TextStyle.Body1" class="rz-mb-2">None.</RadzenText>
                 }
-            </MudCardContent>
-        </MudCard>
-    </MudItem>
-</MudGrid>
+
+                <hr class="rz-my-3" />
+                <RadzenFormField Text="Service account email" Variant="Variant.Outlined" Style="width:100%" class="rz-mb-3">
+                    <RadzenTextBox @bind-Value="_newServiceAccount" Placeholder="name@project.iam.gserviceaccount.com" Name="serviceAccount" />
+                </RadzenFormField>
+                <RadzenButton Text="Register subscriber" Icon="@AppIcons.Add" ButtonStyle="ButtonStyle.Primary" Click="RegisterAsync" Disabled="@(string.IsNullOrWhiteSpace(_newServiceAccount) || _saving)" />
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
 
 @code {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(20);
@@ -184,7 +176,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load notifications: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load notifications: {ex.Message}", Severity.Error);
             _feed = new ChannelNotificationsResult();
         }
         finally
@@ -248,7 +240,7 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load subscriber registration: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to load subscriber registration: {ex.Message}", Severity.Error);
             _registration = new SubscriberRegistration();
         }
         finally
@@ -271,11 +263,11 @@
         {
             _registration = await Api.RegisterSubscriberAsync(new RegisterSubscriberRequest { ServiceAccount = serviceAccount }, _cts.Token);
             _newServiceAccount = string.Empty;
-            Snackbar.Add("Subscriber registered.", Severity.Success);
+            await Snackbar.Add("Subscriber registered.", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to register subscriber: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to register subscriber: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -289,11 +281,11 @@
         try
         {
             _registration = await Api.UnregisterSubscriberAsync(serviceAccount, _cts.Token);
-            Snackbar.Add("Subscriber unregistered.", Severity.Success);
+            await Snackbar.Add("Subscriber unregistered.", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to unregister subscriber: {ex.Message}", Severity.Error);
+            await Snackbar.Add($"Failed to unregister subscriber: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -331,11 +323,11 @@
         }
     }
 
-    private static Color KindColor(string kind) => kind switch
+    private static BadgeStyle KindColor(string kind) => kind switch
     {
-        "Entitlement" => Color.Primary,
-        "Customer" => Color.Info,
-        _ => Color.Default
+        "Entitlement" => BadgeStyle.Primary,
+        "Customer" => BadgeStyle.Info,
+        _ => BadgeStyle.Light
     };
 
     public void Dispose()
@@ -351,3 +343,4 @@
         _cts.Dispose();
     }
 }
+

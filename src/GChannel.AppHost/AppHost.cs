@@ -1,35 +1,48 @@
+using Aspire.Hosting.Azure;
+using Azure.Provisioning.PostgreSql;
 using Azure.Provisioning.RedisEnterprise;
-using Azure.Provisioning.Sql;
+using Azure.Provisioning.ServiceBus;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Azure SQL Database — serverless General Purpose with auto-pause.
-// Runs as a local SQL Server container during development. The container keeps
-// a persistent data volume and a persistent lifetime so the database survives
-// between debug sessions (no reseeding required).
-var sql = builder.AddAzureSqlServer("sql")
+// Azure Database for PostgreSQL Flexible Server — the Marten document store + event store and
+// Wolverine's durable inbox/outbox. Authentication is Microsoft Entra ID (passwordless): each
+// referencing container app's managed identity is registered as an Entra principal on the server,
+// so no database password exists anywhere (the Aspire default — WithPasswordAuthentication is NOT
+// called). Runs as a local PostgreSQL container during development with a persistent data volume
+// and a persistent lifetime so the database survives between debug sessions.
+var postgres = builder.AddAzurePostgresFlexibleServer("postgres")
     .RunAsContainer(container => container
         .WithLifetime(ContainerLifetime.Persistent)
-        .WithDataVolume("gchannel-sql-data"));
+        .WithDataVolume("gchannel-pg-data"));
 
-var database = sql.AddDatabase("gchanneldb");
+// Connection name consumed by the API + worker ("ConnectionStrings:gchanneldb").
+var database = postgres.AddDatabase("gchanneldb");
 
-sql.ConfigureInfrastructure(infra =>
+postgres.ConfigureInfrastructure(infra =>
 {
-    var db = infra.GetProvisionableResources().OfType<SqlDatabase>().Single();
-    db.Sku = new SqlSku
+    var server = infra.GetProvisionableResources().OfType<PostgreSqlFlexibleServer>().Single();
+    // Entry-level Burstable B1ms (1 vCore, 2 GiB): always-on (no auto-pause), sized for the
+    // read-model + event store of a single reseller estate.
+    server.Sku = new PostgreSqlFlexibleServerSku
     {
-        Name = "GP_S_Gen5_2",
-        Tier = "GeneralPurpose",
-        Family = "Gen5",
-        Capacity = 2
+        Name = "Standard_B1ms",
+        Tier = PostgreSqlFlexibleServerSkuTier.Burstable
     };
-    db.MinCapacity = 0.5;
-    db.AutoPauseDelay = 60; // pause after 60 minutes of inactivity
-    // The already-provisioned free-limit DB uses BillOverUsage; Azure forbids changing this in place,
-    // so pin it to match the deployed resource (the current Aspire default would try to set AutoPause).
-    db.UseFreeLimit = true;
-    db.FreeLimitExhaustionBehavior = FreeLimitExhaustionBehavior.BillOverUsage;
+    server.Version = PostgreSqlFlexibleServerVersion.Sixteen;
+    // No zone pinning (Aspire's default pins zone 1): "no preference" lets the platform place the server
+    // wherever the SKU has capacity — Burstable capacity is frequently exhausted in a single zone.
+    server.AvailabilityZone = "";
+    server.Storage = new PostgreSqlFlexibleServerStorage { StorageSizeInGB = 32 };
+    server.Backup = new PostgreSqlFlexibleServerBackupProperties
+    {
+        BackupRetentionDays = 7,
+        GeoRedundantBackup = PostgreSqlFlexibleServerGeoRedundantBackupEnum.Disabled
+    };
+    server.HighAvailability = new PostgreSqlFlexibleServerHighAvailability
+    {
+        Mode = PostgreSqlFlexibleServerHighAvailabilityMode.Disabled
+    };
 });
 
 // Azure Managed Redis — entry-level Balanced B0 tier ("managed redis, basic").
@@ -51,12 +64,77 @@ cache.ConfigureInfrastructure(infra =>
     };
 });
 
+// Azure Service Bus (Standard tier) — the Wolverine messaging transport between the API and the
+// worker. There is deliberately NO emulator: the namespace is a real Azure resource in every
+// environment. Locally, Aspire's run-mode Azure provisioning creates (and reuses) a namespace in the
+// developer's own subscription / dev resource group (configure Azure:SubscriptionId, Azure:Location and
+// Azure:ResourceGroup in the AppHost user secrets, or answer the dashboard prompt on first run) and
+// grants the signed-in developer the Service Bus Data Owner role; azd provisions it for the deployed
+// environment. The topology below is infrastructure-as-code: Aspire emits it as Bicep for both, so
+// Wolverine never auto-provisions entities.
+//
+//  - topic  estate-events : integration events (CustomerChanged, EntitlementChanged,
+//      ChannelNotificationArrived, OperationSubmitted, CustomerReadModelUpdated). Subscriptions:
+//      worker-estate (the worker's projections/sync) and api-cache (the API's Redis cache
+//      invalidation). Duplicate detection (10 min window) is keyed on the Google Pub/Sub message id
+//      so a redelivered notification is dropped at the broker.
+//  - queue  estate-sync   : ProjectCustomer commands (targeted customer refreshes), consumed
+//      sequentially so the Channel API per-minute quotas can be paced.
+//  - queue  jobs          : the self-rescheduling recurring job ticks (estate sync, dashboard
+//      snapshot, billing export sync, billing posture scan).
+//  - queue  operations    : Google long-running-operation saga check timeouts.
+//  - queue  wolverine-dead-letter-queue : Wolverine's shared dead-letter queue — a message that exhausts its
+//      retries is sent here (declared because Wolverine must not auto-provision; see MessagingTopology).
+// Lock duration is the 5-minute maximum because handlers call the (slow, paced) Channel API.
+var serviceBus = builder.AddAzureServiceBus("messaging");
+
+serviceBus.ConfigureInfrastructure(infra =>
+{
+    var ns = infra.GetProvisionableResources().OfType<ServiceBusNamespace>().Single();
+    ns.Sku = new ServiceBusSku
+    {
+        Name = ServiceBusSkuName.Standard,
+        Tier = ServiceBusSkuTier.Standard
+    };
+});
+
+var estateEvents = serviceBus.AddServiceBusTopic("estate-events")
+    .WithProperties(topic =>
+    {
+        topic.RequiresDuplicateDetection = true;
+        topic.DuplicateDetectionHistoryTimeWindow = TimeSpan.FromMinutes(10);
+    });
+estateEvents.AddServiceBusSubscription("worker-estate").WithProperties(ConfigureSubscription);
+estateEvents.AddServiceBusSubscription("api-cache").WithProperties(ConfigureSubscription);
+serviceBus.AddServiceBusQueue("estate-sync").WithProperties(ConfigureQueue);
+serviceBus.AddServiceBusQueue("jobs").WithProperties(ConfigureQueue);
+serviceBus.AddServiceBusQueue("operations").WithProperties(ConfigureQueue);
+// Dead letters are only ever sent (never consumed by the apps), so the queue keeps the Service Bus defaults;
+// inspect / resubmit them with Service Bus Explorer in the portal.
+serviceBus.AddServiceBusQueue("wolverine-dead-letter-queue");
+
+static void ConfigureQueue(AzureServiceBusQueueResource queue)
+{
+    queue.MaxDeliveryCount = 10;
+    queue.LockDuration = TimeSpan.FromMinutes(5);
+    queue.DeadLetteringOnMessageExpiration = true;
+}
+
+static void ConfigureSubscription(AzureServiceBusSubscriptionResource subscription)
+{
+    subscription.MaxDeliveryCount = 10;
+    subscription.LockDuration = TimeSpan.FromMinutes(5);
+    subscription.DeadLetteringOnMessageExpiration = true;
+}
+
 // Azure Key Vault — central, secure store for application secrets (best practice).
 // The OAuth client secret is persisted here and surfaced to the app as a Key Vault
 // reference, so the literal value never appears in the deployment manifest or as
 // plain-text Container Apps configuration.
-// Key Vault has no local emulator, so it is only provisioned when publishing.
-var keyVault = builder.AddAzureKeyVault("secrets");
+// Added to the model only when publishing: locally the secret parameters are injected straight
+// from user secrets (see the bottom of this file), so no vault is provisioned into the developer's
+// Azure resource group alongside the Service Bus namespace.
+var keyVault = builder.ExecutionContext.IsPublishMode ? builder.AddAzureKeyVault("secrets") : null;
 
 // Configuration supplied at deploy time (azd prompts for these once, or `azd env set`).
 var googleClientId = builder.AddParameter("GoogleClientId");
@@ -107,10 +185,12 @@ var ionGatewayEnabled = builder.AddParameter("IonGatewayEnabled");
 var ionGatewayBaseUrl = builder.AddParameter("IonGatewayBaseUrl");
 var ionGatewayApiKeyParam = builder.AddParameter("IonGatewayApiKey", secret: true);
 
-// Back-end services container app (internal): owns SQL, Redis and the Google Channel API.
+// Back-end services container app (internal): owns PostgreSQL (Marten), Redis (cache), Service Bus
+// (Wolverine) and the Google Channel API.
 var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithReference(database)
     .WithReference(cache)
+    .WithReference(serviceBus)
     .WithEnvironment("GoogleChannel__AccountId", googleChannelAccountId)
     .WithEnvironment("GoogleChannel__ImpersonateUser", googleChannelImpersonateUser)
     .WithEnvironment("GoogleChannel__BackgroundRefreshSeconds", googleChannelBackgroundRefreshSeconds)
@@ -129,15 +209,17 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithEnvironment("IonGateway__Enabled", ionGatewayEnabled)
     .WithEnvironment("IonGateway__BaseUrl", ionGatewayBaseUrl)
     .WaitFor(database)
-    .WaitFor(cache);
+    .WaitFor(cache)
+    .WaitFor(serviceBus);
 
-// Background worker container app (internal, no HTTP): the dashboard refresh, Pub/Sub subscriber and
-// read-model sync hosted services, extracted from the API so they scale on their own axis. Pinned to a
-// single replica via WithReplicas(1) — Redis single-flight locks keep extra replicas idle, and these
-// jobs are scheduled/pulled, so there is no benefit to scaling out.
+// Background worker container app (internal, no HTTP): Wolverine message handlers for the estate
+// sync, dashboard snapshot, Pub/Sub bridge, billing export sync and posture scan, extracted from the
+// API so they scale on their own axis. Pinned to a single replica via WithReplicas(1) — the Channel
+// API per-minute quotas are the bottleneck, so a second consumer would only compete for them.
 var worker = builder.AddProject<Projects.GChannel_Worker>("worker")
     .WithReference(database)
     .WithReference(cache)
+    .WithReference(serviceBus)
     .WithEnvironment("GoogleChannel__AccountId", googleChannelAccountId)
     .WithEnvironment("GoogleChannel__ImpersonateUser", googleChannelImpersonateUser)
     .WithEnvironment("GoogleChannel__BackgroundRefreshSeconds", googleChannelBackgroundRefreshSeconds)
@@ -158,7 +240,8 @@ var worker = builder.AddProject<Projects.GChannel_Worker>("worker")
     .WithEnvironment("IonGateway__BaseUrl", ionGatewayBaseUrl)
     .WithReplicas(1)
     .WaitFor(database)
-    .WaitFor(cache);
+    .WaitFor(cache)
+    .WaitFor(serviceBus);
 
 // Blazor front end container app (external): the dashboard users sign in to.
 var webfrontend = builder.AddProject<Projects.GChannel_Web>("webfrontend")
@@ -167,7 +250,7 @@ var webfrontend = builder.AddProject<Projects.GChannel_Web>("webfrontend")
     .WithEnvironment("Authentication__Google__ClientId", googleClientId)
     .WaitFor(apiService);
 
-if (builder.ExecutionContext.IsPublishMode)
+if (keyVault is not null)
 {
     // In Azure, persist the OAuth client secret in Key Vault and surface it to the
     // app as a Key Vault reference (resolved via the app's managed identity), so the

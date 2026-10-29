@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.HttpOverrides;
-using MudBlazor.Services;
+using Radzen;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,8 +27,14 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// UI: MudBlazor + ApexCharts.
-builder.Services.AddMudServices();
+// UI: Radzen Blazor components (MIT; dialog/notification/tooltip/context-menu/theme services) + ApexCharts.
+// The chosen light/dark theme is persisted in a cookie so prerendering already uses the right theme.
+builder.Services.AddRadzenComponents();
+builder.Services.AddRadzenCookieThemeService(options =>
+{
+    options.Name = "GChannelTheme";
+    options.Duration = TimeSpan.FromDays(365);
+});
 builder.Services.AddApexCharts();
 
 builder.Services.AddCascadingAuthenticationState();
@@ -96,6 +102,9 @@ builder.Services.AddHttpClient<GChannelApiClient>(client =>
 {
     client.BaseAddress = new Uri("https+http://apiservice");
 });
+
+// Toasts + confirm dialogs façade over the Radzen notification/dialog services.
+builder.Services.AddScoped<UiNotifier>();
 
 // Per-user onboarding progress (§9 phase 1), persisted in the browser's protected local storage.
 builder.Services.AddScoped<OnboardingStateService>();

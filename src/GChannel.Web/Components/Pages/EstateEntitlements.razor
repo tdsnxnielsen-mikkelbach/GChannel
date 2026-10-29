@@ -1,101 +1,95 @@
 @page "/entitlements"
 @attribute [Authorize]
 @inject GChannelApiClient Api
-@inject ISnackbar Snackbar
+@inject UiNotifier Snackbar
 @inject NavigationManager Nav
 
 <PageTitle>Entitlements · GChannel</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-4">
-    <MudText Typo="Typo.h4">Entitlements</MudText>
-</div>
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-4">Entitlements</RadzenText>
 
-<MudText Typo="Typo.body1" Class="mb-4" Color="Color.Secondary">
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
     Estate-wide subscriptions from the synced read-model. Filter by lifecycle state to see the
     entitlements behind the dashboard KPIs. Paging, sorting and search run server-side.
-</MudText>
+</RadzenText>
 
-<div class="d-flex flex-wrap justify-space-between align-center mb-2" style="gap:12px">
-    <div class="d-flex flex-wrap align-center" style="gap:12px">
-        <MudSelect T="string" Value="_state" ValueChanged="OnStateChanged" Label="State"
-                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px">
-            <MudSelectItem T="string" Value="@("")">All states</MudSelectItem>
-            <MudSelectItem T="string" Value="@("active")">Active</MudSelectItem>
-            <MudSelectItem T="string" Value="@("trial")">Trial</MudSelectItem>
-            <MudSelectItem T="string" Value="@("suspended")">Suspended</MudSelectItem>
-        </MudSelect>
-        <MudSelect T="string" Value="_scope" ValueChanged="OnScopeChanged" Label="Scope"
-                   Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:150px">
-            <MudSelectItem T="string" Value="@("direct")">Direct</MudSelectItem>
-            <MudSelectItem T="string" Value="@("indirect")">Indirect (resellers)</MudSelectItem>
-            <MudSelectItem T="string" Value="@("all")">All</MudSelectItem>
-        </MudSelect>
-        <MudTextField T="string" @bind-Value="_search" Immediate="false" DebounceInterval="400"
-                      OnDebounceIntervalElapsed="OnSearchChanged" Placeholder="Search customer, offer, id…"
-                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                      Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:280px" />
-    </div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap">
+        <RadzenDropDown TValue="string" Data="_stateOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                        Value="@_state" ValueChanged="OnStateChanged" Style="min-width:150px" aria-label="State" Name="state" />
+        <RadzenDropDown TValue="string" Data="_scopeOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                        Value="@_scope" ValueChanged="OnScopeChanged" Style="min-width:170px" aria-label="Scope" Name="scope" />
+        <SearchBox Value="@_search" ValueChanged="OnSearchChanged" Label="Search customer, offer, id…" Style="width: 100%; min-width: 280px" />
+    </RadzenStack>
     <AsOfBadge AsOf="_asOf" />
-</div>
+</RadzenStack>
 
-<MudTable @ref="_table" ServerData="LoadServerData" Hover="true" Elevation="2" Dense="false" RowsPerPage="25">
-    <HeaderContent>
-        <MudTh><MudTableSortLabel SortLabel="customer" T="EstateEntitlement">Customer</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel SortLabel="product" T="EstateEntitlement">Product / offer</MudTableSortLabel></MudTh>
-        <MudTh><MudTableSortLabel SortLabel="state" T="EstateEntitlement">State</MudTableSortLabel></MudTh>
-        <MudTh Style="text-align:right"><MudTableSortLabel SortLabel="seats" T="EstateEntitlement">Seats</MudTableSortLabel></MudTh>
-        <MudTh Style="text-align:right">Est. monthly</MudTh>
-        <MudTh><MudTableSortLabel SortLabel="renewal" T="EstateEntitlement">Renewal</MudTableSortLabel></MudTh>
-        <MudTh Style="text-align:right">Actions</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Customer">
-            <MudLink Href="@($"/customers/{context.CustomerId}")">@(context.CustomerName ?? context.CustomerId)</MudLink>
-            @if (!string.IsNullOrEmpty(context.OwningLinkId))
+<RadzenCard Variant="Variant.Filled">
+    <RadzenDataGrid @ref="_grid" TItem="EstateEntitlement" Data="_items" Count="_total" LoadData="OnLoadData" IsLoading="_loading"
+                    AllowPaging="true" PageSize="25" PageSizeOptions="_pageSizes" ShowPagingSummary="true"
+                    AllowSorting="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+        <Columns>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.CustomerName)" SortProperty="customer" Title="Customer">
+                <Template Context="e">
+                    <RadzenLink Path="@($"/customers/{e.CustomerId}")" Text="@(e.CustomerName ?? e.CustomerId)" />
+                    @if (!string.IsNullOrEmpty(e.OwningLinkId))
+                    {
+                        <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Reseller" class="rz-ms-1" />
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.OfferName)" SortProperty="product" Title="Product / offer">
+                <Template Context="e">
+                    <div>@(e.OfferName ?? e.SkuName ?? "—")</div>
+                    @if (!string.IsNullOrEmpty(e.ProductName))
+                    {
+                        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@e.ProductName</RadzenText>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.State)" SortProperty="state" Title="State" Width="120px">
+                <Template Context="e">
+                    <RadzenBadge BadgeStyle="@StateColor(e)" Text="@StateLabel(e)" />
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.Seats)" SortProperty="seats" Title="Seats" TextAlign="TextAlign.End" Width="90px" />
+            <RadzenDataGridColumn TItem="EstateEntitlement" Title="Est. monthly" Sortable="false" TextAlign="TextAlign.End">
+                <Template Context="e">
+                    @if (EstimatedMonthly(e) is { } v)
+                    {
+                        <Tip Text="@($"Wholesale {FormatMoney(e.UnitPrice * e.BillableSeats, e.Currency)} × (1 + {e.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")">@FormatMoney(v, e.Currency)</Tip>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Property="@nameof(EstateEntitlement.CommitmentEndTime)" SortProperty="renewal" Title="Renewal" Width="130px">
+                <Template Context="e">
+                    @(e.CommitmentEndTime?.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "—")
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="EstateEntitlement" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="90px">
+                <Template Context="e">
+                    <Tip Text="View entitlement">
+                        <LinkButton To="@($"/customers/{e.CustomerId}/entitlements/{e.EntitlementId}")" Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Title="View entitlement" />
+                    </Tip>
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+        <EmptyTemplate>
+            @if (_loading)
             {
-                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text" Class="ml-1">Reseller</MudChip>
-            }
-        </MudTd>
-        <MudTd DataLabel="Product / offer">
-            <div>@(context.OfferName ?? context.SkuName ?? "—")</div>
-            @if (!string.IsNullOrEmpty(context.ProductName))
-            {
-                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ProductName</MudText>
-            }
-        </MudTd>
-        <MudTd DataLabel="State">
-            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@StateColor(context)">@StateLabel(context)</MudChip>
-        </MudTd>
-        <MudTd DataLabel="Seats" Style="text-align:right">@context.Seats</MudTd>
-        <MudTd DataLabel="Est. monthly" Style="text-align:right">
-            @if (EstimatedMonthly(context) is { } v)
-            {
-                <MudTooltip Text="@($"Wholesale {FormatMoney(context.UnitPrice * context.BillableSeats, context.Currency)} × (1 + {context.RepricingPercent:0.##}% markup). Estimated from offer list pricing — not invoiced.")">
-                    <span>@FormatMoney(v, context.Currency)</span>
-                </MudTooltip>
+                <LoadingPanel Title="Loading entitlements…" Hint="Querying the synced read-model." />
             }
             else
             {
-                <span>—</span>
+                <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-3">No entitlements match the current filters.</RadzenAlert>
             }
-        </MudTd>
-        <MudTd DataLabel="Renewal">
-            @(context.CommitmentEndTime?.ToString("MMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "—")
-        </MudTd>
-        <MudTd DataLabel="Actions" Style="text-align:right">
-            <MudTooltip Text="View entitlement">
-                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small"
-                               Href="@($"/customers/{context.CustomerId}/entitlements/{context.EntitlementId}")" />
-            </MudTooltip>
-        </MudTd>
-    </RowTemplate>
-    <NoRecordsContent>
-        <MudAlert Severity="Severity.Info">No entitlements match the current filters.</MudAlert>
-    </NoRecordsContent>
-    <PagerContent>
-        <MudTablePager PageSizeOptions="new[] { 25, 50, 100 }" />
-    </PagerContent>
-</MudTable>
+        </EmptyTemplate>
+    </RadzenDataGrid>
+</RadzenCard>
 
 @code {
     [SupplyParameterFromQuery(Name = "state")]
@@ -104,7 +98,25 @@
     [SupplyParameterFromQuery(Name = "scope")]
     public string? ScopeQuery { get; set; }
 
-    private MudTable<EstateEntitlement>? _table;
+    private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
+    private static readonly SelectOption[] _stateOptions =
+    [
+        new("", "All states"),
+        new("active", "Active"),
+        new("trial", "Trial"),
+        new("suspended", "Suspended"),
+    ];
+    private static readonly SelectOption[] _scopeOptions =
+    [
+        new("direct", "Direct"),
+        new("indirect", "Indirect (resellers)"),
+        new("all", "All"),
+    ];
+
+    private RadzenDataGrid<EstateEntitlement>? _grid;
+    private List<EstateEntitlement> _items = [];
+    private int _total;
+    private bool _loading = true;
     private string _state = "";
     private string _scope = "direct";
     private string? _search;
@@ -118,7 +130,7 @@
         {
             _state = state;
             _scope = scope;
-            _ = _table?.ReloadServerData();
+            _ = _grid?.FirstPage(true);
         }
     }
 
@@ -140,35 +152,51 @@
     private async Task OnStateChanged(string value)
     {
         _state = value ?? "";
-        await (_table?.ReloadServerData() ?? Task.CompletedTask);
+        await ReloadFirstPageAsync();
     }
 
     private async Task OnScopeChanged(string value)
     {
         _scope = string.IsNullOrEmpty(value) ? "direct" : value;
-        await (_table?.ReloadServerData() ?? Task.CompletedTask);
+        await ReloadFirstPageAsync();
     }
 
-    private async Task OnSearchChanged(string _) => await (_table?.ReloadServerData() ?? Task.CompletedTask);
-
-    private async Task<TableData<EstateEntitlement>> LoadServerData(TableState state, CancellationToken token)
+    private async Task OnSearchChanged(string? value)
     {
+        _search = value;
+        await ReloadFirstPageAsync();
+    }
+
+    private Task ReloadFirstPageAsync() => _grid?.FirstPage(true) ?? Task.CompletedTask;
+
+    // Server-side read: Radzen gives Skip/Top, the API takes a 0-based page; sort keys come from SortProperty.
+    private async Task OnLoadData(LoadDataArgs args)
+    {
+        _loading = true;
+        var pageSize = args.Top ?? 25;
+        var page = pageSize == 0 ? 0 : (args.Skip ?? 0) / pageSize;
+        var sort = args.Sorts?.FirstOrDefault();
         try
         {
             var result = await Api.ListEstateEntitlementsAsync(
-                state.Page, state.PageSize, state.SortLabel,
-                state.SortDirection == SortDirection.Descending,
+                page, pageSize, sort?.Property,
+                sort?.SortOrder == SortOrder.Descending,
                 _search, string.IsNullOrEmpty(_state) ? null : _state,
-                _scope, token);
+                _scope, CancellationToken.None);
 
+            _items = result?.Items?.ToList() ?? [];
+            _total = result?.Total ?? 0;
             _asOf = result?.AsOf;
-            await InvokeAsync(StateHasChanged); // re-render the parent so the As-of badge reflects the loaded data
-            return new TableData<EstateEntitlement> { Items = result?.Items ?? [], TotalItems = result?.Total ?? 0 };
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
-            return new TableData<EstateEntitlement> { Items = [], TotalItems = 0 };
+            await Snackbar.Add($"Failed to load entitlements: {ex.Message}", Severity.Error);
+            _items = [];
+            _total = 0;
+        }
+        finally
+        {
+            _loading = false;
         }
     }
 
@@ -186,16 +214,16 @@
             : char.ToUpperInvariant(e.State[0]) + e.State[1..].ToLowerInvariant();
     }
 
-    private static Color StateColor(EstateEntitlement e)
+    private static BadgeStyle StateColor(EstateEntitlement e)
     {
-        if (e.IsTrial) return Color.Info;
+        if (e.IsTrial) return BadgeStyle.Info;
         return e.State?.ToUpperInvariant() switch
         {
-            "ACTIVE" => Color.Success,
-            "SUSPENDED" => Color.Warning,
-            "CANCELLED" or "CANCELED" => Color.Error,
-            "PENDING" => Color.Info,
-            _ => Color.Default,
+            "ACTIVE" => BadgeStyle.Success,
+            "SUSPENDED" => BadgeStyle.Warning,
+            "CANCELLED" or "CANCELED" => BadgeStyle.Danger,
+            "PENDING" => BadgeStyle.Info,
+            _ => BadgeStyle.Light,
         };
     }
 

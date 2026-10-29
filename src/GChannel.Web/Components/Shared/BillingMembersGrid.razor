@@ -1,0 +1,244 @@
+@namespace GChannel.Web.Components
+
+@* Billing-account IAM members with their Google Account posture (kind, 2SV, Advanced Protection, keys).
+   Sorting runs in LoadData so the posture columns can order by a computed rank — weakest first — which the
+   grid can't do from a property path. *@
+<RadzenDataGrid TItem="BillingAccountMember" Data="_view" Count="_view.Count" LoadData="OnLoadData" AllowPaging="false" AllowSorting="true"
+                Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true" EmptyText="@EmptyText">
+    <Columns>
+        <RadzenDataGridColumn TItem="BillingAccountMember" Property="@nameof(BillingAccountMember.Email)" Title="Member">
+            <Template Context="m">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem" Wrap="FlexWrap.Wrap">
+                    <RadzenIcon Icon="@MemberTypeIcon(m.MemberType)" class="rz-text-secondary-color" title="@m.MemberType" />
+                    <span>@m.Email</span>
+                    @if (IdentityByEmail.TryGetValue(m.Email, out var who))
+                    {
+                        if (who.IsAdmin == true)
+                        {
+                            <Tip Text="Workspace super administrator in their tenant"><RadzenBadge BadgeStyle="BadgeStyle.Info" Text="admin" class="rz-ms-1" /></Tip>
+                        }
+                        if (who.Suspended == true)
+                        {
+                            <Tip Text="Account is suspended in Workspace but still holds this billing role"><RadzenBadge BadgeStyle="BadgeStyle.Danger" Text="suspended" class="rz-ms-1" /></Tip>
+                        }
+                    }
+                </RadzenStack>
+            </Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="BillingAccountMember" Property="@nameof(BillingAccountMember.RoleDisplayName)" Title="Role">
+            <Template Context="m"><span class="rz-text-nowrap">@m.RoleDisplayName</span></Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="BillingAccountMember" Property="account" Title="Account">
+            <Template Context="m"><span class="rz-text-nowrap">@AccountKindChip(m)</span></Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="BillingAccountMember" Property="twosv" Title="2SV">
+            <Template Context="m"><span class="rz-text-nowrap">@TwoSvChip(m)</span></Template>
+        </RadzenDataGridColumn>
+        <RadzenDataGridColumn TItem="BillingAccountMember" Property="app" Title="Adv. Protection">
+            <Template Context="m"><span class="rz-text-nowrap">@AdvancedProtectionChip(m)</span></Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<BillingAccountMember> Rows { get; set; } = [];
+    [Parameter] public string EmptyText { get; set; } = "No members.";
+    [Parameter] public IReadOnlyDictionary<string, MemberIdentityInfo> IdentityByEmail { get; set; } = new Dictionary<string, MemberIdentityInfo>();
+    [Parameter] public bool LoadingIdentity { get; set; }
+
+    private List<BillingAccountMember> _view = [];
+    private SortDescriptor? _sort;
+
+    // Identities enrich in place after the first render, which changes the posture ranks — re-sort every time.
+    protected override void OnParametersSet() => ApplySort();
+
+    private void OnLoadData(LoadDataArgs args)
+    {
+        _sort = args.Sorts?.FirstOrDefault();
+        ApplySort();
+    }
+
+    private void ApplySort()
+    {
+        if (_sort is null)
+        {
+            _view = Rows.ToList();
+            return;
+        }
+
+        IOrderedEnumerable<BillingAccountMember> ordered = _sort.Property switch
+        {
+            nameof(BillingAccountMember.Email) => Rows.OrderBy(m => m.Email, StringComparer.OrdinalIgnoreCase),
+            nameof(BillingAccountMember.RoleDisplayName) => Rows.OrderBy(m => m.RoleDisplayName, StringComparer.OrdinalIgnoreCase),
+            "account" => Rows.OrderBy(AccountRank),
+            "twosv" => Rows.OrderBy(TwoSvRank),
+            "app" => Rows.OrderBy(AdvancedProtectionRank),
+            _ => Rows.OrderBy(m => 0)
+        };
+
+        _view = (_sort.SortOrder == SortOrder.Descending ? ordered.Reverse() : ordered).ToList();
+    }
+
+    private RenderFragment AccountKindChip(BillingAccountMember m) => __builder =>
+    {
+        if (!IsUserLike(m)) { <span class="rz-text-secondary-color">—</span> return; }
+        if (LoadingIdentity && !IdentityByEmail.ContainsKey(m.Email)) { <RadzenProgressBarCircular Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.ExtraSmall" ShowValue="false" Style="display:inline-block" /> return; }
+        if (!IdentityByEmail.TryGetValue(m.Email, out var id))
+        {
+            <Tip Text="Identity lookup for this member didn't return — refresh to retry."><span class="rz-text-secondary-color">?</span></Tip>
+            return;
+        }
+
+        var (label, style) = id.AccountKind switch
+        {
+            GoogleAccountKind.Managed => ("Managed", BadgeStyle.Success),
+            GoogleAccountKind.ManagedTeam => ("Managed (team)", BadgeStyle.Warning),
+            GoogleAccountKind.Consumer => ("Consumer", BadgeStyle.Danger),
+            _ => ("Unknown", BadgeStyle.Light)
+        };
+        <Tip Text="@(id.AccountKindReason ?? label)"><RadzenBadge BadgeStyle="@style" Text="@label" /></Tip>
+    };
+
+    private RenderFragment TwoSvChip(BillingAccountMember m) => __builder =>
+    {
+        if (!IsUserLike(m) || !IdentityByEmail.TryGetValue(m.Email, out var id)) { <span class="rz-text-secondary-color">—</span> return; }
+        if (id.TwoStepVerificationEnrolled is null)
+        {
+            <Tip Text="Not visible: the user's tenant is neither ours nor a resold customer we have reseller admin access to."><span class="rz-text-secondary-color">n/a</span></Tip>
+            return;
+        }
+        var enrolled = id.TwoStepVerificationEnrolled.Value;
+        var enforced = id.TwoStepVerificationEnforced == true;
+        <Tip Text="@(enforced ? "Enrolled and enforced by policy" : enrolled ? "Enrolled (not enforced)" : "Not enrolled in 2-Step Verification")">
+            <RadzenBadge BadgeStyle="@(enrolled ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(enrolled ? (enforced ? "On · enforced" : "On") : "Off")" />
+        </Tip>
+    };
+
+    private RenderFragment AdvancedProtectionChip(BillingAccountMember m) => __builder =>
+    {
+        if (!IsUserLike(m) || !IdentityByEmail.TryGetValue(m.Email, out var id))
+        {
+            <span class="rz-text-secondary-color">—</span>
+            return;
+        }
+        if (!id.SecurityVisible)
+        {
+            <Tip Text="@(id.AccountKind == GoogleAccountKind.Consumer
+                ? "Consumer Google Account — not in any Workspace tenant, so Google exposes no 2SV, passkey or Advanced Protection data to anyone but the owner."
+                : "This user's tenant is neither ours nor a resold customer we have reseller admin access to.")">
+                <span class="rz-text-secondary-color">—</span>
+            </Tip>
+            return;
+        }
+        var keys = KeysSummary(id);
+        <RadzenStack AlignItems="AlignItems.Start" Gap="0.125rem">
+            @switch (id.AdvancedProtection)
+            {
+                case AdvancedProtectionStatus.Enrolled:
+                    <Tip Text="@($"Enrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Enrolled" /></Tip>
+                    break;
+                case AdvancedProtectionStatus.NotEnrolled:
+                    <Tip Text="@($"Unenrolled (audit event {id.AdvancedProtectionAsOf:yyyy-MM-dd}){keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="Not enrolled" /></Tip>
+                    break;
+                case AdvancedProtectionStatus.Unavailable:
+                    <Tip Text="@($"Audit log not readable: {id.AdvancedProtectionError}{keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Danger" Text="Unavailable" /></Tip>
+                    break;
+                default:
+                    // Advanced Protection requires a passkey or security key, so a confirmed 0/0 from the usage
+                    // report is a safe "not enrolled" even without an audit event.
+                    if (id is { SecurityKeys: 0, Passkeys: 0 })
+                    {
+                        <Tip Text="@($"No enroll/unenroll audit event retained, but the usage report shows no passkeys or security keys — Advanced Protection requires one.{keys}")"><RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="Not enrolled" /></Tip>
+                    }
+                    else
+                    {
+                        <Tip Text="@($"No Advanced Protection enroll/unenroll event in the ~6 months of audit log Google retains — there is no state field, so enrollment before that can't be confirmed.{keys}")"><span class="rz-text-secondary-color">No recent event</span></Tip>
+                    }
+                    break;
+            }
+            @* Passkey / security-key line: the factor Advanced Protection enforces, shown for every state. *@
+            @if (id.SecurityKeys is not null || id.Passkeys is not null)
+            {
+                var (label, colorClass) = KeysLine(id);
+                <Tip Text="@($"From the user usage report for {id.KeysAsOf:yyyy-MM-dd} (accounts:num_security_keys / num_passkeys_enrolled).")">
+                    <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Span" class="@($"rz-m-0 rz-display-inline-flex rz-align-items-center {colorClass}")" Style="gap: 0.25rem">
+                        <RadzenIcon Icon="@AppIcons.Key" Style="font-size: 1rem; width: auto; height: auto" />@label
+                    </RadzenText>
+                </Tip>
+            }
+        </RadzenStack>
+    };
+
+    // Advanced Protection requires a passkey or security key, so surface those counts alongside.
+    private static string KeysSummary(MemberIdentityInfo id) =>
+        id.SecurityKeys is null && id.Passkeys is null
+            ? ""
+            : $" Keys as of {id.KeysAsOf:yyyy-MM-dd}: {id.SecurityKeys ?? 0} security key(s), {id.Passkeys ?? 0} passkey(s).";
+
+    private static (string Label, string ColorClass) KeysLine(MemberIdentityInfo id)
+    {
+        var keys = id.SecurityKeys ?? 0;
+        var passkeys = id.Passkeys ?? 0;
+        if (keys == 0 && passkeys == 0)
+        {
+            return ("no keys or passkeys", "rz-color-danger");
+        }
+
+        var parts = new List<string>();
+        if (keys > 0) parts.Add($"{keys} security key{(keys == 1 ? "" : "s")}");
+        if (passkeys > 0) parts.Add($"{passkeys} passkey{(passkeys == 1 ? "" : "s")}");
+        return (string.Join(" · ", parts), "rz-color-success");
+    }
+
+    private static bool IsUserLike(BillingAccountMember m) =>
+        m.MemberType is "user" || m.MemberType is "group";
+
+    // Sort keys: ascending = weakest posture first, so one click surfaces the members to act on.
+    // Rows with no data (service accounts, unreadable tenants) sink to the bottom.
+    private int AccountRank(BillingAccountMember m)
+    {
+        if (!IsUserLike(m) || !IdentityByEmail.TryGetValue(m.Email, out var id)) { return 9; }
+        return id.AccountKind switch
+        {
+            GoogleAccountKind.Consumer => 0,
+            GoogleAccountKind.ManagedTeam => 1,
+            GoogleAccountKind.Managed => 3,
+            _ => 8
+        };
+    }
+
+    private int TwoSvRank(BillingAccountMember m)
+    {
+        if (!IsUserLike(m) || !IdentityByEmail.TryGetValue(m.Email, out var id)) { return 9; }
+        return id.TwoStepVerificationEnrolled switch
+        {
+            false => 0,                                                 // Off
+            true when id.TwoStepVerificationEnforced != true => 1,      // On, not enforced
+            true => 2,                                                  // On · enforced
+            null => 8                                                   // n/a (tenant not readable)
+        };
+    }
+
+    private int AdvancedProtectionRank(BillingAccountMember m)
+    {
+        if (!IsUserLike(m) || !IdentityByEmail.TryGetValue(m.Email, out var id) || !id.SecurityVisible) { return 9; }
+        return id.AdvancedProtection switch
+        {
+            AdvancedProtectionStatus.NotEnrolled => 0,
+            AdvancedProtectionStatus.Unknown when id is { SecurityKeys: 0, Passkeys: 0 } => 0, // inferred not enrolled
+            AdvancedProtectionStatus.Unavailable => 1,
+            AdvancedProtectionStatus.Unknown => 2,                       // no recent event, has keys
+            AdvancedProtectionStatus.Enrolled => 3,
+            _ => 8
+        };
+    }
+
+    private static string MemberTypeIcon(string type) => type switch
+    {
+        "user" => AppIcons.Person,
+        "group" => AppIcons.Groups,
+        "serviceAccount" => AppIcons.SmartToy,
+        "domain" => AppIcons.Language,
+        _ => AppIcons.HelpOutline
+    };
+}

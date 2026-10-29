@@ -1,0 +1,40 @@
+@using Radzen
+@namespace GChannel.Web.Components
+@inject TooltipService Tooltips
+
+@* Hover tooltip for arbitrary content (Radzen tooltips are service-driven, so this wraps the child in a span
+   that opens/closes the shared tooltip host rendered by RadzenComponents in MainLayout). *@
+<span @ref="_element" class="@($"gchannel-tip {Class}")" style="@Style" @onmouseenter="Show" @onmouseleave="Hide">@ChildContent</span>
+
+@code {
+    private ElementReference _element;
+
+    /// <summary>Tooltip text; nothing is shown when empty.</summary>
+    [Parameter] public string? Text { get; set; }
+
+    [Parameter] public TooltipPosition Position { get; set; } = TooltipPosition.Top;
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public string? Style { get; set; }
+
+    private void Show()
+    {
+        if (string.IsNullOrWhiteSpace(Text))
+        {
+            return;
+        }
+
+        // Duration = null keeps the tooltip open until the pointer leaves (the default auto-closes after a while).
+        Tooltips.Open(_element, Text, new TooltipOptions
+        {
+            Position = Position,
+            Duration = null,
+            Style = "max-width: 22rem; white-space: pre-line; text-align: start"
+        });
+    }
+
+    private void Hide() => Tooltips.Close();
+}

@@ -1,175 +1,122 @@
-using System.Text.Json;
-using GChannel.ApiService.Configuration;
-using GChannel.ApiService.Services;
+using GChannel.ApiService.Caching;
+using GChannel.ApiService.Http;
+using GChannel.Core.Configuration;
+using GChannel.Core.Estate;
+using GChannel.Core.GoogleApis;
+using GChannel.Core.Messaging;
 using GChannel.Shared.Contracts;
+using Marten;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using Wolverine;
+using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
 
 /// <summary>
-/// Maps the repricing / rebilling-margin endpoints (§6). Customer repricing configs hang off a
-/// customer (the reseller's margin on that customer's bill) and channel partner repricing configs
-/// hang off a channel partner link (a distributor's margin on a downstream reseller's bill). Both
-/// return the config resource directly (not long-running operations), so the UI reflects changes
-/// immediately. Lists are cached briefly and invalidated on every mutation.
+/// Repricing / rebilling-margin endpoints. Customer repricing configs hang off a customer, channel
+/// partner repricing configs off a channel partner link. Both return the config resource directly (not
+/// long-running operations). Lists are cached briefly and invalidated on every mutation; a mutation also
+/// triggers a re-projection so the denormalised repricing percent on the read model follows.
 /// </summary>
 public static class RepricingEndpoints
 {
-    public static IEndpointRouteBuilder MapRepricingEndpoints(this IEndpointRouteBuilder app)
+    // ---- Customer repricing ------------------------------------------------------------------------
+
+    [WolverineGet("/api/customers/{customerId}/repricing-configs")]
+    public static Task<IResult> ListCustomerRepricingConfigs(
+        string customerId, IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, GoogleReadCache.CustomerRepricingKey(customerId), options.Value.CacheSeconds,
+            () => channel.ListCustomerRepricingConfigsAsync(customerId, cancellationToken), cancellationToken);
+
+    [WolverinePost("/api/customers/{customerId}/repricing-configs")]
+    public static async Task<IResult> CreateCustomerRepricingConfig(
+        string customerId, SaveRepricingConfigRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
     {
-        MapCustomerRepricing(app);
-        MapChannelPartnerRepricing(app);
-        return app;
+        var created = await channel.CreateCustomerRepricingConfigAsync(customerId, request, cancellationToken);
+        await cache.RemoveAsync(GoogleReadCache.CustomerRepricingKey(customerId), cancellationToken);
+        await RecordCustomerAsync(session, bus, observer, customerId, "createRepricingConfig", RequestUser.NameOf(http), cancellationToken);
+        return Results.Created(ApiRoutes.CustomerRepricingConfig(customerId, created.Id), created);
     }
 
-    private static void MapCustomerRepricing(IEndpointRouteBuilder app)
+    [WolverinePut("/api/customers/{customerId}/repricing-configs/{configId}")]
+    public static async Task<IResult> UpdateCustomerRepricingConfig(
+        string customerId, string configId, SaveRepricingConfigRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
     {
-        var group = app.MapGroup("/api/customers/{customerId}/repricing-configs").WithTags("Repricing");
-
-        group.MapGet("/", (
-                string customerId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, CustomerCacheKey(customerId), options.Value.CacheSeconds,
-                    () => channel.ListCustomerRepricingConfigsAsync(customerId, cancellationToken), cancellationToken))
-            .WithName("ListCustomerRepricingConfigs")
-            .WithSummary("Lists a customer's repricing (rebilling-margin) configs.");
-
-        group.MapPost("/", async (
-                string customerId,
-                SaveRepricingConfigRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                var created = await channel.CreateCustomerRepricingConfigAsync(customerId, request, cancellationToken);
-                await cache.RemoveAsync(CustomerCacheKey(customerId), cancellationToken);
-                return Results.Created(ApiRoutes.CustomerRepricingConfig(customerId, created.Id), created);
-            })
-            .WithName("CreateCustomerRepricingConfig")
-            .WithSummary("Creates a customer repricing config.");
-
-        group.MapPut("/{configId}", async (
-                string customerId,
-                string configId,
-                SaveRepricingConfigRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                var updated = await channel.UpdateCustomerRepricingConfigAsync(customerId, configId, request, cancellationToken);
-                await cache.RemoveAsync(CustomerCacheKey(customerId), cancellationToken);
-                return Results.Ok(updated);
-            })
-            .WithName("UpdateCustomerRepricingConfig")
-            .WithSummary("Updates a customer repricing config.");
-
-        group.MapDelete("/{configId}", async (
-                string customerId,
-                string configId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                await channel.DeleteCustomerRepricingConfigAsync(customerId, configId, cancellationToken);
-                await cache.RemoveAsync(CustomerCacheKey(customerId), cancellationToken);
-                return Results.NoContent();
-            })
-            .WithName("DeleteCustomerRepricingConfig")
-            .WithSummary("Deletes a customer repricing config.");
+        var updated = await channel.UpdateCustomerRepricingConfigAsync(customerId, configId, request, cancellationToken);
+        await cache.RemoveAsync(GoogleReadCache.CustomerRepricingKey(customerId), cancellationToken);
+        await RecordCustomerAsync(session, bus, observer, customerId, "updateRepricingConfig", RequestUser.NameOf(http), cancellationToken);
+        return Results.Ok(updated);
     }
 
-    private static void MapChannelPartnerRepricing(IEndpointRouteBuilder app)
+    [WolverineDelete("/api/customers/{customerId}/repricing-configs/{configId}")]
+    public static async Task<IResult> DeleteCustomerRepricingConfig(
+        string customerId, string configId, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
     {
-        var group = app.MapGroup("/api/channel-partner-links/{linkId}/repricing-configs").WithTags("Repricing");
-
-        group.MapGet("/", (
-                string linkId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                IOptions<GoogleChannelOptions> options,
-                CancellationToken cancellationToken) =>
-                CachedAsync(cache, PartnerCacheKey(linkId), options.Value.CacheSeconds,
-                    () => channel.ListChannelPartnerRepricingConfigsAsync(linkId, cancellationToken), cancellationToken))
-            .WithName("ListChannelPartnerRepricingConfigs")
-            .WithSummary("Lists a channel partner link's repricing (rebilling-margin) configs.");
-
-        group.MapPost("/", async (
-                string linkId,
-                SaveRepricingConfigRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                var created = await channel.CreateChannelPartnerRepricingConfigAsync(linkId, request, cancellationToken);
-                await cache.RemoveAsync(PartnerCacheKey(linkId), cancellationToken);
-                return Results.Created(ApiRoutes.ChannelPartnerRepricingConfig(linkId, created.Id), created);
-            })
-            .WithName("CreateChannelPartnerRepricingConfig")
-            .WithSummary("Creates a channel partner repricing config.");
-
-        group.MapPut("/{configId}", async (
-                string linkId,
-                string configId,
-                SaveRepricingConfigRequest request,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                var updated = await channel.UpdateChannelPartnerRepricingConfigAsync(linkId, configId, request, cancellationToken);
-                await cache.RemoveAsync(PartnerCacheKey(linkId), cancellationToken);
-                return Results.Ok(updated);
-            })
-            .WithName("UpdateChannelPartnerRepricingConfig")
-            .WithSummary("Updates a channel partner repricing config.");
-
-        group.MapDelete("/{configId}", async (
-                string linkId,
-                string configId,
-                IGoogleChannelClient channel,
-                IDistributedCache cache,
-                CancellationToken cancellationToken) =>
-            {
-                await channel.DeleteChannelPartnerRepricingConfigAsync(linkId, configId, cancellationToken);
-                await cache.RemoveAsync(PartnerCacheKey(linkId), cancellationToken);
-                return Results.NoContent();
-            })
-            .WithName("DeleteChannelPartnerRepricingConfig")
-            .WithSummary("Deletes a channel partner repricing config.");
+        await channel.DeleteCustomerRepricingConfigAsync(customerId, configId, cancellationToken);
+        await cache.RemoveAsync(GoogleReadCache.CustomerRepricingKey(customerId), cancellationToken);
+        await RecordCustomerAsync(session, bus, observer, customerId, "deleteRepricingConfig", RequestUser.NameOf(http), cancellationToken);
+        return Results.NoContent();
     }
 
-    private static string CustomerCacheKey(string customerId) => $"customer:{customerId}:repricing-configs";
+    // ---- Channel partner repricing -----------------------------------------------------------------
 
-    private static string PartnerCacheKey(string linkId) => $"channel-partner-links:{linkId}:repricing-configs";
+    [WolverineGet("/api/channel-partner-links/{linkId}/repricing-configs")]
+    public static Task<IResult> ListChannelPartnerRepricingConfigs(
+        string linkId, IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        => GoogleReadCache.CachedAsync(cache, GoogleReadCache.ChannelPartnerRepricingKey(linkId), options.Value.CacheSeconds,
+            () => channel.ListChannelPartnerRepricingConfigsAsync(linkId, cancellationToken), cancellationToken);
 
-    /// <summary>Returns a cached JSON payload when present, otherwise invokes <paramref name="factory"/> and caches it.</summary>
-    private static async Task<IResult> CachedAsync<T>(
-        IDistributedCache cache,
-        string cacheKey,
-        int cacheSeconds,
-        Func<Task<T>> factory,
-        CancellationToken cancellationToken)
+    [WolverinePost("/api/channel-partner-links/{linkId}/repricing-configs")]
+    public static async Task<IResult> CreateChannelPartnerRepricingConfig(
+        string linkId, SaveRepricingConfigRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
     {
-        var cached = await cache.GetStringAsync(cacheKey, cancellationToken);
-        if (cached is not null)
-        {
-            return Results.Ok(JsonSerializer.Deserialize<T>(cached));
-        }
+        var created = await channel.CreateChannelPartnerRepricingConfigAsync(linkId, request, cancellationToken);
+        await cache.RemoveAsync(GoogleReadCache.ChannelPartnerRepricingKey(linkId), cancellationToken);
+        await RecordLinkAsync(session, observer, linkId, "createRepricingConfig", RequestUser.NameOf(http), cancellationToken);
+        return Results.Created(ApiRoutes.ChannelPartnerRepricingConfig(linkId, created.Id), created);
+    }
 
-        var result = await factory();
+    [WolverinePut("/api/channel-partner-links/{linkId}/repricing-configs/{configId}")]
+    public static async Task<IResult> UpdateChannelPartnerRepricingConfig(
+        string linkId, string configId, SaveRepricingConfigRequest request, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+    {
+        var updated = await channel.UpdateChannelPartnerRepricingConfigAsync(linkId, configId, request, cancellationToken);
+        await cache.RemoveAsync(GoogleReadCache.ChannelPartnerRepricingKey(linkId), cancellationToken);
+        await RecordLinkAsync(session, observer, linkId, "updateRepricingConfig", RequestUser.NameOf(http), cancellationToken);
+        return Results.Ok(updated);
+    }
 
-        await cache.SetStringAsync(
-            cacheKey,
-            JsonSerializer.Serialize(result),
-            new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(cacheSeconds)
-            },
-            cancellationToken);
+    [WolverineDelete("/api/channel-partner-links/{linkId}/repricing-configs/{configId}")]
+    public static async Task<IResult> DeleteChannelPartnerRepricingConfig(
+        string linkId, string configId, IGoogleChannelClient channel, IDistributedCache cache,
+        IDocumentSession session, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
+    {
+        await channel.DeleteChannelPartnerRepricingConfigAsync(linkId, configId, cancellationToken);
+        await cache.RemoveAsync(GoogleReadCache.ChannelPartnerRepricingKey(linkId), cancellationToken);
+        await RecordLinkAsync(session, observer, linkId, "deleteRepricingConfig", RequestUser.NameOf(http), cancellationToken);
+        return Results.NoContent();
+    }
 
-        return Results.Ok(result);
+    private static async Task RecordCustomerAsync(
+        IDocumentSession session, IMessageBus bus, EstateObserver observer, string customerId, string action, string? user, CancellationToken cancellationToken)
+    {
+        await observer.RecordCustomerMutationAsync(session, customerId, action, user, null, cancellationToken);
+        // Re-project so the denormalised RepricingPercent on the customer's entitlements follows the new config.
+        await bus.PublishAsync(new CustomerChanged(customerId, null, action, user));
+        await session.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task RecordLinkAsync(
+        IDocumentSession session, EstateObserver observer, string linkId, string action, string? user, CancellationToken cancellationToken)
+    {
+        await observer.RecordLinkMutationAsync(session, linkId, action, user, cancellationToken);
+        await session.SaveChangesAsync(cancellationToken);
     }
 }

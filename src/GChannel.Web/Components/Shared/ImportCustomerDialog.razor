@@ -1,0 +1,89 @@
+@namespace GChannel.Web.Components
+@inject DialogService Dialogs
+@inject UiNotifier Snackbar
+
+@* Import a customer that already has a Cloud Identity. Opened with DialogService; closes with the imported
+   Customer (or null when cancelled). The caller supplies the API call so the same dialog serves the account-level
+   import and the channel-partner-link import. *@
+<RadzenStack Gap="1rem">
+    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">@Description</RadzenText>
+
+    <RadzenFormField Text="Primary domain" Variant="Variant.Outlined">
+        <ChildContent><RadzenTextBox @bind-Value="_domain" Name="domain" /></ChildContent>
+        <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">e.g. contoso.com</RadzenText></Helper>
+    </RadzenFormField>
+    <RadzenFormField Text="Cloud Identity id" Variant="Variant.Outlined">
+        <RadzenTextBox @bind-Value="_cloudIdentityId" Name="cloudIdentityId" />
+    </RadzenFormField>
+    <RadzenFormField Text="Primary admin email" Variant="Variant.Outlined">
+        <RadzenTextBox @bind-Value="_primaryAdminEmail" Name="primaryAdminEmail" type="email" />
+    </RadzenFormField>
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenCheckBox TValue="bool" @bind-Value="_overwriteIfExists" Name="overwrite" />
+        <RadzenLabel Text="Overwrite if the customer is already imported" Component="overwrite" />
+    </RadzenStack>
+
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+        <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Click="@(() => Dialogs.Close(null))" Disabled="_busy" />
+        <RadzenButton Text="Import" ButtonStyle="ButtonStyle.Primary" Click="ImportAsync" IsBusy="_busy" BusyText="Importing…" />
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    /// <summary>Explanatory text shown above the form.</summary>
+    [Parameter] public string Description { get; set; } =
+        "Bring a customer that already has a Cloud Identity into your reseller account — a pre-transfer step. Provide one identifier (domain, Cloud Identity id, or primary admin email).";
+
+    /// <summary>Pre-filled primary domain.</summary>
+    [Parameter] public string? Domain { get; set; }
+
+    /// <summary>Pre-filled primary admin email.</summary>
+    [Parameter] public string? PrimaryAdminEmail { get; set; }
+
+    /// <summary>The import call to run (account-level or link-scoped).</summary>
+    [Parameter, EditorRequired] public Func<ImportCustomerRequest, Task<Customer?>> Import { get; set; } = null!;
+
+    private string? _domain;
+    private string? _cloudIdentityId;
+    private string? _primaryAdminEmail;
+    private bool _overwriteIfExists;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        _domain = Domain;
+        _primaryAdminEmail = PrimaryAdminEmail;
+    }
+
+    private async Task ImportAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_domain) && string.IsNullOrWhiteSpace(_cloudIdentityId) && string.IsNullOrWhiteSpace(_primaryAdminEmail))
+        {
+            await Snackbar.Add("Provide a domain, Cloud Identity id, or primary admin email to import.", Severity.Warning);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var imported = await Import(new ImportCustomerRequest
+            {
+                Domain = _domain,
+                CloudIdentityId = _cloudIdentityId,
+                PrimaryAdminEmail = _primaryAdminEmail,
+                OverwriteIfExists = _overwriteIfExists
+            });
+
+            await Snackbar.Add($"Imported {imported?.OrgDisplayName ?? imported?.Domain ?? "customer"}.", Severity.Success);
+            Dialogs.Close(imported);
+        }
+        catch (Exception ex)
+        {
+            await Snackbar.Add($"Failed to import customer: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
