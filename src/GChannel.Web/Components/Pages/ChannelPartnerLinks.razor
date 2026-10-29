@@ -84,7 +84,8 @@
 @code {
     private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
     private RadzenDataGrid<EstateReseller>? _grid;
-    private List<EstateReseller> _items = [];
+    // Must start null: RadzenDataGrid only invokes LoadData on first render while Data is null.
+    private List<EstateReseller>? _items;
     private int _total;
     private bool _loading = true;
     private string? _search;
