@@ -54,7 +54,7 @@
                             <div>
                                 <RadzenText TextStyle="TextStyle.Body1" class="rz-m-0" Style="font-weight:600">@item.Domain</RadzenText>
                                 <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
-                                    @(item.Exists ? "Exists" : "Available") · @item.PerformedAt.LocalDateTime.ToString("g")
+                                    @(item.Exists ? "Exists" : "Available") · @DisplayFormat.Timestamp(item.PerformedAt)
                                 </RadzenText>
                             </div>
                             <Tip Text="Recheck (bypass cache)">

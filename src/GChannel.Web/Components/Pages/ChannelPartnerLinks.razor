@@ -53,7 +53,7 @@
                 </Template>
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.CreateTime)" SortProperty="created" Title="Created" Width="110px">
-                <Template Context="r">@(r.CreateTime?.ToString("yyyy-MM-dd") ?? "—")</Template>
+                <Template Context="r">@DisplayFormat.Date(r.CreateTime)</Template>
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="EstateReseller" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="110px">
                 <Template Context="r">

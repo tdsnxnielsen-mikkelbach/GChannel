@@ -16,7 +16,7 @@
     <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem">
         @if (_summary?.AsOf is { } asOf)
         {
-            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">Scanned @asOf.ToLocalTime().ToString("g")</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0 rz-text-nowrap">Scanned @DisplayFormat.Timestamp(asOf)</RadzenText>
         }
         <RadzenButton Text="Reload" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="LoadAsync" Disabled="_loading" />
     </RadzenStack>

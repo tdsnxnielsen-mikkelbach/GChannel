@@ -67,11 +67,11 @@ else
                         }
                         else { <span>—</span> }
                     </DetailRow>
-                    <DetailRow Label="Created">@(_entitlement.CreateTime?.ToString("u") ?? "—")</DetailRow>
-                    <DetailRow Label="Updated">@(_entitlement.UpdateTime?.ToString("u") ?? "—")</DetailRow>
+                    <DetailRow Label="Created">@DisplayFormat.Timestamp(_entitlement.CreateTime)</DetailRow>
+                    <DetailRow Label="Updated">@DisplayFormat.Timestamp(_entitlement.UpdateTime)</DetailRow>
                     @if (_entitlement.IsTrial && _entitlement.TrialEndTime is not null)
                     {
-                        <DetailRow Label="Trial ends">@_entitlement.TrialEndTime.Value.ToString("u")</DetailRow>
+                        <DetailRow Label="Trial ends">@DisplayFormat.Timestamp(_entitlement.TrialEndTime)</DetailRow>
                     }
                     @if (_entitlement.SuspensionReasons.Count > 0)
                     {
@@ -84,8 +84,8 @@ else
                 <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">Commitment &amp; renewal</RadzenText>
                 <RadzenStack Gap="0.5rem" class="rz-mb-3">
                     <DetailRow Label="Payment plan">@(_entitlement.Commitment?.PaymentPlan ?? "—")</DetailRow>
-                    <DetailRow Label="Commitment start">@(_entitlement.Commitment?.StartTime?.ToString("u") ?? "—")</DetailRow>
-                    <DetailRow Label="Commitment end">@(_entitlement.Commitment?.EndTime?.ToString("u") ?? "—")</DetailRow>
+                    <DetailRow Label="Commitment start">@DisplayFormat.Timestamp(_entitlement.Commitment?.StartTime)</DetailRow>
+                    <DetailRow Label="Commitment end">@DisplayFormat.Timestamp(_entitlement.Commitment?.EndTime)</DetailRow>
                 </RadzenStack>
                 <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
                     <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
@@ -226,7 +226,7 @@ else
             <RadzenDataGrid TItem="EntitlementChange" Data="_changes" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
                 <Columns>
                     <RadzenDataGridColumn TItem="EntitlementChange" Title="When" Width="190px">
-                        <Template Context="change">@(change.CreateTime?.ToString("u") ?? "—")</Template>
+                        <Template Context="change">@DisplayFormat.Timestamp(change.CreateTime)</Template>
                     </RadzenDataGridColumn>
                     <RadzenDataGridColumn TItem="EntitlementChange" Title="Change">
                         <Template Context="change">@(change.ChangeType ?? "—")</Template>
@@ -310,7 +310,7 @@ else
             return "No commitment end date";
         }
         var verb = _renewalEnabled ? "Renews" : "Ends";
-        return $"{verb} {end:MMM d, yyyy} · auto-renew {(_renewalEnabled ? "on" : "off")}";
+        return $"{verb} {DisplayFormat.Date(end)} · auto-renew {(_renewalEnabled ? "on" : "off")}";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

@@ -93,7 +93,7 @@ else if (!_loading && _usingSamples)
                             </Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="LicenseChangeEvent" Property="@nameof(LicenseChangeEvent.OccurredAt)" Title="When" Width="150px">
-                            <Template Context="e">@e.OccurredAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</Template>
+                            <Template Context="e">@DisplayFormat.Timestamp(e.OccurredAt)</Template>
                         </RadzenDataGridColumn>
                         <RadzenDataGridColumn TItem="LicenseChangeEvent" Title="Preview" Sortable="false" TextAlign="TextAlign.End" Width="100px">
                             <Template Context="e">
@@ -401,7 +401,7 @@ else if (!_loading && _usingSamples)
           Customer:  {e.CustomerName}{(e.CustomerDomain is null ? "" : $" ({e.CustomerDomain})")}
           Change:    {e.ChangeType}
           License:   {e.Detail ?? "—"}
-          When:      {e.OccurredAt.LocalDateTime:f}
+          When:      {DisplayFormat.Timestamp(e.OccurredAt)} UTC
 
         Sign in to the console to review the entitlement and its change history.
 
