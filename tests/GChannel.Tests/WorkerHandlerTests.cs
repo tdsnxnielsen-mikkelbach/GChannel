@@ -7,11 +7,17 @@ using GChannel.Shared.Contracts;
 using GChannel.Tests.Fixtures;
 using GChannel.Worker.Infrastructure;
 using GChannel.Worker.Sagas;
+using JasperFx;
 using Marten;
 using Marten.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Wolverine;
+using Wolverine.Persistence.Durability.DeadLetterManagement;
+using Wolverine.Runtime;
 using Wolverine.Tracking;
+using Wolverine.Util;
 
 namespace GChannel.Tests;
 
@@ -120,6 +126,46 @@ public sealed class WorkerHandlerTests(PostgresFixture postgres) : IAsyncLifetim
         (await query.LoadAsync<CustomerRecord>(strayCustomerId)).ShouldBeNull();
         (await query.LoadAsync<EntitlementRecord>(strayEntitlementId)).ShouldBeNull();
         (await query.LoadAsync<CustomerRecord>(EstateStreams.Customer(customerId))).ShouldNotBeNull().OrgName.ShouldBe("Kept Co");
+    }
+
+    [Fact]
+    public async Task Startup_replay_requeues_only_notifications_dead_lettered_by_the_snapshot_collision()
+    {
+        var runtime = _host.Services.GetRequiredService<IWolverineRuntime>();
+        var collided = await DeadLetterNotificationAsync(runtime, new DocumentAlreadyExistsException(typeof(CustomerRecord), "cust:collided"));
+        var unrelated = await DeadLetterNotificationAsync(runtime, new InvalidOperationException("unrelated failure"));
+
+        var replay = new NotificationDeadLetterReplay(runtime, NullLogger<NotificationDeadLetterReplay>.Instance);
+        (await replay.ReplayAsync(CancellationToken.None)).ShouldBe(1);
+        (await replay.ReplayAsync(CancellationToken.None)).ShouldBe(0); // idempotent
+
+        // Marked replayable (the durability agent may already have moved it back into the inbox) ...
+        var replayed = await runtime.Storage.DeadLetters.QueryAsync(new DeadLetterEnvelopeQuery([collided]), CancellationToken.None);
+        replayed.Envelopes.ShouldAllBe(e => e.Replayable);
+        // ... while a notification that failed for any other reason stays dead-lettered.
+        var kept = await runtime.Storage.DeadLetters.QueryAsync(new DeadLetterEnvelopeQuery([unrelated]), CancellationToken.None);
+        kept.Envelopes.ShouldHaveSingleItem().Replayable.ShouldBeFalse();
+    }
+
+    // Dead-letters a notification the way Wolverine's error policy does after the last retry.
+    private static async Task<Guid> DeadLetterNotificationAsync(IWolverineRuntime runtime, Exception failure)
+    {
+        var notification = new ChannelNotification
+        {
+            Kind = "Customer",
+            EventType = "PRIMARY_DOMAIN_CHANGED",
+            MessageId = "pubsub-" + Guid.NewGuid().ToString("N"),
+            ReceivedAt = DateTimeOffset.UtcNow,
+        };
+        var envelope = new Envelope(new ChannelNotificationArrived(notification))
+        {
+            MessageType = typeof(ChannelNotificationArrived).ToMessageTypeName(),
+            Destination = new Uri("asb://topic/estate-events/worker-estate"),
+            ContentType = "application/json",
+            Serializer = runtime.Options.DefaultSerializer,
+        };
+        await runtime.Storage.Inbox.MoveToDeadLetterStorageAsync(envelope, failure);
+        return envelope.Id;
     }
 
     [Fact]
