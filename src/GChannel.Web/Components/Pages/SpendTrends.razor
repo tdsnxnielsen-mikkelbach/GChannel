@@ -9,13 +9,27 @@
 
 <PageTitle>Spend trends · GChannel</PageTitle>
 
-<div class="rz-mb-4">
-    <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Spend trends</RadzenText>
-    <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
-        Actual GCP &amp; Marketplace spend from the Cloud Billing → BigQuery cost export — real billed
-        figures, distinct from the list-price estimates elsewhere.
-    </RadzenText>
-</div>
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-4">
+    <div>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Spend trends</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+            Actual GCP &amp; Marketplace spend from the Cloud Billing → BigQuery cost export — real billed
+            figures, distinct from the list-price estimates elsewhere. The monthly panels show the last
+            complete month unless you pick another.
+        </RadzenText>
+    </div>
+    @if (_monthOptions.Count > 0)
+    {
+        <div>
+            <RadzenDropDown TValue="string" Data="_monthOptions" ValueProperty="@nameof(SelectOption.Value)" TextProperty="@nameof(SelectOption.Text)"
+                            Value="@_month" ValueChanged="OnMonthChanged" AllowClear="false" Style="min-width: 220px" aria-label="Billing month" Name="month" />
+            @if (_month == _currentMonth)
+            {
+                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-mt-1 rz-mb-0">Month to date — still accruing.</RadzenText>
+            }
+        </div>
+    }
+</RadzenStack>
 
 @if (_unconfigured)
 {
@@ -39,7 +53,7 @@
                     <thead>
                         <tr>
                             <th>Customer</th>
-                            <th class="num">Billed (last month)</th>
+                            <th class="num">Billed (@WindowLabel)</th>
                             <th>Currency</th>
                         </tr>
                     </thead>
@@ -67,7 +81,7 @@
             }
             else
             {
-                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded yet.</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded for @WindowLabel.</RadzenText>
             }
         </RadzenCard>
 
@@ -84,7 +98,7 @@
                         <tr>
                             <th>Reseller</th>
                             <th class="num">Customers</th>
-                            <th class="num">Billed (last month)</th>
+                            <th class="num">Billed (@WindowLabel)</th>
                             <th>Currency</th>
                         </tr>
                     </thead>
@@ -115,7 +129,7 @@
             }
             else
             {
-                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded yet.</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No billed spend recorded for @WindowLabel.</RadzenText>
             }
         </RadzenCard>
     </RadzenColumn>
@@ -175,11 +189,12 @@
 
 <RadzenRow Gap="1rem" RowGap="1rem" class="rz-mt-2">
     <RadzenColumn Size="12" SizeLG="5">
-        <SellerSplitCard Summary="_sellers" Loading="_sellersLoading" Subtitle="Estate-wide, last invoice month" />
+        <SellerSplitCard Summary="_sellers" Loading="_sellersLoading" Subtitle="@($"Estate-wide, {WindowLabel}")" />
     </RadzenColumn>
     <RadzenColumn Size="12" SizeLG="7">
         <RadzenCard Variant="Variant.Filled">
-            <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Third-party share by customer</RadzenText>
+            <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Third-party share by customer</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-mb-2">Billed @WindowLabel</RadzenText>
             @if (_splitsLoading)
             {
                 <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
@@ -211,7 +226,7 @@
             }
             else
             {
-                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No seller breakdown yet.</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No seller breakdown for @WindowLabel.</RadzenText>
             }
         </RadzenCard>
     </RadzenColumn>
@@ -246,6 +261,15 @@
     };
 
     private bool _unconfigured;
+
+    // The invoice month (YYYYMM) the monthly panels show. It starts as the API's default — the last complete
+    // month — and follows the picker. _window is the month(s) the API actually used, for the panel labels.
+    private string? _month;
+    private string? _currentMonth;
+    private IReadOnlyList<SelectOption> _monthOptions = [];
+    private IReadOnlyList<string> _window = [];
+    private int _estateLoad;
+    private string WindowLabel => _window.Count > 0 ? DisplayFormat.InvoiceWindow(_window) : "last month";
 
     private IReadOnlyList<TopSpender> _top = [];
     private DateTimeOffset? _topAsOf;
@@ -286,37 +310,73 @@
 
         try
         {
-            var top = await Api.GetTopSpendersAsync(months: 1, limit: 15);
-            _unconfigured = top?.Unconfigured ?? false;
-            _top = top?.Spenders ?? [];
-            _topAsOf = top?.AsOf;
+            var months = await Api.GetSpendMonthsAsync();
+            if (months is { Unconfigured: false, Months.Count: > 0 })
+            {
+                _currentMonth = months.CurrentMonth;
+                _month = months.DefaultMonth;
+                _monthOptions = [.. months.Months.Select(m => new SelectOption(
+                    m, m == months.CurrentMonth ? $"{DisplayFormat.InvoiceMonth(m)} (month to date)" : DisplayFormat.InvoiceMonth(m)))];
+            }
         }
         catch
         {
-            _top = [];
-        }
-        finally
-        {
-            _topLoading = false;
+            _monthOptions = [];
         }
 
-        try
+        await Task.WhenAll(LoadEstateAsync(), LoadOrdersAsync());
+    }
+
+    // (Re)loads every panel that depends on the selected month. The calls run in parallel, and a response is
+    // dropped if another month was picked while it was in flight.
+    private async Task LoadEstateAsync()
+    {
+        var load = ++_estateLoad;
+        var month = _month;
+        _topLoading = _resellersLoading = _sellersLoading = _splitsLoading = true;
+
+        var top = TryAsync(() => Api.GetTopSpendersAsync(month, limit: 15));
+        var resellers = TryAsync(() => Api.GetResellerSpendAsync(month));
+        var sellers = TryAsync(() => Api.GetSellerSpendAsync(month));
+        var splits = TryAsync(() => Api.GetCustomerSellerSplitsAsync(month));
+        await Task.WhenAll(top, resellers, sellers, splits);
+        if (load != _estateLoad)
         {
-            var resellers = await Api.GetResellerSpendAsync(months: 1);
-            _resellers = resellers?.Resellers ?? [];
-        }
-        catch
-        {
-            _resellers = [];
-        }
-        finally
-        {
-            _resellersLoading = false;
+            return;
         }
 
-        try { _sellers = await Api.GetSellerSpendAsync(months: 1); } catch { _sellers = null; } finally { _sellersLoading = false; }
-        try { _splits = (await Api.GetCustomerSellerSplitsAsync(months: 1))?.Customers ?? []; } catch { _splits = []; } finally { _splitsLoading = false; }
+        var topResult = await top;
+        _unconfigured = topResult?.Unconfigured ?? false;
+        _top = topResult?.Spenders ?? [];
+        _topAsOf = topResult?.AsOf;
+        _window = topResult?.InvoiceMonths ?? [];
+        _resellers = (await resellers)?.Resellers ?? [];
+        _sellers = await sellers;
+        _splits = (await splits)?.Customers ?? [];
+        _topLoading = _resellersLoading = _sellersLoading = _splitsLoading = false;
+    }
+
+    private async Task LoadOrdersAsync()
+    {
         try { _orders = await Api.GetMarketplaceOrdersAsync(); } catch { _orders = null; } finally { _ordersLoading = false; }
+    }
+
+    private async Task OnMonthChanged(string? month)
+    {
+        if (string.IsNullOrEmpty(month) || month == _month)
+        {
+            return;
+        }
+
+        _month = month;
+        await LoadEstateAsync();
+    }
+
+    // A failed call leaves its panel empty rather than breaking the page.
+    private static async Task<T?> TryAsync<T>(Func<Task<T?>> call) where T : class
+    {
+        try { return await call(); }
+        catch { return null; }
     }
 
     protected override async Task OnParametersSetAsync()

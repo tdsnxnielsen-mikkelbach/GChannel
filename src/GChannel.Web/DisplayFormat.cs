@@ -1,3 +1,4 @@
+using GChannel.Shared.Contracts;
 using System.Globalization;
 
 namespace GChannel.Web;
@@ -13,6 +14,7 @@ public static class DisplayFormat
 {
     public const string DatePattern = "dd-MM-yyyy";
     public const string TimestampPattern = "dd-MM-yyyy HH:mm";
+    public const string MonthPattern = "MMM yyyy";
     private const string Missing = "—";
 
     public static CultureInfo Culture { get; } = CreateCulture();
@@ -26,6 +28,19 @@ public static class DisplayFormat
     public static string Timestamp(DateTimeOffset? value) => value is { } v ? Format(v.UtcDateTime, TimestampPattern) : Missing;
 
     public static string Timestamp(DateTime? value) => value is { } v ? Format(ToUtc(v), TimestampPattern) : Missing;
+
+    /// <summary>An invoice month key (<c>YYYYMM</c>) as <c>MMM yyyy</c>, e.g. "Oct 2026"; an unrecognised key is shown as it is.</summary>
+    public static string InvoiceMonth(string? yyyymm) =>
+        InvoiceMonthKeys.TryParse(yyyymm, out var month) ? month.ToString(MonthPattern, CultureInfo.InvariantCulture)
+        : string.IsNullOrWhiteSpace(yyyymm) ? Missing : yyyymm;
+
+    /// <summary>A window of invoice months (oldest first): "Oct 2026" for one month, "Sep 2026 – Nov 2026" for a range.</summary>
+    public static string InvoiceWindow(IReadOnlyList<string>? months) => months switch
+    {
+        null or { Count: 0 } => Missing,
+        { Count: 1 } => InvoiceMonth(months[0]),
+        _ => $"{InvoiceMonth(months[0])} – {InvoiceMonth(months[^1])}"
+    };
 
     private static string Format(DateTime value, string pattern) => value.ToString(pattern, CultureInfo.InvariantCulture);
 

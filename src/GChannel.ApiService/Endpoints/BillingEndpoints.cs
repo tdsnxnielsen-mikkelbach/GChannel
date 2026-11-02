@@ -7,7 +7,6 @@ using GChannel.Shared.Contracts;
 using Marten;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using System.Globalization;
 using Wolverine.Http;
 
 namespace GChannel.ApiService.Endpoints;
@@ -92,17 +91,18 @@ public static class BillingEndpoints
 
     // ---- Actual spend (BigQuery detailed billing export) --------------------------------------------
 
-    // Bulk last-window billed totals per customer (for the customer-list "Billed" column).
+    // Bulk billed totals per customer for one invoice month (the last complete one unless `month`/`months` say
+    // otherwise), for the customer-list "Billed" column.
     [WolverineGet("/api/billing/customers/spend")]
     public static async Task<CustomerBilledSummaryResult> CustomerBilledSummaries(
-        int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken cancellationToken)
+        string? month, int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken cancellationToken)
     {
         if (!options.Value.BigQueryConfigured)
         {
             return new CustomerBilledSummaryResult { Unconfigured = true };
         }
 
-        var window = MonthKeys(Math.Clamp(months ?? 1, 1, 12));
+        var window = InvoiceMonthKeys.ResolveWindow(month, months, 12, DateTimeOffset.UtcNow);
         var rows = await session.Query<CustomerSpendRecord>()
             .Where(s => s.CustomerId != null && s.InvoiceMonth.IsOneOf(window))
             .ToListAsync(cancellationToken);
@@ -113,6 +113,7 @@ public static class BillingEndpoints
                 .GroupBy(r => new { r.CustomerId, r.Currency })
                 .Select(g => new CustomerBilledSummary { CustomerId = g.Key.CustomerId!, Currency = g.Key.Currency, Cost = g.Sum(x => x.Cost) })
                 .ToList(),
+            InvoiceMonths = window,
             AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null
         };
     }
@@ -126,7 +127,7 @@ public static class BillingEndpoints
             return new CustomerSpendResult { CustomerId = customerId, Unconfigured = true };
         }
 
-        var window = MonthKeys(Math.Clamp(months ?? 13, 1, 36));
+        var window = InvoiceMonthKeys.Rolling(Math.Clamp(months ?? 13, 1, 36), DateTimeOffset.UtcNow);
         var rows = await session.Query<CustomerSpendRecord>()
             .Where(s => s.CustomerId == customerId && s.InvoiceMonth.IsOneOf(window))
             .ToListAsync(cancellationToken);
@@ -186,14 +187,14 @@ public static class BillingEndpoints
 
     [WolverineGet("/api/billing/spend/top")]
     public static async Task<TopSpendersResult> TopSpenders(
-        int? months, int? limit, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken cancellationToken)
+        string? month, int? months, int? limit, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken cancellationToken)
     {
         if (!options.Value.BigQueryConfigured)
         {
             return new TopSpendersResult { Unconfigured = true };
         }
 
-        var window = MonthKeys(Math.Clamp(months ?? 1, 1, 12));
+        var window = InvoiceMonthKeys.ResolveWindow(month, months, 12, DateTimeOffset.UtcNow);
         var lim = Math.Clamp(limit ?? 10, 1, 100);
         var rows = await session.Query<CustomerSpendRecord>()
             .Where(s => s.CustomerId != null && s.InvoiceMonth.IsOneOf(window))
@@ -209,19 +210,19 @@ public static class BillingEndpoints
         var names = await ResolveResellerNamesAsync(session, top.Select(t => t.OwningLinkId), cancellationToken);
         top = top.Select(t => t.OwningLinkId != null && names.TryGetValue(t.OwningLinkId, out var rn) ? t with { ResellerName = rn } : t).ToList();
 
-        return new TopSpendersResult { Spenders = top, AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null };
+        return new TopSpendersResult { Spenders = top, InvoiceMonths = window, AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null };
     }
 
     [WolverineGet("/api/billing/resellers/spend")]
     public static async Task<ResellerSpendResult> ResellerSpend(
-        int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken cancellationToken)
+        string? month, int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken cancellationToken)
     {
         if (!options.Value.BigQueryConfigured)
         {
             return new ResellerSpendResult { Unconfigured = true };
         }
 
-        var window = MonthKeys(Math.Clamp(months ?? 1, 1, 12));
+        var window = InvoiceMonthKeys.ResolveWindow(month, months, 12, DateTimeOffset.UtcNow);
         var rows = await session.Query<CustomerSpendRecord>()
             .Where(s => s.InvoiceMonth.IsOneOf(window))
             .ToListAsync(cancellationToken);
@@ -241,7 +242,33 @@ public static class BillingEndpoints
         var names = await ResolveResellerNamesAsync(session, resellers.Select(r => r.OwningLinkId), cancellationToken);
         resellers = resellers.Select(r => r.OwningLinkId != null && names.TryGetValue(r.OwningLinkId, out var rn) ? r with { ResellerName = rn } : r).ToList();
 
-        return new ResellerSpendResult { Resellers = resellers, AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null };
+        return new ResellerSpendResult { Resellers = resellers, InvoiceMonths = window, AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null };
+    }
+
+    // The invoice months the estate-wide spend views can show (month picker) and the default among them.
+    [WolverineGet("/api/billing/spend/months")]
+    public static async Task<SpendMonthsResult> SpendMonths(
+        IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var current = InvoiceMonthKeys.Current(now);
+        var lastComplete = InvoiceMonthKeys.LastComplete(now);
+        if (!options.Value.BigQueryConfigured)
+        {
+            return new SpendMonthsResult { CurrentMonth = current, DefaultMonth = lastComplete, Unconfigured = true };
+        }
+
+        var synced = await session.Query<CustomerSpendRecord>()
+            .Select(s => s.InvoiceMonth)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return new SpendMonthsResult
+        {
+            Months = InvoiceMonthKeys.Selectable(synced, now),
+            DefaultMonth = lastComplete,
+            CurrentMonth = current
+        };
     }
 
     [WolverineGet("/api/billing/resellers/{linkId}/spend")]
@@ -253,7 +280,7 @@ public static class BillingEndpoints
             return new ResellerSpendDetailResult { LinkId = linkId, Unconfigured = true };
         }
 
-        var window = MonthKeys(Math.Clamp(months ?? 13, 1, 36));
+        var window = InvoiceMonthKeys.Rolling(Math.Clamp(months ?? 13, 1, 36), DateTimeOffset.UtcNow);
         var rows = await session.Query<CustomerSpendRecord>()
             .Where(s => s.OwningLinkId == linkId && s.InvoiceMonth.IsOneOf(window))
             .ToListAsync(cancellationToken);
@@ -275,15 +302,6 @@ public static class BillingEndpoints
                 .ToList(),
             AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null
         };
-    }
-
-    /// <summary>The <c>YYYYMM</c> keys of the last <paramref name="months"/> invoice months including the current one.</summary>
-    internal static string[] MonthKeys(int months)
-    {
-        var now = DateTime.UtcNow;
-        return Enumerable.Range(0, months)
-            .Select(i => now.AddMonths(-i).ToString("yyyyMM", CultureInfo.InvariantCulture))
-            .ToArray();
     }
 
     // Friendly reseller name per link id (primary domain, else reseller cloud id, else the raw link id).

@@ -433,13 +433,23 @@ window in `CustomerSpendBySeller`. The contract maps `transaction_type` to `Sell
 
 | Route | Returns |
 |---|---|
-| `GET /api/billing/spend/sellers?months=` | Estate totals per category + per-seller + per-product (third-party only) |
-| `GET /api/billing/customers/{id}/spend/sellers?months=` | Same for one customer |
-| `GET /api/billing/spend/sellers/customers?months=` | Per-customer Google vs third-party split with seller list |
+| `GET /api/billing/spend/sellers?month=` | Estate totals per category + per-seller + per-product (third-party only) |
+| `GET /api/billing/customers/{id}/spend/sellers?months=` | Same for one customer — a rolling window, default the last 3 months with the current one included |
+| `GET /api/billing/spend/sellers/customers?month=` | Per-customer Google vs third-party split with seller list |
+
+**Which month the estate views show.** The estate-wide routes (these two and the spend routes in
+[§15](todos/15-cloud-billing-bigquery-export.md)) read **one invoice month — the last complete one** — unless told
+otherwise. The current month is still accruing, so it reads next to nothing early in the month; as the default it
+made the Dashboard billing card show `0.00` while BigQuery held real spend. `month=YYYYMM` picks any month (the
+current one is month-to-date, and an unrecognised value is ignored), and `months=N` is a rolling N-month window
+ending with the current month. Months are UTC. Every result carries `invoiceMonths` — the window it used, even when
+it has no rows — which the UI shows in its labels, and `GET /api/billing/spend/months` lists the months that can
+be picked (everything synced plus the current and last complete month) and the default.
 
 UI: `SellerSplitCard` (third-party share, category table, top sellers / products) on Spend trends
-(estate, last month) and customer detail (last 3 months); a *Third-party share by customer* table on
-Spend trends. No new permissions — it is the same export the spend sync already reads.
+(estate, the selected month — by default the last complete one) and customer detail (last 3 months, current
+included); a *Third-party share by customer* table on Spend trends. No new permissions — it is the same export the
+spend sync already reads.
 
 ### §2 Marketplace orders from the Consumer Procurement API (`MarketplaceOrders`)
 

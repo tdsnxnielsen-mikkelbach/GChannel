@@ -117,7 +117,7 @@
             Split by the export's <code>transaction_type</code>: GOOGLE = native Google Cloud; THIRD_PARTY_RESELLER / THIRD_PARTY_AGENCY = Marketplace, ISV and partner products. "Unclassified" covers taxes, adjustments and rows without a type.
             @if (Summary.InvoiceMonths.Count > 0)
             {
-                <span> Window: @FormatMonth(Summary.InvoiceMonths.First())@(Summary.InvoiceMonths.Count > 1 ? $" – {FormatMonth(Summary.InvoiceMonths.Last())}" : "").</span>
+                <span> Window: @DisplayFormat.InvoiceWindow(Summary.InvoiceMonths).</span>
             }
         </RadzenText>
     }
@@ -137,9 +137,4 @@
         SellerCategory.ThirdPartyAgency => BadgeStyle.Info,
         _ => BadgeStyle.Light
     };
-
-    private static string FormatMonth(string yyyymm) =>
-        yyyymm.Length == 6 && int.TryParse(yyyymm[..4], out var y) && int.TryParse(yyyymm[4..], out var m)
-            ? new DateTime(y, m, 1).ToString("MMM yyyy")
-            : yyyymm;
 }

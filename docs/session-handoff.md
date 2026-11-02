@@ -7,37 +7,38 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-10-29 10:45 UTC (end of session) · **branch:** `main` = `eb042b6` (PR #6) plus this
-handoff update. Production runs exactly the code on `main`; no PRs are open. The repo has no CI workflows.
+**Last updated:** 2026-11-02 12:55 UTC (end of session) · **branch:** `billing-last-complete-month` (PR #8, open) on
+`main` = `2687b35`; **deployed and pushed, not merged**. Production runs the branch's code (the billing UI was
+checked signed-in), not `main`'s. The repo has no CI workflows.
 
 ## Current state
 
 ### Code
 
-- **PR #6 (merged, `eb042b6`): pre-generated Wolverine code.**
-  - Roslyn compiling handler and endpoint adapters on first use had OOM-killed the 1 GiB API in a loop.
-  - Production now uses `TypeLoadMode.Static`; the azd `predeploy` hook runs `codegen write` before the
-    image build. The output (`Internal/Generated/`) is git-ignored and compiled only in Release.
-  - The API is back on 0.5 vCPU / 1 GiB at about 300 MiB (1,469 MiB at 2 GiB before), and PR #5's 2 GiB
-    stop-gap is removed. See [deployment.md](deployment.md#pre-generated-wolverine-code).
-- **PR #4 (merged, `bc60335`):**
-  - UI dates are `dd-MM-yyyy` and timestamps `dd-MM-yyyy HH:mm` (UTC), via `DisplayFormat` in `src/GChannel.Web`.
-  - `NotificationDeadLetterReplay` (worker) replayed the 135 dead-lettered notifications. All succeeded and
-    it is now a no-op.
-- **Stack:** Marten and Wolverine on PostgreSQL / Service Bus (the Critter Stack). Radzen.Blazor 12.1.8, with
-  toasts and confirms through `UiNotifier`; the Driver.js tours need the `data-onboarding` /
-  `data-walkthrough` attributes. Aspire 13.6.4; packages current, `Microsoft.OpenApi` pinned to 2.x on purpose.
-- Quality gates, re-run on `eb042b6` at the end of the session:
-  - `dotnet build GChannel.slnx` → 0 errors (the 46 xUnit1051 / CS8602 warnings are in tests only).
-  - `dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj` → 16/16 (needs Docker).
+- **Branch `billing-last-complete-month` (this session): estate spend views show the last *complete* month.**
+  - Symptom: Dashboard "Total billed" and Spend trends read DKK 0.00 ("Window: Nov 2026") while BigQuery held
+    real spend (Google net: Sep 2026 about DKK 157k, Oct about 203k). The sync was healthy; every estate-wide
+    "last month" panel sent `months=1`, which the API resolved to the *current*, month-to-date month.
+  - Estate endpoints now take `month=YYYYMM` or `months=N` (rolling, includes the current month) and default to
+    the last complete UTC month, so never send `months=1` for "last month". The result's `InvoiceMonths` names
+    the window used, so the UI never computes the month itself; an unrecognised `month` is ignored (no 400).
+    The per-customer seller card is unchanged. Shared logic: `InvoiceMonthKeys` in `GChannel.Shared`.
+  - New `GET /api/billing/spend/months` feeds a month picker on **Spend trends**; Dashboard, Customers and
+    Channel partner links label their window ("Total billed, Oct 2026", "Billed (Oct 2026)"). See
+    [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
+- **Stack:** Marten and Wolverine on PostgreSQL / Service Bus. Radzen.Blazor 12.1.8 (toasts and confirms through
+  `UiNotifier`; the Driver.js tours need `data-onboarding` / `data-walkthrough`). Aspire 13.6.4; packages current,
+  `Microsoft.OpenApi` pinned to 2.x on purpose.
+- Quality gates on the branch: `dotnet build GChannel.slnx` → 0 errors (xUnit1051 / CS8602 warnings are in tests
+  only); `dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj` → 52/52 (16 old + 36 new; Docker, ~1 min).
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed at 10:27 UTC on 2026-10-29 by `azd deploy` from the PR #6 branch (tree-identical to `eb042b6`).
-  Both hosts log "code generation mode is Static"; a signed-in check of 18 pages showed `dd-MM-yyyy` dates.
-- Checked at 10:42 UTC: `apiservice--0000078`, `worker--0000070` and `webfrontend--0000073` are Healthy on
-  0.5 vCPU / 1 GiB with 0 restarts and no `fail`/`crit` log lines. Peak memory since the deploy: API 336 MiB,
-  worker 264 MiB, web 316 MiB.
+- Deployed at 12:46 UTC on 2026-11-02 by `azd deploy` from `billing-last-complete-month` (code = `1182418`):
+  `apiservice--0000079`, `worker--0000071`, `webfrontend--0000074` Healthy, 0 restarts, and both hosts log "code
+  generation mode is Static". The previous deploy (10:27 UTC on 2026-10-29) was `main` at `eb042b6`.
+- Before that deploy, the daily `billing-sync` had run on 1 Nov (43 monthly, 951 daily, 564 seller rows, 0
+  unattributed, no error), so the schema-split re-arm worked.
 
 | Resource | Notes |
 | --- | --- |
@@ -50,45 +51,42 @@ handoff update. Production runs exactly the code on `main`; no PRs are open. The
 
 Public URL: `https://webfrontend.gentlewave-ffb522c3.swedencentral.azurecontainerapps.io` (Google sign-in;
 redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlewave-ffb522c3.swedencentral.azurecontainerapps.io`.
-The old Azure SQL server and the unused per-app identities were deleted on 2026-10-28.
 
 ## Open items
 
-1. **Blazor circuit crash, seen in production.**
-   - Trigger: leaving `/notifications` or `/operations` while they are still loading.
-   - Error: `ObjectDisposedException`, because `_cts.Token` is read after `Dispose`.
-   - Fix: `Notifications.razor` (`OnAfterRenderAsync`) and `Operations.razor` (`StartPolling`) need the guard
-     `Home.razor` already has — capture the token once, inside a try/catch.
-2. **Slow cold loads:** about 20 s for entitlement detail and about 40 s for `/license-change-alerts`, the
-   same with and without pre-generated code. Probably the per-entitlement Google calls; profile them before
-   optimising.
-3. **Remove `NotificationDeadLetterReplay`** (worker) in a later change; it has done its job.
-4. **Drop the orphaned `wolverine` schema** in `gchanneldb`.
-   - It needs an Entra login on the server, and only `mi-676wfhbuks6uu` is admin today.
-   - Add yourself with `az postgres flexible-server ad-admin create`, or run it from a container app shell.
-5. **`billing-sync` re-arm** after the schema split, due 13:42 UTC on 2026-10-29 — not verified yet. In the
-   worker logs (Log Analytics, see *Useful* below), look for
-   `Started recurring job chain billing-sync … (overdue …)`, then `run finished`.
-6. **Single shared managed identity** (azd limited mode).
-   - Per-app identities would need a new ACA environment, which means new hostnames and a new Google OAuth
-     redirect URI.
-   - Not done on purpose; decide whether least privilege per app is wanted.
-7. **Postgres SKU:** creating `Standard_B1ms` failed with `RegionalAllocationFailed` on 2026-10-28. If it
+1. **Merge PR #8** (squash, as before) so `main` matches production; its tree equals the deployed code, so no
+   redeploy is needed. The billing-month UI was checked signed-in on 2026-11-02: the Dashboard card, the Spend
+   trends picker and the `Billed (…)` headers on Customers / Channel partner links.
+2. **Month-boundary edge:** "last complete" is computed in UTC but GCP invoice months follow US Pacific, so for a
+   few hours around a month change it can be off by one. Accepted. Google may also adjust the last complete
+   month for a few days after it ends; the daily sync re-reads the last 13 months.
+3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
+4. **Blazor circuit crash, seen in production** when leaving `/notifications` or `/operations` mid-load:
+   `ObjectDisposedException`, because `_cts.Token` is read after `Dispose`. `Notifications.razor`
+   (`OnAfterRenderAsync`) and `Operations.razor` (`StartPolling`) need the guard `Home.razor` already has:
+   capture the token once, inside a try/catch.
+5. **Slow cold loads:** about 20 s for entitlement detail and about 40 s for `/license-change-alerts`, with or
+   without pre-generated code. Probably the per-entitlement Google calls; profile before optimising.
+6. **Remove `NotificationDeadLetterReplay`** (worker) in a later change; it has done its job.
+7. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
+   is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
+8. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
+   i.e. new hostnames and a new Google OAuth redirect URI. Not done on purpose; decide if least privilege per app
+   is wanted.
+9. **Postgres SKU:** creating `Standard_B1ms` failed with `RegionalAllocationFailed` on 2026-10-28. If it
    ever needs recreating, retry or use `Standard_B2s` temporarily.
-8. Noise, not bugs:
-   - The API logs `No known handler for ChannelNotificationArrived`. Fix with a SQL filter on its `api-cache`
-     subscription, in both the AppHost and `MessagingTopology`.
-   - The worker logs `No known handler for CustomerReadModelUpdated`.
-   - KEDA warns "no triggers" for the fixed-replica worker.
-   - Marten stream-version conflicts (`pk_mt_events_stream_and_version`) are absorbed by retries.
+10. Noise, not bugs: the API logs `No known handler for ChannelNotificationArrived` (fix: a SQL filter on its
+    `api-cache` subscription, in the AppHost and `MessagingTopology`) and the worker logs the same for
+    `CustomerReadModelUpdated`; KEDA warns "no triggers" for the fixed-replica worker; Marten stream-version
+    conflicts (`pk_mt_events_stream_and_version`) are absorbed by retries.
 
 ## Next steps (suggested order)
 
-1. Check the `billing-sync` re-arm (item 5); a quick log search.
-2. Fix the circuit crash (item 1). Verify by navigating away from both pages mid-load.
-3. Remove `NotificationDeadLetterReplay` (item 3) and profile the slow pages (item 2).
-4. Get Postgres Entra admin access and drop the old schema (item 4).
-5. Optional: noise filters, per-app identities.
+1. Merge PR #8 (item 1), then `git switch main; git pull` and check `git log` before starting anything new.
+2. Fix the circuit crash (item 4). Verify by navigating away from both pages mid-load.
+3. Remove `NotificationDeadLetterReplay` (item 6) and profile the slow pages (item 5).
+4. Get Postgres Entra admin access and drop the old schema (item 7).
+5. Optional: noise filters, per-app identities, the Marketplace Provider gap (item 3).
 
 ## Start-of-session checklist
 
@@ -96,15 +94,15 @@ The old Azure SQL server and the unused per-app identities were deleted on 2026-
 git status -sb; git log --oneline -5                     # expect branch + head above, clean tree
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
-dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 16 passed (Docker required)
+dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 52 passed (Docker required)
 az containerapp revision list -n worker -g rg-gchannel --query "[?properties.active].{r:name,h:properties.healthState}" -o table
 ```
 
-Useful: `azd provision --preview` (what-if), `azd deploy` (images only), `azd up` (both). Worker log
-query (Log Analytics workspace `law-676wfhbuks6uu`, table `ContainerAppConsoleLogs_CL`, filter
-`RevisionName_s`); `az containerapp logs show -n worker -g rg-gchannel --type console --tail 300`.
-Never provision Azure resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored and
-holds secrets.
+Useful: `azd provision --preview` (what-if), `azd deploy` (images only), `azd up` (both). Worker logs: Log
+Analytics workspace `law-676wfhbuks6uu`, table `ContainerAppConsoleLogs_CL`, `ContainerAppName_s == 'worker'`
+(GUID: `az monitor log-analytics workspace show -g rg-gchannel -n law-676wfhbuks6uu --query customerId -o tsv`),
+or `az containerapp logs show -n worker -g rg-gchannel --type console --tail 300`. Never provision Azure
+resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored and holds secrets.
 
 ## Gotchas learned
 
@@ -120,8 +118,8 @@ holds secrets.
   (use `RadzenStack Gap`); `RadzenChip.ChipStyle` takes a `BadgeStyle`; server-side grids need `Data` to be
   **null** until the first `LoadData`, or they never load.
 - Running the AppHost locks DLLs → stop it before `dotnet build/test`.
-- `git push` authenticates through Git Credential Manager, but `gh` is **not** logged in and the GitHub MCP
-  server is read-only: create/merge PRs in the signed-in integrated browser, or run `gh auth login` first.
+- `git push` authenticates through Git Credential Manager, and `gh` was logged in on 2026-11-02 (check
+  `gh auth status`; if not, `gh auth login` or use the signed-in integrated browser). The GitHub MCP server is read-only.
 - Marten inline snapshots run on every stream that contains an event type they handle. Never add an
   `Apply` (not even a no-op) for an event that is also appended to another aggregate's streams.
 - Wolverine's "moved to the error queue" means the Postgres durable dead letters (`wolverine_*` schema),
@@ -130,20 +128,18 @@ holds secrets.
   after a deploy, check the `predeploy` codegen hook ([deployment.md](deployment.md#pre-generated-wolverine-code)).
 - azd's generated container-app template has no `resources` block, so every deploy resets each app to
   0.5 vCPU / 1 GiB. Sizing needs a hook (as in PR #5) or an Aspire-managed ACA environment.
-- Blazor pages with a `_cts` field: read `_cts.Token` once, before the first await. Reading it after `Dispose`
-  kills the whole circuit.
+- Blazor pages with a `_cts` field: read `_cts.Token` once, before the first await; after `Dispose` it kills the circuit.
 - UI dates go through `DisplayFormat` (`dd-MM-yyyy`, UTC). Don't use culture-dependent format strings.
+- On Windows `az.cmd` / `bq.cmd` cut multi-line arguments at the first newline: pass KQL / SQL on one line (a
+  multi-line `--analytics-query` once dumped 140 MB). Run `bq query --dry_run` first (about 725 MB per aggregate).
 
 ## Session log
 
-- **2026-10-28** — Critter Stack backend (Marten/Wolverine/PostgreSQL/Service Bus) done; UI MudBlazor →
-  Blazorise → Radzen; Aspire 13.6.4 + packages; emulator removed; azd provision/deploy to Azure with
-  managed identities; SQL/identity cleanup; messaging hardening (schemas, DLQ, timeouts, watchdog).
-- **2026-10-29** — Checklist green; PR #1 opened and squash-merged (`0e77d01`). The signed-in smoke test
-  found 2 bugs (3 grids not loading; notification snapshot collision). Fixed with tests in PR #2 (merged
-  `08cfb57`), deployed, re-verified.
-- **2026-10-29 (cont.)** — PR #4 (`bc60335`) replayed the 135 dead-lettered notifications and made all dates
-  `dd-MM-yyyy`. Found the API OOM restart loop: PR #5 (`4873b6a`) was a 2 GiB stop-gap and PR #6 the fix
-  (pre-generated Wolverine code). Deployed; the API is back at 1 GiB, peaking around 300 MiB.
-- **2026-10-29 (end)** — PR #6 merged (`eb042b6`), so `main` matches production. End-of-session check green:
-  build, 16/16 tests, all three apps Healthy on 1 GiB with 0 restarts.
+- **2026-10-28** — Critter Stack backend, UI MudBlazor → Blazorise → Radzen, Aspire 13.6.4, azd deploy to Azure
+  with managed identities, SQL/identity cleanup, messaging hardening (schemas, DLQ, timeouts, watchdog).
+- **2026-10-29** — PR #1 and #2 (smoke-test fixes: 3 grids not loading, notification snapshot collision); PR #4
+  (dead-letter replay of 135 notifications, `dd-MM-yyyy` dates); PR #5 / #6 (API OOM loop → pre-generated
+  Wolverine code). Ended with `main` = production at `eb042b6`, 16/16 tests, all apps Healthy on 1 GiB.
+- **2026-11-02** — "Why is GCP not shown?": the estate "last month" panels resolved to the current, empty month.
+  Branch `billing-last-complete-month`: last-complete-month default, `month` / `months` API, `/spend/months`,
+  Spend trends picker, 36 new tests (52/52). Deployed 12:46 UTC, UI checked signed-in; PR #8 open.
