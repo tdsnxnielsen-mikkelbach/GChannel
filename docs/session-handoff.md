@@ -7,9 +7,9 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-02 12:45 UTC (end of session) · **branch:** `billing-last-complete-month`, one commit
-on top of `main` = `2687b35`; **not pushed, merged or deployed**. Production runs exactly the code on `main`;
-no PRs are open. The repo has no CI workflows.
+**Last updated:** 2026-11-02 12:55 UTC (end of session) · **branch:** `billing-last-complete-month` (`1182418` plus
+this handoff update) on `main` = `2687b35`; **deployed, but not pushed or merged**. Production runs the branch's
+code, not `main`'s; no PRs are open. The repo has no CI workflows.
 
 ## Current state
 
@@ -34,11 +34,11 @@ no PRs are open. The repo has no CI workflows.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed at 10:27 UTC on 2026-10-29 by `azd deploy` from the PR #6 branch (tree-identical to `eb042b6`);
-  both hosts log "code generation mode is Static". The `billing-last-complete-month` branch is **not** deployed.
-- Re-checked on 2026-11-02 (worker only): `worker--0000070` Healthy; the daily `billing-sync` ran on 1 Nov
-  (43 monthly, 951 daily, 564 seller rows, 0 unattributed, no error), so the schema-split re-arm worked. API and
-  web were last checked on 2026-10-29 (`apiservice--0000078`, `webfrontend--0000073`: 1 GiB, 0 restarts).
+- Deployed at 12:46 UTC on 2026-11-02 by `azd deploy` from `billing-last-complete-month` (code = `1182418`):
+  `apiservice--0000079`, `worker--0000071`, `webfrontend--0000074` Healthy, 0 restarts, and both hosts log "code
+  generation mode is Static". The previous deploy (10:27 UTC on 2026-10-29) was `main` at `eb042b6`.
+- Before that deploy, the daily `billing-sync` had run on 1 Nov (43 monthly, 951 daily, 564 seller rows, 0
+  unattributed, no error), so the schema-split re-arm worked.
 
 | Resource | Notes |
 | --- | --- |
@@ -54,10 +54,10 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Open items
 
-1. **Billing-month UI is unverified.** It compiles and the API has tests, but Web needs Google sign-in and the dev
-   AppHost provisions a real Service Bus, so it was never run. After a deploy check: Dashboard "Total billed,
-   Oct 2026"; the Spend trends picker defaults to "Oct 2026" and every panel follows it; the `Billed (…)` header
-   on Customers / Channel partner links updates after load (a dynamic Radzen `Title`: reasoned, not run).
+1. **Billing-month UI is deployed but not yet checked signed-in** (it compiles and the API has tests, but Web needs
+   Google sign-in, so agents can't run it). Check: Dashboard "Total billed, Oct 2026"; the Spend trends picker
+   defaults to "Oct 2026" and every panel follows it; the `Billed (…)` header on Customers / Channel partner
+   links updates after load (a dynamic Radzen `Title`: reasoned, not run).
 2. **Month-boundary edge:** "last complete" is computed in UTC but GCP invoice months follow US Pacific, so for a
    few hours around a month change it can be off by one. Accepted. Google may also adjust the last complete
    month for a few days after it ends; the daily sync re-reads the last 13 months.
@@ -83,8 +83,8 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Decide on the branch: `azd deploy` it (images only; the `predeploy` hook runs codegen), do the checks in
-   item 1, then open the PR in the browser (`gh` is not logged in) and merge. Production = `main`.
+1. Do the checks in item 1, then `git push` the branch, open the PR in the browser (`gh` is not logged in) and
+   merge it so `main` matches production again (the branch is deployed, `main` is not).
 2. Fix the circuit crash (item 4). Verify by navigating away from both pages mid-load.
 3. Remove `NotificationDeadLetterReplay` (item 6) and profile the slow pages (item 5).
 4. Get Postgres Entra admin access and drop the old schema (item 7).
@@ -144,4 +144,4 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
   Wolverine code). Ended with `main` = production at `eb042b6`, 16/16 tests, all apps Healthy on 1 GiB.
 - **2026-11-02** — "Why is GCP not shown?": the estate "last month" panels resolved to the current, empty month.
   Branch `billing-last-complete-month`: last-complete-month default, `month` / `months` API, `/spend/months`,
-  Spend trends picker, 36 new tests (52/52). Not deployed.
+  Spend trends picker, 36 new tests (52/52). Deployed 12:46 UTC (all three apps Healthy); PR still to open.
