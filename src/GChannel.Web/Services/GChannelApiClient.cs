@@ -351,17 +351,17 @@ public sealed class GChannelApiClient(
     public Task<BillingPostureFindingsResult?> GetBillingPostureFindingsAsync(string scope = "all", CancellationToken cancellationToken = default) =>
         GetAsync<BillingPostureFindingsResult>(ApiRoutes.BillingPostureFindings(scope), cancellationToken);
 
-    /// <summary>Estate-wide native Google vs third-party spend split with per-seller / per-product breakdown.</summary>
-    public Task<SellerSpendSummary?> GetSellerSpendAsync(int months = 1, CancellationToken cancellationToken = default) =>
-        GetAsync<SellerSpendSummary>(ApiRoutes.SellerSpend(months), cancellationToken);
+    /// <summary>Estate-wide native Google vs third-party spend split with per-seller / per-product breakdown for one invoice month (null = the last complete month).</summary>
+    public Task<SellerSpendSummary?> GetSellerSpendAsync(string? month = null, CancellationToken cancellationToken = default) =>
+        GetAsync<SellerSpendSummary>(ApiRoutes.SellerSpend(month), cancellationToken);
 
     /// <summary>One customer's native Google vs third-party spend split.</summary>
     public Task<SellerSpendSummary?> GetCustomerSellerSpendAsync(string customerId, int months = 3, CancellationToken cancellationToken = default) =>
         GetAsync<SellerSpendSummary>(ApiRoutes.CustomerSellerSpend(customerId, months), cancellationToken);
 
-    /// <summary>Per-customer Google vs third-party split table.</summary>
-    public Task<CustomerSellerSplitResult?> GetCustomerSellerSplitsAsync(int months = 1, CancellationToken cancellationToken = default) =>
-        GetAsync<CustomerSellerSplitResult>(ApiRoutes.CustomerSellerSplits(months), cancellationToken);
+    /// <summary>Per-customer Google vs third-party split table for one invoice month (null = the last complete month).</summary>
+    public Task<CustomerSellerSplitResult?> GetCustomerSellerSplitsAsync(string? month = null, CancellationToken cancellationToken = default) =>
+        GetAsync<CustomerSellerSplitResult>(ApiRoutes.CustomerSellerSplits(month), cancellationToken);
 
     /// <summary>Marketplace orders across billing accounts, or one customer's.</summary>
     public Task<MarketplaceOrdersResult?> GetMarketplaceOrdersAsync(string? customerId = null, CancellationToken cancellationToken = default) =>
@@ -383,17 +383,21 @@ public sealed class GChannelApiClient(
     public Task<SpendTrendResult?> GetCustomerSpendTrendAsync(string customerId, int days = 90, CancellationToken cancellationToken = default) =>
         GetAsync<SpendTrendResult>(ApiRoutes.CustomerSpendTrend(customerId, days), cancellationToken);
 
-    /// <summary>Estate-wide top spenders by billed cost over the recent window.</summary>
-    public Task<TopSpendersResult?> GetTopSpendersAsync(int months = 1, int limit = 10, CancellationToken cancellationToken = default) =>
-        GetAsync<TopSpendersResult>(ApiRoutes.TopSpenders(months, limit), cancellationToken);
+    /// <summary>Estate-wide top spenders by billed cost for one invoice month (null = the last complete month).</summary>
+    public Task<TopSpendersResult?> GetTopSpendersAsync(string? month = null, int limit = 10, CancellationToken cancellationToken = default) =>
+        GetAsync<TopSpendersResult>(ApiRoutes.TopSpenders(limit, month), cancellationToken);
 
-    /// <summary>Billed spend rolled up per owning reseller (channel partner) over the recent window.</summary>
-    public Task<ResellerSpendResult?> GetResellerSpendAsync(int months = 1, CancellationToken cancellationToken = default) =>
-        GetAsync<ResellerSpendResult>(ApiRoutes.ResellerSpend(months), cancellationToken);
+    /// <summary>Billed spend rolled up per owning reseller (channel partner) for one invoice month (null = the last complete month).</summary>
+    public Task<ResellerSpendResult?> GetResellerSpendAsync(string? month = null, CancellationToken cancellationToken = default) =>
+        GetAsync<ResellerSpendResult>(ApiRoutes.ResellerSpend(month), cancellationToken);
 
-    /// <summary>Bulk last-window billed totals per customer (for the customer-list column).</summary>
-    public Task<CustomerBilledSummaryResult?> GetCustomerBilledSummariesAsync(int months = 1, CancellationToken cancellationToken = default) =>
-        GetAsync<CustomerBilledSummaryResult>(ApiRoutes.CustomerBilledSummaries(months), cancellationToken);
+    /// <summary>Bulk billed totals per customer for one invoice month (null = the last complete month), for the customer-list column.</summary>
+    public Task<CustomerBilledSummaryResult?> GetCustomerBilledSummariesAsync(string? month = null, CancellationToken cancellationToken = default) =>
+        GetAsync<CustomerBilledSummaryResult>(ApiRoutes.CustomerBilledSummaries(month), cancellationToken);
+
+    /// <summary>Invoice months the estate-wide spend views can show (month picker), and the default (last complete) one.</summary>
+    public Task<SpendMonthsResult?> GetSpendMonthsAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<SpendMonthsResult>(ApiRoutes.SpendMonths, cancellationToken);
 
     /// <summary>Monthly billed spend for one owning reseller (channel partner) link.</summary>
     public Task<ResellerSpendDetailResult?> GetResellerSpendDetailAsync(string linkId, int months = 13, CancellationToken cancellationToken = default) =>

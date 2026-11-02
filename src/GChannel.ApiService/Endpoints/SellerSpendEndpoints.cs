@@ -16,20 +16,26 @@ public static class SellerSpendEndpoints
 {
     public const string OrdersCursorScope = "marketplace-orders";
 
+    // Estate: one invoice month — the last complete one unless `month`/`months` say otherwise.
     [WolverineGet("/api/billing/spend/sellers")]
-    public static Task<SellerSpendSummary> SellerSpend(int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken ct)
-        => SummaryAsync(session, options.Value, customerId: null, months, ct);
+    public static Task<SellerSpendSummary> SellerSpend(string? month, int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken ct)
+        => SummaryAsync(session, options.Value, customerId: null, month, months, ct);
 
+    // One customer: a rolling window (default the last 3 months, current included), as on the customer detail card.
     [WolverineGet("/api/billing/customers/{customerId}/spend/sellers")]
     public static Task<SellerSpendSummary> CustomerSellerSpend(
         string customerId, int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken ct)
-        => SummaryAsync(session, options.Value, customerId, months, ct);
+        => SummaryAsync(session, options.Value, customerId, month: null, months, ct);
 
-    private static async Task<SellerSpendSummary> SummaryAsync(IQuerySession session, GoogleBillingOptions opts, string? customerId, int? months, CancellationToken ct)
+    private static async Task<SellerSpendSummary> SummaryAsync(
+        IQuerySession session, GoogleBillingOptions opts, string? customerId, string? month, int? months, CancellationToken ct)
     {
         if (!opts.BigQueryConfigured) { return new SellerSpendSummary { CustomerId = customerId, Unconfigured = true }; }
 
-        var window = BillingEndpoints.MonthKeys(Math.Clamp(months ?? (customerId is null ? 1 : 3), 1, 36));
+        var now = DateTimeOffset.UtcNow;
+        var window = customerId is null
+            ? InvoiceMonthKeys.ResolveWindow(month, months, 36, now)
+            : InvoiceMonthKeys.Rolling(Math.Clamp(months ?? 3, 1, 36), now);
         var query = session.Query<CustomerSpendBySellerRecord>().Where(r => r.InvoiceMonth.IsOneOf(window));
         if (customerId is not null) { query = query.Where(r => r.CustomerId == customerId); }
         var rows = await query.ToListAsync(ct);
@@ -76,12 +82,14 @@ public static class SellerSpendEndpoints
         };
     }
 
+    // One invoice month — the last complete one unless `month`/`months` say otherwise.
     [WolverineGet("/api/billing/spend/sellers/customers")]
-    public static async Task<CustomerSellerSplitResult> GetCustomerSplits(int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken ct)
+    public static async Task<CustomerSellerSplitResult> GetCustomerSplits(
+        string? month, int? months, IQuerySession session, IOptions<GoogleBillingOptions> options, CancellationToken ct)
     {
         if (!options.Value.BigQueryConfigured) { return new CustomerSellerSplitResult { Unconfigured = true }; }
 
-        var window = BillingEndpoints.MonthKeys(Math.Clamp(months ?? 1, 1, 36));
+        var window = InvoiceMonthKeys.ResolveWindow(month, months, 36, DateTimeOffset.UtcNow);
         var rows = await session.Query<CustomerSpendBySellerRecord>()
             .Where(r => r.CustomerId != null && r.InvoiceMonth.IsOneOf(window))
             .ToListAsync(ct);
@@ -102,7 +110,7 @@ public static class SellerSpendEndpoints
             .ThenByDescending(c => c.TotalCost)
             .ToList();
 
-        return new CustomerSellerSplitResult { Customers = customers, AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null };
+        return new CustomerSellerSplitResult { Customers = customers, InvoiceMonths = window, AsOf = rows.Count > 0 ? rows.Max(r => r.LastSyncedUtc) : null };
     }
 
     [WolverineGet("/api/billing/marketplace/orders")]

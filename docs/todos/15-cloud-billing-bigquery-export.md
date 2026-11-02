@@ -82,13 +82,23 @@ that follows the §10/§11 shape — the UI never touches BigQuery on the reques
   and `SpendDaily` (sub-account × day × currency, pruned to the trend window).
 - **API endpoints** (`GChannel.ApiService`, read straight from the indexed read-model):
   `GET /api/billing/customers/{id}/spend` (monthly), `.../trend` (daily + flagged spikes via a pure
-  `mean + k·stddev` rolling window), `/api/billing/spend/top` (estate top spenders) and
-  `/api/billing/resellers/spend` (per-reseller rollup). Each reports `Unconfigured` when the export
-  isn't enabled.
+  `mean + k·stddev` rolling window), `/api/billing/spend/top` (estate top spenders),
+  `/api/billing/resellers/spend` (per-reseller rollup) and `/api/billing/customers/spend` (bulk per-customer
+  totals for the list column). Each reports `Unconfigured` when the export isn't enabled.
+- **Which month.** The estate-wide routes (`spend/top`, `resellers/spend`, `customers/spend` and the
+  seller-split routes in [billing-permissions.md](../billing-permissions.md) Part 4) read **one invoice month,
+  the last *complete* one**, by default: the current month is still accruing and reads ~0 early in the month,
+  which once made the Dashboard billing card show `0.00`. `?month=YYYYMM` selects any month (the current one is
+  month-to-date; an unrecognised value is ignored) and `?months=N` is a rolling N-month window ending with the
+  current month. Months are UTC. Results carry `invoiceMonths` (the window used) and
+  `GET /api/billing/spend/months` lists the pickable months plus the default. The per-customer routes are
+  unchanged (rolling windows). The logic is the pure `InvoiceMonthKeys` helper in `GChannel.Shared`.
 - **UI.** The **Customer detail** page gains a **Billed spend (actual)** card (monthly net/gross/credits
   with an "as of" time, clearly distinguished from the §11 estimate). A new **Billing → Spend trends**
   page (`/billing/spend`) shows estate **top spenders**, a **by-reseller** rollup, and a per-customer
-  **daily trend** ApexChart with spike markers.
+  **daily trend** ApexChart with spike markers; its monthly panels follow a **month picker** (default the last
+  complete month, the current one labelled "month to date"). The Dashboard billing card and the **Billed**
+  columns on Customers and Channel partner links show the last complete month, and say which in their labels.
 - **Config** (`GoogleBilling:*`, all disabled by default): `BigQueryEnabled`, `BigQueryProjectId`,
   `BillingExportDataset`, `BillingExportTable`, `ExcludeBillingAccountIds`, plus `SyncIntervalHours`,
   `TrendDays`, `MaximumBytesBilled`, `SpikeWindowDays`, `SpikeStdDevK`. The reseller service account

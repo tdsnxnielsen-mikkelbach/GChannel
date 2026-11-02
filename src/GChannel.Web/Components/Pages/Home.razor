@@ -598,7 +598,7 @@
                 <div>
                     <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">GCP &amp; Marketplace consumption (billed)</RadzenText>
                     <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
-                        Actual spend from the Cloud Billing → BigQuery export (last month) — real billed
+                        Actual spend from the Cloud Billing → BigQuery export (@SpendWindowLabel) — real billed
                         figures, distinct from the list-price estimate above.
                     </RadzenText>
                 </div>
@@ -621,7 +621,7 @@
                     @foreach (var t in _spendTotals)
                     {
                         <div>
-                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Total billed (@t.Currency)</RadzenText>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="font-weight:600">Total billed, @SpendWindowLabel (@t.Currency)</RadzenText>
                             <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@t.Currency @t.Total.ToString("N2")</RadzenText>
                         </div>
                     }
@@ -771,9 +771,12 @@
     private DateTimeOffset? _spendAsOf;
     private bool _spendLoading = true;
     private bool _spendUnconfigured;
+    // The invoice month(s) the API reported for the billing card — the last complete month, never month-to-date.
+    private IReadOnlyList<string> _spendWindow = [];
+    private string SpendWindowLabel => _spendWindow.Count > 0 ? DisplayFormat.InvoiceWindow(_spendWindow) : "last month";
     // The bar chart plots one currency (the largest by total); the headline lists every currency's total.
     private string _spendChartTitle => _spendTotals.Count > 0
-        ? $"Billed spend by reseller ({_spendTotals[0].Currency})"
+        ? $"Billed spend by reseller, {SpendWindowLabel} ({_spendTotals[0].Currency})"
         : "Billed spend by reseller";
 
     private readonly CancellationTokenSource _cts = new();
@@ -1269,15 +1272,16 @@
         }
     }
 
-    // Loads actual billed GCP/Marketplace spend (BigQuery cost export) rolled up per reseller. The
-    // headline lists every currency's total; the bar chart plots the largest currency by total.
+    // Loads actual billed GCP/Marketplace spend (BigQuery cost export) rolled up per reseller, for the last
+    // complete invoice month. The headline lists every currency's total; the bar chart plots the largest currency.
     private async Task LoadSpendAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var result = await Api.GetResellerSpendAsync(1, cancellationToken);
+            var result = await Api.GetResellerSpendAsync(cancellationToken: cancellationToken);
             _spendUnconfigured = result?.Unconfigured ?? false;
             _spendResellers = result?.Resellers ?? [];
+            _spendWindow = result?.InvoiceMonths ?? [];
             _spendAsOf = result?.AsOf;
 
             _spendTotals.Clear();

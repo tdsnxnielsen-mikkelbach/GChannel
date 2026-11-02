@@ -16,7 +16,17 @@ namespace GChannel.Tests.Fixtures;
 /// </summary>
 public static class ApiHost
 {
-    public static Task<IAlbaHost> StartAsync(string connectionString, IGoogleChannelClient channel)
+    /// <summary>Settings that make the BigQuery billing export count as configured (nothing is ever queried).</summary>
+    public static readonly IReadOnlyDictionary<string, string?> BillingExportConfigured = new Dictionary<string, string?>
+    {
+        ["GoogleBilling:BigQueryEnabled"] = "true",
+        ["GoogleBilling:BigQueryProjectId"] = "test-project",
+        ["GoogleBilling:BillingExportDataset"] = "billing_export",
+        ["GoogleBilling:BillingExportTable"] = "gcp_billing_export_test",
+    };
+
+    /// <param name="settings">Extra configuration, applied after the defaults below.</param>
+    public static Task<IAlbaHost> StartAsync(string connectionString, IGoogleChannelClient channel, IReadOnlyDictionary<string, string?>? settings = null)
         => AlbaHost.For<GChannel.ApiService.ApiAssemblyMarker>(builder =>
         {
             builder.UseEnvironment("Testing");
@@ -25,6 +35,10 @@ public static class ApiHost
             builder.UseSetting("ConnectionStrings:cache", "localhost:6379,abortConnect=false");
             builder.UseSetting("GoogleChannel:AccountId", "accounts/C0test");
             builder.UseSetting("GoogleChannel:UseReadModel", "true");
+            foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
+            {
+                builder.UseSetting(key, value);
+            }
 
             builder.ConfigureServices(services =>
             {

@@ -244,15 +244,20 @@ public static class ApiRoutes
     // Native Google vs third-party (Marketplace / partner) spend split, from the export's
     // transaction_type / seller_name, plus Marketplace orders from the Consumer Procurement API.
 
-    /// <summary>Estate-wide native vs third-party totals + per-seller / per-product breakdown.</summary>
-    public static string SellerSpend(int months) => $"/api/billing/spend/sellers?months={months}";
+    // The estate-wide spend routes below take an optional invoice month (YYYYMM); omitted = the last
+    // complete month, never the month-to-date (see InvoiceMonthKeys.ResolveWindow).
+    private static string MonthQuery(string? month, char prefix) =>
+        string.IsNullOrWhiteSpace(month) ? string.Empty : $"{prefix}month={Uri.EscapeDataString(month)}";
+
+    /// <summary>Estate-wide native vs third-party totals + per-seller / per-product breakdown for one invoice month.</summary>
+    public static string SellerSpend(string? month = null) => "/api/billing/spend/sellers" + MonthQuery(month, '?');
 
     /// <summary>One customer's native vs third-party totals + per-seller / per-product breakdown.</summary>
     public static string CustomerSellerSpend(string customerId, int months) =>
         $"/api/billing/customers/{customerId}/spend/sellers?months={months}";
 
-    /// <summary>Per-customer Google vs third-party split table.</summary>
-    public static string CustomerSellerSplits(int months) => $"/api/billing/spend/sellers/customers?months={months}";
+    /// <summary>Per-customer Google vs third-party split table for one invoice month.</summary>
+    public static string CustomerSellerSplits(string? month = null) => "/api/billing/spend/sellers/customers" + MonthQuery(month, '?');
 
     /// <summary>Marketplace orders across all billing accounts, or one customer's when customerId is set.</summary>
     public static string MarketplaceOrders(string? customerId = null) =>
@@ -277,17 +282,20 @@ public static class ApiRoutes
     public static string CustomerSpendTrend(string customerId, int days) =>
         $"/api/billing/customers/{customerId}/trend?days={days}";
 
-    /// <summary>Estate-wide top spenders by billed cost over the recent window.</summary>
-    public static string TopSpenders(int months, int limit) =>
-        $"/api/billing/spend/top?months={months}&limit={limit}";
+    /// <summary>Estate-wide top spenders by billed cost for one invoice month.</summary>
+    public static string TopSpenders(int limit, string? month = null) =>
+        $"/api/billing/spend/top?limit={limit}" + MonthQuery(month, '&');
 
-    /// <summary>Billed spend rolled up per owning reseller (channel partner) over the recent window.</summary>
-    public static string ResellerSpend(int months) =>
-        $"/api/billing/resellers/spend?months={months}";
+    /// <summary>Billed spend rolled up per owning reseller (channel partner) for one invoice month.</summary>
+    public static string ResellerSpend(string? month = null) =>
+        "/api/billing/resellers/spend" + MonthQuery(month, '?');
 
-    /// <summary>Bulk last-window billed totals per customer, for the customer-list column.</summary>
-    public static string CustomerBilledSummaries(int months) =>
-        $"/api/billing/customers/spend?months={months}";
+    /// <summary>Bulk billed totals per customer for one invoice month, for the customer-list column.</summary>
+    public static string CustomerBilledSummaries(string? month = null) =>
+        "/api/billing/customers/spend" + MonthQuery(month, '?');
+
+    /// <summary>Invoice months the estate-wide spend views can show (month picker) and which one is the default.</summary>
+    public const string SpendMonths = "/api/billing/spend/months";
 
     /// <summary>Monthly actual spend series for a single owning reseller (channel partner) link.</summary>
     public static string ResellerSpendDetail(string linkId, int months) =>
