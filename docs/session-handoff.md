@@ -7,9 +7,9 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-02 12:55 UTC (end of session) · **branch:** `billing-last-complete-month` (`1182418` plus
-this handoff update) on `main` = `2687b35`; **deployed, but not pushed or merged**. Production runs the branch's
-code, not `main`'s; no PRs are open. The repo has no CI workflows.
+**Last updated:** 2026-11-02 12:55 UTC (end of session) · **branch:** `billing-last-complete-month` (PR #8, open) on
+`main` = `2687b35`; **deployed and pushed, not merged**. Production runs the branch's code (the billing UI was
+checked signed-in), not `main`'s. The repo has no CI workflows.
 
 ## Current state
 
@@ -54,10 +54,9 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Open items
 
-1. **Billing-month UI is deployed but not yet checked signed-in** (it compiles and the API has tests, but Web needs
-   Google sign-in, so agents can't run it). Check: Dashboard "Total billed, Oct 2026"; the Spend trends picker
-   defaults to "Oct 2026" and every panel follows it; the `Billed (…)` header on Customers / Channel partner
-   links updates after load (a dynamic Radzen `Title`: reasoned, not run).
+1. **Merge PR #8** (squash, as before) so `main` matches production; its tree equals the deployed code, so no
+   redeploy is needed. The billing-month UI was checked signed-in on 2026-11-02: the Dashboard card, the Spend
+   trends picker and the `Billed (…)` headers on Customers / Channel partner links.
 2. **Month-boundary edge:** "last complete" is computed in UTC but GCP invoice months follow US Pacific, so for a
    few hours around a month change it can be off by one. Accepted. Google may also adjust the last complete
    month for a few days after it ends; the daily sync re-reads the last 13 months.
@@ -83,8 +82,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Do the checks in item 1, then `git push` the branch, open the PR in the browser (`gh` is not logged in) and
-   merge it so `main` matches production again (the branch is deployed, `main` is not).
+1. Merge PR #8 (item 1), then `git switch main; git pull` and check `git log` before starting anything new.
 2. Fix the circuit crash (item 4). Verify by navigating away from both pages mid-load.
 3. Remove `NotificationDeadLetterReplay` (item 6) and profile the slow pages (item 5).
 4. Get Postgres Entra admin access and drop the old schema (item 7).
@@ -120,8 +118,8 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
   (use `RadzenStack Gap`); `RadzenChip.ChipStyle` takes a `BadgeStyle`; server-side grids need `Data` to be
   **null** until the first `LoadData`, or they never load.
 - Running the AppHost locks DLLs → stop it before `dotnet build/test`.
-- `git push` authenticates through Git Credential Manager, but `gh` is **not** logged in and the GitHub MCP
-  server is read-only: create/merge PRs in the signed-in integrated browser, or run `gh auth login` first.
+- `git push` authenticates through Git Credential Manager, and `gh` was logged in on 2026-11-02 (check
+  `gh auth status`; if not, `gh auth login` or use the signed-in integrated browser). The GitHub MCP server is read-only.
 - Marten inline snapshots run on every stream that contains an event type they handle. Never add an
   `Apply` (not even a no-op) for an event that is also appended to another aggregate's streams.
 - Wolverine's "moved to the error queue" means the Postgres durable dead letters (`wolverine_*` schema),
@@ -144,4 +142,4 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
   Wolverine code). Ended with `main` = production at `eb042b6`, 16/16 tests, all apps Healthy on 1 GiB.
 - **2026-11-02** — "Why is GCP not shown?": the estate "last month" panels resolved to the current, empty month.
   Branch `billing-last-complete-month`: last-complete-month default, `month` / `months` API, `/spend/months`,
-  Spend trends picker, 36 new tests (52/52). Deployed 12:46 UTC (all three apps Healthy); PR still to open.
+  Spend trends picker, 36 new tests (52/52). Deployed 12:46 UTC, UI checked signed-in; PR #8 open.
