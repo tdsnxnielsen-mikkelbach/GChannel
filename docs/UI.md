@@ -198,8 +198,8 @@ When a customer already has Google subscriptions (e.g. with another reseller), t
 2. Pick the **billing account** (shown when your reseller account has several, e.g. one per currency —
    the offers and prices depend on it), then expand a SKU to see its **transferable offers** (payment
    plans with payment cycle and list price), resolved to friendly catalog names.
-3. Select what to transfer and submit. Like purchases, transfers are long-running — track them on the
-   **Operations** page.
+3. Select what to transfer and submit. Like purchases, transfers are long-running. Google validates them
+   asynchronously, so after submitting, the page opens the operation on **Operations**, where any failure shows.
 
 ## 8. Channel partners and repricing
 

@@ -69,6 +69,29 @@ public sealed class ApiEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Transfer_lookups_bind_sku_list_and_billing_account_from_the_query()
+    {
+        const string sku = "products/p1/skus/s1";
+        const string billing = "accounts/test/billingAccounts/eur";
+        _channel.QueryEligibleBillingAccountsAsync("cust-ba", Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new EligibleBillingAccountsResult
+            {
+                Groups = [new SkuBillingAccountGroup { SkuIds = ["s1"], BillingAccounts = [new EligibleBillingAccount { Name = billing, CurrencyCode = "EUR" }] }]
+            });
+        _channel.ListTransferableOffersAsync("cust-ba", "p1", "s1", billing, Arg.Any<CancellationToken>())
+            .Returns(new TransferableOffersResult { Offers = [new TransferableOffer { OfferName = "accounts/test/offers/o1" }] });
+
+        var accounts = await _host.GetAsJson<EligibleBillingAccountsResult>(
+            $"/api/customers/cust-ba/eligible-billing-accounts?skus={Uri.EscapeDataString(sku)}");
+        var offers = await _host.GetAsJson<TransferableOffersResult>(ApiRoutes.TransferableOffers("cust-ba", "p1", "s1", billing));
+
+        accounts!.Groups.ShouldHaveSingleItem().BillingAccounts.ShouldHaveSingleItem().Name.ShouldBe(billing);
+        offers!.Offers.ShouldHaveSingleItem().OfferName.ShouldBe("accounts/test/offers/o1");
+        await _channel.Received().QueryEligibleBillingAccountsAsync(
+            "cust-ba", Arg.Is<IReadOnlyList<string>>(s => s.SequenceEqual(new[] { sku })), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Unparseable_query_values_are_rejected_like_minimal_apis()
     {
         await _host.Scenario(s =>

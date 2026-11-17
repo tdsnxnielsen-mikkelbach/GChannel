@@ -7,13 +7,19 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 11:32 UTC (mid-session) · **branch:** `main`, deployed application code `e65e5f6`.
-Offer, product, and SKU catalog caching are deployed. No CI workflows.
+**Last updated:** 2026-11-17 11:55 UTC (mid-session) · **branch:** `main`, deployed application code `2c99982`.
+Transfers now pass the billing account; catalog caching deployed. No CI workflows.
 
 ## Current state
 
 ### Code
 
+- **Transfer billing account (`2c99982`):** multi-currency resellers get 0 transferable offers unless
+  `listTransferableOffers` names a billing account (verified with a direct Google probe: 0 vs 4 plans).
+  The transfer page queries `queryEligibleBillingAccounts`, shows/auto-selects the account, passes it to
+  offers and every transfer line, and shows payment cycle + list price. Live: STG ChromeOS lists 4 EUR plans.
+  Real submit (STG, Annual Yearly, 1 seat, no token): Google failed the operation with bare `FORBIDDEN` (code 7);
+  see open item 10. The transfer page now opens the operation so failures aren't hidden by the success toast.
 - **Catalog optimization (`268b71b`):** detail SKUs limited to its product; history offers skip products.
   Names preserved; two HTTP tests verify skipped requests/display names; live detail/history/pricing work.
 - **Page and Google-call timings (`67cbea5`, `db242b8`); catalog caches (`5a5ba70`, `e65e5f6`):** timing logs
@@ -25,7 +31,7 @@ Offer, product, and SKU catalog caching are deployed. No CI workflows.
   See [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
 - **Stack:** Marten/Wolverine on PostgreSQL/Service Bus; Radzen.Blazor 12.1.8 (`UiNotifier`, Driver.js attributes).
   Aspire 13.6.4; packages current, `Microsoft.OpenApi` intentionally pinned to 2.x.
-- Quality gates: build 0 warnings/errors; suite 57/57; Release publish/codegen passed.
+- Quality gates: build 0 errors; suite 59/59; Release publish/codegen passed.
 
 #### Production profiling (2026-11-17; no cache flush)
 
@@ -47,8 +53,8 @@ Offer, product, and SKU catalog caching are deployed. No CI workflows.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed 11:29 UTC via `azd deploy --environment gchannel --no-prompt` from `main` (`e65e5f6`):
-  API `0000086`, worker `0000078`, web `0000081`, Healthy/Running; API/web 100% traffic.
+- Deployed 11:43 UTC via `azd deploy --no-prompt` from `main` (`2c99982`):
+  API `0000087`, worker `0000079`, web `0000082`, Healthy; API/web 100% traffic.
   Predeploy generated 91 API / 11 worker files; both hosts log Static mode.
   One running replica each; no unhandled/circuit failures. The 3 previously noted unrelated
   `EventStreamUnexpectedMaxEventIdException` dead letters were not replayed or deleted.
@@ -87,22 +93,27 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
     `api-cache` subscription, in the AppHost and `MessagingTopology`) and the worker logs the same for
     `CustomerReadModelUpdated`; KEDA warns "no triggers" for the fixed-replica worker; Marten stream-version
     conflicts (`pk_mt_events_stream_and_version`) are absorbed by retries.
+10. **STG transfer-in FORBIDDEN:** `operations/1249ee58-…` (trace `-5367058062616662119`) and `f08feb12-…`
+    (trace `3011650400553843846`). The SKU is `isEligible`; the customer belongs to channel partner `C01rm8xco`.
+    Raise the trace ids with Partner Support and compare with a Partner Sales Console submission. Purchase
+    offers may also need a billing account (`listPurchasableOffers` returned 0 for this SKU).
 
 ## Next steps (suggested order)
 
-1. Verify product/SKU cache hits on another same-product entitlement and compare a natural cold detail load (item 5).
-2. Verify a real operation deep link when available (item 4).
-3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
-4. Get Postgres Entra admin access and drop the old schema (item 6).
-5. Optional: noise filters, per-app identities, the Marketplace Provider gap (item 3).
+1. Resolve the STG transfer FORBIDDEN with Google (item 10).
+2. Verify product/SKU cache hits on another same-product entitlement and compare a natural cold detail load (item 5).
+3. Verify a real operation deep link when available (item 4).
+4. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
+5. Get Postgres Entra admin access and drop the old schema (item 6).
+6. Optional: noise filters, per-app identities, the Marketplace Provider gap (item 3).
 
 ## Start-of-session checklist
 
 ```powershell
-git status -sb; git log --oneline -5                     # expect main; deployed application code e65e5f6
+git status -sb; git log --oneline -5                     # expect main; deployed application code 2c99982
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
-dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 57 tests (Docker required)
+dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 59 tests (Docker required)
 az containerapp revision list -n worker -g rg-gchannel --query "[?properties.active].{r:name,h:properties.healthState}" -o table
 ```
 
@@ -143,8 +154,7 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 
 ## Session log
 
-- **2026-10-28/29** — Radzen/Aspire, identity/messaging hardening; PR #1/#2/#4/#5/#6 grid/snapshot, replay, dates/static Wolverine; `eb042b6`, 16/16, healthy.
-- **2026-11-02** — Billing-month fix deployed 12:46 UTC, UI checked signed-in; PR #8 open, 52/52 tests.
-- **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, full suite 54/54.
-- **2026-11-17 09:53** — Replay removal deployed (`ec73b40`); apps healthy, worker/navigation smoke passed, first/repeat baseline recorded.
+- **2026-10-28 → 11-02** — Radzen/Aspire, identity/messaging hardening; PRs #1–#8 (grid/snapshot, replay, dates, static Wolverine, billing month); 52/52.
+- **2026-11-17** — PR #8 merged; cancellation fix `6897fe2`; replay removal `ec73b40` deployed, smoke passed, baseline recorded.
 - **2026-11-17 10:48/11:07/11:11/11:21/11:29** — Catalog `268b71b`, timings and catalog caches `e65e5f6` deployed. Offer-cache reduced alerts 30.219→19.169 s; cold detail on latest rollout 15.853 s with uncached product/offer/SKU calls. Apps healthy; build/57 pass.
+- **2026-11-17 11:43** — Transfer offers empty: billing account missing for multi-currency reseller; fixed `2c99982`, deployed, live 4 EUR plans; 59 pass. Real STG submit → Google FORBIDDEN (item 10); transfer page now opens the operation (not deployed).

@@ -403,6 +403,14 @@ else
                 return;
             }
 
+            if (op?.Done != true && !string.IsNullOrEmpty(op?.OperationName))
+            {
+                // Google validates transfers asynchronously, so failures only surface on the operation.
+                await Snackbar.Add("Transfer submitted — tracking the operation…", Severity.Success);
+                Nav.NavigateTo($"/operations?operation={Uri.EscapeDataString(op.OperationName.Split('/')[^1])}");
+                return;
+            }
+
             await Snackbar.Add(op?.Done == true
                 ? "Entitlements transferred."
                 : "Transfer submitted — Google is processing it, this may take a moment.", Severity.Success);
