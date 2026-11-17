@@ -7,8 +7,8 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 10:48 UTC (mid-session) · **branch:** `main`, deployed application code `268b71b`.
-Application fixes are pushed/deployed; only handoff docs follow the deployed commit. No CI workflows.
+**Last updated:** 2026-11-17 10:59 UTC (mid-session) · **branch:** `main`, deployed application code `268b71b`;
+page-stage timings are local/validated, deployment next. No CI workflows.
 
 ## Current state
 
@@ -17,16 +17,17 @@ Application fixes are pushed/deployed; only handoff docs follow the deployed com
 - **Catalog optimization deployed (`268b71b`):** detail reads list SKUs only for their product; history
   resolves offer names without listing products. Friendly-name fallbacks and quota settings are unchanged.
   Two HTTP regression tests verify the skipped requests and preserved names; live detail/history/pricing work.
-- **Earlier fixes deployed:** pre-await token capture on Notifications/Operations (`6897fe2`), renderer
-  regressions and signed-in mid-load navigation smoke. Startup replay service/test removed (`ec73b40`);
-  normal handling, durable dead letters and `StrayReadModelCleanup` are unchanged.
+- **Stage timing instrumentation (local):** logs split alert (feed/links/customer/history) and detail
+  (entitlement/history/pricing). Counts only, no IDs; build succeeded, 55/55 pass.
+- **Earlier fixes:** pre-await token capture with regressions (`6897fe2`); replay removal (`ec73b40`).
+  Notification handling, durable dead letters and cleanup remain intact; signed-in navigation smoke passed.
 - **PR #8 merged:** spend defaults to last complete UTC month; `month=YYYYMM` selects one, `months=N`
   includes current (never `months=1` for "last month"). Window: `InvoiceMonths`; picker: `/api/billing/spend/months`.
   See [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
 - **Stack:** Marten/Wolverine on PostgreSQL/Service Bus; Radzen.Blazor 12.1.8 (`UiNotifier`, Driver.js attributes).
   Aspire 13.6.4; packages current, `Microsoft.OpenApi` intentionally pinned to 2.x.
 - Quality gates on 2026-11-17: build 0 warnings/errors; suite 55/55 (including two catalog regression tests);
-  Release publish/codegen passed. Older tests emit xUnit1051 / CS8602 on recompilation.
+  Release publish/codegen passed. Existing tests emit xUnit1051 / CS8602 warnings on recompilation.
 
 #### Production profiling (2026-11-17; no cache flush)
 
@@ -35,7 +36,7 @@ Application fixes are pushed/deployed; only handoff docs follow the deployed com
 | License alerts (50 rows) | 27.820 s | 21.905 s | 0.295 s | 0.099-0.901 s (4 samples) |
 | Same entitlement detail | 25.063 s | 19.712 s | 0.342 s | 0.348 s |
 
-- **Method:** signed-in same routes/entitlement after over 300 s idle; no cache flush. Single live observations,
+- **Method:** signed-in same routes/entitlement after over 300 s idle; no cache flush. Live observations,
   not controlled A/B or proven cold-cache benchmarks. Background tab used programmatic navigation/DOM timing;
   detail also waited for history/pricing. Initial timeout/full-document probes are excluded.
 - **Checks:** all 50 alert rows, friendly offer/product/SKU names and detail history/pricing remain intact;
@@ -72,9 +73,8 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
 4. **Operation deep-link smoke:** no recent operations were available for a real sample; verify a valid
    `?operation=...` link when one exists. Regular mid-load navigation passed on both pages.
-5. **Slow first visits:** deployed/retested above, still about 20 s despite fewer catalog requests. Instrument
-   backend stages/cache misses, then investigate shared catalog reuse and sequential enrichment without dropping
-   friendly names or introducing quota-risky concurrency.
+5. **Slow first visits:** still about 20 s after catalog optimization. Deploy local page-stage timing logs and
+   find the dominant cache-miss/enrichment stage before further changes; avoid quota-risky concurrency.
 6. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
    is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
 7. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
@@ -89,7 +89,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Instrument the remaining first-visit stages and investigate shared catalog reuse/enrichment (item 5).
+1. Deploy stage timing logs, inspect live first-visit timings, and optimize the dominant stage (item 5).
 2. Verify a real operation deep link when available (item 4).
 3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
 4. Get Postgres Entra admin access and drop the old schema (item 6).
@@ -146,4 +146,5 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 - **2026-11-02** — Billing-month fix deployed 12:46 UTC, UI checked signed-in; PR #8 open, 52/52 tests.
 - **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, full suite 54/54.
 - **2026-11-17 09:53** — Replay removal deployed (`ec73b40`); apps healthy, worker/navigation smoke passed, first/repeat baseline recorded.
-- **2026-11-17 10:48** — Catalog optimization `268b71b` committed/pushed/deployed; build clean, 55/55 tests, apps healthy. First visits 21.905/19.712 s; next: instrument remaining latency.
+- **2026-11-17 10:48** — Catalog optimization `268b71b` deployed; build clean, 55/55 tests, apps healthy. First visits 21.905/19.712 s.
+- **2026-11-17 10:59** — Added local stage timing logs (counts only, no IDs); build and 55/55 pass. Next: deploy and inspect stage durations.

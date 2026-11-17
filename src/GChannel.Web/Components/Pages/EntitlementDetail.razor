@@ -1,7 +1,10 @@
 @page "/customers/{CustomerId}/entitlements/{Id}"
 @attribute [Authorize]
+@using System.Diagnostics
+@using Microsoft.Extensions.Logging
 @inject GChannelApiClient Api
 @inject UiNotifier Snackbar
+@inject ILogger<EntitlementDetail> Logger
 
 <PageTitle>Entitlement · GChannel</PageTitle>
 
@@ -324,10 +327,15 @@ else
 
     private async Task LoadAsync()
     {
+        var totalTimer = Stopwatch.StartNew();
+        long entitlementMs = 0;
+        long historyMs = 0;
+        long pricingMs = 0;
         _loading = true;
         _changes = null;
         _offers = null;
         _changeOfferName = null;
+        var stageTimer = Stopwatch.StartNew();
         try
         {
             _entitlement = await Api.GetEntitlementAsync(CustomerId, Id);
@@ -344,11 +352,13 @@ else
         }
         finally
         {
+            entitlementMs = stageTimer.ElapsedMilliseconds;
             _loading = false;
         }
 
         if (_entitlement is not null)
         {
+            stageTimer.Restart();
             try
             {
                 var changes = await Api.ListEntitlementChangesAsync(CustomerId, Id);
@@ -359,23 +369,46 @@ else
                 await Snackbar.Add($"Failed to load change history: {ex.Message}", Severity.Error);
                 _changes = [];
             }
+            finally
+            {
+                historyMs = stageTimer.ElapsedMilliseconds;
+            }
 
+            stageTimer.Restart();
             await LoadPricingAsync();
+            pricingMs = stageTimer.ElapsedMilliseconds;
         }
+
+        Logger.LogInformation(
+            "Page load timing for {Page}: total={TotalMs}ms entitlement={EntitlementMs}ms history={HistoryMs}ms pricing={PricingMs}ms",
+            "EntitlementDetail", totalTimer.ElapsedMilliseconds, entitlementMs, historyMs, pricingMs);
     }
 
     private async Task LoadPricingAsync()
     {
+        var totalTimer = Stopwatch.StartNew();
+        long offerLookupMs = 0;
+        long repricingConfigMs = 0;
         _pricingLoading = true;
         _offerPricing = null;
         _offerCycle = null;
         _repricingPercent = null;
         try
         {
-            _offerPricing = await Api.LookupEntitlementOfferAsync(CustomerId, Id);
+            var stageTimer = Stopwatch.StartNew();
+            try
+            {
+                _offerPricing = await Api.LookupEntitlementOfferAsync(CustomerId, Id);
+            }
+            finally
+            {
+                offerLookupMs = stageTimer.ElapsedMilliseconds;
+            }
             _offerCycle = _offerPricing?.PaymentCycle;
 
+            stageTimer.Restart();
             var configs = await Api.ListCustomerRepricingConfigsAsync(CustomerId);
+            repricingConfigMs = stageTimer.ElapsedMilliseconds;
             var match = configs?.Configs?.FirstOrDefault(c =>
                 string.Equals(c.EntitlementId, Id, StringComparison.OrdinalIgnoreCase));
             _repricingPercent = match is null ? null : (double)match.PercentageAdjustment;
@@ -387,6 +420,9 @@ else
         finally
         {
             _pricingLoading = false;
+            Logger.LogInformation(
+                "Pricing load timing for {Page}: total={TotalMs}ms offer={OfferLookupMs}ms repricing={RepricingConfigMs}ms",
+                "EntitlementDetail", totalTimer.ElapsedMilliseconds, offerLookupMs, repricingConfigMs);
         }
     }
 
