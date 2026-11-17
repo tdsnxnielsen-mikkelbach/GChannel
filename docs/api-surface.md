@@ -96,6 +96,11 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > `entitlements.create`, and the Purchase button is blocked until an account is picked when the picker is
 > shown.
 
+> **Incoming transfers.** `GET /api/transfers/incoming[?all=true]` lists transferable SKUs across all
+> customers. It is served from the nightly worker scan (`IncomingTransferRecord`) and includes per-customer
+> errors and the scan's as-of time and next run. `POST /api/transfers/incoming/{customerId}/recheck`
+> refreshes one customer live. The Blazor page is **Customers → Incoming transfers** (`/customers/transfers`).
+
 > **Transfers.** Moving an existing subscription into the reseller is exposed under
 > `/api/customers/{id}`: `GET /transferable-skus` and `GET /transferable-offers?productId=&skuId=`
 > (cached in Redis for `CacheSeconds`) list what can be transferred, and `POST /transfer-entitlements`

@@ -2,6 +2,7 @@ using GChannel.ApiService.Caching;
 using GChannel.ApiService.Http;
 using GChannel.Core.Configuration;
 using GChannel.Core.Estate;
+using GChannel.Core.Estate.ReadModels;
 using GChannel.Core.GoogleApis;
 using GChannel.Core.Messaging;
 using GChannel.Core.Persistence.Documents;
@@ -25,9 +26,112 @@ public static class TransfersEndpoints
 {
     [WolverineGet("/api/customers/{customerId}/transferable-skus")]
     public static Task<IResult> ListTransferableSkus(
-        string customerId, IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+        string customerId, IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options,
+        IDocumentSession session, ILogger<IncomingTransferRecord> logger, CancellationToken cancellationToken)
         => GoogleReadCache.CachedAsync(cache, GoogleReadCache.TransferableSkusKey(customerId), options.Value.CacheSeconds,
-            () => channel.ListTransferableSkusAsync(customerId, cancellationToken), cancellationToken);
+            async () =>
+            {
+                var result = await channel.ListTransferableSkusAsync(customerId, cancellationToken);
+                // A live read also refreshes the customer's row in the estate-wide incoming-transfer list.
+                try
+                {
+                    await IncomingTransfers.RecordAsync(session, customerId, result, null, cancellationToken);
+                    await session.SaveChangesAsync(cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(ex, "Could not record the incoming-transfer check for {Customer}.", customerId);
+                }
+                return result;
+            }, cancellationToken);
+
+    /// <summary>
+    /// Estate-wide transferable SKUs from the nightly incoming-transfer scan (eligible ones only unless
+    /// <paramref name="all"/>), plus the customers whose last check failed. Read model only — no Google calls.
+    /// </summary>
+    [WolverineGet("/api/transfers/incoming")]
+    public static async Task<IncomingTransfersResult> ListIncomingTransfers(
+        bool? all, IQuerySession session, IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
+    {
+        var includeIneligible = all == true;
+        var records = await session.Query<IncomingTransferRecord>().ToListAsync(cancellationToken);
+        var cursor = await session.LoadAsync<SyncCursor>(IncomingTransfers.CursorScope, cancellationToken);
+        var job = await session.LoadAsync<RecurringJobState>(RecurringJobs.IncomingTransferScan, cancellationToken);
+
+        var linkIds = records.Select(r => r.OwningLinkId).OfType<string>().Distinct().ToList();
+        var resellers = linkIds.Count == 0
+            ? new Dictionary<string, string?>()
+            : (await session.Query<ResellerLinkRecord>().Where(l => l.LinkId.IsOneOf(linkIds)).ToListAsync(cancellationToken))
+                .GroupBy(l => l.LinkId).ToDictionary(g => g.Key, g => g.First().PrimaryDomain);
+
+        return new IncomingTransfersResult
+        {
+            Items = ToRows(records, includeIneligible, resellers),
+            Errors = records.Where(r => r.Error is not null)
+                .Select(r => new IncomingTransferError { CustomerId = r.Id, CustomerName = r.OrgName, Error = r.Error!, CheckedUtc = r.LastScannedUtc })
+                .OrderBy(e => e.CustomerName ?? e.CustomerId, StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            CustomersScanned = records.Count,
+            CustomersWithEligible = records.Count(r => r.EligibleCount > 0),
+            AsOf = cursor?.LastFullPassUtc,
+            NextScanUtc = job?.NextRunUtc,
+            Scanning = job?.IsRunning ?? false,
+            Unconfigured = !options.Value.IncomingTransferScanEnabled
+        };
+    }
+
+    /// <summary>Re-checks one customer live (the signed-in user's token) and returns its refreshed rows, eligible or not.</summary>
+    [WolverinePost("/api/transfers/incoming/{customerId}/recheck")]
+    public static async Task<IncomingTransfersResult> RecheckIncomingTransfers(
+        string customerId, IGoogleChannelClient channel, IDistributedCache cache, IOptions<GoogleChannelOptions> options,
+        IDocumentSession session, CancellationToken cancellationToken)
+    {
+        TransferableSkusResult? result = null;
+        string? error = null;
+        try
+        {
+            result = await channel.ListTransferableSkusAsync(customerId, cancellationToken);
+            await GoogleReadCache.SetAsync(cache, GoogleReadCache.TransferableSkusKey(customerId), result, options.Value.CacheSeconds, cancellationToken);
+        }
+        catch (Google.GoogleApiException ex)
+        {
+            error = $"{ex.HttpStatusCode}: {ex.Error?.Message ?? ex.Message}";
+        }
+
+        var record = await IncomingTransfers.RecordAsync(session, customerId, result, error, cancellationToken);
+        await session.SaveChangesAsync(cancellationToken);
+
+        var reseller = record.OwningLinkId is null
+            ? null
+            : (await session.Query<ResellerLinkRecord>().Where(l => l.LinkId == record.OwningLinkId).FirstOrDefaultAsync(cancellationToken))?.PrimaryDomain;
+        return new IncomingTransfersResult
+        {
+            Items = ToRows([record], includeIneligible: true, new Dictionary<string, string?> { [record.OwningLinkId ?? string.Empty] = reseller }),
+            Errors = error is null ? [] : [new IncomingTransferError { CustomerId = customerId, CustomerName = record.OrgName, Error = error, CheckedUtc = record.LastScannedUtc }],
+            CustomersScanned = 1,
+            CustomersWithEligible = record.EligibleCount > 0 ? 1 : 0
+        };
+    }
+
+    private static List<IncomingTransfer> ToRows(IEnumerable<IncomingTransferRecord> records, bool includeIneligible, IReadOnlyDictionary<string, string?> resellers) =>
+        records
+            .SelectMany(r => r.Skus
+                .Where(s => includeIneligible || s.IsEligible)
+                .Select(s => new IncomingTransfer
+                {
+                    CustomerId = r.Id,
+                    CustomerName = r.OrgName,
+                    Domain = r.Domain,
+                    OwningLinkId = r.OwningLinkId,
+                    ResellerName = r.OwningLinkId is null ? null : resellers.GetValueOrDefault(r.OwningLinkId),
+                    Sku = s,
+                    CheckedUtc = r.LastSucceededUtc
+                }))
+            .OrderBy(t => t.CustomerName ?? t.CustomerId, StringComparer.OrdinalIgnoreCase)
+            .ThenByDescending(t => t.Sku.IsEligible)
+            .ThenBy(t => t.Sku.ProductDisplayName ?? t.Sku.ProductId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(t => t.Sku.SkuDisplayName ?? t.Sku.SkuId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     [WolverineGet("/api/customers/{customerId}/transferable-offers")]
     public static Task<IResult> ListTransferableOffers(

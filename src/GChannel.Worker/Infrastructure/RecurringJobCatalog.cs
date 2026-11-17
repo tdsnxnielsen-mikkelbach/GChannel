@@ -31,6 +31,7 @@ public sealed class RecurringJobCatalog(IOptions<GoogleChannelOptions> channelOp
             var refreshInterval = TimeSpan.FromSeconds(Math.Max(30, channel.BackgroundRefreshSeconds));
             var billingInterval = TimeSpan.FromHours(Math.Max(1, billing.SyncIntervalHours));
             var postureHour = Math.Clamp(billing.PostureScanHourUtc, 0, 23);
+            var transferHour = Math.Clamp(channel.TransferScanHourUtc, 0, 23);
 
             return
             [
@@ -66,6 +67,14 @@ public sealed class RecurringJobCatalog(IOptions<GoogleChannelOptions> channelOp
                     completed => NextDailyAt(completed, postureHour),
                     runId => new RunBillingPostureScan(runId),
                     StuckAfter: Budget(RecurringJobs.BillingPostureScanBudgetSeconds)),
+
+                // Nightly incoming-transfer scan (listTransferableSkus per customer) at TransferScanHourUtc.
+                new RecurringJobDefinition(
+                    RecurringJobs.IncomingTransferScan,
+                    () => channel.IncomingTransferScanEnabled,
+                    completed => NextDailyAt(completed, transferHour),
+                    runId => new RunIncomingTransferScan(runId),
+                    StuckAfter: Budget(RecurringJobs.IncomingTransferScanBudgetSeconds)),
             ];
         }
     }

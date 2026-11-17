@@ -1,16 +1,20 @@
 using GChannel.Core.Estate;
 using GChannel.Core.Estate.Events;
 using GChannel.Core.Estate.ReadModels;
+using GChannel.Core.GoogleApis;
 using GChannel.Core.Messaging;
 using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
 using GChannel.Tests.Fixtures;
+using GChannel.Worker.Handlers;
 using GChannel.Worker.Infrastructure;
 using GChannel.Worker.Sagas;
 using Marten;
 using Marten.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Wolverine;
 using Wolverine.Tracking;
 
@@ -121,6 +125,57 @@ public sealed class WorkerHandlerTests(PostgresFixture postgres) : IAsyncLifetim
         (await query.LoadAsync<CustomerRecord>(strayCustomerId)).ShouldBeNull();
         (await query.LoadAsync<EntitlementRecord>(strayEntitlementId)).ShouldBeNull();
         (await query.LoadAsync<CustomerRecord>(EstateStreams.Customer(customerId))).ShouldNotBeNull().OrgName.ShouldBe("Kept Co");
+    }
+
+    [Fact]
+    public async Task Incoming_transfer_scan_records_each_customer_keeps_skus_on_failure_and_drops_departed_customers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var eligible = "T" + Guid.NewGuid().ToString("N")[..8];
+        var failing = "T" + Guid.NewGuid().ToString("N")[..8];
+        var departed = "T" + Guid.NewGuid().ToString("N")[..8];
+        var observer = _host.Services.GetRequiredService<EstateObserver>();
+        await using (var session = _store.LightweightSession())
+        {
+            foreach (var (id, name) in new[] { (eligible, "Eligible Co"), (failing, "Failing Co") })
+            {
+                await observer.ObserveCustomerAsync(session,
+                    new Customer { Name = $"accounts/C0test/customers/{id}", Id = id, OrgDisplayName = name, Domain = $"{id}.example" },
+                    null, ObservationSource.Sync, DateTimeOffset.UtcNow, ct);
+            }
+            var kept = new TransferableSku { SkuName = "products/p0/skus/s0", SkuId = "s0", IsEligible = true };
+            session.Store(new IncomingTransferRecord { Id = failing, Skus = [kept], EligibleCount = 1 });
+            session.Store(new IncomingTransferRecord { Id = departed, Skus = [kept], EligibleCount = 1 });
+            await session.SaveChangesAsync(ct);
+        }
+
+        var client = Substitute.For<IGoogleChannelClient>();
+        client.ListTransferableSkusAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new TransferableSkusResult());
+        client.ListTransferableSkusAsync(eligible, Arg.Any<CancellationToken>()).Returns(new TransferableSkusResult
+        {
+            Skus =
+            [
+                new TransferableSku { SkuName = "products/p1/skus/s1", SkuId = "s1", IsEligible = true },
+                new TransferableSku { SkuName = "products/p2/skus/s2", SkuId = "s2", IneligibilityReason = "SKU_NOT_ELIGIBLE" }
+            ]
+        });
+        client.ListTransferableSkusAsync(failing, Arg.Any<CancellationToken>())
+            .Returns<TransferableSkusResult>(_ => throw new Google.GoogleApiException("cloudchannel", "denied") { HttpStatusCode = System.Net.HttpStatusCode.Forbidden });
+
+        var summary = await IncomingTransferScanHandler.ScanAsync(client, _store, TimeSpan.Zero, NullLogger.Instance, ct);
+
+        summary.Failed.ShouldBeGreaterThanOrEqualTo(1);
+        await using var query = _store.QuerySession();
+        var ok = (await query.LoadAsync<IncomingTransferRecord>(eligible, ct)).ShouldNotBeNull();
+        ok.OrgName.ShouldBe("Eligible Co");
+        ok.Skus.Count.ShouldBe(2);
+        ok.EligibleCount.ShouldBe(1);
+        ok.Error.ShouldBeNull();
+        var failed = (await query.LoadAsync<IncomingTransferRecord>(failing, ct)).ShouldNotBeNull();
+        failed.Error.ShouldNotBeNull().ShouldContain("Forbidden");
+        failed.Skus.ShouldHaveSingleItem().SkuId.ShouldBe("s0");
+        (await query.LoadAsync<IncomingTransferRecord>(departed, ct)).ShouldBeNull();
+        (await query.LoadAsync<SyncCursor>(IncomingTransfers.CursorScope, ct)).ShouldNotBeNull().LastFullPassUtc.ShouldNotBeNull();
     }
 
     [Fact]

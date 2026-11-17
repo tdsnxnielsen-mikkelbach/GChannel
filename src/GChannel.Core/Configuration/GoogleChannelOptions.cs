@@ -145,6 +145,22 @@ public sealed class GoogleChannelOptions
     public int ReadModelDashboardCacheSeconds { get; set; } = 20;
 
     /// <summary>
+    /// Nightly incoming-transfer scan: the worker calls <c>accounts.listTransferableSkus</c> for every
+    /// customer in the read model and stores the result, so the Customers → Incoming transfers page can
+    /// list transferable SKUs estate-wide. Needs the service-account + impersonation path.
+    /// </summary>
+    public bool TransferScanEnabled { get; set; } = true;
+
+    /// <summary>UTC hour (0–23) the nightly incoming-transfer scan starts.</summary>
+    public int TransferScanHourUtc { get; set; } = 3;
+
+    /// <summary>
+    /// Client-side pacing (customers per minute) of the incoming-transfer scan, kept well under the
+    /// Channel API per-minute quota it shares with the estate sync. Minimum 1.
+    /// </summary>
+    public int TransferScanRequestsPerMinute { get; set; } = 20;
+
+    /// <summary>
     /// The Google Cloud project id that hosts the Pub/Sub subscription for Channel notifications.
     /// This is your own project, where you create a subscription against the Google-owned topic
     /// returned by <c>accounts.register</c>. Required to run the notification subscriber.
@@ -175,6 +191,10 @@ public sealed class GoogleChannelOptions
     /// <summary>True when the §10 read-model sync should run (needs the service-account + impersonation path).</summary>
     public bool ReadModelSyncEnabled =>
         UseReadModel && BackgroundRefreshSeconds > 0 && HasServiceAccountCredential && !string.IsNullOrWhiteSpace(ImpersonateUser);
+
+    /// <summary>True when the nightly incoming-transfer scan should run (needs the service-account + impersonation path).</summary>
+    public bool IncomingTransferScanEnabled =>
+        TransferScanEnabled && HasServiceAccountCredential && !string.IsNullOrWhiteSpace(ImpersonateUser);
 
     /// <summary>
     /// True when the background Pub/Sub notification subscriber should run: a project + subscription

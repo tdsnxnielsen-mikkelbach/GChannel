@@ -17,6 +17,12 @@
         <RadzenPanelMenuItem Text="All customers" Icon="@AppIcons.PeopleAlt" Path="customers" Match="NavLinkMatch.All" />
         <RadzenPanelMenuItem Text="New customer" Icon="@AppIcons.PersonAdd" Path="customers/new" />
         <RadzenPanelMenuItem Text="Entitlements" Icon="@AppIcons.Subscriptions" Path="entitlements" Match="NavLinkMatch.All" />
+        <RadzenPanelMenuItem Path="customers/transfers" Match="NavLinkMatch.All" Icon="@AppIcons.MoveToInbox">
+            <Template>
+                Incoming transfers
+                <FeatureBeacon Id="incoming-transfers-v1" MatchPath="customers/transfers" Tooltip="New: every customer's transferable subscriptions in one list" />
+            </Template>
+        </RadzenPanelMenuItem>
     </RadzenPanelMenuItem>
 
     <RadzenPanelMenuItem Text="Channel partners" Icon="@AppIcons.Hub" Expanded="true" data-onboarding="nav-partners">

@@ -113,3 +113,46 @@ public sealed record TransferEntitlementsToGoogleRequest
     /// <summary>The entitlements (offers) to hand back to Google (direct) billing.</summary>
     public required IReadOnlyList<TransferEntitlementLine> Entitlements { get; init; }
 }
+
+/// <summary>One transferable SKU of one customer, from the estate-wide incoming-transfer scan.</summary>
+public sealed record IncomingTransfer
+{
+    public required string CustomerId { get; init; }
+    public string? CustomerName { get; init; }
+    public string? Domain { get; init; }
+    /// <summary>Owning channel partner link id (null for direct customers).</summary>
+    public string? OwningLinkId { get; init; }
+    /// <summary>Primary domain of the owning reseller, when known.</summary>
+    public string? ResellerName { get; init; }
+    public required TransferableSku Sku { get; init; }
+    /// <summary>When the customer's transferability was last refreshed successfully.</summary>
+    public DateTimeOffset? CheckedUtc { get; init; }
+}
+
+/// <summary>A customer whose last transferability check failed.</summary>
+public sealed record IncomingTransferError
+{
+    public required string CustomerId { get; init; }
+    public string? CustomerName { get; init; }
+    public required string Error { get; init; }
+    public DateTimeOffset CheckedUtc { get; init; }
+}
+
+/// <summary>Estate-wide incoming transfers (<c>GET /api/transfers/incoming</c>).</summary>
+public sealed record IncomingTransfersResult
+{
+    public IReadOnlyList<IncomingTransfer> Items { get; init; } = [];
+    public IReadOnlyList<IncomingTransferError> Errors { get; init; } = [];
+    /// <summary>Customers checked at least once.</summary>
+    public int CustomersScanned { get; init; }
+    /// <summary>Customers with at least one eligible SKU.</summary>
+    public int CustomersWithEligible { get; init; }
+    /// <summary>When the last full scan finished.</summary>
+    public DateTimeOffset? AsOf { get; init; }
+    /// <summary>When the next nightly scan is scheduled.</summary>
+    public DateTimeOffset? NextScanUtc { get; init; }
+    /// <summary>True while a scan is running.</summary>
+    public bool Scanning { get; init; }
+    /// <summary>True when the scan cannot run (no service account / disabled).</summary>
+    public bool Unconfigured { get; init; }
+}

@@ -4,6 +4,7 @@ using GChannel.Core.Estate.Events;
 using GChannel.Core.Estate.ReadModels;
 using GChannel.Core.GoogleApis;
 using GChannel.Core.Messaging;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
 using GChannel.Tests.Fixtures;
 using Marten;
@@ -149,6 +150,53 @@ public sealed class ApiEndpointTests(PostgresFixture postgres) : IAsyncLifetime
         merged.ErrorDetails.ShouldHaveSingleItem().ShouldContain("ErrorInfo");
         merged.CustomerId.ShouldBe(customerId);
         merged.Tracking.ShouldNotBeNull().Action.ShouldBe("transferEntitlements");
+    }
+
+    [Fact]
+    public async Task Incoming_transfers_list_eligible_skus_estate_wide_and_recheck_refreshes_a_customer()
+    {
+        var eligibleCustomer = $"cust-in-{Guid.NewGuid():N}";
+        var failedCustomer = $"cust-in-{Guid.NewGuid():N}";
+        var store = _host.Services.GetRequiredService<IDocumentStore>();
+        await using (var session = store.LightweightSession())
+        {
+            session.Store(new IncomingTransferRecord
+            {
+                Id = eligibleCustomer,
+                OrgName = "Eligible Co",
+                Skus =
+                [
+                    new TransferableSku { SkuName = "products/p1/skus/s1", SkuId = "s1", ProductId = "p1", IsEligible = true },
+                    new TransferableSku { SkuName = "products/p2/skus/s2", SkuId = "s2", ProductId = "p2", IneligibilityReason = "SKU_NOT_ELIGIBLE" }
+                ],
+                EligibleCount = 1,
+                LastScannedUtc = DateTimeOffset.UtcNow
+            });
+            session.Store(new IncomingTransferRecord { Id = failedCustomer, Error = "Forbidden: denied", LastScannedUtc = DateTimeOffset.UtcNow });
+            await session.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var eligibleOnly = await _host.GetAsJson<IncomingTransfersResult>(ApiRoutes.IncomingTransfers());
+        eligibleOnly!.Items.Where(t => t.CustomerId == eligibleCustomer).ShouldHaveSingleItem().Sku.SkuId.ShouldBe("s1");
+        eligibleOnly.Errors.ShouldContain(e => e.CustomerId == failedCustomer && e.Error == "Forbidden: denied");
+        eligibleOnly.Unconfigured.ShouldBeTrue();
+
+        var all = await _host.GetAsJson<IncomingTransfersResult>(ApiRoutes.IncomingTransfers(includeIneligible: true));
+        all!.Items.Where(t => t.CustomerId == eligibleCustomer).Select(t => t.Sku.SkuId).ShouldBe(["s1", "s2"]);
+
+        // The SKU has moved in since the scan: a recheck replaces the customer's rows and clears nothing else.
+        _channel.ListTransferableSkusAsync(eligibleCustomer, Arg.Any<CancellationToken>())
+            .Returns(new TransferableSkusResult { Skus = [new TransferableSku { SkuName = "products/p2/skus/s2", SkuId = "s2", IneligibilityReason = "SKU_NOT_ELIGIBLE" }] });
+        var rechecked = await _host.Scenario(s =>
+        {
+            s.Post.Url(ApiRoutes.IncomingTransfersRecheck(eligibleCustomer));
+            s.StatusCodeShouldBeOk();
+        });
+        rechecked.ReadAsJson<IncomingTransfersResult>()!.Items.ShouldHaveSingleItem().Sku.IsEligible.ShouldBeFalse();
+
+        var after = await _host.GetAsJson<IncomingTransfersResult>(ApiRoutes.IncomingTransfers());
+        after!.Items.ShouldNotContain(t => t.CustomerId == eligibleCustomer);
+        after.Errors.ShouldContain(e => e.CustomerId == failedCustomer);
     }
 
     [Fact]

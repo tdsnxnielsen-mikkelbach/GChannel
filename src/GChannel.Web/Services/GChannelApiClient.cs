@@ -185,6 +185,14 @@ public sealed class GChannelApiClient(
     public Task<EntitlementOperation?> TransferEntitlementsToGoogleAsync(string customerId, TransferEntitlementsToGoogleRequest request, CancellationToken cancellationToken = default) =>
         SendAsync<EntitlementOperation>(HttpMethod.Post, ApiRoutes.TransferEntitlementsToGoogle(customerId), request, cancellationToken);
 
+    /// <summary>Estate-wide transferable SKUs from the nightly incoming-transfer scan.</summary>
+    public Task<IncomingTransfersResult?> ListIncomingTransfersAsync(bool includeIneligible = false, CancellationToken cancellationToken = default) =>
+        GetAsync<IncomingTransfersResult>(ApiRoutes.IncomingTransfers(includeIneligible), cancellationToken);
+
+    /// <summary>Re-checks one customer's transferability live; returns its refreshed rows.</summary>
+    public Task<IncomingTransfersResult?> RecheckIncomingTransfersAsync(string customerId, CancellationToken cancellationToken = default) =>
+        SendAsync<IncomingTransfersResult>(HttpMethod.Post, ApiRoutes.IncomingTransfersRecheck(customerId), EmptyBody, cancellationToken);
+
     /// <summary>Lists the reseller account's channel partner links.</summary>
     public Task<ChannelPartnerLinksResult?> ListChannelPartnerLinksAsync(CancellationToken cancellationToken = default) =>
         GetAsync<ChannelPartnerLinksResult>(ApiRoutes.ChannelPartnerLinks, cancellationToken);

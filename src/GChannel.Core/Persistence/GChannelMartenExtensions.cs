@@ -150,6 +150,10 @@ public static class GChannelMartenExtensions
             .Index(x => x.Email)
             .Index(x => x.BillingAccountId);
 
+        opts.Schema.For<IncomingTransferRecord>()
+            .Index(x => x.EligibleCount)
+            .Index(x => x.LastScannedUtc);
+
         opts.Schema.For<RecurringJobState>();
         opts.Schema.For<SyncCursor>();
         opts.Schema.For<DashboardRefreshState>();

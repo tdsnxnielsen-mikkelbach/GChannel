@@ -93,6 +93,7 @@ public static class GChannelWolverineExtensions
         opts.PublishMessage<RefreshDashboardSnapshot>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
         opts.PublishMessage<RunBillingSyncCycle>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
         opts.PublishMessage<RunBillingPostureScan>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
+        opts.PublishMessage<RunIncomingTransferScan>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
 
         opts.PublishMessage<CheckChannelOperation>().ToAzureServiceBusQueue(MessagingTopology.OperationsQueue);
 

@@ -198,6 +198,10 @@ else
     [Parameter]
     public string Id { get; set; } = string.Empty;
 
+    // Optional deep link (from Incoming transfers): expands this SKU and loads its offers once the SKUs are in.
+    [SupplyParameterFromQuery(Name = "sku")]
+    public string? SkuQuery { get; set; }
+
     private Customer? _customer;
     private IReadOnlyList<TransferableSku>? _skus;
     private readonly Dictionary<string, IReadOnlyList<TransferableOffer>?> _offersBySku = [];
@@ -255,6 +259,10 @@ else
             var result = await Api.ListTransferableSkusAsync(Id);
             _skus = result?.Skus ?? [];
             await LoadEligibleBillingAccountsAsync();
+            if (_skus.FirstOrDefault(s => s.IsEligible && string.Equals(s.SkuId, SkuQuery, StringComparison.OrdinalIgnoreCase)) is { } preselected)
+            {
+                await OnSkuExpanded(preselected, true);
+            }
         }
         catch (Exception ex)
         {

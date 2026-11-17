@@ -1,5 +1,6 @@
 using GChannel.Core.Configuration;
 using GChannel.Core.GoogleApis;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 
 namespace GChannel.Worker.Infrastructure;
@@ -8,12 +9,14 @@ namespace GChannel.Worker.Infrastructure;
 /// Builds (once, lazily) the service-account-backed <see cref="GoogleChannelClient"/> the worker uses off the
 /// request path. The Channel API has no service-account identity of its own, so the key impersonates a
 /// reseller admin via domain-wide delegation. Returns null when the credential / impersonation user is not
-/// configured, in which case every handler that needs the Channel API is a no-op.
+/// configured, in which case every handler that needs the Channel API is a no-op. The client shares the API's
+/// Redis catalog cache, so per-customer calls that resolve catalog names don't each re-list the catalog.
 /// </summary>
 public sealed class ServiceAccountChannelClientProvider(
     IOptions<GoogleChannelOptions> options,
     ILoggerFactory loggerFactory,
-    ILogger<ServiceAccountChannelClientProvider> logger)
+    ILogger<ServiceAccountChannelClientProvider> logger,
+    IDistributedCache? cache = null)
 {
     private readonly Lazy<IGoogleChannelClient?> _client = new(() =>
     {
@@ -23,7 +26,7 @@ public sealed class ServiceAccountChannelClientProvider(
             logger.LogInformation("No service-account credential + impersonation user configured; Channel API background work is disabled.");
             return null;
         }
-        return new GoogleChannelClient(new ServiceAccountCredentialSource(opts), options, loggerFactory.CreateLogger<GoogleChannelClient>());
+        return new GoogleChannelClient(new ServiceAccountCredentialSource(opts), options, loggerFactory.CreateLogger<GoogleChannelClient>(), distributedCache: cache);
     });
 
     public IGoogleChannelClient? Client => _client.Value;

@@ -201,6 +201,12 @@ When a customer already has Google subscriptions (e.g. with another reseller), t
 3. Select what to transfer and submit. Like purchases, transfers are long-running. Google validates them
    asynchronously, so after submitting, the page opens the operation on **Operations**, where any failure shows.
 
+To see what can be transferred in across **all** customers, open **Customers → Incoming transfers**
+(`/customers/transfers`). A nightly scan (03:00 UTC) checks every customer, so the list shows when it was
+last checked. Use **Re-check** to refresh one customer now, or **Transfer** to open that customer's transfer
+page with the SKU already expanded. Switch on **Show ineligible SKUs** to see the reasons SKUs can't move.
+Customers whose check failed (e.g. no access to the customer) are listed separately.
+
 ## 8. Channel partners and repricing
 
 - **Channel partners → Partner links** (`/channel-partner-links`) — see your channel partner links;

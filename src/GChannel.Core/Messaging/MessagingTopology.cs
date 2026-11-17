@@ -28,6 +28,7 @@ public static class RecurringJobs
     public const string DashboardSnapshot = "dashboard-snapshot";
     public const string BillingSync = "billing-sync";
     public const string BillingPostureScan = "billing-posture-scan";
+    public const string IncomingTransferScan = "incoming-transfer-scan";
 
     /// <summary>
     /// Execution budgets of the tick handlers, in seconds (Wolverine's <c>[MessageTimeout]</c> takes a constant). Every
@@ -38,4 +39,5 @@ public static class RecurringJobs
     public const int DashboardSnapshotBudgetSeconds = 2 * 60 * 60;
     public const int BillingSyncBudgetSeconds = 60 * 60;
     public const int BillingPostureScanBudgetSeconds = 3 * 60 * 60;
+    public const int IncomingTransferScanBudgetSeconds = 3 * 60 * 60;
 }

@@ -121,6 +121,13 @@ public static class ApiRoutes
     public static string TransferEntitlementsToGoogle(string customerId) =>
         $"/api/customers/{customerId}/transfer-entitlements-to-google";
 
+    /// <summary>Estate-wide transferable SKUs from the nightly incoming-transfer scan (<c>?all=true</c> includes ineligible ones).</summary>
+    public static string IncomingTransfers(bool includeIneligible = false) =>
+        "/api/transfers/incoming" + (includeIneligible ? "?all=true" : string.Empty);
+
+    /// <summary>Re-checks one customer's transferability live and updates the incoming-transfer list.</summary>
+    public static string IncomingTransfersRecheck(string customerId) => $"/api/transfers/incoming/{customerId}/recheck";
+
     // Channel partner links (§5 — distributor / n-tier). A distributor links downstream resellers
     // ("channel partners") to their account; customers can then be owned by a partner.
 

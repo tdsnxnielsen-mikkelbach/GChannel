@@ -60,6 +60,9 @@ public sealed record RunBillingSyncCycle(Guid RunId) : IRecurringJobTick;
 /// <summary>One nightly billing IAM security-posture scan.</summary>
 public sealed record RunBillingPostureScan(Guid RunId) : IRecurringJobTick;
 
+/// <summary>One nightly incoming-transfer scan (listTransferableSkus for every customer in the read model).</summary>
+public sealed record RunIncomingTransferScan(Guid RunId) : IRecurringJobTick;
+
 // ---------------------------------------------------------------------------------------------------
 // Operation tracking saga — Service Bus queue "operations".
 // ---------------------------------------------------------------------------------------------------

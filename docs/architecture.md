@@ -147,7 +147,7 @@ local provisioning and `azd` — it is **not** auto-provisioned by Wolverine:
 | `worker-estate` | subscription | the worker's projections / targeted refreshes |
 | `api-cache` | subscription | the API's Redis cache invalidation (`CustomerReadModelUpdatedHandler`) |
 | `estate-sync` | queue | `ProjectCustomer` commands (targeted customer refresh: a mutation, a Pub/Sub event or a manual resync), consumed sequentially so Channel API quotas can be paced |
-| `jobs` | queue | self-rescheduling recurring job ticks (`RunEstateSyncCycle`, `RefreshDashboardSnapshot`, `RunBillingSyncCycle`, `RunBillingPostureScan`) |
+| `jobs` | queue | self-rescheduling recurring job ticks (`RunEstateSyncCycle`, `RefreshDashboardSnapshot`, `RunBillingSyncCycle`, `RunBillingPostureScan`, `RunIncomingTransferScan`) |
 | `operations` | queue | Google long-running-operation saga timeouts (`CheckChannelOperation`) |
 | `wolverine-dead-letter-queue` | queue | Wolverine's shared dead-letter queue: a message that exhausts its retries is sent here (inspect / resubmit with Service Bus Explorer) |
 
@@ -325,7 +325,17 @@ transferred subscriptions show up once provisioning finishes.
   are disabled), lazy-loads transferable offers (with payment cycle and list price per seat) when a SKU
   panel is expanded, and builds a basket of
   offers to transfer with per-line seats + purchase order and an optional transfer auth token. It is
-  reachable from both the **Customer detail** and **Entitlements** page headers.
+  reachable from both the **Customer detail** and **Entitlements** page headers. A `?sku={skuName}`
+  query auto-expands that SKU's offers.
+- **Incoming transfers (estate-wide).** The worker's nightly `RunIncomingTransferScan` job
+  (`GoogleChannel:TransferScan*`, paced at `TransferScanRequestsPerMinute`, least-recently-scanned
+  first) calls `listTransferableSkus` for every customer and stores one `IncomingTransferRecord` per
+  customer (SKUs, eligible count, last error). A failed customer keeps its previous SKUs and gets an error;
+  records for departed customers are deleted; the `incoming-transfers` `SyncCursor` stamps the pass. The
+  per-customer `GET /transferable-skus` also refreshes the record. `GET /api/transfers/incoming[?all=true]`
+  serves the read model only, and `POST /api/transfers/incoming/{customerId}/recheck` re-runs one customer
+  live. The **Customers → Incoming transfers** page (`/customers/transfers`) lists them, with a Transfer
+  deep link per SKU.
 - **Catalog correlation.** Transferable SKUs/offers carry the same `productId`/`skuId`/`offerId` as
   everywhere else and resolve their friendly **product / SKU / offer** names from the offer catalog
   (reusing `MarketingInfo.DisplayName`), so a transfer resolves to the same catalog ids as a

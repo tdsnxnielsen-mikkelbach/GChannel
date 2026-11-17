@@ -1,0 +1,251 @@
+@page "/customers/transfers"
+@attribute [Authorize]
+@inject GChannelApiClient Api
+@inject UiNotifier Snackbar
+
+<PageTitle>Incoming transfers · GChannel</PageTitle>
+
+<RadzenText TextStyle="TextStyle.H4" class="rz-mb-4">Incoming transfers</RadzenText>
+
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-4">
+    Subscriptions your customers hold elsewhere (directly with Google or with another reseller) that can be
+    transferred into your account. A nightly scan checks every customer; opening a customer's transfer page or
+    re-checking a row refreshes it live.
+</RadzenText>
+
+@if (_result?.Unconfigured == true)
+{
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
+        The nightly scan is not running: it needs <code>GoogleChannel:ServiceAccountKeyJson</code>, <code>GoogleChannel:ImpersonateUser</code>
+        and <code>GoogleChannel:TransferScanEnabled</code>. Rows still appear for customers checked from their transfer page.
+    </RadzenAlert>
+}
+
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.75rem" Wrap="FlexWrap.Wrap">
+        <SearchBox Value="@_search" ValueChanged="OnSearchChanged" Label="Search customer, domain, product…" Style="width: 100%; min-width: 280px" />
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            <RadzenSwitch Value="_includeIneligible" ValueChanged="@((bool v) => OnIncludeIneligibleChanged(v))" Name="includeIneligible" />
+            <RadzenLabel Text="Show ineligible SKUs" Component="includeIneligible" />
+        </RadzenStack>
+    </RadzenStack>
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap">
+        @if (_result is not null)
+        {
+            <RadzenBadge BadgeStyle="BadgeStyle.Success" Variant="Variant.Outlined" Text="@($"{_result.CustomersWithEligible} customers with eligible SKUs")" />
+            <RadzenBadge BadgeStyle="BadgeStyle.Light" Variant="Variant.Outlined" Text="@($"{_result.CustomersScanned} checked")" />
+            @if (_result.Scanning)
+            {
+                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Scan running" />
+            }
+            else if (_result.NextScanUtc is { } next)
+            {
+                <Tip Text="Next nightly scan (UTC)"><RadzenBadge BadgeStyle="BadgeStyle.Light" Text="@($"Next scan {DisplayFormat.Timestamp(next)}")" /></Tip>
+            }
+        }
+        <AsOfBadge AsOf="_result?.AsOf" />
+        <RadzenButton Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Size="ButtonSize.Small" Click="LoadAsync" Disabled="_loading" title="Reload the list" />
+    </RadzenStack>
+</RadzenStack>
+
+<RadzenCard Variant="Variant.Filled">
+    <RadzenDataGrid TItem="IncomingTransfer" Data="Filtered" IsLoading="_loading"
+                    AllowPaging="true" PageSize="25" PageSizeOptions="_pageSizes" ShowPagingSummary="true"
+                    AllowSorting="true" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+        <Columns>
+            <RadzenDataGridColumn TItem="IncomingTransfer" Property="@nameof(IncomingTransfer.CustomerName)" Title="Customer">
+                <Template Context="t">
+                    <RadzenLink Path="@($"/customers/{t.CustomerId}")" Text="@(t.CustomerName ?? t.CustomerId)" />
+                    @if (!string.IsNullOrEmpty(t.OwningLinkId))
+                    {
+                        <Tip Text="@($"Owned by reseller {t.ResellerName ?? t.OwningLinkId}")"><RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Reseller" class="rz-ms-1" /></Tip>
+                    }
+                    @if (!string.IsNullOrEmpty(t.Domain))
+                    {
+                        <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@t.Domain</RadzenText>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="IncomingTransfer" Title="Product / SKU" SortProperty="Sku.ProductDisplayName">
+                <Template Context="t">
+                    <div>@(t.Sku.SkuDisplayName ?? t.Sku.SkuId)</div>
+                    <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">@(t.Sku.ProductDisplayName ?? t.Sku.ProductId)</RadzenText>
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="IncomingTransfer" Title="Eligibility" SortProperty="Sku.IsEligible" Width="200px">
+                <Template Context="t">
+                    @if (t.Sku.IsEligible)
+                    {
+                        <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Eligible" />
+                    }
+                    else
+                    {
+                        <Tip Text="@(t.Sku.EligibilityDescription ?? t.Sku.IneligibilityReason ?? "Not eligible")">
+                            <RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="@IneligibleLabel(t.Sku)" />
+                        </Tip>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="IncomingTransfer" Property="@nameof(IncomingTransfer.CheckedUtc)" Title="Checked" Width="150px">
+                <Template Context="t">@DisplayFormat.Timestamp(t.CheckedUtc)</Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="IncomingTransfer" Title="Actions" Sortable="false" TextAlign="TextAlign.End" Width="120px">
+                <Template Context="t">
+                    <Tip Text="Re-check this customer now">
+                        <RadzenButton Icon="@AppIcons.Sync" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat"
+                                      Click="@(() => RecheckAsync(t.CustomerId))" IsBusy="@(_rechecking == t.CustomerId)" Disabled="@(_rechecking is not null)" title="Re-check" />
+                    </Tip>
+                    @if (t.Sku.IsEligible)
+                    {
+                        <Tip Text="Transfer into your account">
+                            <LinkButton To="@($"/customers/{t.CustomerId}/transfer?sku={Uri.EscapeDataString(t.Sku.SkuId ?? string.Empty)}")" Icon="@AppIcons.SwapHoriz" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Flat" Title="Transfer" />
+                        </Tip>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+        <EmptyTemplate>
+            @if (_loading)
+            {
+                <LoadingPanel Title="Loading incoming transfers…" Hint="Reading the last scan results." />
+            }
+            else
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-m-3">
+                    @(_result is { CustomersScanned: 0 } ? "No customers have been checked yet — the nightly scan fills this list." : "No transferable SKUs match the current filters.")
+                </RadzenAlert>
+            }
+        </EmptyTemplate>
+    </RadzenDataGrid>
+</RadzenCard>
+
+@if (_result is { Errors.Count: > 0 })
+{
+    <RadzenCard Variant="Variant.Outlined" class="rz-mt-4">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">@_result.Errors.Count customers could not be checked</RadzenText>
+            <RadzenButton Text="@(_showErrors ? "Hide" : "Show")" Variant="Variant.Text" Size="ButtonSize.Small" Click="@(() => _showErrors = !_showErrors)" />
+        </RadzenStack>
+        @if (_showErrors)
+        {
+            <RadzenDataGrid TItem="IncomingTransferError" Data="_result.Errors" AllowPaging="true" PageSize="10" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" class="rz-mt-2">
+                <Columns>
+                    <RadzenDataGridColumn TItem="IncomingTransferError" Property="@nameof(IncomingTransferError.CustomerName)" Title="Customer" Width="240px">
+                        <Template Context="e"><RadzenLink Path="@($"/customers/{e.CustomerId}")" Text="@(e.CustomerName ?? e.CustomerId)" /></Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="IncomingTransferError" Property="@nameof(IncomingTransferError.Error)" Title="Error" />
+                    <RadzenDataGridColumn TItem="IncomingTransferError" Property="@nameof(IncomingTransferError.CheckedUtc)" Title="Checked" Width="150px">
+                        <Template Context="e">@DisplayFormat.Timestamp(e.CheckedUtc)</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="IncomingTransferError" Title="" Sortable="false" TextAlign="TextAlign.End" Width="70px">
+                        <Template Context="e">
+                            <RadzenButton Icon="@AppIcons.Sync" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat"
+                                          Click="@(() => RecheckAsync(e.CustomerId))" IsBusy="@(_rechecking == e.CustomerId)" Disabled="@(_rechecking is not null)" title="Re-check" />
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </RadzenCard>
+}
+
+@code {
+    private static readonly IEnumerable<int> _pageSizes = [25, 50, 100];
+
+    private IncomingTransfersResult? _result;
+    private List<IncomingTransfer> _items = [];
+    private bool _loading = true;
+    private bool _includeIneligible;
+    private bool _showErrors;
+    private string? _search;
+    private string? _rechecking;
+
+    private IEnumerable<IncomingTransfer> Filtered => string.IsNullOrWhiteSpace(_search)
+        ? _items
+        : _items.Where(t => Matches(t, _search!.Trim()));
+
+    private static bool Matches(IncomingTransfer t, string term) =>
+        new[] { t.CustomerName, t.CustomerId, t.Domain, t.ResellerName, t.Sku.SkuDisplayName, t.Sku.ProductDisplayName, t.Sku.SkuId, t.Sku.ProductId }
+            .Any(v => v?.Contains(term, StringComparison.OrdinalIgnoreCase) == true);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _result = await Api.ListIncomingTransfersAsync(_includeIneligible);
+            _items = _result?.Items.ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            await Snackbar.Add($"Failed to load incoming transfers: {ex.Message}", Severity.Error);
+            _items = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task OnSearchChanged(string? value)
+    {
+        _search = value;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnIncludeIneligibleChanged(bool value)
+    {
+        _includeIneligible = value;
+        await LoadAsync();
+    }
+
+    // Live re-check of one customer: its rows are replaced in place, the error list updated.
+    private async Task RecheckAsync(string customerId)
+    {
+        _rechecking = customerId;
+        try
+        {
+            var fresh = await Api.RecheckIncomingTransfersAsync(customerId);
+            var rows = (fresh?.Items ?? []).Where(t => _includeIneligible || t.Sku.IsEligible).ToList();
+            var index = _items.FindIndex(t => t.CustomerId == customerId);
+            _items.RemoveAll(t => t.CustomerId == customerId);
+            _items.InsertRange(index < 0 ? 0 : index, rows);
+
+            if (_result is not null)
+            {
+                var errors = _result.Errors.Where(e => e.CustomerId != customerId).Concat(fresh?.Errors ?? []).ToList();
+                _result = _result with { Errors = errors };
+            }
+
+            if (fresh?.Errors is { Count: > 0 } failed)
+            {
+                await Snackbar.Add($"Re-check failed: {failed[0].Error}", Severity.Warning);
+            }
+            else
+            {
+                var eligible = rows.Count(r => r.Sku.IsEligible);
+                await Snackbar.Add(eligible > 0 ? $"{eligible} eligible SKU(s) for {rows[0].CustomerName ?? customerId}." : "No eligible SKUs for this customer any more.", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            await Snackbar.Add($"Re-check failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _rechecking = null;
+        }
+    }
+
+    private static string IneligibleLabel(TransferableSku sku) => sku.IneligibilityReason switch
+    {
+        "PENDING_TOS_ACCEPTANCE" => "Pending ToS",
+        "SKU_NOT_ELIGIBLE" => "SKU not eligible",
+        "SKU_SUSPENDED" => "SKU suspended",
+        "CHANNEL_PARTNER_NOT_AUTHORIZED_FOR_SKU" => "Not authorized",
+        null or "" => "Not eligible",
+        var other => other
+    };
+}
