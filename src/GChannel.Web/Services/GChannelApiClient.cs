@@ -174,8 +174,8 @@ public sealed class GChannelApiClient(
         GetAsync<TransferableSkusResult>(ApiRoutes.TransferableSkus(customerId), cancellationToken);
 
     /// <summary>Lists the offers a customer is eligible to transfer in for a SKU.</summary>
-    public Task<TransferableOffersResult?> ListTransferableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken = default) =>
-        GetAsync<TransferableOffersResult>(ApiRoutes.TransferableOffers(customerId, productId, skuId), cancellationToken);
+    public Task<TransferableOffersResult?> ListTransferableOffersAsync(string customerId, string productId, string skuId, string? billingAccount = null, CancellationToken cancellationToken = default) =>
+        GetAsync<TransferableOffersResult>(ApiRoutes.TransferableOffers(customerId, productId, skuId, billingAccount), cancellationToken);
 
     /// <summary>Transfers entitlements to this reseller.</summary>
     public Task<EntitlementOperation?> TransferEntitlementsAsync(string customerId, TransferEntitlementsRequest request, CancellationToken cancellationToken = default) =>

@@ -109,8 +109,9 @@ public static class ApiRoutes
         $"/api/customers/{customerId}/transferable-skus";
 
     /// <summary>Lists the offers a customer is eligible to transfer in for a SKU.</summary>
-    public static string TransferableOffers(string customerId, string productId, string skuId) =>
-        $"/api/customers/{customerId}/transferable-offers?productId={productId}&skuId={skuId}";
+    public static string TransferableOffers(string customerId, string productId, string skuId, string? billingAccount = null) =>
+        $"/api/customers/{customerId}/transferable-offers?productId={productId}&skuId={skuId}"
+        + (string.IsNullOrWhiteSpace(billingAccount) ? string.Empty : $"&billingAccount={Uri.EscapeDataString(billingAccount)}");
 
     /// <summary>Transfers entitlements to this reseller.</summary>
     public static string TransferEntitlements(string customerId) =>

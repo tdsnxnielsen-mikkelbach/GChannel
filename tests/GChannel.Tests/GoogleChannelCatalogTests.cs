@@ -98,6 +98,27 @@ public sealed class GoogleChannelCatalogTests
         secondHandler.Requests.ShouldContain("/v1/accounts/test/customers/customer/entitlements/second:listEntitlementChanges");
     }
 
+    [Fact]
+    public async Task Transfer_offers_and_transfer_carry_the_selected_billing_account()
+    {
+        using var handler = new CatalogHttpHandler();
+        var client = CreateClient(handler);
+        const string billingAccount = "accounts/test/billingAccounts/eur";
+
+        var offers = await client.ListTransferableOffersAsync(
+            "customer", "p1", "s1", billingAccount, TestContext.Current.CancellationToken);
+        await client.TransferEntitlementsAsync("customer", new GChannel.Shared.Contracts.TransferEntitlementsRequest
+        {
+            Entitlements = [new GChannel.Shared.Contracts.TransferEntitlementLine { OfferId = "offer1", BillingAccount = billingAccount }]
+        }, TestContext.Current.CancellationToken);
+
+        var offer = offers.Offers.ShouldHaveSingleItem();
+        offer.PaymentCycle.ShouldBe("Monthly");
+        offer.Pricing.ShouldHaveSingleItem().EffectivePrice!.Units.ShouldBe(2);
+        handler.Bodies["/v1/accounts/test:listTransferableOffers"].ShouldContain($"\"billingAccount\":\"{billingAccount}\"");
+        handler.Bodies["/v1/accounts/test/customers/customer:transferEntitlements"].ShouldContain($"\"billingAccount\":\"{billingAccount}\"");
+    }
+
     private static GoogleChannelClient CreateClient(CatalogHttpHandler handler, IDistributedCache? cache = null)
     {
         var credentialSource = Substitute.For<IGoogleChannelCredentialSource>();
@@ -119,13 +140,30 @@ public sealed class GoogleChannelCatalogTests
     private sealed class CatalogHttpHandler : HttpMessageHandler
     {
         public List<string> Requests { get; } = [];
+        public Dictionary<string, string> Bodies { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
             Requests.Add(path);
+            if (request.Content is not null)
+            {
+                var bytes = await request.Content.ReadAsByteArrayAsync(cancellationToken);
+                if (request.Content.Headers.ContentEncoding.Contains("gzip"))
+                {
+                    using var gzip = new System.IO.Compression.GZipStream(new MemoryStream(bytes), System.IO.Compression.CompressionMode.Decompress);
+                    using var plain = new MemoryStream();
+                    await gzip.CopyToAsync(plain, cancellationToken);
+                    bytes = plain.ToArray();
+                }
+                Bodies[path] = Encoding.UTF8.GetString(bytes);
+            }
             var body = path switch
             {
+                "/v1/accounts/test:listTransferableOffers" =>
+                    """{"transferableOffers":[{"offer":{"name":"accounts/test/offers/offer1","marketingInfo":{"displayName":"Annual Plan (Monthly Payment)"},"sku":{"name":"products/p1/skus/s1"},"plan":{"paymentCycle":{"periodType":"MONTH","duration":1}},"priceByResources":[{"resourceType":"SEAT","price":{"effectivePrice":{"currencyCode":"EUR","units":"2","nanos":630000000}}}]}}]}""",
+                "/v1/accounts/test/customers/customer:transferEntitlements" =>
+                    """{"name":"operations/transfer","done":false}""",
                 "/v1/accounts/test/customers/customer/entitlements/entitlement" =>
                     """{"name":"accounts/test/customers/customer/entitlements/entitlement","offer":"accounts/test/offers/offer1","provisionedService":{"productId":"p1","skuId":"s1"}}""",
                 "/v1/products" =>
@@ -140,10 +178,10 @@ public sealed class GoogleChannelCatalogTests
                 _ => throw new InvalidOperationException($"Unexpected Google API request: {path}")
             };
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
-            });
+            };
         }
     }
 }

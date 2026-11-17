@@ -67,7 +67,7 @@ public sealed partial class GoogleChannelClient
         return new TransferableSkusResult { Skus = skus };
     }
 
-    public async Task<TransferableOffersResult> ListTransferableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken)
+    public async Task<TransferableOffersResult> ListTransferableOffersAsync(string customerId, string productId, string skuId, string? billingAccount, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(customerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(productId);
@@ -83,6 +83,8 @@ public sealed partial class GoogleChannelClient
             {
                 CustomerName = CustomerName(customerId),
                 Sku = $"products/{productId}/skus/{skuId}",
+                // Multi-currency resellers get no offers unless the billing account is named.
+                BillingAccount = string.IsNullOrWhiteSpace(billingAccount) ? null : billingAccount,
                 PageToken = pageToken
             };
             var response = await service.Accounts
@@ -100,7 +102,9 @@ public sealed partial class GoogleChannelClient
                     OfferDisplayName = offer?.MarketingInfo?.DisplayName,
                     SkuId = LastSegment(offerSkuName) is { Length: > 0 } sid ? sid : skuId,
                     SkuDisplayName = offer?.Sku?.MarketingInfo?.DisplayName,
-                    ProductId = ProductIdFromResourceName(offerSkuName) is { Length: > 0 } pid ? pid : productId
+                    ProductId = ProductIdFromResourceName(offerSkuName) is { Length: > 0 } pid ? pid : productId,
+                    Pricing = MapOfferPricing(offer),
+                    PaymentCycle = PaymentCycleLabel(offer?.Plan)
                 });
             }
 
@@ -167,6 +171,7 @@ public sealed partial class GoogleChannelClient
     {
         Offer = OfferName(line.OfferId),
         Parameters = ToGoogleParameters(line.Parameters),
+        BillingAccount = string.IsNullOrWhiteSpace(line.BillingAccount) ? null : line.BillingAccount,
         PurchaseOrderId = string.IsNullOrWhiteSpace(line.PurchaseOrderId) ? null : line.PurchaseOrderId
     };
 }

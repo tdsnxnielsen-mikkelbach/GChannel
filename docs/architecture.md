@@ -309,10 +309,16 @@ mutating calls invalidate the customer's transferable-SKU and entitlement-list c
 transferred subscriptions show up once provisioning finishes.
 
 - **Endpoints.** Under `/api/customers/{customerId}`: `GET /transferable-skus`,
-  `GET /transferable-offers?productId={productId}&skuId={skuId}`, `POST /transfer-entitlements`,
+  `GET /transferable-offers?productId={productId}&skuId={skuId}[&billingAccount=…]`, `POST /transfer-entitlements`,
   and `POST /transfer-entitlements-to-google` (the last two return `202 Accepted` with the LRO).
+- **Billing account.** Multi-currency reseller accounts get **no** transferable offers unless
+  `listTransferableOffers` names a billing account, and each transferred entitlement must carry it too.
+  The page queries `customers.queryEligibleBillingAccounts` for the eligible SKUs; when Google returns
+  accounts it shows a picker (auto-selected when there is only one). The chosen account is passed to the
+  offer lookup (and its cache key) and set on every `TransferEntitlementLine.BillingAccount`.
 - **Page.** `/customers/{id}/transfer` lists transferable SKUs (eligibility chip; ineligible SKUs
-  are disabled), lazy-loads transferable offers when a SKU panel is expanded, and builds a basket of
+  are disabled), lazy-loads transferable offers (with payment cycle and list price per seat) when a SKU
+  panel is expanded, and builds a basket of
   offers to transfer with per-line seats + purchase order and an optional transfer auth token. It is
   reachable from both the **Customer detail** and **Entitlements** page headers.
 - **Catalog correlation.** Transferable SKUs/offers carry the same `productId`/`skuId`/`offerId` as

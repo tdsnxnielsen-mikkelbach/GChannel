@@ -30,6 +30,27 @@
 else
 {
     <RadzenRow Gap="1rem" RowGap="1rem">
+        @if (_billingAccounts is { Count: > 0 })
+        {
+            <RadzenColumn Size="12">
+                <RadzenCard Variant="Variant.Filled">
+                    <RadzenFormField Text="Billing account" Variant="Variant.Outlined" Style="width:100%; max-width:640px">
+                        <ChildContent>
+                            <RadzenDropDown TValue="string" Data="_billingAccounts" ValueProperty="@nameof(EligibleBillingAccount.Name)" TextProperty="@nameof(EligibleBillingAccount.DisplayName)"
+                                            Value="_billingAccount" ValueChanged="@((string? v) => OnBillingAccountChanged(v))" AllowClear="false"
+                                            Placeholder="Choose a billing account…" Name="billingAccount">
+                                <Template Context="a">@(a.DisplayName ?? a.Id)@(string.IsNullOrEmpty(a.CurrencyCode) ? "" : $" · {a.CurrencyCode}")</Template>
+                            </RadzenDropDown>
+                        </ChildContent>
+                        <Helper>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">
+                                All of this customer's purchases must use the same currency and billing account. Transferable offers and prices depend on it.
+                            </RadzenText>
+                        </Helper>
+                    </RadzenFormField>
+                </RadzenCard>
+            </RadzenColumn>
+        }
         <RadzenColumn Size="12" SizeLG="7">
             <RadzenCard Variant="Variant.Filled">
                 <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Transferable SKUs</RadzenText>
@@ -69,7 +90,11 @@ else
                                                 <LinkButton To="@($"/catalog/products?product={sku.ProductId}&sku={sku.SkuId}")" Text="View in catalog" Icon="@AppIcons.OpenInNew" Variant="Variant.Text" Size="ButtonSize.Small" />
                                             </RadzenStack>
 
-                                            @if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
+                                            @if (NeedsBillingAccount)
+                                            {
+                                                <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">Choose a billing account above to load the transferable offers.</RadzenText>
+                                            }
+                                            else if (_offersBySku.TryGetValue(sku.SkuId ?? string.Empty, out var offers))
                                             {
                                                 @if (offers is null)
                                                 {
@@ -77,7 +102,9 @@ else
                                                 }
                                                 else if (offers.Count == 0)
                                                 {
-                                                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">No transferable offers.</RadzenText>
+                                                    <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-m-0">
+                                                        No transferable offers@(_billingAccounts is { Count: > 1 } ? " for this billing account — try another one." : ".")
+                                                    </RadzenText>
                                                 }
                                                 else
                                                 {
@@ -85,6 +112,8 @@ else
                                                         <thead>
                                                             <tr>
                                                                 <th>Offer</th>
+                                                                <th>Payment</th>
+                                                                <th class="num">List price</th>
                                                                 <th class="num">Add</th>
                                                             </tr>
                                                         </thead>
@@ -93,6 +122,8 @@ else
                                                             {
                                                                 <tr>
                                                                     <td>@(offer.OfferDisplayName ?? offer.OfferId)</td>
+                                                                    <td>@(offer.PaymentCycle ?? "—")</td>
+                                                                    <td class="num">@(SeatPrice(offer) is { } price ? $"{price.Display} / seat" : "—")</td>
                                                                     <td class="num">
                                                                         <RadzenButton Text="Add" Icon="@AppIcons.Add" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Primary"
                                                                                       Disabled="@_basket.Any(b => b.OfferName == offer.OfferName)"
@@ -157,7 +188,7 @@ else
                         <Helper><RadzenText TextStyle="TextStyle.Caption" class="rz-m-0">Required only when transferring from another reseller.</RadzenText></Helper>
                     </RadzenFormField>
                 }
-                <RadzenButton Text="Transfer to my account" Icon="@AppIcons.SwapHoriz" ButtonStyle="ButtonStyle.Primary" Disabled="@(_basket.Count == 0)" IsBusy="_submitting" BusyText="Submitting…" Click="SubmitAsync" />
+                <RadzenButton Text="Transfer to my account" Icon="@AppIcons.SwapHoriz" ButtonStyle="ButtonStyle.Primary" Disabled="@(_basket.Count == 0 || NeedsBillingAccount)" IsBusy="_submitting" BusyText="Submitting…" Click="SubmitAsync" />
             </RadzenCard>
         </RadzenColumn>
     </RadzenRow>
@@ -176,6 +207,19 @@ else
     private bool _loading = true;
     private bool _submitting;
 
+    // Eligible billing accounts for the transferable SKUs (queryEligibleBillingAccounts). Multi-currency
+    // reseller accounts must name one, or listTransferableOffers returns nothing; the picker shows only
+    // when Google returns at least one account. Holds the selected account resource name.
+    private IReadOnlyList<EligibleBillingAccount>? _billingAccounts;
+    private string? _billingAccount;
+
+    private bool NeedsBillingAccount => _billingAccounts is { Count: > 0 } && string.IsNullOrEmpty(_billingAccount);
+
+    // Effective per-seat price: prefer SEAT resource, else the first priced resource.
+    private static MoneyAmount? SeatPrice(TransferableOffer offer) =>
+        (offer.Pricing.FirstOrDefault(p => string.Equals(p.ResourceType, "SEAT", StringComparison.OrdinalIgnoreCase))
+            ?? offer.Pricing.FirstOrDefault(p => p.EffectivePrice is not null))?.EffectivePrice;
+
     // A selected offer to transfer, with its editable seats / purchase-order id.
     private sealed class BasketLine
     {
@@ -193,6 +237,8 @@ else
         _offersBySku.Clear();
         _expandedSkus.Clear();
         _basket.Clear();
+        _billingAccounts = null;
+        _billingAccount = null;
 
         try
         {
@@ -208,6 +254,7 @@ else
         {
             var result = await Api.ListTransferableSkusAsync(Id);
             _skus = result?.Skus ?? [];
+            await LoadEligibleBillingAccountsAsync();
         }
         catch (Exception ex)
         {
@@ -217,6 +264,55 @@ else
         finally
         {
             _loading = false;
+        }
+    }
+
+    // Best-effort: single-currency resellers (or SKUs Google doesn't gate) may return no accounts or fail,
+    // in which case the picker stays hidden and offers are listed without a billing account, as before.
+    private async Task LoadEligibleBillingAccountsAsync()
+    {
+        var skuNames = (_skus ?? [])
+            .Where(s => s.IsEligible && !string.IsNullOrEmpty(s.ProductId) && !string.IsNullOrEmpty(s.SkuId))
+            .Select(s => $"products/{s.ProductId}/skus/{s.SkuId}")
+            .Distinct()
+            .ToList();
+        if (skuNames.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await Api.QueryEligibleBillingAccountsAsync(Id, skuNames);
+            _billingAccounts = (result?.Groups.SelectMany(g => g.BillingAccounts) ?? [])
+                .Where(a => !string.IsNullOrEmpty(a.Name))
+                .DistinctBy(a => a.Name)
+                .ToList();
+            _billingAccount = _billingAccounts.Count == 1 ? _billingAccounts[0].Name : null;
+        }
+        catch
+        {
+            _billingAccounts = [];
+            _billingAccount = null;
+        }
+    }
+
+    // Offers (and their prices) depend on the billing account, so switching drops what was loaded and
+    // re-queries the SKUs that are open.
+    private async Task OnBillingAccountChanged(string? billingAccount)
+    {
+        if (string.Equals(billingAccount, _billingAccount, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _billingAccount = billingAccount;
+        _offersBySku.Clear();
+        _basket.Clear();
+
+        foreach (var sku in (_skus ?? []).Where(s => s.IsEligible && _expandedSkus.Contains(s.SkuId ?? string.Empty)).ToList())
+        {
+            await LoadOffersAsync(sku);
         }
     }
 
@@ -237,10 +333,21 @@ else
             return;
         }
 
+        await LoadOffersAsync(sku);
+    }
+
+    private async Task LoadOffersAsync(TransferableSku sku)
+    {
+        var skuId = sku.SkuId ?? string.Empty;
+        if (string.IsNullOrEmpty(skuId) || NeedsBillingAccount)
+        {
+            return;
+        }
+
         _offersBySku[skuId] = null;
         try
         {
-            var result = await Api.ListTransferableOffersAsync(Id, sku.ProductId ?? string.Empty, skuId);
+            var result = await Api.ListTransferableOffersAsync(Id, sku.ProductId ?? string.Empty, skuId, _billingAccount);
             _offersBySku[skuId] = result?.Offers ?? [];
         }
         catch (Exception ex)
@@ -283,7 +390,8 @@ else
                     {
                         OfferId = b.OfferName,
                         PurchaseOrderId = string.IsNullOrWhiteSpace(b.PurchaseOrderId) ? null : b.PurchaseOrderId,
-                        Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = b.Seats }]
+                        Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = b.Seats }],
+                        BillingAccount = string.IsNullOrEmpty(_billingAccount) ? null : _billingAccount
                     })
                     .ToList()
             };

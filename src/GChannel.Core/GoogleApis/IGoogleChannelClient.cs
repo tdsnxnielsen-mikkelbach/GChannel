@@ -112,8 +112,12 @@ public interface IGoogleChannelClient
     /// <summary>Lists the SKUs a customer currently holds that could be transferred in (<c>accounts.listTransferableSkus</c>).</summary>
     Task<TransferableSkusResult> ListTransferableSkusAsync(string customerId, CancellationToken cancellationToken);
 
-    /// <summary>Lists the offers a customer is eligible to transfer in for a SKU (<c>accounts.listTransferableOffers</c>).</summary>
-    Task<TransferableOffersResult> ListTransferableOffersAsync(string customerId, string productId, string skuId, CancellationToken cancellationToken);
+    /// <summary>
+    /// Lists the offers a customer is eligible to transfer in for a SKU (<c>accounts.listTransferableOffers</c>).
+    /// <paramref name="billingAccount"/> ("accounts/{account}/billingAccounts/{id}") is required by Google for
+    /// multi-currency reseller accounts, which otherwise get no offers; pass null for single-currency accounts.
+    /// </summary>
+    Task<TransferableOffersResult> ListTransferableOffersAsync(string customerId, string productId, string skuId, string? billingAccount, CancellationToken cancellationToken);
 
     /// <summary>Transfers entitlements to this reseller (<c>customers.transferEntitlements</c>).</summary>
     Task<EntitlementOperation> TransferEntitlementsAsync(string customerId, TransferEntitlementsRequest request, CancellationToken cancellationToken);

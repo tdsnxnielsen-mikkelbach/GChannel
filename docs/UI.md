@@ -195,7 +195,9 @@ or offers that couldn't be priced. As with the dashboard, these are *estimates f
 When a customer already has Google subscriptions (e.g. with another reseller), transfer them in:
 
 1. From customer detail choose **Transfer** (`/customers/{id}/transfer`).
-2. The page lists **transferable SKUs/offers** for that customer (resolved to friendly catalog names).
+2. Pick the **billing account** (shown when your reseller account has several, e.g. one per currency —
+   the offers and prices depend on it), then expand a SKU to see its **transferable offers** (payment
+   plans with payment cycle and list price), resolved to friendly catalog names.
 3. Select what to transfer and submit. Like purchases, transfers are long-running — track them on the
    **Operations** page.
 

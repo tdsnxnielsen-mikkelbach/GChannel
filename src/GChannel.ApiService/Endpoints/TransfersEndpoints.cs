@@ -29,10 +29,12 @@ public static class TransfersEndpoints
 
     [WolverineGet("/api/customers/{customerId}/transferable-offers")]
     public static Task<IResult> ListTransferableOffers(
-        string customerId, string productId, string skuId, IGoogleChannelClient channel, IDistributedCache cache,
+        string customerId, string productId, string skuId, string? billingAccount, IGoogleChannelClient channel, IDistributedCache cache,
         IOptions<GoogleChannelOptions> options, CancellationToken cancellationToken)
-        => GoogleReadCache.CachedAsync(cache, $"customer:{customerId}:transferable-offers:{productId}:{skuId}", options.Value.CacheSeconds,
-            () => channel.ListTransferableOffersAsync(customerId, productId, skuId, cancellationToken), cancellationToken);
+        => GoogleReadCache.CachedAsync(cache,
+            $"customer:{customerId}:transferable-offers:{productId}:{skuId}:{(string.IsNullOrWhiteSpace(billingAccount) ? "-" : billingAccount)}",
+            options.Value.CacheSeconds,
+            () => channel.ListTransferableOffersAsync(customerId, productId, skuId, billingAccount, cancellationToken), cancellationToken);
 
     [WolverinePost("/api/customers/{customerId}/transfer-entitlements")]
     public static async Task<IResult> TransferEntitlements(

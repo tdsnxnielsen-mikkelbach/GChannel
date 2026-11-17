@@ -61,6 +61,12 @@ public sealed record TransferableOffer
 
     /// <summary>Id of the product the related SKU belongs to.</summary>
     public string? ProductId { get; init; }
+
+    /// <summary>Wholesale list pricing per priced resource (seats, GB, etc.). Empty if not exposed.</summary>
+    public IReadOnlyList<OfferPrice> Pricing { get; init; } = [];
+
+    /// <summary>Human-friendly payment cycle (e.g. "Monthly", "Annual"). Null when unknown.</summary>
+    public string? PaymentCycle { get; init; }
 }
 
 /// <summary>Result of listing a customer's transferable offers for a SKU.</summary>
@@ -77,6 +83,12 @@ public sealed record TransferEntitlementLine
 
     public string? PurchaseOrderId { get; init; }
     public IReadOnlyList<EntitlementParameterInput> Parameters { get; init; } = [];
+
+    /// <summary>
+    /// Billing account resource name ("accounts/{account}/billingAccounts/{id}") to bill the transferred
+    /// entitlement against. Required by Google for multi-currency reseller accounts; null otherwise.
+    /// </summary>
+    public string? BillingAccount { get; init; }
 }
 
 /// <summary>Transfer-in payload (<c>accounts.customers.transferEntitlements</c>).</summary>
