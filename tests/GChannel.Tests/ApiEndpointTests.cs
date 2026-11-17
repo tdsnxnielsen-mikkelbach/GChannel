@@ -58,6 +58,17 @@ public sealed class ApiEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Spend_months_report_unconfigured_while_the_billing_export_is_not_set_up()
+    {
+        var result = await _host.GetAsJson<SpendMonthsResult>("/api/billing/spend/months");
+
+        result.ShouldNotBeNull();
+        result.Unconfigured.ShouldBeTrue();
+        result.Months.ShouldBeEmpty();
+        result.DefaultMonth.ShouldBe(InvoiceMonthKeys.LastComplete(DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
     public async Task Unparseable_query_values_are_rejected_like_minimal_apis()
     {
         await _host.Scenario(s =>

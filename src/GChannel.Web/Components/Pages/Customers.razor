@@ -151,7 +151,7 @@
                     }
                 </Template>
             </RadzenDataGridColumn>
-            <RadzenDataGridColumn TItem="EstateCustomer" Title="Billed (last month)" Sortable="false">
+            <RadzenDataGridColumn TItem="EstateCustomer" Title="@BilledHeader" Sortable="false">
                 <Template Context="c">
                     @if (BilledLabel(c.CustomerId) is { } billed)
                     {
@@ -322,9 +322,13 @@
             ? value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
             : $"{currency} {value.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)}";
 
-    // Bulk billed (actual) spend per customer for the list column — loaded once, best-effort.
+    // Bulk billed (actual) spend per customer for the list column — the last complete invoice month, loaded
+    // once, best-effort.
     private readonly Dictionary<string, (decimal Cost, string Currency)> _billed = new(StringComparer.OrdinalIgnoreCase);
     private bool _billedLoaded;
+    private IReadOnlyList<string> _billedWindow = [];
+
+    private string BilledHeader => _billedWindow.Count > 0 ? $"Billed ({DisplayFormat.InvoiceWindow(_billedWindow)})" : "Billed (last month)";
 
     private async Task EnsureBilledAsync(CancellationToken token)
     {
@@ -332,7 +336,8 @@
         _billedLoaded = true;
         try
         {
-            var result = await Api.GetCustomerBilledSummariesAsync(1, token);
+            var result = await Api.GetCustomerBilledSummariesAsync(cancellationToken: token);
+            _billedWindow = result?.InvoiceMonths ?? [];
             foreach (var g in (result?.Customers ?? []).GroupBy(c => c.CustomerId, StringComparer.OrdinalIgnoreCase))
             {
                 var top = g.OrderByDescending(x => x.Cost).First();

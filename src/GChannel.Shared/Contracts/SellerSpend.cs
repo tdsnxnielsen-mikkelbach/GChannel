@@ -60,7 +60,7 @@ public sealed record SellerSpendSummary
 {
     /// <summary>Customer id when scoped to one customer; null for the estate.</summary>
     public string? CustomerId { get; init; }
-    /// <summary>Invoice months covered (YYYYMM), oldest first.</summary>
+    /// <summary>Invoice months with data in this summary (YYYYMM), oldest first.</summary>
     public IReadOnlyList<string> InvoiceMonths { get; init; } = [];
 
     /// <summary>Totals per category and currency.</summary>
@@ -91,6 +91,8 @@ public sealed record CustomerSellerSplit
 public sealed record CustomerSellerSplitResult
 {
     public IReadOnlyList<CustomerSellerSplit> Customers { get; init; } = [];
+    /// <summary>Invoice months (<c>YYYYMM</c>, oldest first) the split covers — the requested window, even when it has no rows yet.</summary>
+    public IReadOnlyList<string> InvoiceMonths { get; init; } = [];
     public DateTimeOffset? AsOf { get; init; }
     public bool Unconfigured { get; init; }
 }

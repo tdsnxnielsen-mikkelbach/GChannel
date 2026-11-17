@@ -29,7 +29,7 @@
                 <Template Context="r">@(r.PrimaryDomain ?? r.ResellerCloudId ?? r.LinkId)</Template>
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="EstateReseller" Property="@nameof(EstateReseller.CustomerCount)" Title="Customers" Sortable="false" Width="110px" />
-            <RadzenDataGridColumn TItem="EstateReseller" Title="Billed (last month)" Sortable="false">
+            <RadzenDataGridColumn TItem="EstateReseller" Title="@BilledHeader" Sortable="false">
                 <Template Context="r">
                     @if (BilledLabel(r.LinkId) is { } billed)
                     {
@@ -122,9 +122,13 @@
         }
     }
 
-    // Billed (actual) spend per reseller link for the list column — loaded once, best-effort.
+    // Billed (actual) spend per reseller link for the list column — the last complete invoice month, loaded
+    // once, best-effort.
     private readonly Dictionary<string, (decimal Cost, string Currency)> _billed = new(StringComparer.OrdinalIgnoreCase);
     private bool _billedLoaded;
+    private IReadOnlyList<string> _billedWindow = [];
+
+    private string BilledHeader => _billedWindow.Count > 0 ? $"Billed ({DisplayFormat.InvoiceWindow(_billedWindow)})" : "Billed (last month)";
 
     private async Task EnsureBilledAsync(CancellationToken token)
     {
@@ -132,7 +136,8 @@
         _billedLoaded = true;
         try
         {
-            var result = await Api.GetResellerSpendAsync(1, token);
+            var result = await Api.GetResellerSpendAsync(cancellationToken: token);
+            _billedWindow = result?.InvoiceMonths ?? [];
             foreach (var g in (result?.Resellers ?? [])
                 .Where(r => r.OwningLinkId != null)
                 .GroupBy(r => r.OwningLinkId!, StringComparer.OrdinalIgnoreCase))

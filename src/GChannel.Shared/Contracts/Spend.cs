@@ -88,6 +88,9 @@ public sealed record TopSpendersResult
 {
     public IReadOnlyList<TopSpender> Spenders { get; init; } = [];
 
+    /// <summary>Invoice months (<c>YYYYMM</c>, oldest first) the ranking covers — the requested window, even when it has no rows yet.</summary>
+    public IReadOnlyList<string> InvoiceMonths { get; init; } = [];
+
     public DateTimeOffset? AsOf { get; init; }
 
     public bool Unconfigured { get; init; }
@@ -116,6 +119,9 @@ public sealed record ResellerSpendResult
 {
     public IReadOnlyList<ResellerSpend> Resellers { get; init; } = [];
 
+    /// <summary>Invoice months (<c>YYYYMM</c>, oldest first) the rollup covers — the requested window, even when it has no rows yet.</summary>
+    public IReadOnlyList<string> InvoiceMonths { get; init; } = [];
+
     public DateTimeOffset? AsOf { get; init; }
 
     public bool Unconfigured { get; init; }
@@ -132,12 +138,34 @@ public sealed record CustomerBilledSummary
     public decimal Cost { get; init; }
 }
 
-/// <summary>Bulk billed totals per customer over a recent window, for the customer-list column.</summary>
+/// <summary>Bulk billed totals per customer for one invoice month, for the customer-list column.</summary>
 public sealed record CustomerBilledSummaryResult
 {
     public IReadOnlyList<CustomerBilledSummary> Customers { get; init; } = [];
 
+    /// <summary>Invoice months (<c>YYYYMM</c>, oldest first) the totals cover — the requested window, even when it has no rows yet.</summary>
+    public IReadOnlyList<string> InvoiceMonths { get; init; } = [];
+
     public DateTimeOffset? AsOf { get; init; }
+
+    public bool Unconfigured { get; init; }
+}
+
+/// <summary>
+/// The invoice months the estate-wide spend views can show — feeds the Spend trends month picker — and which
+/// one they default to. The default is the last <em>complete</em> month; the current month is selectable but is
+/// month-to-date.
+/// </summary>
+public sealed record SpendMonthsResult
+{
+    /// <summary>Selectable invoice months (<c>YYYYMM</c>), newest first: every month with synced spend plus the current and last complete ones.</summary>
+    public IReadOnlyList<string> Months { get; init; } = [];
+
+    /// <summary>The month the views show unless one is chosen: the last complete invoice month.</summary>
+    public string DefaultMonth { get; init; } = string.Empty;
+
+    /// <summary>The month still accruing; its totals are month-to-date.</summary>
+    public string CurrentMonth { get; init; } = string.Empty;
 
     public bool Unconfigured { get; init; }
 }
