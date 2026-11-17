@@ -250,12 +250,22 @@ else
             return;
         }
 
+        CancellationToken token;
+        try
+        {
+            token = _cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
         _lookupId = operationId;
         _tracking = true;
         try
         {
-            _tracked = await Api.GetOperationAsync(operationId, _cts.Token);
-            StartPolling();
+            _tracked = await Api.GetOperationAsync(operationId, token);
+            StartPolling(token);
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
@@ -297,14 +307,14 @@ else
         }
     }
 
-    private void StartPolling()
+    private void StartPolling(CancellationToken cancellationToken)
     {
-        if (_pollTask is { IsCompleted: false } || _tracked is null || _tracked.Done)
+        if (cancellationToken.IsCancellationRequested || _pollTask is { IsCompleted: false } || _tracked is null || _tracked.Done)
         {
             return;
         }
 
-        _pollTask = PollLoopAsync(_cts.Token);
+        _pollTask = PollLoopAsync(cancellationToken);
     }
 
     private async Task PollLoopAsync(CancellationToken cancellationToken)

@@ -157,9 +157,27 @@
             return;
         }
 
+        CancellationToken token;
+        try
+        {
+            token = _cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
         await RefreshFeedAsync();
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
         await LoadRegistrationAsync();
-        _ = PollLoopAsync(_cts.Token);
+        if (!token.IsCancellationRequested)
+        {
+            _ = PollLoopAsync(token);
+        }
     }
 
     private async Task RefreshFeedAsync()

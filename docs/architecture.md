@@ -760,6 +760,9 @@ surfacing as a benign `TaskCanceledException` (innermost `SocketException: "...a
 - **Prerender-safe loading.** Data-heavy pages (e.g. the customers list) load in
   `OnAfterRenderAsync(firstRender)` instead, so the API call runs once on the live circuit and the
   canceled prerender request is avoided.
+- **Teardown-safe polling.** Notifications and Operations capture the component cancellation token
+  before awaiting their initial load or operation lookup and pass it to polling. Navigating away
+  cancels the work without reading a disposed token source or starting a new poll.
 - **Traceable, non-fatal cancellation.** Server-side, these cancellations are caught at the call
   site (e.g. `ListCustomersAsync`), logged at `Debug`, and rethrown — behavior is unchanged and
   ASP.NET Core handles the aborted request normally. The global `GoogleApiExceptionHandler` also

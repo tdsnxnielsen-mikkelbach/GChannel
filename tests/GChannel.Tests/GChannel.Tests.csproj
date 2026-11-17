@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\GChannel.ApiService\GChannel.ApiService.csproj" />
     <ProjectReference Include="..\..\src\GChannel.Core\GChannel.Core.csproj" />
+    <ProjectReference Include="..\..\src\GChannel.Web\GChannel.Web.csproj" />
     <ProjectReference Include="..\..\src\GChannel.Worker\GChannel.Worker.csproj" />
   </ItemGroup>
 
