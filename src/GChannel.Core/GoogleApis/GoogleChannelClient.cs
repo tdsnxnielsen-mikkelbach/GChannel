@@ -8,9 +8,9 @@ using Google.Apis.Util;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System.Text.Json;
 using System.Globalization;
 using System.Net;
+using System.Text.Json;
 
 namespace GChannel.Core.GoogleApis;
 
@@ -26,29 +26,30 @@ public sealed partial class GoogleChannelClient(
     Google.Apis.Http.IHttpClientFactory? googleHttpClientFactory = null,
     IDistributedCache? distributedCache = null) : IGoogleChannelClient
 {
+    private const string ProductsCacheKey = "catalog:products";
     private const string OffersCacheKey = "catalog:offers";
     private static readonly JsonSerializerOptions CacheJson = new(JsonSerializerDefaults.Web);
 
     private readonly GoogleChannelOptions _options = options.Value;
 
-    private async Task<CatalogOffersResult> GetOffersAsync(
-        CloudchannelService service, CancellationToken cancellationToken)
+    private async Task<T> GetCachedCatalogAsync<T>(
+        string cacheKey, Func<Task<T>> fetch, CancellationToken cancellationToken) where T : class
     {
         if (distributedCache is not null)
         {
-            var cached = await distributedCache.GetStringAsync(OffersCacheKey, cancellationToken);
-            if (cached is not null && JsonSerializer.Deserialize<CatalogOffersResult>(cached, CacheJson) is { } result)
+            var cached = await distributedCache.GetStringAsync(cacheKey, cancellationToken);
+            if (cached is not null && JsonSerializer.Deserialize<T>(cached, CacheJson) is { } cachedResult)
             {
-                return result;
+                return cachedResult;
             }
         }
 
-        var offers = await FetchOffersAsync(service, cancellationToken);
+        var result = await fetch();
         if (distributedCache is not null)
         {
             await distributedCache.SetStringAsync(
-                OffersCacheKey,
-                JsonSerializer.Serialize(offers, CacheJson),
+                cacheKey,
+                JsonSerializer.Serialize(result, CacheJson),
                 new DistributedCacheEntryOptions
                 {
                     AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(Math.Max(1, _options.CacheSeconds))
@@ -56,8 +57,21 @@ public sealed partial class GoogleChannelClient(
                 cancellationToken);
         }
 
-        return offers;
+        return result;
     }
+
+    private Task<CatalogProductsResult> GetProductsAsync(
+        CloudchannelService service, CancellationToken cancellationToken)
+        => GetCachedCatalogAsync(ProductsCacheKey, () => FetchProductsAsync(service, cancellationToken), cancellationToken);
+
+    private Task<CatalogSkusResult> GetSkusAsync(
+        CloudchannelService service, string productId, CancellationToken cancellationToken)
+        => GetCachedCatalogAsync($"catalog:skus:{productId}",
+            () => FetchSkusAsync(service, productId, cancellationToken), cancellationToken);
+
+    private Task<CatalogOffersResult> GetOffersAsync(
+        CloudchannelService service, CancellationToken cancellationToken)
+        => GetCachedCatalogAsync(OffersCacheKey, () => FetchOffersAsync(service, cancellationToken), cancellationToken);
 
     /// <summary>
     /// The <c>CloudIdentityType</c> enum value for a domain-verified Cloud Identity account.

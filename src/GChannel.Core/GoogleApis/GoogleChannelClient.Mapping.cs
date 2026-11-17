@@ -129,27 +129,14 @@ public sealed partial class GoogleChannelClient
         var stageTimer = Stopwatch.StartNew();
         try
         {
-            string? pageToken = null;
-            do
+            var catalogProducts = await GetProductsAsync(service, cancellationToken);
+            foreach (var product in catalogProducts.Products)
             {
-                var request = service.Products.List();
-                request.Account = _options.AccountName;
-                request.PageToken = pageToken;
-                var response = await request.ExecuteAsync(cancellationToken);
-
-                foreach (var product in response.Products ?? [])
+                if (!string.IsNullOrEmpty(product.Id) && !string.IsNullOrEmpty(product.DisplayName))
                 {
-                    var productId = LastSegment(product.Name);
-                    var productName = product.MarketingInfo?.DisplayName;
-                    if (!string.IsNullOrEmpty(productId) && !string.IsNullOrEmpty(productName))
-                    {
-                        products[productId] = productName;
-                    }
+                    products[product.Id] = product.DisplayName;
                 }
-
-                pageToken = response.NextPageToken;
             }
-            while (!string.IsNullOrEmpty(pageToken));
         }
         catch (OperationCanceledException)
         {
@@ -218,32 +205,20 @@ public sealed partial class GoogleChannelClient
                 await throttle.WaitAsync(cancellationToken);
                 try
                 {
-                    string? skuToken = null;
-                    do
+                    var catalogSkus = await GetSkusAsync(service, productId, cancellationToken);
+                    foreach (var sku in catalogSkus.Skus)
                     {
-                        var request = service.Products.Skus.List($"products/{productId}");
-                        request.Account = _options.AccountName;
-                        request.PageToken = skuToken;
-                        var response = await request.ExecuteAsync(cancellationToken);
-
-                        foreach (var sku in response.Skus ?? [])
+                        if (string.IsNullOrEmpty(sku.Id))
                         {
-                            var skuId = LastSegment(sku.Name);
-                            if (string.IsNullOrEmpty(skuId))
-                            {
-                                continue;
-                            }
-
-                            var display = new SkuDisplay(sku.MarketingInfo?.DisplayName, productName);
-                            lock (skuGate)
-                            {
-                                skus[skuId] = display;
-                            }
+                            continue;
                         }
 
-                        skuToken = response.NextPageToken;
+                        var display = new SkuDisplay(sku.DisplayName, productName);
+                        lock (skuGate)
+                        {
+                            skus[sku.Id] = display;
+                        }
                     }
-                    while (!string.IsNullOrEmpty(skuToken));
                 }
                 catch (OperationCanceledException)
                 {

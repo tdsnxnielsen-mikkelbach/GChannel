@@ -31,6 +31,34 @@ public sealed class GoogleChannelCatalogTests
     }
 
     [Fact]
+    public async Task Single_entitlement_load_reuses_shared_catalog_cache_across_clients()
+    {
+        var services = new ServiceCollection();
+        services.AddDistributedMemoryCache();
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<IDistributedCache>();
+
+        using var firstHandler = new CatalogHttpHandler();
+        var firstClient = CreateClient(firstHandler, cache);
+        var firstEntitlement = await firstClient.GetEntitlementAsync(
+            "customer", "entitlement", TestContext.Current.CancellationToken);
+
+        using var secondHandler = new CatalogHttpHandler();
+        var secondClient = CreateClient(secondHandler, cache);
+        var secondEntitlement = await secondClient.GetEntitlementAsync(
+            "customer", "entitlement", TestContext.Current.CancellationToken);
+
+        firstEntitlement.ProductDisplayName.ShouldBe("Product one");
+        firstEntitlement.SkuDisplayName.ShouldBe("SKU one");
+        secondEntitlement.ProductDisplayName.ShouldBe("Product one");
+        secondEntitlement.SkuDisplayName.ShouldBe("SKU one");
+        secondHandler.Requests.ShouldContain("/v1/accounts/test/customers/customer/entitlements/entitlement");
+        secondHandler.Requests.ShouldNotContain("/v1/products");
+        secondHandler.Requests.ShouldNotContain("/v1/accounts/test/offers");
+        secondHandler.Requests.ShouldNotContain("/v1/products/p1/skus");
+    }
+
+    [Fact]
     public async Task Entitlement_change_names_load_offers_without_loading_the_product_catalog()
     {
         using var handler = new CatalogHttpHandler();

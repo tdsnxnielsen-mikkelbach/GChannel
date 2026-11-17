@@ -7,8 +7,8 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 11:18 UTC (mid-session) · **branch:** `main`, deployed application code `db242b8`.
-Google-call timings are deployed; shared offer-catalog caching is local. No CI workflows.
+**Last updated:** 2026-11-17 11:26 UTC (mid-session) · **branch:** `main`, deployed application code `5a5ba70`.
+Offer caching and its production measurements are complete; product/SKU caching is local. No CI workflows.
 
 ## Current state
 
@@ -16,8 +16,8 @@ Google-call timings are deployed; shared offer-catalog caching is local. No CI w
 
 - **Catalog optimization (`268b71b`):** detail SKUs limited to its product; history offers skip products.
   Names preserved; two HTTP tests verify skipped requests/display names; live detail/history/pricing work.
-- **Page and Google-call timings (`67cbea5`, `db242b8`):** counts only, no customer/entitlement IDs.
-  Local optimization reuses Redis `catalog:offers` for internal name resolution (300 s TTL); build, 56/56 pass.
+- **Page and Google-call timings (`67cbea5`, `db242b8`); offer cache (`5a5ba70`):** timings log counts only,
+  no customer/entitlement IDs. Reuses Redis `catalog:offers` (300 s TTL); product/SKU cache is local (57/57).
 - **Earlier fixes:** pre-await token capture with regressions (`6897fe2`); replay removal (`ec73b40`).
   Notification handling, durable dead letters and cleanup remain intact; signed-in navigation smoke passed.
 - **PR #8 merged:** spend defaults to last complete UTC month; `month=YYYYMM` selects one, `months=N`
@@ -25,7 +25,7 @@ Google-call timings are deployed; shared offer-catalog caching is local. No CI w
   See [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
 - **Stack:** Marten/Wolverine on PostgreSQL/Service Bus; Radzen.Blazor 12.1.8 (`UiNotifier`, Driver.js attributes).
   Aspire 13.6.4; packages current, `Microsoft.OpenApi` intentionally pinned to 2.x.
-- Quality gates: build 0 warnings/errors; suite 56/56; Release publish/codegen passed.
+- Quality gates: build 0 warnings/errors; suite 57/57; Release publish/codegen passed.
 
 #### Production profiling (2026-11-17; no cache flush)
 
@@ -37,20 +37,19 @@ Google-call timings are deployed; shared offer-catalog caching is local. No CI w
 - **Method:** signed-in same routes/entitlement after over 300 s idle; no cache flush. Live observations,
   not controlled A/B or proven cold-cache benchmarks. Background tab used programmatic navigation/DOM timing;
   detail also waited for history/pricing. Initial timeout/full-document probes are excluded.
-- **Checks:** all 50 alert rows, friendly offer/product/SKU names and detail history/pricing remain intact;
-  successful measured runs had no browser errors, error UI or load-failure messages. Alerts shell: 39 ms.
-- **Remaining latency:** first samples were about 21% lower but still around 20 s. Offer-list calls dominate histories;
-  the local cache targets that without increasing Google API concurrency.
-- **Stage evidence:** first run: alerts 35.250 s (4 histories 26.948), detail 18.717 s. New-call run: alerts
-  30.219 s (histories 26.283); offer listing 4.65–6.19 s vs history API 1.28–2.36 s.
-  Detail 23.337 s: entitlement 13.163 (get 1.321, catalog 8.615), history 7.836, pricing 2.337; uncontrolled runs, warm repeats 39–110 ms.
+- **Checks:** all 50 alert rows, friendly names and detail history/pricing render. Browser navigation had transient
+  websocket disconnects, but SPA navigation recovered; production logs show no unhandled/circuit failures.
+- **Offer-cache result (`5a5ba70`):** alerts 19.169 s (histories 11.401) vs 30.219/26.283; first offer list
+  5.598 s, subsequent 7–20 ms; history API 1.37–1.46 s each. Warm repeat 116 ms.
+- **Detail:** 8.305 s vs 23.337; get 1.210, catalog 3.321 (products 1.683, offers 12 ms, SKU 1.621),
+  history 1.376, pricing 2.304. Uncontrolled observations. Product/SKU stages now targeted by local cache.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed 11:11 UTC via `azd deploy --environment gchannel --no-prompt` from `main` (`db242b8`):
-  API `0000084`, worker `0000076`, web `0000079`, Healthy/Running, zero restarts; API/web 100% traffic.
+- Deployed 11:21 UTC via `azd deploy --environment gchannel --no-prompt` from `main` (`5a5ba70`):
+  API `0000085`, worker `0000077`, web `0000080`, Healthy/Running; API/web 100% traffic.
   Predeploy generated 91 API / 11 worker files; both hosts log Static mode.
-  Google timings confirm offer listings dominate history loads. No unhandled/circuit failures. The 3 previously noted unrelated
+  Offer-cache timings improved alerts/detail. No unhandled/circuit failures. The 3 previously noted unrelated
   `EventStreamUnexpectedMaxEventIdException` dead letters were not replayed or deleted.
 
 | Resource | Notes |
@@ -74,8 +73,8 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
 4. **Operation deep-link smoke:** no recent operations were available for a real sample; verify a valid
    `?operation=...` link when one exists. Regular mid-load navigation passed on both pages.
-5. **Slow first visits:** offer-list calls dominate histories. Deploy local shared-catalog-cache optimization and
-   remeasure alerts/detail; assess product/SKU catalog cost afterward.
+5. **Slow first visits:** offer cache helped; product/SKU calls cost another 3.3 s on detail. Deploy local
+   product/SKU cache reuse and remeasure; avoid quota-risky concurrency.
 6. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
    is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
 7. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
@@ -90,7 +89,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Commit/push/deploy the shared offer-catalog cache and remeasure first loads (item 5); decide whether product/SKU caching is next.
+1. Commit/push/deploy product/SKU catalog-cache reuse and remeasure detail/alerts (item 5).
 2. Verify a real operation deep link when available (item 4).
 3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
 4. Get Postgres Entra admin access and drop the old schema (item 6).
@@ -99,10 +98,10 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 ## Start-of-session checklist
 
 ```powershell
-git status -sb; git log --oneline -5                     # expect main; deployed application code db242b8
+git status -sb; git log --oneline -5                     # expect main; deployed application code 5a5ba70
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
-dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 56 tests (Docker required)
+dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 57 tests (Docker required)
 az containerapp revision list -n worker -g rg-gchannel --query "[?properties.active].{r:name,h:properties.healthState}" -o table
 ```
 
@@ -147,4 +146,4 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 - **2026-11-02** — Billing-month fix deployed 12:46 UTC, UI checked signed-in; PR #8 open, 52/52 tests.
 - **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, full suite 54/54.
 - **2026-11-17 09:53** — Replay removal deployed (`ec73b40`); apps healthy, worker/navigation smoke passed, first/repeat baseline recorded.
-- **2026-11-17 10:48/11:07/11:11** — Catalog `268b71b`, page timings `67cbea5`, Google timings `db242b8` deployed. Alert histories 26–27 s; offers.list 4.65–6.19 s each vs history API 1.28–2.36 s. Apps healthy, build/56 tests pass; shared offer cache is local.
+- **2026-11-17 10:48/11:07/11:11/11:21** — Catalog `268b71b`, page/Google timings, offer-cache `5a5ba70` deployed. Alerts improved 30.219→19.169 s, detail 23.337→8.305 s; offers.list repeats now <20 ms. Apps healthy, build/57 pass; product/SKU cache local.

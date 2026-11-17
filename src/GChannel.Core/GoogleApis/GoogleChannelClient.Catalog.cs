@@ -66,6 +66,12 @@ public sealed partial class GoogleChannelClient
         EnsureAccountConfigured();
         using var service = CreateService();
 
+        return await GetProductsAsync(service, cancellationToken);
+    }
+
+    private async Task<CatalogProductsResult> FetchProductsAsync(
+        CloudchannelService service, CancellationToken cancellationToken)
+    {
         var products = new List<CatalogProduct>();
         string? pageToken = null;
         do
@@ -99,6 +105,12 @@ public sealed partial class GoogleChannelClient
         EnsureAccountConfigured();
         using var service = CreateService();
 
+        return await GetSkusAsync(service, productId, cancellationToken);
+    }
+
+    private async Task<CatalogSkusResult> FetchSkusAsync(
+        CloudchannelService service, string productId, CancellationToken cancellationToken)
+    {
         var skus = new List<CatalogSku>();
         string? pageToken = null;
         do
