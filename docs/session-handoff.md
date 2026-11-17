@@ -7,8 +7,8 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 11:26 UTC (mid-session) · **branch:** `main`, deployed application code `5a5ba70`.
-Offer caching and its production measurements are complete; product/SKU caching is local. No CI workflows.
+**Last updated:** 2026-11-17 11:32 UTC (mid-session) · **branch:** `main`, deployed application code `e65e5f6`.
+Offer, product, and SKU catalog caching are deployed. No CI workflows.
 
 ## Current state
 
@@ -16,8 +16,8 @@ Offer caching and its production measurements are complete; product/SKU caching 
 
 - **Catalog optimization (`268b71b`):** detail SKUs limited to its product; history offers skip products.
   Names preserved; two HTTP tests verify skipped requests/display names; live detail/history/pricing work.
-- **Page and Google-call timings (`67cbea5`, `db242b8`); offer cache (`5a5ba70`):** timings log counts only,
-  no customer/entitlement IDs. Reuses Redis `catalog:offers` (300 s TTL); product/SKU cache is local (57/57).
+- **Page and Google-call timings (`67cbea5`, `db242b8`); catalog caches (`5a5ba70`, `e65e5f6`):** timing logs
+  contain counts only, no customer/entitlement IDs. Internal lookups share existing Redis catalog keys (300 s TTL).
 - **Earlier fixes:** pre-await token capture with regressions (`6897fe2`); replay removal (`ec73b40`).
   Notification handling, durable dead letters and cleanup remain intact; signed-in navigation smoke passed.
 - **PR #8 merged:** spend defaults to last complete UTC month; `month=YYYYMM` selects one, `months=N`
@@ -41,15 +41,16 @@ Offer caching and its production measurements are complete; product/SKU caching 
   websocket disconnects, but SPA navigation recovered; production logs show no unhandled/circuit failures.
 - **Offer-cache result (`5a5ba70`):** alerts 19.169 s (histories 11.401) vs 30.219/26.283; first offer list
   5.598 s, subsequent 7–20 ms; history API 1.37–1.46 s each. Warm repeat 116 ms.
-- **Detail:** 8.305 s vs 23.337; get 1.210, catalog 3.321 (products 1.683, offers 12 ms, SKU 1.621),
-  history 1.376, pricing 2.304. Uncontrolled observations. Product/SKU stages now targeted by local cache.
+- **Latest cold detail (`e65e5f6`):** 15.853 s; entitlement 11.988 (get 1.400, products 1.764, offers 4.944,
+  SKU 1.670), history 1.390, pricing 2.474. The cache was cold after deploy; alert run then took 11.977 s
+  with offer-cache hits and 50 rows. These uncontrolled runs do not establish warm detail performance.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed 11:21 UTC via `azd deploy --environment gchannel --no-prompt` from `main` (`5a5ba70`):
-  API `0000085`, worker `0000077`, web `0000080`, Healthy/Running; API/web 100% traffic.
+- Deployed 11:29 UTC via `azd deploy --environment gchannel --no-prompt` from `main` (`e65e5f6`):
+  API `0000086`, worker `0000078`, web `0000081`, Healthy/Running; API/web 100% traffic.
   Predeploy generated 91 API / 11 worker files; both hosts log Static mode.
-  Offer-cache timings improved alerts/detail. No unhandled/circuit failures. The 3 previously noted unrelated
+  One running replica each; no unhandled/circuit failures. The 3 previously noted unrelated
   `EventStreamUnexpectedMaxEventIdException` dead letters were not replayed or deleted.
 
 | Resource | Notes |
@@ -73,8 +74,8 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
 4. **Operation deep-link smoke:** no recent operations were available for a real sample; verify a valid
    `?operation=...` link when one exists. Regular mid-load navigation passed on both pages.
-5. **Slow first visits:** offer cache helped; product/SKU calls cost another 3.3 s on detail. Deploy local
-   product/SKU cache reuse and remeasure; avoid quota-risky concurrency.
+5. **Slow first visits:** catalog caches are deployed. Verify cache reuse on a second same-product entitlement
+   after a natural cache miss; avoid flushing caches or adding quota-risky concurrency.
 6. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
    is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
 7. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
@@ -89,7 +90,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Commit/push/deploy product/SKU catalog-cache reuse and remeasure detail/alerts (item 5).
+1. Verify product/SKU cache hits on another same-product entitlement and compare a natural cold detail load (item 5).
 2. Verify a real operation deep link when available (item 4).
 3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
 4. Get Postgres Entra admin access and drop the old schema (item 6).
@@ -98,7 +99,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 ## Start-of-session checklist
 
 ```powershell
-git status -sb; git log --oneline -5                     # expect main; deployed application code 5a5ba70
+git status -sb; git log --oneline -5                     # expect main; deployed application code e65e5f6
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
 dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 57 tests (Docker required)
@@ -146,4 +147,4 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 - **2026-11-02** — Billing-month fix deployed 12:46 UTC, UI checked signed-in; PR #8 open, 52/52 tests.
 - **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, full suite 54/54.
 - **2026-11-17 09:53** — Replay removal deployed (`ec73b40`); apps healthy, worker/navigation smoke passed, first/repeat baseline recorded.
-- **2026-11-17 10:48/11:07/11:11/11:21** — Catalog `268b71b`, page/Google timings, offer-cache `5a5ba70` deployed. Alerts improved 30.219→19.169 s, detail 23.337→8.305 s; offers.list repeats now <20 ms. Apps healthy, build/57 pass; product/SKU cache local.
+- **2026-11-17 10:48/11:07/11:11/11:21/11:29** — Catalog `268b71b`, timings and catalog caches `e65e5f6` deployed. Offer-cache reduced alerts 30.219→19.169 s; cold detail on latest rollout 15.853 s with uncached product/offer/SKU calls. Apps healthy; build/57 pass.
