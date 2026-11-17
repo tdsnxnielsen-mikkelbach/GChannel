@@ -5,8 +5,10 @@ using Google.Apis.Cloudchannel.v1.Data;
 using Google.Apis.Http;
 using Google.Apis.Services;
 using Google.Apis.Util;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using System.Globalization;
 using System.Net;
 
@@ -21,9 +23,41 @@ public sealed partial class GoogleChannelClient(
     IGoogleChannelCredentialSource credentialSource,
     IOptions<GoogleChannelOptions> options,
     ILogger<GoogleChannelClient> logger,
-    Google.Apis.Http.IHttpClientFactory? googleHttpClientFactory = null) : IGoogleChannelClient
+    Google.Apis.Http.IHttpClientFactory? googleHttpClientFactory = null,
+    IDistributedCache? distributedCache = null) : IGoogleChannelClient
 {
+    private const string OffersCacheKey = "catalog:offers";
+    private static readonly JsonSerializerOptions CacheJson = new(JsonSerializerDefaults.Web);
+
     private readonly GoogleChannelOptions _options = options.Value;
+
+    private async Task<CatalogOffersResult> GetOffersAsync(
+        CloudchannelService service, CancellationToken cancellationToken)
+    {
+        if (distributedCache is not null)
+        {
+            var cached = await distributedCache.GetStringAsync(OffersCacheKey, cancellationToken);
+            if (cached is not null && JsonSerializer.Deserialize<CatalogOffersResult>(cached, CacheJson) is { } result)
+            {
+                return result;
+            }
+        }
+
+        var offers = await FetchOffersAsync(service, cancellationToken);
+        if (distributedCache is not null)
+        {
+            await distributedCache.SetStringAsync(
+                OffersCacheKey,
+                JsonSerializer.Serialize(offers, CacheJson),
+                new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(Math.Max(1, _options.CacheSeconds))
+                },
+                cancellationToken);
+        }
+
+        return offers;
+    }
 
     /// <summary>
     /// The <c>CloudIdentityType</c> enum value for a domain-verified Cloud Identity account.

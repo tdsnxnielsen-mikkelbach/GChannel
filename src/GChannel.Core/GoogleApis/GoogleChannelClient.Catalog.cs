@@ -132,6 +132,12 @@ public sealed partial class GoogleChannelClient
         EnsureAccountConfigured();
         using var service = CreateService();
 
+        return await GetOffersAsync(service, cancellationToken);
+    }
+
+    private async Task<CatalogOffersResult> FetchOffersAsync(
+        CloudchannelService service, CancellationToken cancellationToken)
+    {
         var offers = new List<CatalogOffer>();
         string? pageToken = null;
         do

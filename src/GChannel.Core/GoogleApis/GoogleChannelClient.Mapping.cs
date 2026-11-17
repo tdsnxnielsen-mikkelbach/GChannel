@@ -169,35 +169,21 @@ public sealed partial class GoogleChannelClient
         stageTimer.Restart();
         try
         {
-            string? pageToken = null;
-            do
+            var catalogOffers = await GetOffersAsync(service, cancellationToken);
+            foreach (var offer in catalogOffers.Offers)
             {
-                var request = service.Accounts.Offers.List(_options.AccountName);
-                request.PageToken = pageToken;
-                var response = await request.ExecuteAsync(cancellationToken);
-
-                foreach (var offer in response.Offers ?? [])
+                var offerId = string.IsNullOrEmpty(offer.OfferId) ? LastSegment(offer.Name) : offer.OfferId;
+                if (!string.IsNullOrEmpty(offerId))
                 {
-                    var offerId = LastSegment(offer.Name);
-                    if (!string.IsNullOrEmpty(offerId))
-                    {
-                        offers[offerId] = new OfferDisplay(
-                            offer.MarketingInfo?.DisplayName,
-                            offer.Sku?.MarketingInfo?.DisplayName,
-                            offer.Sku?.Product?.MarketingInfo?.DisplayName);
-                    }
-
-                    var productId = LastSegment(offer.Sku?.Product?.Name);
-                    var productName = offer.Sku?.Product?.MarketingInfo?.DisplayName;
-                    if (!string.IsNullOrEmpty(productId) && !string.IsNullOrEmpty(productName))
-                    {
-                        products.TryAdd(productId, productName);
-                    }
+                    offers[offerId] = new OfferDisplay(
+                        offer.DisplayName, offer.SkuDisplayName, offer.ProductDisplayName);
                 }
 
-                pageToken = response.NextPageToken;
+                if (!string.IsNullOrEmpty(offer.ProductId) && !string.IsNullOrEmpty(offer.ProductDisplayName))
+                {
+                    products.TryAdd(offer.ProductId, offer.ProductDisplayName);
+                }
             }
-            while (!string.IsNullOrEmpty(pageToken));
         }
         catch (OperationCanceledException)
         {
@@ -290,25 +276,15 @@ public sealed partial class GoogleChannelClient
         var timer = Stopwatch.StartNew();
         try
         {
-            string? pageToken = null;
-            do
+            var catalogOffers = await GetOffersAsync(service, cancellationToken);
+            foreach (var offer in catalogOffers.Offers)
             {
-                var request = service.Accounts.Offers.List(_options.AccountName);
-                request.PageToken = pageToken;
-                var response = await request.ExecuteAsync(cancellationToken);
-
-                foreach (var offer in response.Offers ?? [])
+                var offerId = string.IsNullOrEmpty(offer.OfferId) ? LastSegment(offer.Name) : offer.OfferId;
+                if (!string.IsNullOrEmpty(offerId))
                 {
-                    var offerId = LastSegment(offer.Name);
-                    if (!string.IsNullOrEmpty(offerId))
-                    {
-                        offers[offerId] = new OfferDisplay(offer.MarketingInfo?.DisplayName, null, null);
-                    }
+                    offers[offerId] = new OfferDisplay(offer.DisplayName, null, null);
                 }
-
-                pageToken = response.NextPageToken;
             }
-            while (!string.IsNullOrEmpty(pageToken));
         }
         catch (OperationCanceledException)
         {

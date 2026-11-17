@@ -4,6 +4,8 @@ using GChannel.Core.Configuration;
 using GChannel.Core.GoogleApis;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Http;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -43,7 +45,32 @@ public sealed class GoogleChannelCatalogTests
         handler.Requests.ShouldNotContain("/v1/products");
     }
 
-    private static GoogleChannelClient CreateClient(CatalogHttpHandler handler)
+    [Fact]
+    public async Task Entitlement_change_names_reuse_the_shared_offer_catalog_cache()
+    {
+        var services = new ServiceCollection();
+        services.AddDistributedMemoryCache();
+        using var provider = services.BuildServiceProvider();
+        var cache = provider.GetRequiredService<IDistributedCache>();
+
+        using var firstHandler = new CatalogHttpHandler();
+        var firstClient = CreateClient(firstHandler, cache);
+        var firstChanges = await firstClient.ListEntitlementChangesAsync(
+            "customer", "first", TestContext.Current.CancellationToken);
+
+        using var secondHandler = new CatalogHttpHandler();
+        var secondClient = CreateClient(secondHandler, cache);
+        var secondChanges = await secondClient.ListEntitlementChangesAsync(
+            "customer", "second", TestContext.Current.CancellationToken);
+
+        firstChanges.Changes.ShouldHaveSingleItem().OfferDisplayName.ShouldBe("Offer one");
+        secondChanges.Changes.ShouldHaveSingleItem().OfferDisplayName.ShouldBe("Offer one");
+        firstHandler.Requests.Count(path => path == "/v1/accounts/test/offers").ShouldBe(1);
+        secondHandler.Requests.Count(path => path == "/v1/accounts/test/offers").ShouldBe(0);
+        secondHandler.Requests.ShouldContain("/v1/accounts/test/customers/customer/entitlements/second:listEntitlementChanges");
+    }
+
+    private static GoogleChannelClient CreateClient(CatalogHttpHandler handler, IDistributedCache? cache = null)
     {
         var credentialSource = Substitute.For<IGoogleChannelCredentialSource>();
         credentialSource.GetCredential().Returns(GoogleCredential.FromAccessToken("test-token"));
@@ -52,7 +79,8 @@ public sealed class GoogleChannelCatalogTests
             credentialSource,
             Options.Create(new GoogleChannelOptions { AccountId = "test" }),
             NullLogger<GoogleChannelClient>.Instance,
-            new StubHttpClientFactory(handler));
+            new StubHttpClientFactory(handler),
+            cache);
     }
 
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : HttpClientFactory
@@ -78,7 +106,8 @@ public sealed class GoogleChannelCatalogTests
                     """{"offers":[{"name":"accounts/test/offers/offer1","marketingInfo":{"displayName":"Offer one"},"sku":{"name":"products/p1/skus/s1","marketingInfo":{"displayName":"SKU one"},"product":{"name":"products/p1","marketingInfo":{"displayName":"Product one"}}}}]}""",
                 "/v1/products/p1/skus" =>
                     """{"skus":[{"name":"products/p1/skus/s1","marketingInfo":{"displayName":"SKU one"}}]}""",
-                "/v1/accounts/test/customers/customer/entitlements/entitlement:listEntitlementChanges" =>
+                _ when path.StartsWith("/v1/accounts/test/customers/customer/entitlements/", StringComparison.Ordinal)
+                    && path.EndsWith(":listEntitlementChanges", StringComparison.Ordinal) =>
                     """{"entitlementChanges":[{"changeType":"CREATED","offer":"accounts/test/offers/offer1"}]}""",
                 _ => throw new InvalidOperationException($"Unexpected Google API request: {path}")
             };
