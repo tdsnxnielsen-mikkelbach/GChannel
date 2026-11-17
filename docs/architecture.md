@@ -120,10 +120,10 @@ partner link against its current read model and appends only the differences:
   and entitlement streams, so it is deliberately unhandled and kept as history only. An earlier no-op
   `Apply` created blank `CustomerRecord`/`EntitlementRecord` documents on the other type's streams, which
   then violated the unique `CustomerId`/`EntitlementId` indexes. The worker's `StrayReadModelCleanup`
-  (Marten initial data, idempotent) deletes any such leftovers at startup, and `NotificationDeadLetterReplay`
-  (hosted service, 15 s after start) replays the `ChannelNotificationArrived` messages that were dead-lettered
-  with `DocumentAlreadyExistsException` back then; every other dead letter is left alone and only counted in
-  the log. Both are no-ops once the leftovers are gone.
+  (Marten initial data, idempotent) deletes any such leftovers at startup and is a no-op once they are gone.
+  A temporary startup replay recovered the affected notifications and has been removed. Dead letters remain
+  in Wolverine's durable PostgreSQL storage for explicit triage/replay; the worker no longer automatically
+  replays notifications from that historical snapshot collision.
 - Sync bookkeeping that is not business history (`LastSyncedUtc`, cursors, recurring-job state, dashboard
   refresh status, identity-check log, notification feed, billing documents) lives in plain Marten
   **documents** (`Persistence/Documents`), not events.

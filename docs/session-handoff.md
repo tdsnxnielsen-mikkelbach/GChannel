@@ -7,8 +7,8 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 09:36 UTC (mid-session) · **branch:** `main` after `d1a9f71` (PR #8 merged).
-The billing code matches production. The cancellation fix below is verified; **deployment is pending**.
+**Last updated:** 2026-11-17 09:43 UTC (mid-session) · **branch:** `main` after `6897fe2`.
+The cancellation fix is pushed/deployed. Temporary replay removal is verified; deployment is pending.
 The repo has no CI workflows.
 
 ## Current state
@@ -20,6 +20,8 @@ The repo has no CI workflows.
   which does not start after cancellation. No disposed-source read when starting either poll.
   Two regression tests dispose Notifications during feed/subscriber loading; both reproduced the original
   `ObjectDisposedException` and pass with the fix. Tests use the framework renderer, with no new packages.
+- **Completed replay removed:** the temporary startup recovery service and its obsolete test are gone.
+  Normal notification handling, durable dead-letter storage and `StrayReadModelCleanup` are unchanged.
 - **PR #8 merged:** estate spend views show the last *complete* month, not the current empty month.
   - Estate endpoints now take `month=YYYYMM` or `months=N` (rolling, includes the current month) and default to
     the last complete UTC month, so never send `months=1` for "last month". The result's `InvoiceMonths` names
@@ -31,16 +33,17 @@ The repo has no CI workflows.
 - **Stack:** Marten and Wolverine on PostgreSQL / Service Bus. Radzen.Blazor 12.1.8 (toasts and confirms through
   `UiNotifier`; the Driver.js tours need `data-onboarding` / `data-walkthrough`). Aspire 13.6.4; packages current,
   `Microsoft.OpenApi` pinned to 2.x on purpose.
-- Quality gates on 2026-11-17: `dotnet build GChannel.slnx` → 0 errors / warnings (incremental);
-  `dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj --no-build` → 54/54 (Docker, ~1 min).
-  Existing xUnit1051 / CS8602 warnings remain in older tests on recompilation.
+- Quality gates on 2026-11-17: solution build → 0 errors / warnings (incremental); full suite at `6897fe2`
+  → 54/54. After removing the obsolete replay test: worker suite → 4/4; 53 tests remain.
+  Older tests still emit xUnit1051 / CS8602 warnings on recompilation.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed at 12:46 UTC on 2026-11-02 by `azd deploy` from `billing-last-complete-month` (code = `1182418`):
-  `apiservice--0000079`, `worker--0000071`, `webfrontend--0000074`, all Healthy / Running when checked on
-  2026-11-17. This code matches merged `main` (`d1a9f71`); only the handoff differs. No deployment this session.
-  Both hosts logged "code generation mode is Static" at deployment.
+- Deployed at 09:39 UTC on 2026-11-17 by `azd deploy` from `main` (`6897fe2`):
+  `apiservice--0000080`, `worker--0000072`, `webfrontend--0000075`, all Healthy / Running, 0 restarts.
+  Both hosts log "code generation mode is Static"; public web redirects to Google sign-in as expected.
+  Startup replay found no matching snapshot-collision notifications; 3 unrelated
+  `EventStreamUnexpectedMaxEventIdException` dead letters remain untouched.
 - Before that deploy, the daily `billing-sync` had run on 1 Nov (43 monthly, 951 daily, 564 seller rows, 0
   unattributed, no error), so the schema-split re-arm worked.
 
@@ -58,18 +61,18 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Open items
 
-1. **Deploy the cancellation fix.** PR #8 was merged on 2026-11-17; `main` was pulled.
-   The billing-month UI was checked signed-in on 2026-11-02. Production does not yet include the new fix.
+1. **Triage 3 notification dead letters** with `EventStreamUnexpectedMaxEventIdException` when appropriate.
+   They are not the old snapshot-collision failures; do not blindly replay or delete them.
 2. **Month-boundary edge:** "last complete" is computed in UTC but GCP invoice months follow US Pacific, so for a
    few hours around a month change it can be off by one. Accepted. Google may also adjust the last complete
    month for a few days after it ends; the daily sync re-reads the last 13 months.
 3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
 4. **Post-deploy circuit smoke test:** navigate away from `/notifications` and `/operations` mid-load
    (including an operation deep link). Automated notification teardown tests pass; signed-in browser
-   navigation has not yet been checked with the fix.
+   navigation is blocked on Google sign-in in the integrated browser.
 5. **Slow cold loads:** about 20 s for entitlement detail and about 40 s for `/license-change-alerts`, with or
    without pre-generated code. Probably the per-entitlement Google calls; profile before optimising.
-6. **Remove `NotificationDeadLetterReplay`** (worker) in a later change; it has done its job.
+6. **Deploy the verified replay removal:** the completed service and its obsolete test have been removed.
 7. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
    is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
 8. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
@@ -84,9 +87,9 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Deploy the cancellation fix (item 1); no provisioning needed.
-2. Verify signed-in navigation away from both pages mid-load after deployment (item 4).
-3. Remove `NotificationDeadLetterReplay` (item 6) and profile the slow pages (item 5).
+1. Commit/push and deploy the verified temporary replay removal (item 6).
+2. Verify signed-in navigation away from both pages mid-load (item 4), then profile slow pages (item 5).
+3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
 4. Get Postgres Entra admin access and drop the old schema (item 7).
 5. Optional: noise filters, per-app identities, the Marketplace Provider gap (item 3).
 
@@ -96,7 +99,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 git status -sb; git log --oneline -5                     # expect main with the cancellation fix
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
-dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 54 passed (Docker required)
+dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 53 tests after replay removal (Docker required)
 az containerapp revision list -n worker -g rg-gchannel --query "[?properties.active].{r:name,h:properties.healthState}" -o table
 ```
 
@@ -145,5 +148,5 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 - **2026-11-02** — "Why is GCP not shown?": the estate "last month" panels resolved to the current, empty month.
   Branch `billing-last-complete-month`: last-complete-month default, `month` / `months` API, `/spend/months`,
   Spend trends picker, 36 new tests (52/52). Deployed 12:46 UTC, UI checked signed-in; PR #8 open.
-- **2026-11-17** — PR #8 merged/pulled; production healthy and code-equivalent. Cancellation fix and two
-  regression tests added; build passed, 54/54 tests. Deployment pending.
+- **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, all apps healthy.
+  Build passed, 54/54 tests; replay removal verified (4/4 worker), deployment pending. Signed-in smoke pending.

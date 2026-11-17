@@ -38,9 +38,6 @@ builder.Services.AddSingleton<ServiceAccountChannelClientProvider>();
 builder.Services.AddSingleton<RecurringJobCatalog>();
 builder.Services.AddHostedService<RecurringJobsBootstrap>();
 
-// Startup repair: replays the Channel notifications the snapshot collision dead-lettered (a no-op once done).
-builder.Services.AddHostedService<NotificationDeadLetterReplay>();
-
 // Google Pub/Sub → Service Bus bridge for Channel change notifications.
 builder.Services.AddHostedService<ChannelNotificationsService>();
 
