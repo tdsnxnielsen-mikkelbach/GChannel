@@ -7,48 +7,49 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 10:19 UTC (mid-session) · **branch:** `main`, deployed application code `ec73b40`.
-The cancellation fix (`6897fe2`) and temporary replay removal (`ec73b40`) are pushed/deployed.
-The repo has no CI workflows.
+**Last updated:** 2026-11-17 10:48 UTC (mid-session) · **branch:** `main`, deployed application code `268b71b`.
+Application fixes are pushed/deployed; only handoff docs follow the deployed commit. No CI workflows.
 
 ## Current state
 
 ### Code
 
-- **Cancellation fix:** Notifications captures its token before initial loading and skips further
-  setup after cancellation; Operations captures its token before lookup and passes it into polling,
-  which does not start after cancellation. No disposed-source read when starting either poll.
-  Two regression tests dispose Notifications during feed/subscriber loading; both reproduced the original
-  `ObjectDisposedException` and pass with the fix. Tests use the framework renderer, with no new packages.
-- **Completed replay removed:** the temporary startup recovery service and its obsolete test are gone.
-  Normal notification handling, durable dead-letter storage and `StrayReadModelCleanup` are unchanged.
-- **PR #8 merged:** estate spend defaults to the last complete UTC month; `month=YYYYMM` selects one,
-  `months=N` is rolling and includes the current month. Never send `months=1` for "last month".
-  `InvoiceMonths` labels the window; `/api/billing/spend/months` feeds the picker. See
-  [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
-- **Signed-in smoke passed:** navigated away from both Notifications and Operations with their loading
-  panels visible; the circuit stayed usable, with no browser errors or server-side circuit failures.
-- **Production profiling (no cache flush):** license alerts first visit 27.820 s (shell 139 ms), refresh
-  0.295 s, 50 rows; same entitlement detail first visit 25.063 s, revisit 0.342 s. These are first/repeat
-  visits, not controlled cold-cache benchmarks. Source shows sequential enrichment and live catalog
-  rebuilds on detail/history cache misses; per-stage timing is still needed to apportion the delay.
-  The checked last-day console logs contain no API/HttpClient timing entries.
-- **First-visit optimization (validated; deployment pending):** detail reads list SKUs only for their product;
-  history resolves offer names without listing products. Two tests pass; build 0 warnings/errors, suite 55/55.
-  No production timing yet; sequential enrichment and per-history offer lookups remain.
-- **Stack:** Marten and Wolverine on PostgreSQL / Service Bus. Radzen.Blazor 12.1.8 (toasts and confirms through
-  `UiNotifier`; the Driver.js tours need `data-onboarding` / `data-walkthrough`). Aspire 13.6.4; packages current,
-  `Microsoft.OpenApi` pinned to 2.x on purpose.
+- **Catalog optimization deployed (`268b71b`):** detail reads list SKUs only for their product; history
+  resolves offer names without listing products. Friendly-name fallbacks and quota settings are unchanged.
+  Two HTTP regression tests verify the skipped requests and preserved names; live detail/history/pricing work.
+- **Earlier fixes deployed:** pre-await token capture on Notifications/Operations (`6897fe2`), renderer
+  regressions and signed-in mid-load navigation smoke. Startup replay service/test removed (`ec73b40`);
+  normal handling, durable dead letters and `StrayReadModelCleanup` are unchanged.
+- **PR #8 merged:** spend defaults to last complete UTC month; `month=YYYYMM` selects one, `months=N`
+  includes current (never `months=1` for "last month"). Window: `InvoiceMonths`; picker: `/api/billing/spend/months`.
+  See [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
+- **Stack:** Marten/Wolverine on PostgreSQL/Service Bus; Radzen.Blazor 12.1.8 (`UiNotifier`, Driver.js attributes).
+  Aspire 13.6.4; packages current, `Microsoft.OpenApi` intentionally pinned to 2.x.
 - Quality gates on 2026-11-17: build 0 warnings/errors; suite 55/55 (including two catalog regression tests);
-  worker suite 4/4 after replay removal. Older tests emit xUnit1051 / CS8602 on recompilation.
+  Release publish/codegen passed. Older tests emit xUnit1051 / CS8602 on recompilation.
+
+#### Production profiling (2026-11-17; no cache flush)
+
+| Page | Previous first visit | After optimization | Previous repeat | After repeat |
+| --- | --- | --- | --- | --- |
+| License alerts (50 rows) | 27.820 s | 21.905 s | 0.295 s | 0.099-0.901 s (4 samples) |
+| Same entitlement detail | 25.063 s | 19.712 s | 0.342 s | 0.348 s |
+
+- **Method:** signed-in same routes/entitlement after over 300 s idle; no cache flush. Single live observations,
+  not controlled A/B or proven cold-cache benchmarks. Background tab used programmatic navigation/DOM timing;
+  detail also waited for history/pricing. Initial timeout/full-document probes are excluded.
+- **Checks:** all 50 alert rows, friendly offer/product/SKU names and detail history/pricing remain intact;
+  successful measured runs had no browser errors, error UI or load-failure messages. Alerts shell: 39 ms.
+- **Remaining latency:** first samples are about 21% lower but still around 20 s. Sequential customer/history
+  enrichment and per-history offer lookups remain; stage timings are needed before further quota-sensitive changes.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed at 09:45 UTC on 2026-11-17 by `azd deploy` from `main` (`ec73b40`):
-  `apiservice--0000081`, `worker--0000073`, `webfrontend--0000076`, all Healthy / Running, 0 restarts.
-  Both hosts log "code generation mode is Static"; latest revisions still Ready / Running at 09:53.
-  Before removal, startup replay found no matching snapshot-collision notifications; 3 unrelated
-  `EventStreamUnexpectedMaxEventIdException` dead letters remain untouched.
+- Deployed at 10:22 UTC on 2026-11-17 by `azd deploy --environment gchannel --no-prompt` from `main` (`268b71b`):
+  `apiservice--0000082`, `worker--0000074`, `webfrontend--0000077`, all Healthy / Running, 0 restarts at 10:48.
+  API/web receive 100% traffic. Predeploy generated 91 API / 11 worker code files; both hosts log Static mode.
+  New-revision logs checked at 10:48 show no unhandled/circuit failures. The 3 previously noted unrelated
+  `EventStreamUnexpectedMaxEventIdException` dead letters were not replayed or deleted.
 
 | Resource | Notes |
 | --- | --- |
@@ -66,14 +67,14 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 1. **Triage 3 notification dead letters** with `EventStreamUnexpectedMaxEventIdException` when appropriate.
    They are not the old snapshot-collision failures; do not blindly replay or delete them.
-2. **Month-boundary edge:** "last complete" is computed in UTC but GCP invoice months follow US Pacific, so for a
-   few hours around a month change it can be off by one. Accepted. Google may also adjust the last complete
-   month for a few days after it ends; the daily sync re-reads the last 13 months.
+2. **Month-boundary edge:** UTC "last complete" can differ from GCP's US Pacific invoice month for a few hours.
+   Accepted; Google may adjust it for days, and daily sync re-reads the last 13 months.
 3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
 4. **Operation deep-link smoke:** no recent operations were available for a real sample; verify a valid
    `?operation=...` link when one exists. Regular mid-load navigation passed on both pages.
-5. **Slow first visits:** validated optimization is unmeasured in production; commit, push and deploy before
-   measuring. Sequential enrichment and per-history offer lookups remain; avoid quota-risky concurrency.
+5. **Slow first visits:** deployed/retested above, still about 20 s despite fewer catalog requests. Instrument
+   backend stages/cache misses, then investigate shared catalog reuse and sequential enrichment without dropping
+   friendly names or introducing quota-risky concurrency.
 6. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
    is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
 7. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
@@ -88,7 +89,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Commit, push and deploy the validated first-visit optimization, then remeasure (item 5).
+1. Instrument the remaining first-visit stages and investigate shared catalog reuse/enrichment (item 5).
 2. Verify a real operation deep link when available (item 4).
 3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
 4. Get Postgres Entra admin access and drop the old schema (item 6).
@@ -97,7 +98,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 ## Start-of-session checklist
 
 ```powershell
-git status -sb; git log --oneline -5                     # expect main; deployed application code ec73b40
+git status -sb; git log --oneline -5                     # expect main; deployed application code 268b71b
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
 dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 55 tests (Docker required)
@@ -141,11 +142,8 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 
 ## Session log
 
-- **2026-10-28** — Backend/UI moved to Radzen; Aspire/azd deployment, managed identity, SQL and messaging hardening.
-- **2026-10-29** — PR #1/#2/#4/#5/#6: grid/snapshot, replay, dates and static Wolverine; production at `eb042b6`, 16/16, healthy.
+- **2026-10-28/29** — Radzen/Aspire, identity/messaging hardening; PR #1/#2/#4/#5/#6 grid/snapshot, replay, dates/static Wolverine; `eb042b6`, 16/16, healthy.
 - **2026-11-02** — Billing-month fix deployed 12:46 UTC, UI checked signed-in; PR #8 open, 52/52 tests.
 - **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, full suite 54/54.
-- **2026-11-17 09:53** — Replay removal deployed (`ec73b40`); apps healthy, worker tests/navigation smoke passed,
-  first/repeat timings recorded. Next: uncached-path optimisation.
-- **2026-11-17 10:07** — Local catalog optimization narrows detail SKU lookups and skips product listings for history; build and 55/55 pass. Not deployed; next: deploy and remeasure.
-- **2026-11-17 10:19** — Release checklist repeated: build clean, 55/55 tests pass, worker healthy; committing before deployment and remeasurement.
+- **2026-11-17 09:53** — Replay removal deployed (`ec73b40`); apps healthy, worker/navigation smoke passed, first/repeat baseline recorded.
+- **2026-11-17 10:48** — Catalog optimization `268b71b` committed/pushed/deployed; build clean, 55/55 tests, apps healthy. First visits 21.905/19.712 s; next: instrument remaining latency.
