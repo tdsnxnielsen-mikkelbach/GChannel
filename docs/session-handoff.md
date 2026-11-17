@@ -24,36 +24,19 @@ Every Channel operation is now recorded and correlated on the Operations page. N
 - **Transfer billing account (`2c99982`, `c73d806`):** multi-currency resellers get 0 transferable offers unless
   `listTransferableOffers` names a billing account. The page picks it via `queryEligibleBillingAccounts` and passes
   it to offers and transfer lines. After submit it opens the operation.
-- **Catalog optimization (`268b71b`):** detail SKUs limited to its product; history offers skip products.
-  Names preserved; two HTTP tests verify skipped requests/display names; live detail/history/pricing work.
-- **Page and Google-call timings (`67cbea5`, `db242b8`); catalog caches (`5a5ba70`, `e65e5f6`):** timing logs
-  contain counts only, no customer/entitlement IDs. Internal lookups share existing Redis catalog keys (300 s TTL).
-- **Earlier fixes:** pre-await token capture with regressions (`6897fe2`); replay removal (`ec73b40`).
-  Notification handling, durable dead letters and cleanup remain intact; signed-in navigation smoke passed.
-- **PR #8 merged:** spend defaults to last complete UTC month; `month=YYYYMM` selects one, `months=N`
-  includes current (never `months=1` for "last month"). Window: `InvoiceMonths`; picker: `/api/billing/spend/months`.
-  See [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
+- **Catalog optimization (`268b71b`), timings (`67cbea5`, `db242b8`), caches (`5a5ba70`, `e65e5f6`):** detail SKUs
+  limited to its product; timing logs hold counts only; lookups share Redis catalog keys (300 s TTL).
+- **Earlier:** token capture `6897fe2`, replay removal `ec73b40`; PR #8 spend window (`InvoiceMonths`, see
+  [billing-permissions.md](billing-permissions.md) Part 4).
 - **Stack:** Marten/Wolverine on PostgreSQL/Service Bus; Radzen.Blazor 12.1.8 (`UiNotifier`, Driver.js attributes).
   Aspire 13.6.4; packages current, `Microsoft.OpenApi` intentionally pinned to 2.x.
 - Quality gates: build 0 errors; suite 61/61; Release publish/codegen passed.
 
-#### Production profiling (2026-11-17; no cache flush)
+#### Production profiling (2026-11-17; uncontrolled live runs, no cache flush)
 
-| Page | Previous first visit | After optimization | Previous repeat | After repeat |
-| --- | --- | --- | --- | --- |
-| License alerts (50 rows) | 27.820 s | 21.905 s | 0.295 s | 0.099-0.901 s (4 samples) |
-| Same entitlement detail | 25.063 s | 19.712 s | 0.342 s | 0.348 s |
-
-- **Method:** signed-in same routes/entitlement after over 300 s idle; no cache flush. Live observations,
-  not controlled A/B or proven cold-cache benchmarks. Background tab used programmatic navigation/DOM timing;
-  detail also waited for history/pricing. Initial timeout/full-document probes are excluded.
-- **Checks:** all 50 alert rows, friendly names and detail history/pricing render. Browser navigation had transient
-  websocket disconnects, but SPA navigation recovered; production logs show no unhandled/circuit failures.
-- **Offer-cache result (`5a5ba70`):** alerts 19.169 s (histories 11.401) vs 30.219/26.283; first offer list
-  5.598 s, subsequent 7–20 ms; history API 1.37–1.46 s each. Warm repeat 116 ms.
-- **Latest cold detail (`e65e5f6`):** 15.853 s; entitlement 11.988 (get 1.400, products 1.764, offers 4.944,
-  SKU 1.670), history 1.390, pricing 2.474. The cache was cold after deploy; alert run then took 11.977 s
-  with offer-cache hits and 50 rows. These uncontrolled runs do not establish warm detail performance.
+- License alerts (50 rows) first visit 27.8 → 11.98 s with offer-cache hits; warm repeat ~0.1 s. Cold entitlement
+  detail 25.1 → 15.9 s (offers 4.9 s, products/SKU ~1.7 s each, uncached after deploy). Details: commits
+  `5a5ba70`/`e65e5f6`/`12d46ce`. Not controlled benchmarks; warm detail performance unproven.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
