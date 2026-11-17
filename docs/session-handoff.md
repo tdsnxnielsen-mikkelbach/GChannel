@@ -7,8 +7,8 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 09:43 UTC (mid-session) · **branch:** `main` after `6897fe2`.
-The cancellation fix is pushed/deployed. Temporary replay removal is verified; deployment is pending.
+**Last updated:** 2026-11-17 09:53 UTC (mid-session) · **branch:** `main`, application code `ec73b40`.
+The cancellation fix (`6897fe2`) and temporary replay removal (`ec73b40`) are pushed/deployed.
 The repo has no CI workflows.
 
 ## Current state
@@ -22,14 +22,17 @@ The repo has no CI workflows.
   `ObjectDisposedException` and pass with the fix. Tests use the framework renderer, with no new packages.
 - **Completed replay removed:** the temporary startup recovery service and its obsolete test are gone.
   Normal notification handling, durable dead-letter storage and `StrayReadModelCleanup` are unchanged.
-- **PR #8 merged:** estate spend views show the last *complete* month, not the current empty month.
-  - Estate endpoints now take `month=YYYYMM` or `months=N` (rolling, includes the current month) and default to
-    the last complete UTC month, so never send `months=1` for "last month". The result's `InvoiceMonths` names
-    the window used, so the UI never computes the month itself; an unrecognised `month` is ignored (no 400).
-    The per-customer seller card is unchanged. Shared logic: `InvoiceMonthKeys` in `GChannel.Shared`.
-  - New `GET /api/billing/spend/months` feeds a month picker on **Spend trends**; Dashboard, Customers and
-    Channel partner links label their window ("Total billed, Oct 2026", "Billed (Oct 2026)"). See
-    [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
+- **PR #8 merged:** estate spend defaults to the last complete UTC month; `month=YYYYMM` selects one,
+  `months=N` is rolling and includes the current month. Never send `months=1` for "last month".
+  `InvoiceMonths` labels the window; `/api/billing/spend/months` feeds the picker. See
+  [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
+- **Signed-in smoke passed:** navigated away from both Notifications and Operations with their loading
+  panels visible; the circuit stayed usable, with no browser errors or server-side circuit failures.
+- **Production profiling (no cache flush):** license alerts first visit 27.820 s (shell 139 ms), refresh
+  0.295 s, 50 rows; same entitlement detail first visit 25.063 s, revisit 0.342 s. These are first/repeat
+  visits, not controlled cold-cache benchmarks. Source shows sequential enrichment and live catalog
+  rebuilds on detail/history cache misses; per-stage timing is still needed to apportion the delay.
+  The checked last-day console logs contain no API/HttpClient timing entries.
 - **Stack:** Marten and Wolverine on PostgreSQL / Service Bus. Radzen.Blazor 12.1.8 (toasts and confirms through
   `UiNotifier`; the Driver.js tours need `data-onboarding` / `data-walkthrough`). Aspire 13.6.4; packages current,
   `Microsoft.OpenApi` pinned to 2.x on purpose.
@@ -39,13 +42,11 @@ The repo has no CI workflows.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed at 09:39 UTC on 2026-11-17 by `azd deploy` from `main` (`6897fe2`):
-  `apiservice--0000080`, `worker--0000072`, `webfrontend--0000075`, all Healthy / Running, 0 restarts.
-  Both hosts log "code generation mode is Static"; public web redirects to Google sign-in as expected.
-  Startup replay found no matching snapshot-collision notifications; 3 unrelated
+- Deployed at 09:45 UTC on 2026-11-17 by `azd deploy` from `main` (`ec73b40`):
+  `apiservice--0000081`, `worker--0000073`, `webfrontend--0000076`, all Healthy / Running, 0 restarts.
+  Both hosts log "code generation mode is Static"; latest revisions still Ready / Running at 09:53.
+  Before removal, startup replay found no matching snapshot-collision notifications; 3 unrelated
   `EventStreamUnexpectedMaxEventIdException` dead letters remain untouched.
-- Before that deploy, the daily `billing-sync` had run on 1 Nov (43 monthly, 951 daily, 564 seller rows, 0
-  unattributed, no error), so the schema-split re-arm worked.
 
 | Resource | Notes |
 | --- | --- |
@@ -67,36 +68,34 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
    few hours around a month change it can be off by one. Accepted. Google may also adjust the last complete
    month for a few days after it ends; the daily sync re-reads the last 13 months.
 3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
-4. **Post-deploy circuit smoke test:** navigate away from `/notifications` and `/operations` mid-load
-   (including an operation deep link). Automated notification teardown tests pass; signed-in browser
-   navigation is blocked on Google sign-in in the integrated browser.
-5. **Slow cold loads:** about 20 s for entitlement detail and about 40 s for `/license-change-alerts`, with or
-   without pre-generated code. Probably the per-entitlement Google calls; profile before optimising.
-6. **Deploy the verified replay removal:** the completed service and its obsolete test have been removed.
-7. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
+4. **Operation deep-link smoke:** no recent operations were available for a real sample; verify a valid
+   `?operation=...` link when one exists. Regular mid-load navigation passed on both pages.
+5. **Slow first visits:** measured above. Investigate shared catalog reuse and sequential page enrichment;
+   distinguish backend stages before changing concurrency or Google quota usage.
+6. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
    is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
-8. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
+7. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
    i.e. new hostnames and a new Google OAuth redirect URI. Not done on purpose; decide if least privilege per app
    is wanted.
-9. **Postgres SKU:** creating `Standard_B1ms` failed with `RegionalAllocationFailed` on 2026-10-28. If it
+8. **Postgres SKU:** creating `Standard_B1ms` failed with `RegionalAllocationFailed` on 2026-10-28. If it
    ever needs recreating, retry or use `Standard_B2s` temporarily.
-10. Noise, not bugs: the API logs `No known handler for ChannelNotificationArrived` (fix: a SQL filter on its
+9. Noise, not bugs: the API logs `No known handler for ChannelNotificationArrived` (fix: a SQL filter on its
     `api-cache` subscription, in the AppHost and `MessagingTopology`) and the worker logs the same for
     `CustomerReadModelUpdated`; KEDA warns "no triggers" for the fixed-replica worker; Marten stream-version
     conflicts (`pk_mt_events_stream_and_version`) are absorbed by retries.
 
 ## Next steps (suggested order)
 
-1. Commit/push and deploy the verified temporary replay removal (item 6).
-2. Verify signed-in navigation away from both pages mid-load (item 4), then profile slow pages (item 5).
+1. Optimise the slow first-visit path using the measured baseline and stage-level evidence (item 5).
+2. Verify a real operation deep link when available (item 4).
 3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
-4. Get Postgres Entra admin access and drop the old schema (item 7).
+4. Get Postgres Entra admin access and drop the old schema (item 6).
 5. Optional: noise filters, per-app identities, the Marketplace Provider gap (item 3).
 
 ## Start-of-session checklist
 
 ```powershell
-git status -sb; git log --oneline -5                     # expect main with the cancellation fix
+git status -sb; git log --oneline -5                     # expect main; deployed application code ec73b40
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
 dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 53 tests after replay removal (Docker required)
@@ -142,11 +141,9 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 
 - **2026-10-28** — Critter Stack backend, UI MudBlazor → Blazorise → Radzen, Aspire 13.6.4, azd deploy to Azure
   with managed identities, SQL/identity cleanup, messaging hardening (schemas, DLQ, timeouts, watchdog).
-- **2026-10-29** — PR #1 and #2 (smoke-test fixes: 3 grids not loading, notification snapshot collision); PR #4
-  (dead-letter replay of 135 notifications, `dd-MM-yyyy` dates); PR #5 / #6 (API OOM loop → pre-generated
-  Wolverine code). Ended with `main` = production at `eb042b6`, 16/16 tests, all apps Healthy on 1 GiB.
-- **2026-11-02** — "Why is GCP not shown?": the estate "last month" panels resolved to the current, empty month.
-  Branch `billing-last-complete-month`: last-complete-month default, `month` / `months` API, `/spend/months`,
-  Spend trends picker, 36 new tests (52/52). Deployed 12:46 UTC, UI checked signed-in; PR #8 open.
-- **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, all apps healthy.
-  Build passed, 54/54 tests; replay removal verified (4/4 worker), deployment pending. Signed-in smoke pending.
+- **2026-10-29** — PR #1/#2/#4/#5/#6: grid/snapshot fixes, replayed 135 notifications, European dates, pre-generated
+  Wolverine code fixing API OOM. `main` = production at `eb042b6`, 16/16 tests, all apps Healthy on 1 GiB.
+- **2026-11-02** — Billing-month fix deployed 12:46 UTC, UI checked signed-in; PR #8 open, 52/52 tests.
+- **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, full suite 54/54.
+- **2026-11-17 09:53** — Replay removed/deployed (`ec73b40`), build + 4/4 worker tests passed; all apps healthy,
+  signed-in navigation smoke passed, first/repeat load timings recorded. Next: uncached-path optimisation.
