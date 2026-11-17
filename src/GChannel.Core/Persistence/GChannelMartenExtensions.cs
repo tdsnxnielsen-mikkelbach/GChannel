@@ -118,6 +118,11 @@ public static class GChannelMartenExtensions
             .Index(x => x.CustomerId)
             .Index(x => x.EntitlementId);
 
+        opts.Schema.For<OperationLogRecord>()
+            .Index(x => x.SubmittedAt)
+            .Index(x => x.CustomerId)
+            .Index(x => x.EntitlementId);
+
         opts.Schema.For<CustomerSpendRecord>()
             .Index(x => x.CustomerId)
             .Index(x => x.OwningLinkId)

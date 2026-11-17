@@ -391,7 +391,8 @@ else
                         OfferId = b.OfferName,
                         PurchaseOrderId = string.IsNullOrWhiteSpace(b.PurchaseOrderId) ? null : b.PurchaseOrderId,
                         Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = b.Seats }],
-                        BillingAccount = string.IsNullOrEmpty(_billingAccount) ? null : _billingAccount
+                        BillingAccount = string.IsNullOrEmpty(_billingAccount) ? null : _billingAccount,
+                        OfferDisplayName = $"{b.SkuDisplay} · {b.OfferDisplay}"
                     })
                     .ToList()
             };
@@ -399,7 +400,7 @@ else
             var op = await Api.TransferEntitlementsAsync(Id, request);
             if (!string.IsNullOrEmpty(op?.Error))
             {
-                await Snackbar.Add($"Transfer failed: {op!.Error}", Severity.Error);
+                await Snackbar.AddOperation($"Transfer failed: {op!.Error}", op.OperationName, Severity.Error);
                 return;
             }
 
@@ -407,13 +408,13 @@ else
             {
                 // Google validates transfers asynchronously, so failures only surface on the operation.
                 await Snackbar.Add("Transfer submitted — tracking the operation…", Severity.Success);
-                Nav.NavigateTo($"/operations?operation={Uri.EscapeDataString(op.OperationName.Split('/')[^1])}");
+                Nav.NavigateTo(UiNotifier.OperationLink(op.OperationName));
                 return;
             }
 
-            await Snackbar.Add(op?.Done == true
+            await Snackbar.AddOperation(op?.Done == true
                 ? "Entitlements transferred."
-                : "Transfer submitted — Google is processing it, this may take a moment.", Severity.Success);
+                : "Transfer submitted — Google is processing it, this may take a moment.", op?.OperationName, Severity.Success);
             Nav.NavigateTo($"/customers/{Id}/entitlements");
         }
         catch (Exception ex)

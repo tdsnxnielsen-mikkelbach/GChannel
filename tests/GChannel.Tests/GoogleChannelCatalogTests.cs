@@ -119,6 +119,28 @@ public sealed class GoogleChannelCatalogTests
         handler.Bodies["/v1/accounts/test/customers/customer:transferEntitlements"].ShouldContain($"\"billingAccount\":\"{billingAccount}\"");
     }
 
+    [Fact]
+    public async Task Operations_carry_googles_error_details_and_transfer_results()
+    {
+        using var handler = new CatalogHttpHandler();
+        var client = CreateClient(handler);
+
+        var failed = await client.GetOperationAsync("failed", TestContext.Current.CancellationToken);
+        var transferred = await client.GetOperationAsync("transferred", TestContext.Current.CancellationToken);
+
+        failed.ErrorCode.ShouldBe(7);
+        var detail = failed.ErrorDetails.ShouldHaveSingleItem();
+        detail.ShouldContain("google.rpc.ErrorInfo");
+        detail.ShouldContain("\"reason\":\"EXAMPLE_REASON\"");
+        transferred.ResultResources.ShouldBe(
+        [
+            "accounts/test/customers/customer/entitlements/e1",
+            "accounts/test/customers/customer/entitlements/e2"
+        ]);
+        transferred.CustomerId.ShouldBe("customer");
+        transferred.EntitlementId.ShouldBeNull();
+    }
+
     private static GoogleChannelClient CreateClient(CatalogHttpHandler handler, IDistributedCache? cache = null)
     {
         var credentialSource = Substitute.For<IGoogleChannelCredentialSource>();
@@ -166,6 +188,10 @@ public sealed class GoogleChannelCatalogTests
                     """{"name":"operations/transfer","done":false}""",
                 "/v1/accounts/test/customers/customer/entitlements/entitlement" =>
                     """{"name":"accounts/test/customers/customer/entitlements/entitlement","offer":"accounts/test/offers/offer1","provisionedService":{"productId":"p1","skuId":"s1"}}""",
+                "/v1/operations/failed" =>
+                    """{"name":"operations/failed","done":true,"error":{"code":7,"message":"Permission denied","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"EXAMPLE_REASON","domain":"cloudchannel.googleapis.com"}]}}""",
+                "/v1/operations/transferred" =>
+                    """{"name":"operations/transferred","done":true,"response":{"@type":"type.googleapis.com/google.cloud.channel.v1.TransferEntitlementsResponse","entitlements":[{"name":"accounts/test/customers/customer/entitlements/e1"},{"name":"accounts/test/customers/customer/entitlements/e2"}]}}""",
                 "/v1/products" =>
                     """{"products":[{"name":"products/p1","marketingInfo":{"displayName":"Product one"}},{"name":"products/p2","marketingInfo":{"displayName":"Product two"}}]}""",
                 "/v1/accounts/test/offers" =>

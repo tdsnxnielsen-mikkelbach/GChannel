@@ -4,6 +4,7 @@ using GChannel.Core.Configuration;
 using GChannel.Core.Estate;
 using GChannel.Core.GoogleApis;
 using GChannel.Core.Messaging;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
 using Marten;
 using Microsoft.AspNetCore.Mvc;
@@ -98,6 +99,8 @@ public static class CustomersEndpoints
         await InvalidateAsync(cache, customerId, cancellationToken);
         var user = RequestUser.NameOf(http);
         await observer.RecordCustomerMutationAsync(session, customerId, "provisionCloudIdentity", user, operation.Name, cancellationToken);
+        await OperationLog.RecordSubmittedAsync(session, operation.Name, operation.Done, operation.Error, customerId, null, "provisionCloudIdentity",
+            [new OperationDetail("Validate only", request.ValidateOnly ? "yes" : "no")], user, cancellationToken);
         if (!operation.Done)
         {
             await bus.PublishAsync(new OperationSubmitted(operation.Name, customerId, null, "provisionCloudIdentity", user, DateTimeOffset.UtcNow));

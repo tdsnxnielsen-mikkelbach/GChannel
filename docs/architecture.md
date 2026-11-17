@@ -176,7 +176,12 @@ lock used to provide.
 
 **Long-running operations** are tracked by a Wolverine **saga** (`ChannelOperationSaga`, keyed by the
 operation name): `OperationSubmitted` starts it, `CheckChannelOperation` timeouts poll Google until `done`,
-and completion appends `CustomerOperationCompleted` to the customer's stream and refreshes it.
+and completion appends `CustomerOperationCompleted` to the customer's stream and refreshes it. Each poll
+also updates the operation's **`OperationLogRecord`** (a Marten document, id `operations/{id}`), which the
+API writes when a mutating call returns an operation. The record keeps the action, the user, the customer and
+entitlement names, the request inputs (offer, seats, billing account, PO; transfer tokens are never stored),
+and the final outcome, including Google's structured `error.details`. It outlives the saga, whose state is
+deleted on completion.
 
 **Redis** is now only the Google-response cache (catalog, customers, dashboard snapshots, identity
 checks); nothing takes locks and no feed lives there.
@@ -722,14 +727,18 @@ change). Both correlate back to the customer/entitlement they concern so the UI 
 
 **Long-running operations.** Mutating Channel calls (entitlement create/change/state changes,
 transfers) return an `operations/{id}` name rather than completing inline. `GoogleChannelClient`'s
-operations partial wraps `operations.list`/`get`/`cancel` into `ChannelOperation` — extracting the
-`operationType` from the operation **metadata** and the affected resource name from the operation
-**response**, then parsing the customer/entitlement ids out of that name. The endpoints
-(`GET /api/operations`, `GET /api/operations/{id}`, `POST /api/operations/{id}/cancel`) are uncached
-(operations are volatile). The Blazor **Operations** page (`/operations`) tracks an operation by id
-(the name a mutating call returned), polls it every few seconds until `done`, lets you request
-cancellation, and deep-links to the affected customer/entitlement. Listing degrades gracefully — some
-accounts don't support `operations.list`, so the page falls back to lookup-by-id.
+operations partial wraps `operations.get`/`cancel` into `ChannelOperation`. It extracts the
+`operationType` from the operation **metadata**; from the operation **response** it takes the affected
+resource name, or a transfer's `entitlements[].name`. It also keeps Google's `error.details` (ErrorInfo,
+DebugInfo, …) as compact JSON, and parses the customer/entitlement ids out of the resource names. Google
+does not implement `operations.list` (HTTP 501). Instead, `GET /api/operations[?customerId=]` lists the
+app's own `OperationLogRecord`s, newest first, up to 200. `GET /api/operations/{id}` merges the live Google
+state with that record, falling back to the record if Google can't be reached. Cancel does the same merge.
+Nothing is cached. The Blazor **Operations** page (`/operations`, `?operation=` to track, `?customer=` to
+filter) lists every operation submitted from the app. For a tracked operation it shows who, what and when,
+the request inputs, the error with its gRPC status name and every error detail, and the resulting
+entitlements. It polls every few seconds until `done` and lets you request cancellation. Every UI action
+that starts an operation either opens the page or raises a toast that links to it (`UiNotifier.AddOperation`).
 
 **Change notifications (Pub/Sub).** The notification *source* is mandatorily **Google Cloud
 Pub/Sub**: Google publishes entitlement/customer events to a Google-owned topic, and

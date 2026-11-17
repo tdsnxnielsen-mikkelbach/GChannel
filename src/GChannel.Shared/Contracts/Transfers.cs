@@ -89,6 +89,9 @@ public sealed record TransferEntitlementLine
     /// entitlement against. Required by Google for multi-currency reseller accounts; null otherwise.
     /// </summary>
     public string? BillingAccount { get; init; }
+
+    /// <summary>Optional friendly offer name from the UI; only recorded in the operation log, never sent to Google.</summary>
+    public string? OfferDisplayName { get; init; }
 }
 
 /// <summary>Transfer-in payload (<c>accounts.customers.transferEntitlements</c>).</summary>

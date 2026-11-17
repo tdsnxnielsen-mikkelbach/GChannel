@@ -192,8 +192,11 @@ public static class ApiRoutes
     // Pub/Sub subscriber management plus a feed of received Channel change notifications close the
     // loop so the UI reacts to entitlement/customer events instead of polling.
 
-    /// <summary>Lists recent long-running operations.</summary>
+    /// <summary>Lists the long-running operations the app submitted (newest first) — Google cannot list them.</summary>
     public const string Operations = "/api/operations";
+
+    /// <summary>The operations the app submitted for one customer.</summary>
+    public static string CustomerOperations(string customerId) => $"/api/operations?customerId={Uri.EscapeDataString(customerId)}";
 
     /// <summary>A single long-running operation by id (the segment after "operations/").</summary>
     public static string Operation(string operationId) => $"/api/operations/{operationId}";

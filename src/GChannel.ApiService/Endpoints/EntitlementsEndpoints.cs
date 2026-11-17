@@ -5,6 +5,7 @@ using GChannel.Core.Estate;
 using GChannel.Core.Estate.ReadModels;
 using GChannel.Core.GoogleApis;
 using GChannel.Core.Messaging;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
 using Marten;
 using Microsoft.AspNetCore.Mvc;
@@ -101,6 +102,12 @@ public static class EntitlementsEndpoints
         await InvalidateAsync(cache, customerId, null, cancellationToken);
         var user = RequestUser.NameOf(http);
         await observer.RecordCustomerMutationAsync(session, customerId, $"purchase offer {request.OfferId}", user, operation.OperationName, cancellationToken);
+        var details = OfferDetails(request.OfferId, request.OfferDisplayName, request.Parameters, request.PurchaseOrderId);
+        if (!string.IsNullOrWhiteSpace(request.BillingAccount))
+        {
+            details.Add(new OperationDetail("Billing account", request.BillingAccount));
+        }
+        await OperationLog.RecordSubmittedAsync(session, operation.OperationName, operation.Done, operation.Error, customerId, null, "create", details, user, cancellationToken);
         await PublishAsync(bus, customerId, null, "create", operation, user);
         await session.SaveChangesAsync(cancellationToken);
         return Results.Accepted(value: operation);
@@ -111,6 +118,7 @@ public static class EntitlementsEndpoints
         string customerId, string entitlementId, ChangeOfferRequest request, IGoogleChannelClient channel, IDistributedCache cache,
         IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
         => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "changeOffer", $"offer {request.OfferId}",
+            OfferDetails(request.OfferId, request.OfferDisplayName, request.Parameters, request.PurchaseOrderId),
             () => channel.ChangeEntitlementOfferAsync(customerId, entitlementId, request, cancellationToken), cancellationToken);
 
     [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/change-parameters")]
@@ -119,6 +127,7 @@ public static class EntitlementsEndpoints
         IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
         => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "changeParameters",
             string.Join(", ", request.Parameters.Select(p => $"{p.Name}={p.IntValue?.ToString(CultureInfo.InvariantCulture) ?? p.StringValue}")),
+            ParameterDetails(request.Parameters),
             () => channel.ChangeEntitlementParametersAsync(customerId, entitlementId, request, cancellationToken), cancellationToken);
 
     [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/change-renewal")]
@@ -126,35 +135,56 @@ public static class EntitlementsEndpoints
         string customerId, string entitlementId, ChangeRenewalSettingsRequest request, IGoogleChannelClient channel, IDistributedCache cache,
         IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
         => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "changeRenewalSettings", $"enableRenewal={request.EnableRenewal}",
+            [new OperationDetail("Auto-renewal", request.EnableRenewal ? "enabled" : "disabled")],
             () => channel.ChangeEntitlementRenewalAsync(customerId, entitlementId, request, cancellationToken), cancellationToken);
 
     [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/activate")]
     public static Task<IResult> ActivateEntitlement(
         string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
         IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
-        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "activate", null,
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "activate", null, [],
             () => channel.ActivateEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken);
 
     [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/suspend")]
     public static Task<IResult> SuspendEntitlement(
         string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
         IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
-        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "suspend", null,
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "suspend", null, [],
             () => channel.SuspendEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken);
 
     [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/cancel")]
     public static Task<IResult> CancelEntitlement(
         string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
         IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
-        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "cancel", null,
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "cancel", null, [],
             () => channel.CancelEntitlementAsync(customerId, entitlementId, cancellationToken), cancellationToken);
 
     [WolverinePost("/api/customers/{customerId}/entitlements/{entitlementId}/start-paid-service")]
     public static Task<IResult> StartPaidService(
         string customerId, string entitlementId, IGoogleChannelClient channel, IDistributedCache cache,
         IDocumentSession session, IMessageBus bus, [FromServices] EstateObserver observer, HttpContext http, CancellationToken cancellationToken)
-        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "startPaidService", null,
+        => MutateAsync(cache, session, bus, observer, http, customerId, entitlementId, "startPaidService", null, [],
             () => channel.StartPaidServiceAsync(customerId, entitlementId, cancellationToken), cancellationToken);
+
+    private static List<OperationDetail> OfferDetails(
+        string offerId, string? offerDisplayName, IReadOnlyList<EntitlementParameterInput> parameters, string? purchaseOrderId)
+    {
+        var details = new List<OperationDetail>
+        {
+            new("Offer", string.IsNullOrWhiteSpace(offerDisplayName) ? offerId : $"{offerDisplayName} ({offerId})")
+        };
+        details.AddRange(ParameterDetails(parameters));
+        if (!string.IsNullOrWhiteSpace(purchaseOrderId))
+        {
+            details.Add(new OperationDetail("Purchase order", purchaseOrderId));
+        }
+        return details;
+    }
+
+    private static List<OperationDetail> ParameterDetails(IReadOnlyList<EntitlementParameterInput> parameters) =>
+        parameters
+            .Select(p => new OperationDetail(TransfersEndpoints.ParameterLabel(p.Name), p.IntValue?.ToString(CultureInfo.InvariantCulture) ?? p.StringValue ?? "—"))
+            .ToList();
 
     /// <summary>
     /// Projects a read-model entitlement onto the shared <see cref="Entitlement"/> contract. Display names,
@@ -194,13 +224,14 @@ public static class EntitlementsEndpoints
     /// <summary>Runs a mutating entitlement call, invalidates the affected caches, records the request and returns the operation.</summary>
     private static async Task<IResult> MutateAsync(
         IDistributedCache cache, IDocumentSession session, IMessageBus bus, EstateObserver observer, HttpContext http,
-        string customerId, string entitlementId, string action, string? details,
+        string customerId, string entitlementId, string action, string? details, IReadOnlyList<OperationDetail> logDetails,
         Func<Task<EntitlementOperation>> mutation, CancellationToken cancellationToken)
     {
         var operation = await mutation();
         await InvalidateAsync(cache, customerId, entitlementId, cancellationToken);
         var user = RequestUser.NameOf(http);
         await observer.RecordEntitlementChangeRequestedAsync(session, customerId, entitlementId, action, user, operation.OperationName, details, cancellationToken);
+        await OperationLog.RecordSubmittedAsync(session, operation.OperationName, operation.Done, operation.Error, customerId, entitlementId, action, logDetails, user, cancellationToken);
         await PublishAsync(bus, customerId, entitlementId, action, operation, user);
         await session.SaveChangesAsync(cancellationToken);
         return Results.Accepted(value: operation);

@@ -467,7 +467,8 @@ else
 
         await MutateAsync("Change offer", () => Api.ChangeEntitlementOfferAsync(CustomerId, Id, new ChangeOfferRequest
         {
-            OfferId = _changeOfferName!
+            OfferId = _changeOfferName!,
+            OfferDisplayName = _offers?.FirstOrDefault(o => o.OfferName == _changeOfferName)?.DisplayName
         }));
     }
 
@@ -507,13 +508,14 @@ else
             var op = await call();
             if (!string.IsNullOrEmpty(op?.Error))
             {
-                await Snackbar.Add($"{action} failed: {op!.Error}", Severity.Error);
+                await Snackbar.AddOperation($"{action} failed: {op!.Error}", op.OperationName, Severity.Error);
                 return;
             }
 
-            await Snackbar.Add(op?.Done == true
+            await Snackbar.AddOperation(op?.Done == true
                 ? $"{action} completed."
                 : $"{action} submitted — Google is processing it, this may take a moment.",
+                op?.OperationName,
                 op?.Done == true ? Severity.Success : Severity.Info);
             await LoadAsync();
         }

@@ -28,6 +28,7 @@ else
             <LinkButton To="@($"/customers/{_customer.Id}/entitlements")" Text="Entitlements" Icon="@AppIcons.Subscriptions" />
             <LinkButton To="@($"/customers/{_customer.Id}/transfer")" Text="Transfer" Icon="@AppIcons.SwapHoriz" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
             <LinkButton To="@($"/customers/{_customer.Id}/repricing")" Text="Repricing" Icon="@AppIcons.Percent" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
+            <LinkButton To="@($"/operations?customer={Uri.EscapeDataString(_customer.Id)}")" Text="Operations" Icon="@AppIcons.Bolt" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" />
             @if (string.IsNullOrEmpty(_customer.CloudIdentityId))
             {
                 <div style="position:relative; display:inline-flex">
@@ -712,7 +713,7 @@ else
             await Snackbar.Add("Provisioning started. Tracking the operation…", Severity.Success);
             if (outcome.Operation is not null)
             {
-                Nav.NavigateTo($"/operations?operation={Uri.EscapeDataString(outcome.Operation.Id)}");
+                Nav.NavigateTo(UiNotifier.OperationLink(outcome.Operation.Id));
             }
         }
     }

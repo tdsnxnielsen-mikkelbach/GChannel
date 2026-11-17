@@ -177,6 +177,9 @@ public sealed record PurchaseEntitlementRequest
     /// <summary>Optional billing account resource name to pay for the entitlement (GCP / n-tier
     /// billing-gated SKUs only), as returned by <c>queryEligibleBillingAccounts</c>.</summary>
     public string? BillingAccount { get; init; }
+
+    /// <summary>Optional friendly offer name from the UI; only recorded in the operation log, never sent to Google.</summary>
+    public string? OfferDisplayName { get; init; }
 }
 
 /// <summary>Change-offer payload (<c>entitlements.changeOffer</c>).</summary>
@@ -187,6 +190,9 @@ public sealed record ChangeOfferRequest
 
     public string? PurchaseOrderId { get; init; }
     public IReadOnlyList<EntitlementParameterInput> Parameters { get; init; } = [];
+
+    /// <summary>Optional friendly offer name from the UI; only recorded in the operation log, never sent to Google.</summary>
+    public string? OfferDisplayName { get; init; }
 }
 
 /// <summary>Change-parameters payload, e.g. seat count (<c>entitlements.changeParameters</c>).</summary>

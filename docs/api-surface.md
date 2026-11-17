@@ -52,8 +52,8 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > `GET /api/operations/{id}` and `POST /api/operations/{id}/cancel` wrap
 > `operations.get`/`cancel`, and the **Operations** page tracks any returned operation name to
 > `done` and deep-links to the affected customer/entitlement. Note the Cloud Channel API does **not**
-> implement `operations.list` (it returns HTTP 501 `notImplemented`), so `GET /api/operations` returns
-> an empty list by design — operations are tracked individually by the name a mutation returns.
+> implement `operations.list` (it returns HTTP 501 `notImplemented`), so `GET /api/operations` lists
+> the app's own operation log (every operation GChannel submitted, kept current by the worker) instead.
 > Mutating pages still also reflect the
 > operation inline as *completed* (when Google finishes synchronously) or *submitted — processing*.
 

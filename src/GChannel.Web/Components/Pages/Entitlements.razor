@@ -278,7 +278,8 @@ else
         try
         {
             var op = await call();
-            await Snackbar.Add(OperationMessage(action, op), op?.Done == true ? Severity.Success : Severity.Info);
+            await Snackbar.AddOperation(OperationMessage(action, op), op?.OperationName,
+                !string.IsNullOrEmpty(op?.Error) ? Severity.Error : op?.Done == true ? Severity.Success : Severity.Info);
             await LoadAsync();
         }
         catch (Exception ex)

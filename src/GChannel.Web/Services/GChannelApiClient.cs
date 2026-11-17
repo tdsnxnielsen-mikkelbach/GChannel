@@ -295,9 +295,9 @@ public sealed class GChannelApiClient(
 
     // Eventing & operations (§7).
 
-    /// <summary>Lists recent long-running operations.</summary>
-    public Task<ChannelOperationsResult?> ListOperationsAsync(CancellationToken cancellationToken = default) =>
-        GetAsync<ChannelOperationsResult>(ApiRoutes.Operations, cancellationToken);
+    /// <summary>Lists recent long-running operations submitted through the app (newest first), optionally for one customer.</summary>
+    public Task<ChannelOperationsResult?> ListOperationsAsync(string? customerId = null, CancellationToken cancellationToken = default) =>
+        GetAsync<ChannelOperationsResult>(string.IsNullOrWhiteSpace(customerId) ? ApiRoutes.Operations : ApiRoutes.CustomerOperations(customerId), cancellationToken);
 
     /// <summary>Gets a single long-running operation by id (poll until done).</summary>
     public Task<ChannelOperation?> GetOperationAsync(string operationId, CancellationToken cancellationToken = default) =>

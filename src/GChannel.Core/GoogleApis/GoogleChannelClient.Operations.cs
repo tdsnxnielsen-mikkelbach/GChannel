@@ -7,6 +7,8 @@ using Google.Apis.Services;
 using Google.Apis.Util;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Globalization;
 using System.Net;
 
@@ -102,7 +104,28 @@ public sealed partial class GoogleChannelClient
             resourceName = resource.ToString();
         }
 
-        var (customerId, entitlementId) = SplitCustomerEntitlement(resourceName);
+        // Transfers answer with { "entitlements": [ { "name": ... }, ... ] } rather than a single resource.
+        var resultResources = new List<string>();
+        if (operation.Response is IDictionary<string, object> transferResponse
+            && transferResponse.TryGetValue("entitlements", out var entitlements) && entitlements is not null
+            && JToken.FromObject(entitlements) is JArray entitlementArray)
+        {
+            resultResources.AddRange(entitlementArray
+                .Select(e => e is JObject o ? o.Value<string>("name") : null)
+                .OfType<string>()
+                .Where(n => n.Length > 0));
+        }
+
+        var (customerId, entitlementId) = SplitCustomerEntitlement(resourceName ?? resultResources.FirstOrDefault());
+        if (resourceName is null && resultResources.Count > 1)
+        {
+            entitlementId = null;
+        }
+
+        var errorDetails = operation.Error?.Details?
+            .Where(d => d is not null)
+            .Select(d => JsonConvert.SerializeObject(d, Formatting.None))
+            .ToList() ?? [];
 
         return new ChannelOperation
         {
@@ -111,8 +134,10 @@ public sealed partial class GoogleChannelClient
             Done = operation.Done ?? false,
             Error = operation.Error?.Message,
             ErrorCode = operation.Error?.Code,
+            ErrorDetails = errorDetails,
             OperationType = operationType,
             ResourceName = resourceName,
+            ResultResources = resultResources,
             CustomerId = customerId,
             EntitlementId = entitlementId
         };

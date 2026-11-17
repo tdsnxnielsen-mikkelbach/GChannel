@@ -4,11 +4,13 @@ using GChannel.Core.Configuration;
 using GChannel.Core.Estate;
 using GChannel.Core.GoogleApis;
 using GChannel.Core.Messaging;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Shared.Contracts;
 using Marten;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 using Wolverine;
 using Wolverine.Http;
 
@@ -43,7 +45,9 @@ public static class TransfersEndpoints
     {
         var operation = await channel.TransferEntitlementsAsync(customerId, request, cancellationToken);
         await InvalidateAsync(cache, customerId, cancellationToken);
-        await RecordAsync(session, bus, observer, customerId, "transferEntitlements", operation, RequestUser.NameOf(http), cancellationToken);
+        var details = TransferDetails(request.Entitlements);
+        details.Add(new OperationDetail("Transfer auth token", string.IsNullOrWhiteSpace(request.AuthToken) ? "not provided" : "provided"));
+        await RecordAsync(session, bus, observer, customerId, "transferEntitlements", operation, details, RequestUser.NameOf(http), cancellationToken);
         return Results.Accepted(value: operation);
     }
 
@@ -54,15 +58,46 @@ public static class TransfersEndpoints
     {
         var operation = await channel.TransferEntitlementsToGoogleAsync(customerId, request, cancellationToken);
         await InvalidateAsync(cache, customerId, cancellationToken);
-        await RecordAsync(session, bus, observer, customerId, "transferEntitlementsToGoogle", operation, RequestUser.NameOf(http), cancellationToken);
+        await RecordAsync(session, bus, observer, customerId, "transferEntitlementsToGoogle", operation, TransferDetails(request.Entitlements),
+            RequestUser.NameOf(http), cancellationToken);
         return Results.Accepted(value: operation);
     }
 
+    /// <summary>One labelled block per transferred line, numbered when the request has several.</summary>
+    internal static List<OperationDetail> TransferDetails(IReadOnlyList<TransferEntitlementLine> lines)
+    {
+        var details = new List<OperationDetail>();
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var line = lines[i];
+            var prefix = lines.Count > 1 ? $"#{i + 1} " : string.Empty;
+            details.Add(new OperationDetail($"{prefix}Offer", string.IsNullOrWhiteSpace(line.OfferDisplayName) ? line.OfferId : $"{line.OfferDisplayName} ({line.OfferId})"));
+            details.AddRange(line.Parameters.Select(p => new OperationDetail($"{prefix}{ParameterLabel(p.Name)}", p.IntValue?.ToString(CultureInfo.InvariantCulture) ?? p.StringValue ?? "—")));
+            if (!string.IsNullOrWhiteSpace(line.BillingAccount))
+            {
+                details.Add(new OperationDetail($"{prefix}Billing account", line.BillingAccount));
+            }
+            if (!string.IsNullOrWhiteSpace(line.PurchaseOrderId))
+            {
+                details.Add(new OperationDetail($"{prefix}Purchase order", line.PurchaseOrderId));
+            }
+        }
+        return details;
+    }
+
+    internal static string ParameterLabel(string name) => name switch
+    {
+        "num_units" => "Seats",
+        "max_units" => "Max seats",
+        _ => name
+    };
+
     private static async Task RecordAsync(
         IDocumentSession session, IMessageBus bus, EstateObserver observer, string customerId, string action,
-        EntitlementOperation operation, string? user, CancellationToken cancellationToken)
+        EntitlementOperation operation, IReadOnlyList<OperationDetail> details, string? user, CancellationToken cancellationToken)
     {
         await observer.RecordCustomerMutationAsync(session, customerId, action, user, operation.OperationName, cancellationToken);
+        await OperationLog.RecordSubmittedAsync(session, operation.OperationName, operation.Done, operation.Error, customerId, null, action, details, user, cancellationToken);
         await bus.PublishAsync(new CustomerChanged(customerId, null, action, user));
         if (!string.IsNullOrEmpty(operation.OperationName) && !operation.Done)
         {

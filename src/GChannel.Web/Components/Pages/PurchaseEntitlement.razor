@@ -300,19 +300,32 @@ else
                 OfferId = _offerId,
                 PurchaseOrderId = string.IsNullOrWhiteSpace(_purchaseOrderId) ? null : _purchaseOrderId,
                 Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = _seats }],
-                BillingAccount = _billingAccounts is { Count: > 0 } ? _billingAccount : null
+                BillingAccount = _billingAccounts is { Count: > 0 } ? _billingAccount : null,
+                OfferDisplayName = string.Join(" · ", new[]
+                {
+                    _skus?.FirstOrDefault(s => s.SkuId == _skuId)?.DisplayName,
+                    SelectedOffer?.DisplayName
+                }.Where(s => !string.IsNullOrWhiteSpace(s)))
             };
 
             var op = await Api.PurchaseEntitlementAsync(CustomerId, request);
             if (!string.IsNullOrEmpty(op?.Error))
             {
-                await Snackbar.Add($"Purchase failed: {op!.Error}", Severity.Error);
+                await Snackbar.AddOperation($"Purchase failed: {op!.Error}", op.OperationName, Severity.Error);
                 return;
             }
 
-            await Snackbar.Add(op?.Done == true
+            if (op?.Done != true && !string.IsNullOrEmpty(op?.OperationName))
+            {
+                // Google can still reject the order asynchronously; the Operations page shows the outcome.
+                await Snackbar.Add("Purchase submitted — tracking the operation…", Severity.Success);
+                Nav.NavigateTo(UiNotifier.OperationLink(op.OperationName));
+                return;
+            }
+
+            await Snackbar.AddOperation(op?.Done == true
                 ? "Entitlement purchased."
-                : "Purchase submitted — Google is provisioning it, this may take a moment.", Severity.Success);
+                : "Purchase submitted — Google is provisioning it, this may take a moment.", op?.OperationName, Severity.Success);
             Nav.NavigateTo($"/customers/{CustomerId}/entitlements");
         }
         catch (Exception ex)

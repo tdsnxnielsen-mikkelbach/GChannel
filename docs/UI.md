@@ -222,9 +222,13 @@ When a customer already has Google subscriptions (e.g. with another reseller), t
 
 ## 9. Eventing — track operations and watch changes
 
-- **Eventing → Operations** (`/operations`) — track a long-running operation by the name a mutation
-  returned. The page polls it to **done** and deep-links to the affected customer/entitlement. (There's
-  no global "list all" — Google doesn't support it — so you track specific operations.)
+- **Eventing → Operations** (`/operations`) — every operation started from GChannel (purchase, seat/offer/
+  renewal/state changes, transfers, Cloud Identity provisioning) is listed with who started it, the customer,
+  the entitlement and its state. Track one to see the request inputs (offer, seats, billing account; never
+  the transfer token), poll status, the full Google error with its structured details (e.g. ErrorInfo reason),
+  and the entitlements a transfer produced. Toasts after an action link to the operation, and the customer
+  page's **Operations** button filters the list to that customer. Operations started elsewhere can still be
+  tracked by pasting their name.
 - **Eventing → Notifications** (`/notifications`) — a live feed of Channel change events (entitlement
   and customer changes) delivered via Google Cloud Pub/Sub. Each row resolves to the customer name and
   deep-links to the affected resource. The right-hand card manages the **subscriber registration**

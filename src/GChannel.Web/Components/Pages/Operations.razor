@@ -15,9 +15,9 @@
 </RadzenStack>
 
 <RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-3">
-    Mutating Channel calls (entitlement create/change/state changes, transfers) run asynchronously and
-    return an operation. Track one by id to watch it complete, then deep-link to the customer or
-    entitlement it affected.
+    Mutating Channel calls (purchases, entitlement changes, transfers, Cloud Identity provisioning) run
+    asynchronously and return an operation. Every operation started from GChannel is recorded here with who
+    started it, what was requested and how Google answered — including errors that only appear after submit.
 </RadzenText>
 
 <RadzenAccordion class="rz-mb-6">
@@ -25,11 +25,10 @@
         <RadzenAccordionItem Text="How operations work &amp; examples" Icon="@AppIcons.HelpOutline" @bind-Selected="_helpOpen">
             <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Where the id comes from</RadzenText>
             <RadzenText TextStyle="TextStyle.Body2" class="rz-text-secondary-color rz-mb-3">
-                When you buy/change/suspend an entitlement or run a transfer, the API returns an operation name
-                like <code>operations/abc-123-def</code>. Paste that whole string, or just the
-                <code>abc-123-def</code> id segment, into the box below. You usually don't need this page for
-                small accounts — most actions finish in seconds — but it's handy for transfers and bulk changes
-                that stay <em>Running</em> for a while.
+                Actions that start an operation open it here (or show a toast you can click), and every
+                operation GChannel submitted is listed under <em>Recent operations</em>. You can also paste an
+                operation name like <code>operations/abc-123-def</code>, or just the <code>abc-123-def</code> id
+                segment, into the box below.
             </RadzenText>
 
             <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">What you'll see</RadzenText>
@@ -50,8 +49,9 @@
                 • Purchase a Workspace SKU → track the op to confirm provisioning before assigning licenses.<br />
                 • Transfer customers from another reseller → watch the op finish, then open the entitlement.<br />
                 • Suspend/cancel/start-paid-service → confirm the state change actually applied.<br />
-                <em>Note:</em> Google's Channel API has no global "list all operations", so track by id rather
-                than browse — you can still cancel a still-running operation.
+                <em>Note:</em> Google's Channel API has no "list all operations", so the list below shows the
+                operations GChannel submitted (the worker keeps their status current). Operations started
+                elsewhere, e.g. in Partner Sales Console, can still be tracked by id.
             </RadzenText>
         </RadzenAccordionItem>
     </Items>
@@ -84,8 +84,81 @@
         @if (!string.IsNullOrEmpty(_tracked.Error))
         {
             <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-3">
-                @_tracked.Error @(_tracked.ErrorCode is { } code and not 0 ? $"(code {code})" : "")
+                @_tracked.Error @(_tracked.ErrorCode is { } code and not 0 ? $"({StatusName(code)}, code {code})" : "")
             </RadzenAlert>
+        }
+
+        @if (_tracked.ErrorDetails.Count > 0)
+        {
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Error details from Google</RadzenText>
+            @foreach (var detail in _tracked.ErrorDetails)
+            {
+                <pre class="rz-p-2 rz-mb-2 rz-border-radius-2 rz-background-color-base-200" style="white-space:pre-wrap; word-break:break-word; font-size:0.8rem">@PrettyJson(detail)</pre>
+            }
+        }
+        else if (!string.IsNullOrEmpty(_tracked.Error))
+        {
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-3">Google returned no structured error details for this operation.</RadzenText>
+        }
+
+        @if (_tracked.Tracking is { } t)
+        {
+            <RadzenRow Gap="1rem" class="rz-mb-3">
+                <RadzenColumn Size="12" SizeMD="6">
+                    <dl class="rz-m-0" style="display:grid; grid-template-columns:max-content 1fr; gap:0.25rem 1rem">
+                        <dt class="rz-text-secondary-color">Action</dt><dd class="rz-m-0">@ActionLabel(t.Action)</dd>
+                        <dt class="rz-text-secondary-color">Customer</dt>
+                        <dd class="rz-m-0">@(t.CustomerName ?? t.CustomerId ?? "—")@(string.IsNullOrEmpty(t.CustomerDomain) ? "" : $" · {t.CustomerDomain}")</dd>
+                        @if (!string.IsNullOrEmpty(t.Subject))
+                        {
+                            <dt class="rz-text-secondary-color">Entitlement</dt><dd class="rz-m-0">@t.Subject</dd>
+                        }
+                        <dt class="rz-text-secondary-color">Requested by</dt><dd class="rz-m-0">@(t.RequestedBy ?? "—")</dd>
+                        <dt class="rz-text-secondary-color">Submitted</dt><dd class="rz-m-0">@DisplayFormat.Timestamp(t.SubmittedAt) UTC</dd>
+                        <dt class="rz-text-secondary-color">Completed</dt><dd class="rz-m-0">@DisplayFormat.Timestamp(t.CompletedAt)</dd>
+                        <dt class="rz-text-secondary-color">Last checked</dt><dd class="rz-m-0">@DisplayFormat.Timestamp(t.LastCheckedAt) (@t.PollAttempts poll@(t.PollAttempts == 1 ? "" : "s"))</dd>
+                    </dl>
+                </RadzenColumn>
+                <RadzenColumn Size="12" SizeMD="6">
+                    @if (t.Details.Count > 0)
+                    {
+                        <dl class="rz-m-0" style="display:grid; grid-template-columns:max-content 1fr; gap:0.25rem 1rem">
+                            @foreach (var d in t.Details)
+                            {
+                                <dt class="rz-text-secondary-color">@d.Label</dt><dd class="rz-m-0" style="word-break:break-word">@d.Value</dd>
+                            }
+                        </dl>
+                    }
+                </RadzenColumn>
+            </RadzenRow>
+            @if (!string.IsNullOrEmpty(t.Note))
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-3">@t.Note</RadzenAlert>
+            }
+        }
+        else
+        {
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-mb-3">This operation wasn't submitted through GChannel, so only Google's live status is shown.</RadzenText>
+        }
+
+        @if (_tracked.ResultResources.Count > 0)
+        {
+            <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-1">Resulting resources</RadzenText>
+            <ul class="rz-mt-0 rz-mb-3">
+                @foreach (var resource in _tracked.ResultResources)
+                {
+                    <li>
+                        @if (EntitlementLink(resource) is { } link)
+                        {
+                            <RadzenLink Path="@link" Text="@resource" />
+                        }
+                        else
+                        {
+                            <code>@resource</code>
+                        }
+                    </li>
+                }
+            </ul>
         }
 
         @if (!string.IsNullOrEmpty(_tracked.CustomerId) || !string.IsNullOrEmpty(_tracked.EntitlementId))
@@ -112,50 +185,44 @@
     }
 </RadzenCard>
 
-<RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Recent operations</RadzenText>
-@if (_listLoading)
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">
+        Recent operations@(string.IsNullOrEmpty(_customerFilter) ? "" : " for this customer")
+    </RadzenText>
+    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+        @if (!string.IsNullOrEmpty(_customerFilter))
+        {
+            <RadzenButton Text="All customers" Icon="@AppIcons.Close" ButtonStyle="ButtonStyle.Base" Variant="Variant.Text" Size="ButtonSize.Small" Click="ClearCustomerFilterAsync" />
+        }
+        <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Text" Size="ButtonSize.Small" Click="RefreshListAsync" Disabled="_listLoading" />
+    </RadzenStack>
+</RadzenStack>
+@if (_listLoading && _operations is null)
 {
-    <LoadingPanel Title="Loading operations…" Hint="Fetching long-running operations from the Channel API." />
+    <LoadingPanel Title="Loading operations…" Hint="Reading the operations GChannel submitted." />
 }
 else if (_listUnavailable)
 {
-    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
-        Listing operations isn't available for this account. Track an operation by id using its name from a
-        mutating call's response.
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
+        The operation list couldn't be loaded. You can still track an operation by id.
     </RadzenAlert>
 }
 else if (_operations is { Count: > 0 })
 {
     <RadzenCard Variant="Variant.Filled">
-        <RadzenDataGrid TItem="ChannelOperation" Data="_operations" AllowPaging="false" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
+        <RadzenDataGrid TItem="ChannelOperation" Data="_operations" AllowPaging="true" PageSize="25" AllowSorting="false" Density="Density.Compact" GridLines="DataGridGridLines.Horizontal" Responsive="true">
             <Columns>
-                <RadzenDataGridColumn TItem="ChannelOperation" Title="Type">
-                    <Template Context="op">@(op.OperationType ?? "—")</Template>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Submitted" Width="150px">
+                    <Template Context="op">@DisplayFormat.Timestamp(op.Tracking?.SubmittedAt)</Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="ChannelOperation" Title="Id">
-                    <Template Context="op"><code>@op.Id</code></Template>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Action">
+                    <Template Context="op">@(op.Tracking is { } t ? ActionLabel(t.Action) : op.OperationType ?? "—")</Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="ChannelOperation" Title="State" Width="110px">
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Customer">
                     <Template Context="op">
-                        @if (op.Done)
+                        @if (!string.IsNullOrEmpty(op.CustomerId))
                         {
-                            <RadzenBadge BadgeStyle="@(op.Error is null ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(op.Error is null ? "Done" : "Failed")" />
-                        }
-                        else
-                        {
-                            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Running" />
-                        }
-                    </Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="ChannelOperation" Title="Correlation">
-                    <Template Context="op">
-                        @if (!string.IsNullOrEmpty(op.CustomerId) && !string.IsNullOrEmpty(op.EntitlementId))
-                        {
-                            <RadzenLink Path="@($"/customers/{op.CustomerId}/entitlements/{op.EntitlementId}")" Text="Entitlement" />
-                        }
-                        else if (!string.IsNullOrEmpty(op.CustomerId))
-                        {
-                            <RadzenLink Path="@($"/customers/{op.CustomerId}")" Text="Customer" />
+                            <RadzenLink Path="@($"/customers/{op.CustomerId}")" Text="@(op.Tracking?.CustomerName ?? op.Tracking?.CustomerDomain ?? op.CustomerId)" />
                         }
                         else
                         {
@@ -163,7 +230,39 @@ else if (_operations is { Count: > 0 })
                         }
                     </Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="ChannelOperation" Title="Actions" TextAlign="TextAlign.End" Width="90px">
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Subject">
+                    <Template Context="op">
+                        @if (!string.IsNullOrEmpty(op.CustomerId) && !string.IsNullOrEmpty(op.EntitlementId))
+                        {
+                            <RadzenLink Path="@($"/customers/{op.CustomerId}/entitlements/{op.EntitlementId}")" Text="@(op.Tracking?.Subject ?? op.EntitlementId)" />
+                        }
+                        else
+                        {
+                            <span>@(op.Tracking?.Subject ?? "—")</span>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Requested by">
+                    <Template Context="op">@(op.Tracking?.RequestedBy ?? "—")</Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="State" Width="110px">
+                    <Template Context="op">
+                        @if (op.Done)
+                        {
+                            <Tip Text="@(op.Error ?? "Completed")">
+                                <RadzenBadge BadgeStyle="@(op.Error is null ? BadgeStyle.Success : BadgeStyle.Danger)" Text="@(op.Error is null ? "Done" : "Failed")" />
+                            </Tip>
+                        }
+                        else
+                        {
+                            <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="Running" />
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="Id">
+                    <Template Context="op"><code style="font-size:0.75rem">@op.Id</code></Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="ChannelOperation" Title="" TextAlign="TextAlign.End" Width="70px">
                     <Template Context="op">
                         <Tip Text="Track">
                             <RadzenButton Icon="@AppIcons.Visibility" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Base" Variant="Variant.Flat" Click="@(() => TrackByIdAsync(op.Id))" aria-label="Track" />
@@ -176,7 +275,9 @@ else if (_operations is { Count: > 0 })
 }
 else
 {
-    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">No recent operations.</RadzenAlert>
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
+        No operations recorded yet. Purchases, entitlement changes, transfers and Cloud Identity provisioning appear here once submitted.
+    </RadzenAlert>
 }
 
 @code {
@@ -188,6 +289,10 @@ else
     [SupplyParameterFromQuery(Name = "operation")]
     public string? OperationId { get; set; }
 
+    /// <summary>Optional customer id to list only that customer's operations (linked from the customer page).</summary>
+    [SupplyParameterFromQuery(Name = "customer")]
+    public string? CustomerId { get; set; }
+
     private bool _helpOpen;
     private string _lookupId = string.Empty;
     private ChannelOperation? _tracked;
@@ -195,6 +300,7 @@ else
     private bool _cancelling;
 
     private IReadOnlyList<ChannelOperation>? _operations;
+    private string? _customerFilter;
     private bool _listLoading = true;
     private bool _listUnavailable;
     private Task? _pollTask;
@@ -206,6 +312,7 @@ else
             return;
         }
 
+        _customerFilter = string.IsNullOrWhiteSpace(CustomerId) ? null : CustomerId.Trim();
         if (!string.IsNullOrWhiteSpace(OperationId))
         {
             await TrackByIdAsync(OperationId.Trim());
@@ -214,14 +321,30 @@ else
         await RefreshListAsync();
     }
 
+    private Task ClearCustomerFilterAsync()
+    {
+        _customerFilter = null;
+        return RefreshListAsync();
+    }
+
     private async Task RefreshListAsync()
     {
+        CancellationToken token;
+        try
+        {
+            token = _cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
         _listLoading = true;
         _listUnavailable = false;
         StateHasChanged();
         try
         {
-            var result = await Api.ListOperationsAsync(_cts.Token);
+            var result = await Api.ListOperationsAsync(_customerFilter, token);
             _operations = result?.Operations ?? [];
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
@@ -230,14 +353,16 @@ else
         }
         catch
         {
-            // The Channel API may not support listing operations for every account; degrade gracefully.
             _listUnavailable = true;
             _operations = [];
         }
         finally
         {
             _listLoading = false;
-            StateHasChanged();
+            if (!token.IsCancellationRequested)
+            {
+                StateHasChanged();
+            }
         }
     }
 
@@ -288,13 +413,29 @@ else
             return;
         }
 
+        CancellationToken token;
         try
         {
-            var operation = await Api.GetOperationAsync(_tracked.Id, _cts.Token);
+            token = _cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            var wasDone = _tracked.Done;
+            var operation = await Api.GetOperationAsync(_tracked.Id, token);
             _tracked = operation;
             if (notify && operation is not null)
             {
                 await Snackbar.Add(operation.Done ? "Operation is done." : "Operation still running.", Severity.Info);
+            }
+
+            if (!wasDone && operation is { Done: true })
+            {
+                await InvokeAsync(RefreshListAsync);
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
@@ -355,6 +496,65 @@ else
         {
             _cancelling = false;
         }
+    }
+
+    private static string ActionLabel(string action) => action switch
+    {
+        "transferEntitlements" => "Transfer entitlements",
+        "transferEntitlementsToGoogle" => "Transfer to Google",
+        "create" => "Purchase entitlement",
+        "changeOffer" => "Change offer",
+        "changeParameters" => "Change seats/parameters",
+        "changeRenewalSettings" => "Change renewal",
+        "provisionCloudIdentity" => "Provision Cloud Identity",
+        "startPaidService" => "Start paid service",
+        _ => action.Length > 0 ? char.ToUpperInvariant(action[0]) + action[1..] : action
+    };
+
+    // gRPC canonical status codes, so "code 7" reads as PERMISSION_DENIED.
+    private static string StatusName(int code) => code switch
+    {
+        1 => "CANCELLED",
+        2 => "UNKNOWN",
+        3 => "INVALID_ARGUMENT",
+        4 => "DEADLINE_EXCEEDED",
+        5 => "NOT_FOUND",
+        6 => "ALREADY_EXISTS",
+        7 => "PERMISSION_DENIED",
+        8 => "RESOURCE_EXHAUSTED",
+        9 => "FAILED_PRECONDITION",
+        10 => "ABORTED",
+        11 => "OUT_OF_RANGE",
+        12 => "UNIMPLEMENTED",
+        13 => "INTERNAL",
+        14 => "UNAVAILABLE",
+        15 => "DATA_LOSS",
+        16 => "UNAUTHENTICATED",
+        _ => "status"
+    };
+
+    private static string PrettyJson(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(doc.RootElement, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return json;
+        }
+    }
+
+    // "accounts/a/customers/c/entitlements/e" → the entitlement page; anything else isn't linkable.
+    private static string? EntitlementLink(string resource)
+    {
+        var parts = resource.Split('/');
+        var c = Array.IndexOf(parts, "customers");
+        var e = Array.IndexOf(parts, "entitlements");
+        return c >= 0 && e == c + 2 && e + 1 < parts.Length
+            ? $"/customers/{parts[c + 1]}/entitlements/{parts[e + 1]}"
+            : null;
     }
 
     public void Dispose()

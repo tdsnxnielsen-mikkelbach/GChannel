@@ -2,6 +2,7 @@ using GChannel.Core.Estate;
 using GChannel.Core.Estate.Events;
 using GChannel.Core.Estate.ReadModels;
 using GChannel.Core.Messaging;
+using GChannel.Core.Persistence.Documents;
 using GChannel.Worker.Infrastructure;
 using Marten;
 using Wolverine;
@@ -49,11 +50,26 @@ public sealed class ChannelOperationSaga : Saga
         ILogger<ChannelOperationSaga> logger,
         CancellationToken ct)
     {
+        var log = await LoadLogAsync(session, ct);
+        var outgoing = await PollAsync(log, clients, observer, session, logger, ct);
+        session.Store(log);
+        return outgoing;
+    }
+
+    private async Task<OutgoingMessages> PollAsync(
+        OperationLogRecord log,
+        ServiceAccountChannelClientProvider clients,
+        EstateObserver observer,
+        IDocumentSession session,
+        ILogger<ChannelOperationSaga> logger,
+        CancellationToken ct)
+    {
         var outgoing = new OutgoingMessages();
         var client = clients.Client;
         if (client is null)
         {
             logger.LogInformation("Cannot track operation {Operation}: no service-account credential configured.", Id);
+            log.Note = "Not tracked: the worker has no service-account credential.";
             MarkCompleted();
             return outgoing;
         }
@@ -71,9 +87,13 @@ public sealed class ChannelOperationSaga : Saga
         }
         catch (Exception ex)
         {
+            log.LastCheckedAt = DateTimeOffset.UtcNow;
+            log.PollAttempts++;
+            log.Note = $"Polling failed: {ex.Message}";
             if (DateTimeOffset.UtcNow - SubmittedAt > MaxTrackingWindow)
             {
                 logger.LogWarning(ex, "Giving up tracking operation {Operation} after {Attempts} attempts.", Id, Attempts);
+                log.Note = $"Tracking abandoned: {ex.Message}";
                 await RecordOutcomeAsync(session, observer, succeeded: false, $"Tracking abandoned: {ex.Message}", ct);
                 MarkCompleted();
                 return outgoing;
@@ -83,10 +103,12 @@ public sealed class ChannelOperationSaga : Saga
             return outgoing;
         }
 
+        OperationLog.ApplyPoll(log, operation, DateTimeOffset.UtcNow);
         if (!operation.Done)
         {
             if (DateTimeOffset.UtcNow - SubmittedAt > MaxTrackingWindow)
             {
+                log.Note = "Operation did not complete within the tracking window.";
                 await RecordOutcomeAsync(session, observer, succeeded: false, "Operation did not complete within the tracking window.", ct);
                 MarkCompleted();
                 return outgoing;
@@ -104,6 +126,22 @@ public sealed class ChannelOperationSaga : Saga
     }
 
     private TimeSpan Backoff() => TimeSpan.FromSeconds(Math.Min(60, 5 * Math.Pow(1.5, Math.Min(Attempts, 8))));
+
+    /// <summary>Loads this operation's log record, creating one for operations submitted before the log existed.</summary>
+    private async Task<OperationLogRecord> LoadLogAsync(IDocumentSession session, CancellationToken ct)
+    {
+        var id = OperationLog.Normalize(Id);
+        var record = await session.LoadAsync<OperationLogRecord>(id, ct) ?? new OperationLogRecord
+        {
+            Id = id,
+            Action = Action,
+            RequestedBy = RequestedBy,
+            SubmittedAt = SubmittedAt,
+            CustomerId = CustomerId,
+            EntitlementId = EntitlementId,
+        };
+        return record;
+    }
 
     private async Task RecordOutcomeAsync(IDocumentSession session, EstateObserver observer, bool succeeded, string? error, CancellationToken ct)
     {

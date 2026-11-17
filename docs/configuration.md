@@ -295,10 +295,10 @@ azd env set GoogleChannelPubSubSubscriptionId "gchannel-notifications-sub"
 azd up
 ```
 
-The **Operations** page (`/operations`) needs no configuration — it tracks long-running operation names
-returned by mutating calls via `operations.get`/`cancel` using the signed-in user's token. (The Cloud
-Channel API does **not** implement `operations.list` — it returns HTTP 501 — so there is no global
-operation list; operations are tracked individually by the name a mutation returns.)
+The **Operations** page (`/operations`) needs no configuration. The Cloud Channel API does **not**
+implement `operations.list` (it returns HTTP 501), so the page lists the operations GChannel itself
+submitted. They are stored in Marten as `OperationLogRecord`s, and the worker keeps them current. Any other
+operation can still be tracked by name via `operations.get`/`cancel`.
 
 #### Notifications feed behaviour & troubleshooting
 

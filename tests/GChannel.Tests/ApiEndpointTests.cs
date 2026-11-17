@@ -92,6 +92,65 @@ public sealed class ApiEndpointTests(PostgresFixture postgres) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Submitted_transfer_is_listed_with_its_inputs_and_merged_with_googles_failure()
+    {
+        var customerId = $"cust-op-{Guid.NewGuid():N}";
+        var operationId = Guid.NewGuid().ToString("N");
+        const string billing = "accounts/test/billingAccounts/eur";
+        _channel.TransferEntitlementsAsync(customerId, Arg.Any<TransferEntitlementsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new EntitlementOperation { OperationName = $"operations/{operationId}", Done = false });
+        _channel.GetOperationAsync(operationId, Arg.Any<CancellationToken>())
+            .Returns(new ChannelOperation
+            {
+                Name = $"operations/{operationId}",
+                Id = operationId,
+                Done = true,
+                Error = "Permission denied",
+                ErrorCode = 7,
+                ErrorDetails = ["""{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"EXAMPLE"}"""]
+            });
+
+        await _host.Scenario(s =>
+        {
+            s.Post.Json(new TransferEntitlementsRequest
+            {
+                AuthToken = "secret-token",
+                Entitlements =
+                [
+                    new TransferEntitlementLine
+                    {
+                        OfferId = "accounts/test/offers/o1",
+                        OfferDisplayName = "Annual Plan (Yearly Payment)",
+                        BillingAccount = billing,
+                        Parameters = [new EntitlementParameterInput { Name = "num_units", IntValue = 3 }]
+                    }
+                ]
+            }).ToUrl($"/api/customers/{customerId}/transfer-entitlements");
+            s.StatusCodeShouldBe(202);
+        });
+
+        var listed = (await _host.GetAsJson<ChannelOperationsResult>(ApiRoutes.CustomerOperations(customerId)))!
+            .Operations.ShouldHaveSingleItem();
+        listed.Id.ShouldBe(operationId);
+        listed.Done.ShouldBeFalse();
+        var tracking = listed.Tracking.ShouldNotBeNull();
+        tracking.Action.ShouldBe("transferEntitlements");
+        tracking.CustomerId.ShouldBe(customerId);
+        tracking.Details.ShouldContain(new OperationDetail("Offer", "Annual Plan (Yearly Payment) (accounts/test/offers/o1)"));
+        tracking.Details.ShouldContain(new OperationDetail("Seats", "3"));
+        tracking.Details.ShouldContain(new OperationDetail("Billing account", billing));
+        tracking.Details.ShouldContain(new OperationDetail("Transfer auth token", "provided"));
+        tracking.Details.ShouldNotContain(d => d.Value.Contains("secret-token"));
+
+        var merged = await _host.GetAsJson<ChannelOperation>($"/api/operations/{operationId}");
+        merged!.Done.ShouldBeTrue();
+        merged.ErrorCode.ShouldBe(7);
+        merged.ErrorDetails.ShouldHaveSingleItem().ShouldContain("ErrorInfo");
+        merged.CustomerId.ShouldBe(customerId);
+        merged.Tracking.ShouldNotBeNull().Action.ShouldBe("transferEntitlements");
+    }
+
+    [Fact]
     public async Task Unparseable_query_values_are_rejected_like_minimal_apis()
     {
         await _host.Scenario(s =>
