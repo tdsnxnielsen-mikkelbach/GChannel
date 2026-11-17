@@ -7,13 +7,19 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 12:17 UTC (mid-session) · **branch:** `main`, deployed application code `7976ea5`.
-Every Channel operation is now recorded and correlated on the Operations page. No CI workflows.
+**Last updated:** 2026-11-17 12:50 UTC (mid-session) · **branch:** `main`, deployed application code `197192f`.
+Customers → Incoming transfers lists transferable SKUs across the estate. No CI workflows.
 
 ## Current state
 
 ### Code
 
+- **Incoming transfers (`197192f`):** a nightly worker job, `RunIncomingTransferScan`, runs at 03:00 UTC, checks
+  20 customers/min and is configured with `GoogleChannel:TransferScan*`. It calls `listTransferableSkus` for every
+  customer and writes `IncomingTransferRecord`. The `/customers/transfers` page has search, an ineligible switch,
+  a per-row Re-check (`POST /api/transfers/incoming/{id}/recheck`) and a Transfer deep link (`?sku=` auto-expands).
+  Failed customers are listed separately. The worker's Channel client now uses the Redis catalog cache.
+  Docs: architecture/UI/configuration/api-surface.
 - **Operation log (`dff122e`, `7976ea5`):** Google can't list operations (501) and the saga state is deleted, so the API writes a
   Marten `OperationLogRecord` for every purchase, entitlement change, transfer and Cloud Identity provisioning. It holds
   the user, the customer and entitlement names, the inputs (offer, seats, billing account, PO; never the transfer token),
@@ -30,7 +36,7 @@ Every Channel operation is now recorded and correlated on the Operations page. N
   [billing-permissions.md](billing-permissions.md) Part 4).
 - **Stack:** Marten/Wolverine on PostgreSQL/Service Bus; Radzen.Blazor 12.1.8 (`UiNotifier`, Driver.js attributes).
   Aspire 13.6.4; packages current, `Microsoft.OpenApi` intentionally pinned to 2.x.
-- Quality gates: build 0 errors; suite 61/61; Release publish/codegen passed.
+- Quality gates: build 0 errors; suite 63/63; Release publish/codegen passed.
 
 #### Production profiling (2026-11-17; uncontrolled live runs, no cache flush)
 
@@ -40,8 +46,9 @@ Every Channel operation is now recorded and correlated on the Operations page. N
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed 12:15 UTC via `azd deploy --no-prompt` from `main` (`7976ea5`):
-  API `0000090`, worker `0000082`, web `0000085`, Running; both hosts log Static codegen.
+- Deployed 12:38 UTC via `azd deploy --no-prompt` from `main` (`197192f`):
+  API `0000091`, worker `0000083`, web `0000086`, Running; both hosts log Static codegen. The first
+  incoming-transfer scan started on deploy; STG is listed as eligible and the deep link was verified live.
   One running replica each; no unhandled/circuit failures. The 3 previously noted unrelated
   `EventStreamUnexpectedMaxEventIdException` dead letters were not replayed or deleted.
 
@@ -87,22 +94,27 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
     Next: try the current reseller's transfer token, raise the trace ids with Partner Support, and compare with
     a Partner Sales Console submission. Purchase offers may also need a billing account
     (`listPurchasableOffers` returned 0).
+11. **Incoming-transfer scan errors:** customers resold by another reseller return
+    `FORBIDDEN: TRANSFER_TOKEN_DOES_NOT_EXIST`, which probably has the same cause as item 10. Customers without
+    Cloud Identity return `No cloud identity id found`. Both show as errors. Consider labelling them
+    "needs transfer token" / "nothing to transfer", and passing a token to `listTransferableSkus`.
 
 ## Next steps (suggested order)
 
-1. Resolve the STG transfer FORBIDDEN with Google: token, trace ids, PSC comparison (item 10).
-2. Verify product/SKU cache hits on another same-product entitlement and compare a natural cold detail load (item 5).
-3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
-4. Get Postgres Entra admin access and drop the old schema (item 6).
-5. Optional: noise filters, per-app identities, the Marketplace Provider gap (item 3).
+1. Resolve the STG transfer FORBIDDEN with Google: token, trace ids, PSC comparison (items 10, 11).
+2. Check the full incoming-transfer scan completed (`incoming-transfers` SyncCursor), then decide on item 11.
+3. Verify product/SKU cache hits on another same-product entitlement and compare a natural cold detail load (item 5).
+4. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
+5. Get Postgres Entra admin access and drop the old schema (item 6).
+6. Optional: noise filters, per-app identities, the Marketplace Provider gap (item 3).
 
 ## Start-of-session checklist
 
 ```powershell
-git status -sb; git log --oneline -5                     # expect main; deployed application code 7976ea5
+git status -sb; git log --oneline -5                     # expect main; deployed application code 197192f
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
-dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 61 tests (Docker required)
+dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 63 tests (Docker required)
 az containerapp revision list -n worker -g rg-gchannel --query "[?properties.active].{r:name,h:properties.healthState}" -o table
 ```
 
@@ -148,3 +160,4 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 - **2026-11-17 10:48/11:07/11:11/11:21/11:29** — Catalog `268b71b`, timings and catalog caches `e65e5f6` deployed. Offer-cache reduced alerts 30.219→19.169 s; cold detail on latest rollout 15.853 s with uncached product/offer/SKU calls. Apps healthy; build/57 pass.
 - **2026-11-17 11:43** — Transfer offers empty: billing account missing for multi-currency reseller; fixed `2c99982`, deployed, live 4 EUR plans; 59 pass. Real STG submit → Google FORBIDDEN (item 10); transfer page now opens the operation (not deployed).
 - **2026-11-17 12:15** — Operation log `dff122e`/`7976ea5` deployed; 61 pass. Live STG transfer rerun recorded end to end (worker poll → Failed); Google returns only FORBIDDEN + traceId, no ErrorInfo.
+- **2026-11-17 12:38** — Incoming transfers `197192f` deployed; 63 pass. The scan runs live; STG listed and deep link verified; resold customers return TRANSFER_TOKEN_DOES_NOT_EXIST (item 11).
