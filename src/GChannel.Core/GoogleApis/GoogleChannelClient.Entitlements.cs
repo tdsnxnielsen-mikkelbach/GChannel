@@ -91,7 +91,9 @@ public sealed partial class GoogleChannelClient
             .Get(EntitlementName(customerId, entitlementId))
             .ExecuteAsync(cancellationToken);
 
-        var lookups = await BuildCatalogLookupsAsync(service, cancellationToken, includeSkus: true);
+        var productId = response.ProvisionedService?.ProductId;
+        var lookups = await BuildCatalogLookupsAsync(
+            service, cancellationToken, includeSkus: !string.IsNullOrEmpty(productId), skuProductId: productId);
         return MapEntitlement(response, lookups);
     }
 

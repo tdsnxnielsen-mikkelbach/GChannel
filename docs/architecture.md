@@ -288,7 +288,9 @@ affected customer's entitlement caches (list + the specific entitlement's get/ch
   resolves the SKU/product names by `skuId`; (3) the full product catalog (`products.list`) resolves
   the product name by `productId` as a last resort. The UI shows the friendly name with the raw id as
   a tooltip/secondary caption, and falls back to the id only if every lookup misses (all lookups are
-  non-fatal). The dashboard skips step (2) since it only needs product names.
+  non-fatal). A single-entitlement read limits step (2) to that entitlement's product, and change
+  history resolves offer names without loading the product catalog. The dashboard skips step (2)
+  since it only needs product names.
 - **Typed parameters.** Seat counts are the `num_units` entitlement parameter; the UI sends them as
   a typed `int64` value (`EntitlementParameterInput.IntValue`) on purchase and `changeParameters`.
 - **Long-running operations.** Mutating calls (`create`, `changeOffer`, `changeParameters`,

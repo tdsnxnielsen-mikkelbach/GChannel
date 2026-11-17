@@ -110,10 +110,13 @@ public sealed partial class GoogleChannelClient
     /// <c>offers.list</c>, which also yields the offer map that turns opaque entitlement offer ids
     /// into names. When <paramref name="includeSkus"/> is set, a SKU-id -> name map is also built
     /// from <c>products.skus.list</c> per product, so an entitlement's SKU/product names resolve even
-    /// when its specific offer is no longer listed. Failures are non-fatal: callers fall back to raw ids.
+    /// when its specific offer is no longer listed. <paramref name="skuProductId"/> limits that
+    /// lookup to one product when mapping a single entitlement. Failures are non-fatal: callers fall
+    /// back to raw ids.
     /// </summary>
     private async Task<CatalogLookups> BuildCatalogLookupsAsync(
-        CloudchannelService service, CancellationToken cancellationToken, bool includeSkus = false)
+        CloudchannelService service, CancellationToken cancellationToken, bool includeSkus = false,
+        string? skuProductId = null)
     {
         var offers = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
         var products = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -201,11 +204,14 @@ public sealed partial class GoogleChannelClient
         // longer listed in offers.list (the common reason the UI shows raw ids). Bounded concurrency
         // keeps the per-product fan-out quick; each product is independently graceful.
         var skus = new Dictionary<string, SkuDisplay>(StringComparer.OrdinalIgnoreCase);
-        if (includeSkus && products.Count > 0)
+        var skuProducts = skuProductId is null
+            ? products
+            : products.Where(product => string.Equals(product.Key, skuProductId, StringComparison.OrdinalIgnoreCase));
+        if (includeSkus && skuProducts.Any())
         {
             var skuGate = new object();
             using var throttle = new SemaphoreSlim(Math.Max(1, _options.DashboardMaxConcurrency));
-            await Task.WhenAll(products.Select(async kv =>
+            await Task.WhenAll(skuProducts.Select(async kv =>
             {
                 var productId = kv.Key;
                 var productName = kv.Value;
@@ -257,10 +263,44 @@ public sealed partial class GoogleChannelClient
         return new CatalogLookups(offers, products, skus);
     }
 
-    /// <summary>Offer id -&gt; friendly display names (a thin view over <see cref="BuildCatalogLookupsAsync"/>).</summary>
+    /// <summary>Offer id -&gt; friendly display names required by entitlement change history.</summary>
     private async Task<IReadOnlyDictionary<string, OfferDisplay>> BuildOfferDisplayLookupAsync(
         CloudchannelService service, CancellationToken cancellationToken)
-        => (await BuildCatalogLookupsAsync(service, cancellationToken)).Offers;
+    {
+        var offers = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            string? pageToken = null;
+            do
+            {
+                var request = service.Accounts.Offers.List(_options.AccountName);
+                request.PageToken = pageToken;
+                var response = await request.ExecuteAsync(cancellationToken);
+
+                foreach (var offer in response.Offers ?? [])
+                {
+                    var offerId = LastSegment(offer.Name);
+                    if (!string.IsNullOrEmpty(offerId))
+                    {
+                        offers[offerId] = new OfferDisplay(offer.MarketingInfo?.DisplayName, null, null);
+                    }
+                }
+
+                pageToken = response.NextPageToken;
+            }
+            while (!string.IsNullOrEmpty(pageToken));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not resolve catalog offer display names; entitlement changes may show ids.");
+        }
+
+        return offers;
+    }
 
     /// <summary>Maps a Google entitlement-change resource to the UI-facing <see cref="EntitlementChange"/>.</summary>
     private static EntitlementChange MapEntitlementChange(GoogleCloudChannelV1EntitlementChange change, IReadOnlyDictionary<string, OfferDisplay>? offerLookup = null)

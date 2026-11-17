@@ -20,7 +20,8 @@ namespace GChannel.Core.GoogleApis;
 public sealed partial class GoogleChannelClient(
     IGoogleChannelCredentialSource credentialSource,
     IOptions<GoogleChannelOptions> options,
-    ILogger<GoogleChannelClient> logger) : IGoogleChannelClient
+    ILogger<GoogleChannelClient> logger,
+    Google.Apis.Http.IHttpClientFactory? googleHttpClientFactory = null) : IGoogleChannelClient
 {
     private readonly GoogleChannelOptions _options = options.Value;
 
@@ -39,6 +40,7 @@ public sealed partial class GoogleChannelClient(
         var service = new CloudchannelService(new BaseClientService.Initializer
         {
             HttpClientInitializer = credential,
+            HttpClientFactory = googleHttpClientFactory,
             ApplicationName = _options.ApplicationName,
             // We install our own back-off handler below (covering 429 and 503 and honouring the
             // server's Retry-After), so turn off the library default which only retries 503.

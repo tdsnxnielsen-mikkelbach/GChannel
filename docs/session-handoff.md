@@ -7,7 +7,7 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 09:53 UTC (mid-session) · **branch:** `main`, application code `ec73b40`.
+**Last updated:** 2026-11-17 10:19 UTC (mid-session) · **branch:** `main`, deployed application code `ec73b40`.
 The cancellation fix (`6897fe2`) and temporary replay removal (`ec73b40`) are pushed/deployed.
 The repo has no CI workflows.
 
@@ -33,12 +33,14 @@ The repo has no CI workflows.
   visits, not controlled cold-cache benchmarks. Source shows sequential enrichment and live catalog
   rebuilds on detail/history cache misses; per-stage timing is still needed to apportion the delay.
   The checked last-day console logs contain no API/HttpClient timing entries.
+- **First-visit optimization (validated; deployment pending):** detail reads list SKUs only for their product;
+  history resolves offer names without listing products. Two tests pass; build 0 warnings/errors, suite 55/55.
+  No production timing yet; sequential enrichment and per-history offer lookups remain.
 - **Stack:** Marten and Wolverine on PostgreSQL / Service Bus. Radzen.Blazor 12.1.8 (toasts and confirms through
   `UiNotifier`; the Driver.js tours need `data-onboarding` / `data-walkthrough`). Aspire 13.6.4; packages current,
   `Microsoft.OpenApi` pinned to 2.x on purpose.
-- Quality gates on 2026-11-17: solution build → 0 errors / warnings (incremental); full suite at `6897fe2`
-  → 54/54. After removing the obsolete replay test: worker suite → 4/4; 53 tests remain.
-  Older tests still emit xUnit1051 / CS8602 warnings on recompilation.
+- Quality gates on 2026-11-17: build 0 warnings/errors; suite 55/55 (including two catalog regression tests);
+  worker suite 4/4 after replay removal. Older tests emit xUnit1051 / CS8602 on recompilation.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
@@ -70,8 +72,8 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
 4. **Operation deep-link smoke:** no recent operations were available for a real sample; verify a valid
    `?operation=...` link when one exists. Regular mid-load navigation passed on both pages.
-5. **Slow first visits:** measured above. Investigate shared catalog reuse and sequential page enrichment;
-   distinguish backend stages before changing concurrency or Google quota usage.
+5. **Slow first visits:** validated optimization is unmeasured in production; commit, push and deploy before
+   measuring. Sequential enrichment and per-history offer lookups remain; avoid quota-risky concurrency.
 6. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
    is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
 7. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
@@ -86,7 +88,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Optimise the slow first-visit path using the measured baseline and stage-level evidence (item 5).
+1. Commit, push and deploy the validated first-visit optimization, then remeasure (item 5).
 2. Verify a real operation deep link when available (item 4).
 3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
 4. Get Postgres Entra admin access and drop the old schema (item 6).
@@ -98,7 +100,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 git status -sb; git log --oneline -5                     # expect main; deployed application code ec73b40
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
-dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 53 tests after replay removal (Docker required)
+dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 55 tests (Docker required)
 az containerapp revision list -n worker -g rg-gchannel --query "[?properties.active].{r:name,h:properties.healthState}" -o table
 ```
 
@@ -139,11 +141,11 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 
 ## Session log
 
-- **2026-10-28** — Critter Stack backend, UI MudBlazor → Blazorise → Radzen, Aspire 13.6.4, azd deploy to Azure
-  with managed identities, SQL/identity cleanup, messaging hardening (schemas, DLQ, timeouts, watchdog).
-- **2026-10-29** — PR #1/#2/#4/#5/#6: grid/snapshot fixes, replayed 135 notifications, European dates, pre-generated
-  Wolverine code fixing API OOM. `main` = production at `eb042b6`, 16/16 tests, all apps Healthy on 1 GiB.
+- **2026-10-28** — Backend/UI moved to Radzen; Aspire/azd deployment, managed identity, SQL and messaging hardening.
+- **2026-10-29** — PR #1/#2/#4/#5/#6: grid/snapshot, replay, dates and static Wolverine; production at `eb042b6`, 16/16, healthy.
 - **2026-11-02** — Billing-month fix deployed 12:46 UTC, UI checked signed-in; PR #8 open, 52/52 tests.
 - **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, full suite 54/54.
-- **2026-11-17 09:53** — Replay removed/deployed (`ec73b40`), build + 4/4 worker tests passed; all apps healthy,
-  signed-in navigation smoke passed, first/repeat load timings recorded. Next: uncached-path optimisation.
+- **2026-11-17 09:53** — Replay removal deployed (`ec73b40`); apps healthy, worker tests/navigation smoke passed,
+  first/repeat timings recorded. Next: uncached-path optimisation.
+- **2026-11-17 10:07** — Local catalog optimization narrows detail SKU lookups and skips product listings for history; build and 55/55 pass. Not deployed; next: deploy and remeasure.
+- **2026-11-17 10:19** — Release checklist repeated: build clean, 55/55 tests pass, worker healthy; committing before deployment and remeasurement.
