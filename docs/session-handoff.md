@@ -7,18 +7,17 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-17 10:59 UTC (mid-session) · **branch:** `main`, deployed application code `268b71b`;
-page-stage timings are local/validated, deployment next. No CI workflows.
+**Last updated:** 2026-11-17 11:08 UTC (mid-session) · **branch:** `main`, deployed application code `67cbea5`.
+Page timings are deployed; lower-level Google call timings are local. No CI workflows.
 
 ## Current state
 
 ### Code
 
-- **Catalog optimization deployed (`268b71b`):** detail reads list SKUs only for their product; history
-  resolves offer names without listing products. Friendly-name fallbacks and quota settings are unchanged.
-  Two HTTP regression tests verify the skipped requests and preserved names; live detail/history/pricing work.
-- **Stage timing instrumentation (local):** logs split alert (feed/links/customer/history) and detail
-  (entitlement/history/pricing). Counts only, no IDs; build succeeded, 55/55 pass.
+- **Catalog optimization (`268b71b`):** detail SKUs limited to its product; history offers skip products.
+  Names preserved; two HTTP tests verify skipped requests/display names; live detail/history/pricing work.
+- **Page-stage timing (`67cbea5`):** alert feed/links/customer/history and detail entitlement/history/pricing;
+  counts only, no customer/entitlement IDs. Google-call splits are local (build, 55/55), pending deploy.
 - **Earlier fixes:** pre-await token capture with regressions (`6897fe2`); replay removal (`ec73b40`).
   Notification handling, durable dead letters and cleanup remain intact; signed-in navigation smoke passed.
 - **PR #8 merged:** spend defaults to last complete UTC month; `month=YYYYMM` selects one, `months=N`
@@ -26,8 +25,7 @@ page-stage timings are local/validated, deployment next. No CI workflows.
   See [billing-permissions.md](billing-permissions.md) Part 4 and [the todo](todos/15-cloud-billing-bigquery-export.md).
 - **Stack:** Marten/Wolverine on PostgreSQL/Service Bus; Radzen.Blazor 12.1.8 (`UiNotifier`, Driver.js attributes).
   Aspire 13.6.4; packages current, `Microsoft.OpenApi` intentionally pinned to 2.x.
-- Quality gates on 2026-11-17: build 0 warnings/errors; suite 55/55 (including two catalog regression tests);
-  Release publish/codegen passed. Existing tests emit xUnit1051 / CS8602 warnings on recompilation.
+- Quality gates: build 0 errors; suite 55/55; Release publish/codegen passed. Existing tests emit xUnit1051 / CS8602.
 
 #### Production profiling (2026-11-17; no cache flush)
 
@@ -43,13 +41,16 @@ page-stage timings are local/validated, deployment next. No CI workflows.
   successful measured runs had no browser errors, error UI or load-failure messages. Alerts shell: 39 ms.
 - **Remaining latency:** first samples are about 21% lower but still around 20 s. Sequential customer/history
   enrichment and per-history offer lookups remain; stage timings are needed before further quota-sensitive changes.
+- **Stage evidence (`67cbea5`, one run):** alerts 35.250 s: feed 1.362, links 4.848, 2 customers 2.084,
+  4 histories 26.948; warm repeat 0.104 s. Detail 18.717 s: entitlement 9.994, history 6.305, pricing
+  2.417 (offer 1.437, repricing 0.978). Alert used reload, not comparable to prior SPA first visit.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed at 10:22 UTC on 2026-11-17 by `azd deploy --environment gchannel --no-prompt` from `main` (`268b71b`):
-  `apiservice--0000082`, `worker--0000074`, `webfrontend--0000077`, all Healthy / Running, 0 restarts at 10:48.
-  API/web receive 100% traffic. Predeploy generated 91 API / 11 worker code files; both hosts log Static mode.
-  New-revision logs checked at 10:48 show no unhandled/circuit failures. The 3 previously noted unrelated
+- Deployed 11:02 UTC via `azd deploy --environment gchannel --no-prompt` from `main` (`67cbea5`):
+  API `0000083`, worker `0000075`, web `0000078`, Healthy/Running, zero restarts; API/web 100% traffic.
+  Predeploy generated 91 API / 11 worker files; both hosts log Static mode.
+  Page-stage timing logs confirm histories dominate alerts. No unhandled/circuit failures. The 3 previously noted unrelated
   `EventStreamUnexpectedMaxEventIdException` dead letters were not replayed or deleted.
 
 | Resource | Notes |
@@ -73,8 +74,8 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 3. Marketplace orders on Spend trends show Provider "—" and a blank Product. Seen in a screenshot; not investigated.
 4. **Operation deep-link smoke:** no recent operations were available for a real sample; verify a valid
    `?operation=...` link when one exists. Regular mid-load navigation passed on both pages.
-5. **Slow first visits:** still about 20 s after catalog optimization. Deploy local page-stage timing logs and
-   find the dominant cache-miss/enrichment stage before further changes; avoid quota-risky concurrency.
+5. **Slow first visits:** alert history and detail entitlement/history stages dominate. Deploy local Google-call
+   timing splits to separate offer-catalog fetches from entitlement history and product/offer/SKU lookup costs.
 6. **Drop the orphaned `wolverine` schema** in `gchanneldb`. It needs an Entra login, and only `mi-676wfhbuks6uu`
    is admin today: add yourself with `az postgres flexible-server ad-admin create`, or use a container app shell.
 7. **Single shared managed identity** (azd limited mode). Per-app identities would need a new ACA environment,
@@ -89,7 +90,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Deploy stage timing logs, inspect live first-visit timings, and optimize the dominant stage (item 5).
+1. Deploy Google-call timing splits, inspect offer/catalog vs history API durations, then target the dominant call (item 5).
 2. Verify a real operation deep link when available (item 4).
 3. Triage the 3 unrelated notification dead letters without blindly replaying (item 1).
 4. Get Postgres Entra admin access and drop the old schema (item 6).
@@ -98,7 +99,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 ## Start-of-session checklist
 
 ```powershell
-git status -sb; git log --oneline -5                     # expect main; deployed application code 268b71b
+git status -sb; git log --oneline -5                     # expect main; deployed application code 67cbea5
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
 dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 55 tests (Docker required)
@@ -146,5 +147,4 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 - **2026-11-02** — Billing-month fix deployed 12:46 UTC, UI checked signed-in; PR #8 open, 52/52 tests.
 - **2026-11-17** — PR #8 merged/pulled; cancellation fix `6897fe2` pushed/deployed, full suite 54/54.
 - **2026-11-17 09:53** — Replay removal deployed (`ec73b40`); apps healthy, worker/navigation smoke passed, first/repeat baseline recorded.
-- **2026-11-17 10:48** — Catalog optimization `268b71b` deployed; build clean, 55/55 tests, apps healthy. First visits 21.905/19.712 s.
-- **2026-11-17 10:59** — Added local stage timing logs (counts only, no IDs); build and 55/55 pass. Next: deploy and inspect stage durations.
+- **2026-11-17 10:48/11:07** — Catalog optimization `268b71b` deployed; first visits 21.905/19.712 s. Page timings `67cbea5` show alert history 26.948 s and detail entitlement/history 16.299 s; apps healthy, build and 55/55 pass. Google-call splits local.

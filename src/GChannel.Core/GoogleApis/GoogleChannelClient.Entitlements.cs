@@ -7,6 +7,7 @@ using Google.Apis.Services;
 using Google.Apis.Util;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 
@@ -87,13 +88,21 @@ public sealed partial class GoogleChannelClient
         EnsureAccountConfigured();
         using var service = CreateService();
 
+        var totalTimer = Stopwatch.StartNew();
+        var stageTimer = Stopwatch.StartNew();
         var response = await service.Accounts.Customers.Entitlements
             .Get(EntitlementName(customerId, entitlementId))
             .ExecuteAsync(cancellationToken);
+        var googleGetMs = stageTimer.ElapsedMilliseconds;
 
         var productId = response.ProvisionedService?.ProductId;
+        stageTimer.Restart();
         var lookups = await BuildCatalogLookupsAsync(
             service, cancellationToken, includeSkus: !string.IsNullOrEmpty(productId), skuProductId: productId);
+        var catalogMs = stageTimer.ElapsedMilliseconds;
+        logger.LogInformation(
+            "Google Channel timing for {Operation}: total={TotalMs}ms get={GoogleGetMs}ms catalog={CatalogMs}ms",
+            "EntitlementGet", totalTimer.ElapsedMilliseconds, googleGetMs, catalogMs);
         return MapEntitlement(response, lookups);
     }
 
@@ -128,8 +137,12 @@ public sealed partial class GoogleChannelClient
         EnsureAccountConfigured();
         using var service = CreateService();
 
+        var totalTimer = Stopwatch.StartNew();
+        var stageTimer = Stopwatch.StartNew();
         var changes = new List<EntitlementChange>();
         var offerLookup = await BuildOfferDisplayLookupAsync(service, cancellationToken);
+        var offersMs = stageTimer.ElapsedMilliseconds;
+        stageTimer.Restart();
         string? pageToken = null;
         do
         {
@@ -147,6 +160,10 @@ public sealed partial class GoogleChannelClient
         }
         while (!string.IsNullOrEmpty(pageToken));
 
+        var historyMs = stageTimer.ElapsedMilliseconds;
+        logger.LogInformation(
+            "Google Channel timing for {Operation}: total={TotalMs}ms offers={OffersMs}ms history={HistoryMs}ms changes={ChangeCount}",
+            "EntitlementHistory", totalTimer.ElapsedMilliseconds, offersMs, historyMs, changes.Count);
         return new EntitlementChangesResult { Changes = changes };
     }
 

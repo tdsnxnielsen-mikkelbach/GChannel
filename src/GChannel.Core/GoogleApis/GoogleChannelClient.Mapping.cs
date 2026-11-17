@@ -7,6 +7,7 @@ using Google.Apis.Services;
 using Google.Apis.Util;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 
@@ -120,9 +121,12 @@ public sealed partial class GoogleChannelClient
     {
         var offers = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
         var products = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        long productsMs = 0;
+        long offersMs = 0;
 
         // Authoritative product-id -> name map from the full product catalog. Covers products whose
         // specific offer is no longer listed (the dashboard would otherwise show raw product ids).
+        var stageTimer = Stopwatch.StartNew();
         try
         {
             string? pageToken = null;
@@ -155,9 +159,14 @@ public sealed partial class GoogleChannelClient
         {
             logger.LogDebug(ex, "Could not list products for display-name resolution.");
         }
+        finally
+        {
+            productsMs = stageTimer.ElapsedMilliseconds;
+        }
 
         // Offer-id -> display names (also supplements the product map for any product not already
         // covered above).
+        stageTimer.Restart();
         try
         {
             string? pageToken = null;
@@ -198,6 +207,10 @@ public sealed partial class GoogleChannelClient
         {
             logger.LogDebug(ex, "Could not resolve catalog offer display names; entitlements may show ids.");
         }
+        finally
+        {
+            offersMs = stageTimer.ElapsedMilliseconds;
+        }
 
         // SKU-id -> name map (and its product name) from the authoritative per-product SKU catalog.
         // This is what lets an entitlement resolve its SKU/product names when its specific offer is no
@@ -207,6 +220,7 @@ public sealed partial class GoogleChannelClient
         var skuProducts = skuProductId is null
             ? products
             : products.Where(product => string.Equals(product.Key, skuProductId, StringComparison.OrdinalIgnoreCase));
+        stageTimer.Restart();
         if (includeSkus && skuProducts.Any())
         {
             var skuGate = new object();
@@ -259,6 +273,11 @@ public sealed partial class GoogleChannelClient
                 }
             }));
         }
+        var skusMs = stageTimer.ElapsedMilliseconds;
+
+        logger.LogInformation(
+            "Catalog display-name timing: products={ProductsMs}ms offers={OffersMs}ms skus={SkusMs}ms productCount={ProductCount} skuProductCount={SkuProductCount}",
+            productsMs, offersMs, skusMs, products.Count, includeSkus ? skuProducts.Count() : 0);
 
         return new CatalogLookups(offers, products, skus);
     }
@@ -268,6 +287,7 @@ public sealed partial class GoogleChannelClient
         CloudchannelService service, CancellationToken cancellationToken)
     {
         var offers = new Dictionary<string, OfferDisplay>(StringComparer.OrdinalIgnoreCase);
+        var timer = Stopwatch.StartNew();
         try
         {
             string? pageToken = null;
@@ -299,6 +319,8 @@ public sealed partial class GoogleChannelClient
             logger.LogDebug(ex, "Could not resolve catalog offer display names; entitlement changes may show ids.");
         }
 
+        logger.LogInformation("Offer catalog timing: elapsed={ElapsedMs}ms offerCount={OfferCount}",
+            timer.ElapsedMilliseconds, offers.Count);
         return offers;
     }
 
