@@ -47,7 +47,7 @@ public static class TransfersEndpoints
         await InvalidateAsync(cache, customerId, cancellationToken);
         var details = TransferDetails(request.Entitlements);
         details.Add(new OperationDetail("Transfer auth token", string.IsNullOrWhiteSpace(request.AuthToken) ? "not provided" : "provided"));
-        await RecordAsync(session, bus, observer, customerId, "transferEntitlements", operation, details, RequestUser.NameOf(http), cancellationToken);
+        await RecordAsync(session, bus, observer, customerId, "transferEntitlements", operation, request.Entitlements, details, RequestUser.NameOf(http), cancellationToken);
         return Results.Accepted(value: operation);
     }
 
@@ -58,7 +58,7 @@ public static class TransfersEndpoints
     {
         var operation = await channel.TransferEntitlementsToGoogleAsync(customerId, request, cancellationToken);
         await InvalidateAsync(cache, customerId, cancellationToken);
-        await RecordAsync(session, bus, observer, customerId, "transferEntitlementsToGoogle", operation, TransferDetails(request.Entitlements),
+        await RecordAsync(session, bus, observer, customerId, "transferEntitlementsToGoogle", operation, request.Entitlements, TransferDetails(request.Entitlements),
             RequestUser.NameOf(http), cancellationToken);
         return Results.Accepted(value: operation);
     }
@@ -94,10 +94,11 @@ public static class TransfersEndpoints
 
     private static async Task RecordAsync(
         IDocumentSession session, IMessageBus bus, EstateObserver observer, string customerId, string action,
-        EntitlementOperation operation, IReadOnlyList<OperationDetail> details, string? user, CancellationToken cancellationToken)
+        EntitlementOperation operation, IReadOnlyList<TransferEntitlementLine> lines, IReadOnlyList<OperationDetail> details, string? user, CancellationToken cancellationToken)
     {
         await observer.RecordCustomerMutationAsync(session, customerId, action, user, operation.OperationName, cancellationToken);
-        await OperationLog.RecordSubmittedAsync(session, operation.OperationName, operation.Done, operation.Error, customerId, null, action, details, user, cancellationToken);
+        await OperationLog.RecordSubmittedAsync(session, operation.OperationName, operation.Done, operation.Error, customerId, null, action, details, user, cancellationToken,
+            subject: string.Join(", ", lines.Select(l => string.IsNullOrWhiteSpace(l.OfferDisplayName) ? l.OfferId : l.OfferDisplayName)));
         await bus.PublishAsync(new CustomerChanged(customerId, null, action, user));
         if (!string.IsNullOrEmpty(operation.OperationName) && !operation.Done)
         {

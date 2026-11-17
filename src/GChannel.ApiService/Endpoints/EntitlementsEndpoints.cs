@@ -107,7 +107,8 @@ public static class EntitlementsEndpoints
         {
             details.Add(new OperationDetail("Billing account", request.BillingAccount));
         }
-        await OperationLog.RecordSubmittedAsync(session, operation.OperationName, operation.Done, operation.Error, customerId, null, "create", details, user, cancellationToken);
+        await OperationLog.RecordSubmittedAsync(session, operation.OperationName, operation.Done, operation.Error, customerId, null, "create", details, user, cancellationToken,
+            subject: string.IsNullOrWhiteSpace(request.OfferDisplayName) ? request.OfferId : request.OfferDisplayName);
         await PublishAsync(bus, customerId, null, "create", operation, user);
         await session.SaveChangesAsync(cancellationToken);
         return Results.Accepted(value: operation);

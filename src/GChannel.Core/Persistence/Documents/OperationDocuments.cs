@@ -44,12 +44,13 @@ public static class OperationLog
     /// <summary>
     /// Stores the record for an operation a mutating call just returned (no-op without an operation name).
     /// Customer / entitlement names are copied from the read model so the log stays readable even if they
-    /// change later. The caller saves the session.
+    /// change later; <paramref name="subject"/> describes what was requested when there is no entitlement
+    /// yet (purchases, transfers). The caller saves the session.
     /// </summary>
     public static async Task RecordSubmittedAsync(
         IDocumentSession session, string? operationName, bool done, string? error,
         string customerId, string? entitlementId, string action, IReadOnlyList<OperationDetail> details,
-        string? requestedBy, CancellationToken cancellationToken)
+        string? requestedBy, CancellationToken cancellationToken, string? subject = null)
     {
         if (string.IsNullOrWhiteSpace(operationName))
         {
@@ -69,6 +70,7 @@ public static class OperationLog
             Done = done,
             Error = string.IsNullOrEmpty(error) ? null : error,
             CompletedAt = done ? now : null,
+            Subject = string.IsNullOrWhiteSpace(subject) ? null : subject,
         };
 
         var customer = await session.LoadAsync<CustomerRecord>(EstateStreams.Customer(customerId), cancellationToken);

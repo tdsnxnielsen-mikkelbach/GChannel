@@ -135,6 +135,7 @@ public sealed class ApiEndpointTests(PostgresFixture postgres) : IAsyncLifetime
         listed.Done.ShouldBeFalse();
         var tracking = listed.Tracking.ShouldNotBeNull();
         tracking.Action.ShouldBe("transferEntitlements");
+        tracking.Subject.ShouldBe("Annual Plan (Yearly Payment)");
         tracking.CustomerId.ShouldBe(customerId);
         tracking.Details.ShouldContain(new OperationDetail("Offer", "Annual Plan (Yearly Payment) (accounts/test/offers/o1)"));
         tracking.Details.ShouldContain(new OperationDetail("Seats", "3"));
