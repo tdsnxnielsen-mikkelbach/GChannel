@@ -16,8 +16,7 @@ The Support feature (`8ac3f17`) was **removed** again in `c13e4bb` (see *Session
 
 - **No support-case feature.** The Cloud Support API covers only Google Cloud Customer Care cases (Standard,
   Enhanced or Premium plan), and its Pub/Sub event subscriptions need Premium. All of our cases are Google
-  Workspace / reseller cases, which have no public API. A possible alternative is to parse case emails via the
-  Gmail API (not started; the user hasn't decided).
+  Workspace / reseller cases, which have no public API. Dropped for good; no email-based tracker either.
 - **Incoming transfers (`197192f`):** nightly `RunIncomingTransferScan` (03:00 UTC, `GoogleChannel:TransferScan*`)
   → `IncomingTransferRecord`; `/customers/transfers` with Re-check and Transfer deep link.
 - **Operation log (`dff122e`, `7976ea5`):** Google can't list operations (501), so the API writes a Marten
@@ -80,7 +79,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. Optional: decide whether to build an email-based (Gmail API) Workspace case tracker; tidy GCP leftovers (item 1).
+1. Optional: tidy GCP leftovers (item 1).
 2. Act on Google's answer to the STG ticket: token, trace IDs, PSC comparison (items 11, 12).
 3. Verify product/SKU cache hits on another same-product entitlement (item 6).
 4. Triage the 3 unrelated notification dead letters without blindly replaying (item 2).
