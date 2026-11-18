@@ -94,11 +94,8 @@ public static class GChannelWolverineExtensions
         opts.PublishMessage<RunBillingSyncCycle>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
         opts.PublishMessage<RunBillingPostureScan>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
         opts.PublishMessage<RunIncomingTransferScan>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
-        opts.PublishMessage<RunSupportCaseCatchUp>().ToAzureServiceBusQueue(MessagingTopology.JobsQueue);
 
         opts.PublishMessage<CheckChannelOperation>().ToAzureServiceBusQueue(MessagingTopology.OperationsQueue);
-
-        opts.PublishMessage<SupportEventArrived>().ToAzureServiceBusQueue(MessagingTopology.SupportQueue);
 
         // ---- Listening -----------------------------------------------------------------------------
         switch (role)
@@ -110,8 +107,6 @@ public static class GChannelWolverineExtensions
                 opts.ListenToAzureServiceBusQueue(MessagingTopology.EstateSyncQueue).Sequential();
                 opts.ListenToAzureServiceBusQueue(MessagingTopology.JobsQueue).Sequential();
                 opts.ListenToAzureServiceBusQueue(MessagingTopology.OperationsQueue);
-                // One at a time: events for the same case arrive in bursts and each refresh re-reads the whole case.
-                opts.ListenToAzureServiceBusQueue(MessagingTopology.SupportQueue).Sequential();
                 break;
             case MessagingRole.Api:
                 opts.ListenToAzureServiceBusSubscription(MessagingTopology.ApiCacheSubscription)

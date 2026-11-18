@@ -147,9 +147,8 @@ local provisioning and `azd` — it is **not** auto-provisioned by Wolverine:
 | `worker-estate` | subscription | the worker's projections / targeted refreshes |
 | `api-cache` | subscription | the API's Redis cache invalidation (`CustomerReadModelUpdatedHandler`) |
 | `estate-sync` | queue | `ProjectCustomer` commands (targeted customer refresh: a mutation, a Pub/Sub event or a manual resync), consumed sequentially so Channel API quotas can be paced |
-| `jobs` | queue | self-rescheduling recurring job ticks (`RunEstateSyncCycle`, `RefreshDashboardSnapshot`, `RunBillingSyncCycle`, `RunBillingPostureScan`, `RunIncomingTransferScan`, `RunSupportCaseCatchUp`) |
+| `jobs` | queue | self-rescheduling recurring job ticks (`RunEstateSyncCycle`, `RefreshDashboardSnapshot`, `RunBillingSyncCycle`, `RunBillingPostureScan`, `RunIncomingTransferScan`) |
 | `operations` | queue | Google long-running-operation saga timeouts (`CheckChannelOperation`) |
-| `support` | queue | `SupportEventArrived` from the Cloud Support Pub/Sub connector, consumed sequentially by the worker |
 | `wolverine-dead-letter-queue` | queue | Wolverine's shared dead-letter queue: a message that exhausts its retries is sent here (inspect / resubmit with Service Bus Explorer) |
 
 All listeners use Wolverine's **durable inbox** (so a multi-minute job tick is not bound by the 5-minute
@@ -775,20 +774,6 @@ refresh (Pub/Sub uses the key directly; no domain-wide delegation), and is a **n
 F5 behaves identically using the key from user-secrets. On shutdown the service stops the subscriber
 (via the stopping `CancellationToken`) so in-flight messages drain cleanly. See
 [configuration.md](configuration.md#pubsub-notifications-7) for the Google-side setup.
-
-**Support cases (Cloud Customer Care).** A second Pub/Sub path follows Google's
-[Pub/Sub connector](https://docs.cloud.google.com/support/docs/reference/pubsub-connector): an organization-level
-`SupportEventSubscription` makes Customer Care publish attribute-only messages (`resource_name`,
-`notification_type`) to our own `support-events` topic. The worker's `SupportEventsService` pulls
-`GoogleSupport:PubSubSubscriptionId` and sends `SupportEventArrived` to the dedicated Service Bus `support`
-queue (a queue rather than the `estate-events` topic, so the API host never sees it). `SupportEventArrivedHandler`
-(sequential listener) reads the case with comments and attachments through `ISupportCasesService` (Cloud
-Support API v2, reseller service-account key) and stores a `SupportCaseRecord` mirror plus a `SupportEventRecord`
-feed entry. Permanent read failures (400/401/403/404, not configured) are recorded on the event instead of retried.
-The daily `support-case-catch-up` recurring job lists all cases and refreshes those whose `updateTime` changed.
-`/api/support/*` serves the mirror and performs create / comment / close / escalate live, refreshing the mirror
-afterwards; the **Support** pages (`/support`, `/support/cases/{id}`, `/support/new`) render it and poll every 30 s.
-See [configuration.md](configuration.md#google-cloud-support-cases-pubsub-connector).
 
 ## Blazor rendering &amp; request cancellation
 

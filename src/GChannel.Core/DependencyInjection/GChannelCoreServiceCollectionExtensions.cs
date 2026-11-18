@@ -22,12 +22,6 @@ public static class GChannelCoreServiceCollectionExtensions
             .Bind(configuration.GetSection(GoogleBillingOptions.SectionName));
         services.AddOptions<IonGatewayOptions>()
             .Bind(configuration.GetSection(IonGatewayOptions.SectionName));
-        services.AddOptions<GoogleSupportOptions>()
-            .Bind(configuration.GetSection(GoogleSupportOptions.SectionName));
-
-        // Cloud Customer Care cases (cloudsupport.googleapis.com) — reuses the reseller service-account key; the
-        // REST client it builds is thread-safe and cached.
-        services.AddSingleton<ISupportCasesService, SupportCasesService>();
 
         // Ion Gateway (TD SYNNEX StreamOne) enrichment — singleton over IHttpClientFactory so it is safe to
         // inject into singleton projection/sync services.

@@ -100,7 +100,7 @@ public sealed class ChannelNotificationsService(
     /// Prefers a Workload Identity Federation configuration (the <c>external_account</c> JSON, loaded with auto
     /// type-detection so the host's own identity mints short-lived federated tokens), else a service-account key.
     /// </summary>
-    internal static GoogleCredential? ResolveCredential(GoogleChannelOptions opts)
+    private static GoogleCredential? ResolveCredential(GoogleChannelOptions opts)
     {
         if (!string.IsNullOrWhiteSpace(opts.WorkloadIdentityCredentialJson))
             return CredentialFactory.FromJson<GoogleCredential>(opts.WorkloadIdentityCredentialJson);

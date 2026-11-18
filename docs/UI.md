@@ -243,14 +243,6 @@ Customers whose check failed (e.g. no access to the customer) are listed separat
   empty and the rest of the app is unaffected. When the read-model is enabled, each event **also triggers
   a targeted refresh** of the affected customer's synced data (seats, subscriptions, renewal, pricing), so
   lists and dashboards update in near-real-time — an info tooltip on the page notes this.
-- **Eventing → Support** (`/support`) — your organization's Google Cloud support cases, kept in sync by
-  Customer Care's Pub/Sub events. KPI cards count open cases, cases waiting on you (*Action required*) and
-  escalations; the grid hides closed cases unless you switch them on. The right-hand cards show whether the
-  event subscription is healthy (**Resume** it if it is *Failing*) and the latest events. Click a case to read
-  the full comment thread (Google Support's replies are outlined), add a comment, escalate or close it;
-  **New case** opens a form with a classification search, priority (P0–P4) and a test-case switch. Comments
-  are posted by the GChannel service account and signed with your name. An administrator must run the
-  one-time setup in [configuration.md](configuration.md#google-cloud-support-cases-pubsub-connector) first.
 
 > **Data freshness (§14).** Changes you make in the app are **written through** to the synced read-model
 > immediately, so a new/edited/removed customer shows in the customers, estate and partner-detail lists

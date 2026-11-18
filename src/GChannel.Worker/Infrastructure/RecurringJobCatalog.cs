@@ -17,11 +17,8 @@ public sealed record RecurringJobDefinition(
     Func<Guid, object> CreateTick,
     TimeSpan StuckAfter);
 
-/// <summary>The worker's recurring jobs, derived from the Google Channel / Billing / Support options.</summary>
-public sealed class RecurringJobCatalog(
-    IOptions<GoogleChannelOptions> channelOptions,
-    IOptions<GoogleBillingOptions> billingOptions,
-    IOptions<GoogleSupportOptions> supportOptions)
+/// <summary>The worker's recurring jobs, derived from the Google Channel / Billing options.</summary>
+public sealed class RecurringJobCatalog(IOptions<GoogleChannelOptions> channelOptions, IOptions<GoogleBillingOptions> billingOptions)
 {
     private static readonly TimeSpan StuckGrace = TimeSpan.FromMinutes(30);
 
@@ -35,8 +32,6 @@ public sealed class RecurringJobCatalog(
             var billingInterval = TimeSpan.FromHours(Math.Max(1, billing.SyncIntervalHours));
             var postureHour = Math.Clamp(billing.PostureScanHourUtc, 0, 23);
             var transferHour = Math.Clamp(channel.TransferScanHourUtc, 0, 23);
-            var support = supportOptions.Value;
-            var supportHour = Math.Clamp(support.CatchUpHourUtc, 0, 23);
 
             return
             [
@@ -80,15 +75,6 @@ public sealed class RecurringJobCatalog(
                     completed => NextDailyAt(completed, transferHour),
                     runId => new RunIncomingTransferScan(runId),
                     StuckAfter: Budget(RecurringJobs.IncomingTransferScanBudgetSeconds)),
-
-                // Daily support-case catch-up (cases.list for the organization) at CatchUpHourUtc — the safety net
-                // for support events lost while the subscription was FAILING or the worker was down.
-                new RecurringJobDefinition(
-                    RecurringJobs.SupportCaseCatchUp,
-                    () => support.CatchUpActive(channel),
-                    completed => NextDailyAt(completed, supportHour),
-                    runId => new RunSupportCaseCatchUp(runId),
-                    StuckAfter: Budget(RecurringJobs.SupportCaseCatchUpBudgetSeconds)),
             ];
         }
     }

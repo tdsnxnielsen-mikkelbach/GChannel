@@ -31,7 +31,7 @@ public sealed class OnboardingTourService(IJSRuntime js, OnboardingStateService 
         new("[data-onboarding=\"nav-catalog\"]", "Catalog", "Browse products, offers and SKU groups available to resell."),
         new("[data-onboarding=\"nav-customers\"]", "Customers", "Create customers and manage their entitlements (purchase, suspend, transfer)."),
         new("[data-onboarding=\"nav-partners\"]", "Channel partners", "Invite and manage channel partner links for two-tier resale."),
-        new("[data-onboarding=\"nav-eventing\"]", "Eventing", "Track long-running operations, live Pub/Sub notifications and Google support cases."),
+        new("[data-onboarding=\"nav-eventing\"]", "Eventing", "Track long-running operations and live Pub/Sub notifications."),
         new("[data-onboarding=\"appbar-theme\"]", "Light & dark", "Switch the theme to suit your environment."),
         new("[data-onboarding=\"appbar-help\"]", "Restart anytime", "Replay this tour whenever you like from here."),
     ];

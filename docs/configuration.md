@@ -27,8 +27,6 @@
 | `GoogleChannel:BackgroundRefreshSeconds` | Worker | `Parameters:` (AppHost) | `GoogleChannelBackgroundRefreshSeconds` azd param (env var) |
 | `GoogleChannel:PubSubProjectId` | Worker | `Parameters:` (AppHost) | `GoogleChannelPubSubProjectId` azd param (env var) |
 | `GoogleChannel:PubSubSubscriptionId` | Worker | `Parameters:` (AppHost) | `GoogleChannelPubSubSubscriptionId` azd param (env var) |
-| `GoogleSupport:OrganizationId` | ApiService + Worker | `Parameters:` (AppHost) | `GoogleSupportOrganizationId` azd param (env var) |
-| `GoogleSupport:PubSubSubscriptionId` | ApiService + Worker | `Parameters:` (AppHost) | `GoogleSupportPubSubSubscriptionId` azd param (env var) |
 | `ConnectionStrings:gchanneldb` | ApiService + Worker | Aspire (local `postgres` container) | Aspire: PostgreSQL flexible server host + Entra token (`Aspire.Azure.Npgsql`) — no password |
 | `ConnectionStrings:messaging` | ApiService + Worker | Aspire: locally provisioned Service Bus namespace host + `DefaultAzureCredential` (your `az login`) | Aspire: Service Bus namespace host + `DefaultAzureCredential` (managed identity) |
 | `Azure:SubscriptionId` / `Azure:Location` / `Azure:ResourceGroup` | AppHost | user-secrets — where Aspire provisions the dev Service Bus namespace | n/a (`azd` provisions) |
@@ -336,90 +334,6 @@ operation can still be tracked by name via `operations.get`/`cancel`.
 
   Events acked **before** retention was enabled are gone for good; trigger a fresh change (e.g. a
   license-assignment change) to populate the feed.
-
-### Google Cloud support cases (Pub/Sub connector)
-
-**Eventing → Support** (`/support`) shows the Cloud Customer Care cases of your Google Cloud organization and
-lets you comment on, open, close and escalate them. It follows Google's
-[Synchronize cases using Pub/Sub](https://docs.cloud.google.com/support/docs/reference/pubsub-connector) pattern:
-
-1. Customer Care publishes an **attribute-only** message (`resource_name`, `notification_type` — e.g.
-   `CASE_UPDATED`, `COMMENT_ADDED`) to a topic **you own** (`support-events`) through an organization-level
-   `SupportEventSubscription`.
-2. The worker pulls the subscription (`gchannel-support-sub`) and forwards each event to the Service Bus
-   `support` queue.
-3. A handler reads the case (and its comments + attachments) with the **Cloud Support API v2** and stores it in
-   the Marten mirror (`SupportCaseRecord`); the event lands in the `SupportEventRecord` feed.
-4. A daily catch-up (`support-case-catch-up`, Operations → Background jobs) lists every case and refreshes the
-   ones whose `updateTime` changed — Google's documented fallback for events missed while the subscription was
-   `FAILING`.
-
-Authentication reuses the reseller service-account key (`GoogleChannel:ServiceAccountKeyJson`) — no new secret.
-The page reports "not configured" until `GoogleSupport:OrganizationId` and the key are both set; the
-subscriber only needs the subscription id.
-
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `GoogleSupport:OrganizationId` | _empty_ | Numeric Google Cloud organization id whose cases are shown. Blank disables the API endpoints and the catch-up. |
-| `GoogleSupport:PubSubProjectId` | `GoogleChannel:PubSubProjectId` | Project holding the support topic + subscription. |
-| `GoogleSupport:PubSubTopicId` | `support-events` | Topic the `SupportEventSubscription` publishes to (shown on the page). |
-| `GoogleSupport:PubSubSubscriptionId` | _empty_ | Pull subscription the worker reads. Blank disables the subscriber. |
-| `GoogleSupport:CatchUpEnabled` | `true` | Run the daily case catch-up. |
-| `GoogleSupport:CatchUpHourUtc` | `4` | UTC hour (0–23) of the catch-up. |
-| `GoogleSupport:MaxEvents` | `1000` | Size of the support event feed (minimum 50). |
-
-| AppHost parameter (`azd env set` name) | Maps to env var → config key | Secret |
-| --- | --- | --- |
-| `GoogleSupportOrganizationId` | `GoogleSupport__OrganizationId` → `GoogleSupport:OrganizationId` | No |
-| `GoogleSupportPubSubSubscriptionId` | `GoogleSupport__PubSubSubscriptionId` → `GoogleSupport:PubSubSubscriptionId` | No |
-
-**One-time Google setup** (run as an organization admin; `SA` is the GChannel service account,
-`ORG_ID` your organization id — `gcloud organizations list` or the console's resource picker shows it):
-
-```bash
-PROJECT=tdsgchannel
-SA=gchannel-dashboard@tdsgchannel.iam.gserviceaccount.com
-ORG_ID=123456789012
-
-# 1. APIs (in the project that owns the topic and calls the API)
-gcloud services enable cloudsupport.googleapis.com pubsub.googleapis.com --project=$PROJECT
-
-# 2. Topic + let Customer Care publish to it
-gcloud pubsub topics create support-events --project=$PROJECT
-gcloud pubsub topics add-iam-policy-binding support-events --project=$PROJECT \
-  --member=serviceAccount:cloud-support-apievents@system.gserviceaccount.com --role=roles/pubsub.publisher
-
-# 3. Pull subscription for the worker
-gcloud pubsub subscriptions create gchannel-support-sub --project=$PROJECT --topic=support-events
-gcloud pubsub subscriptions add-iam-policy-binding gchannel-support-sub --project=$PROJECT \
-  --member=serviceAccount:$SA --role=roles/pubsub.subscriber
-
-# 4. Case + subscription access for the service account on the organization
-for ROLE in roles/cloudsupport.techSupportEditor roles/cloudsupport.supportSubscriptionEditor roles/resourcemanager.organizationViewer; do
-  gcloud organizations add-iam-policy-binding $ORG_ID --member=serviceAccount:$SA --role=$ROLE
-done
-
-# 5. Tell Customer Care to publish the organization's case events to the topic
-curl -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "Content-Type: application/json" \
-  "https://cloudsupport.googleapis.com/v2/organizations/$ORG_ID/supportEventSubscriptions" \
-  -d "{\"pubSubTopic\":\"projects/$PROJECT/topics/support-events\"}"
-```
-
-Then point the app at it:
-
-```powershell
-# Local (AppHost)
-dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleSupportOrganizationId" "123456789012"
-dotnet user-secrets --project src/GChannel.AppHost set "Parameters:GoogleSupportPubSubSubscriptionId" "gchannel-support-sub"
-# Azure
-azd env set GoogleSupportOrganizationId "123456789012"
-azd env set GoogleSupportPubSubSubscriptionId "gchannel-support-sub"
-azd deploy
-```
-
-If the subscription turns `FAILING` (e.g. the publisher binding was removed), fix the cause and press **Resume**
-on the Support page — it re-saves the subscription's topic, which makes Google re-verify publishing. Comments
-posted from GChannel are written by the service account and signed with the signed-in user's name.
 
 
 

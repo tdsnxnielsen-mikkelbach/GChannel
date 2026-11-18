@@ -13,9 +13,6 @@ public static class MessagingTopology
     public const string JobsQueue = "jobs";
     public const string OperationsQueue = "operations";
 
-    /// <summary>Worker-only queue for Cloud Customer Care support events (bridged from Pub/Sub).</summary>
-    public const string SupportQueue = "support";
-
     /// <summary>
     /// Wolverine's shared dead-letter queue: a message that exhausts its retries is <em>sent</em> here (durable
     /// listeners have already completed the broker message when they persisted it to the inbox, so the native
@@ -32,7 +29,6 @@ public static class RecurringJobs
     public const string BillingSync = "billing-sync";
     public const string BillingPostureScan = "billing-posture-scan";
     public const string IncomingTransferScan = "incoming-transfer-scan";
-    public const string SupportCaseCatchUp = "support-case-catch-up";
 
     /// <summary>
     /// Execution budgets of the tick handlers, in seconds (Wolverine's <c>[MessageTimeout]</c> takes a constant). Every
@@ -44,5 +40,4 @@ public static class RecurringJobs
     public const int BillingSyncBudgetSeconds = 60 * 60;
     public const int BillingPostureScanBudgetSeconds = 3 * 60 * 60;
     public const int IncomingTransferScanBudgetSeconds = 3 * 60 * 60;
-    public const int SupportCaseCatchUpBudgetSeconds = 30 * 60;
 }
