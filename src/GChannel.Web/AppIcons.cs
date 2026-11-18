@@ -14,6 +14,7 @@ public static class AppIcons
     public const string AddShoppingCart = "add_shopping_cart";
     public const string ArrowBack = "arrow_back";
     public const string ArrowForward = "arrow_forward";
+    public const string AttachFile = "attach_file";
     public const string Autorenew = "autorenew";
     public const string Block = "block";
     public const string Bolt = "bolt";
@@ -26,6 +27,7 @@ public static class AppIcons
     public const string ChevronRight = "chevron_right";
     public const string Close = "close";
     public const string CloudDownload = "cloud_download";
+    public const string Comment = "comment";
     public const string DarkMode = "dark_mode";
     public const string Dashboard = "dashboard";
     public const string Delete = "delete";
@@ -70,6 +72,7 @@ public static class AppIcons
     public const string Person = "person";
     public const string PersonAdd = "person_add";
     public const string PlayArrow = "play_arrow";
+    public const string PriorityHigh = "priority_high";
     public const string RadioButtonUnchecked = "radio_button_unchecked";
     public const string Refresh = "refresh";
     public const string Savings = "savings";
@@ -83,6 +86,7 @@ public static class AppIcons
     public const string SmartToy = "smart_toy";
     public const string Storefront = "storefront";
     public const string Subscriptions = "subscriptions";
+    public const string SupportAgent = "support_agent";
     public const string SwapHoriz = "swap_horiz";
     public const string Sync = "sync";
     public const string Tour = "tour";

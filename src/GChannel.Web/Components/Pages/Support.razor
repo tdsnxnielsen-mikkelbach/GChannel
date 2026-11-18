@@ -1,0 +1,459 @@
+@page "/support"
+@attribute [Authorize]
+@implements IDisposable
+@inject GChannelApiClient Api
+@inject UiNotifier Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Support · GChannel</PageTitle>
+
+<RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+    <div>
+        <RadzenText TextStyle="TextStyle.H4" class="rz-m-0">Support</RadzenText>
+        <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">
+            Google Cloud Customer Care cases@(_cases?.Organization is { } org ? $" · {org}" : string.Empty)
+        </RadzenText>
+    </div>
+    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" AlignItems="AlignItems.Center">
+        <GuidedWalkthrough Id="support-overview" Steps="_walkthrough" />
+        <RadzenButton Text="Refresh" Icon="@AppIcons.Refresh" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="LoadAsync" Disabled="_loading" />
+        <span data-walkthrough="support-new"><LinkButton To="/support/new" Text="New case" Icon="@AppIcons.Add" Disabled="@(_cases is not { Configured: true })" /></span>
+    </RadzenStack>
+</RadzenStack>
+
+<RadzenText TextStyle="TextStyle.Body1" class="rz-text-secondary-color rz-mb-6">
+    Customer Care publishes an event to our Pub/Sub topic whenever a case, comment or attachment changes. The worker
+    reads the changed case through the Cloud Support API and keeps this overview current; a daily catch-up re-reads
+    every case in case an event was missed.
+    <Tip Text="Comments, closes and escalations are sent with the GChannel service account, so Google shows the service account as the author — the console appends your name to every comment and justification.">
+        <RadzenIcon Icon="@AppIcons.Info" Style="font-size: 1.1rem; width: auto; height: auto; vertical-align: text-bottom" class="rz-ms-1" />
+    </Tip>
+</RadzenText>
+
+@if (_cases is { Configured: false })
+{
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
+        Support cases aren't configured. Set <code>GoogleSupport:OrganizationId</code> (azd parameter
+        <code>GoogleSupportOrganizationId</code>) and make sure the service-account key is present — see
+        <em>docs/deployment.md → Cloud Customer Care</em> for the Google-side setup.
+    </RadzenAlert>
+}
+else if (_cases is { SubscriberEnabled: false })
+{
+    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
+        The support Pub/Sub subscriber isn't running (<code>GoogleSupport:PubSubSubscriptionId</code> is blank), so cases
+        only refresh on the daily catch-up or when you open them.
+    </RadzenAlert>
+}
+
+<RadzenRow Gap="1rem" RowGap="1rem" class="rz-mb-4" data-walkthrough="support-kpis">
+    <RadzenColumn Size="6" SizeMD="3">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Open cases</RadzenText>
+            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@(_cases?.Cases.Count(c => c.IsOpen) ?? 0)</RadzenText>
+        </RadzenCard>
+    </RadzenColumn>
+    <RadzenColumn Size="6" SizeMD="3">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Waiting on us</RadzenText>
+            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@(_cases?.Cases.Count(c => c.State == "ACTION_REQUIRED") ?? 0)</RadzenText>
+        </RadzenCard>
+    </RadzenColumn>
+    <RadzenColumn Size="6" SizeMD="3">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Escalated (open)</RadzenText>
+            <RadzenText TextStyle="TextStyle.H5" class="rz-m-0">@(_cases?.Cases.Count(c => c.IsOpen && c.Escalated) ?? 0)</RadzenText>
+        </RadzenCard>
+    </RadzenColumn>
+    <RadzenColumn Size="6" SizeMD="3">
+        <RadzenCard Variant="Variant.Filled">
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Last catch-up</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body1" class="rz-m-0">
+                @if (_cases?.CatchUpRunning == true)
+                {
+                    <span>Running…</span>
+                }
+                else
+                {
+                    @DisplayFormat.Timestamp(_cases?.LastCatchUpUtc)
+                }
+            </RadzenText>
+            @if (_cases?.NextCatchUpUtc is { } next)
+            {
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Next @DisplayFormat.Timestamp(next) UTC</RadzenText>
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
+
+@if (!string.IsNullOrEmpty(_cases?.CatchUpError))
+{
+    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" class="rz-mb-4">
+        Last catch-up: @_cases.CatchUpError
+    </RadzenAlert>
+}
+
+<RadzenRow Gap="1rem" RowGap="1rem">
+    <RadzenColumn Size="12" SizeLG="8">
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.End" Gap="1rem" Wrap="FlexWrap.Wrap" class="rz-mb-2">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-m-0">Cases</RadzenText>
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem" Wrap="FlexWrap.Wrap" data-walkthrough="support-filter">
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenSwitch @bind-Value="_showClosed" Name="showClosed" />
+                    <RadzenLabel Text="Show closed" Component="showClosed" />
+                </RadzenStack>
+                <SearchBox @bind-Value="_search" Placeholder="Case number, title, classification…" Name="supportSearch" />
+            </RadzenStack>
+        </RadzenStack>
+
+        @if (_loading && _cases is null)
+        {
+            <LoadingPanel Title="Loading support cases…" Hint="Reading the mirrored Customer Care cases." />
+        }
+        else if (FilteredCases.Count > 0)
+        {
+            <RadzenCard Variant="Variant.Filled" data-walkthrough="support-grid">
+                <RadzenDataGrid TItem="SupportCase" Data="FilteredCases" AllowPaging="true" PageSize="20" AllowSorting="true" Density="Density.Compact"
+                                GridLines="DataGridGridLines.Horizontal" Responsive="true" RowClick="@(args => Navigation.NavigateTo($"/support/cases/{args.Data?.CaseId}"))"
+                                Style="cursor: pointer">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="SupportCase" Property="DisplayName" Title="Case">
+                            <Template Context="c">
+                                <RadzenLink Path="@($"/support/cases/{c.CaseId}")" Text="@(c.DisplayName ?? c.CaseId)" />
+                                <RadzenText TextStyle="TextStyle.Caption" TagName="TagName.Div" class="rz-text-secondary-color rz-m-0">
+                                    #@c.CaseId@(c.TestCase ? " · test case" : string.Empty)@(c.Escalated ? " · escalated" : string.Empty)
+                                </RadzenText>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="SupportCase" Property="State" Title="State" Width="170px">
+                            <Template Context="c"><RadzenBadge BadgeStyle="@StateStyle(c.State)" Text="@StateLabel(c.State)" /></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="SupportCase" Property="Priority" Title="Priority" Width="95px">
+                            <Template Context="c"><RadzenBadge BadgeStyle="@PriorityStyle(c.Priority)" Variant="Variant.Outlined" Text="@(c.Priority ?? "—")" /></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="SupportCase" Property="ClassificationName" Title="Classification">
+                            <Template Context="c"><span style="overflow-wrap: anywhere">@(c.ClassificationName ?? "—")</span></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="SupportCase" Property="UpdateTime" Title="Updated" Width="150px">
+                            <Template Context="c">@DisplayFormat.Timestamp(c.UpdateTime)</Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
+        }
+        else
+        {
+            <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false">
+                @(_cases is { Cases.Count: > 0 } ? "No cases match the filter." : "No support cases mirrored yet.")
+            </RadzenAlert>
+        }
+    </RadzenColumn>
+
+    <RadzenColumn Size="12" SizeLG="4">
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Event subscription</RadzenText>
+        <RadzenCard Variant="Variant.Filled" class="rz-mb-4" data-walkthrough="support-subscription">
+            @if (_subscription is null)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else
+            {
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">Expected topic</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-3" Style="overflow-wrap: anywhere">@(_subscription.ExpectedTopic ?? "— Pub/Sub project not configured —")</RadzenText>
+
+                @if (!string.IsNullOrEmpty(_subscription.Error))
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" Size="AlertSize.Small" class="rz-m-0">
+                        Could not read the subscription: @_subscription.Error
+                    </RadzenAlert>
+                }
+                else if (!_subscription.Configured)
+                {
+                    <RadzenText TextStyle="TextStyle.Body2" class="rz-m-0">Not configured.</RadzenText>
+                }
+                else if (_subscription.Subscriptions.Count == 0)
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false" Size="AlertSize.Small" class="rz-m-0">
+                        The organization has no support event subscription, so Google publishes nothing. Create one for the topic above (docs/deployment.md).
+                    </RadzenAlert>
+                }
+                else
+                {
+                    @foreach (var s in _subscription.Subscriptions)
+                    {
+                        <RadzenStack Gap="0.25rem" class="rz-py-2 rz-border-bottom rz-border-color-base-200">
+                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                <RadzenBadge BadgeStyle="@SubscriptionStyle(s.State)" Text="@(s.State ?? "UNKNOWN")" />
+                                @if (s.FailureReason is { Length: > 0 } reason && s.State == "FAILING")
+                                {
+                                    <RadzenText TextStyle="TextStyle.Caption" class="rz-color-danger rz-m-0">@reason</RadzenText>
+                                }
+                            </RadzenStack>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0" Style="overflow-wrap: anywhere">@s.PubSubTopic</RadzenText>
+                            @if (!string.IsNullOrEmpty(_subscription.ExpectedTopic) && !string.Equals(s.PubSubTopic, _subscription.ExpectedTopic, StringComparison.Ordinal))
+                            {
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-color-warning rz-m-0">Publishes to a different topic than the worker reads.</RadzenText>
+                            }
+                        </RadzenStack>
+                    }
+                    @if (_subscription.Subscriptions.Any(s => s.State == "FAILING"))
+                    {
+                        <RadzenButton Text="Resume" Icon="@AppIcons.PlayArrow" ButtonStyle="ButtonStyle.Warning" Size="ButtonSize.Small" class="rz-mt-3"
+                                      Click="ResumeAsync" Disabled="_resuming" />
+                    }
+                }
+            }
+        </RadzenCard>
+
+        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Recent events</RadzenText>
+        <RadzenCard Variant="Variant.Filled" data-walkthrough="support-events">
+            @if (_events is null)
+            {
+                <RadzenProgressBar Mode="ProgressBarMode.Indeterminate" ShowValue="false" class="rz-my-2" />
+            }
+            else if (_events.Events.Count == 0)
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-m-0">No support events received yet.</RadzenText>
+            }
+            else
+            {
+                @foreach (var e in _events.Events.Take(12))
+                {
+                    var caseId = e.CaseName?.Split('/')[^1];
+                    <RadzenStack Gap="0" class="rz-py-2 rz-border-bottom rz-border-color-base-200">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenBadge BadgeStyle="@EventStyle(e.NotificationType)" Variant="Variant.Flat" Text="@EventLabel(e.NotificationType)" />
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-text-secondary-color rz-m-0">@DisplayFormat.Timestamp(e.ReceivedAt)</RadzenText>
+                        </RadzenStack>
+                        @if (caseId is not null)
+                        {
+                            <RadzenLink Path="@($"/support/cases/{caseId}")" Text="@CaseLabel(caseId)" />
+                        }
+                        @if (!string.IsNullOrEmpty(e.Error))
+                        {
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-color-danger rz-m-0" Style="overflow-wrap: anywhere">@e.Error</RadzenText>
+                        }
+                    </RadzenStack>
+                }
+            }
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
+
+    private static readonly IReadOnlyList<WalkthroughStep> _walkthrough =
+    [
+        new("[data-walkthrough=\"support-kpis\"]", "At a glance", "Open cases, the ones waiting on a reply from us (ACTION_REQUIRED) and open escalations."),
+        new("[data-walkthrough=\"support-filter\"]", "Find a case", "Search by number, title or classification; closed cases are hidden unless you switch them on."),
+        new("[data-walkthrough=\"support-subscription\"]", "Event subscription", "Customer Care publishes case changes to this topic. If it shows FAILING, fix the cause (usually the publisher grant on the topic) and press Resume."),
+        new("[data-walkthrough=\"support-events\"]", "Live events", "Every case, comment and attachment change Google publishes, newest first."),
+        new("[data-walkthrough=\"support-new\"]", "Open a case", "Create a Customer Care case for the organization straight from the console."),
+    ];
+
+    private readonly CancellationTokenSource _cts = new();
+
+    private SupportCasesResult? _cases;
+    private SupportSubscriptionStatus? _subscription;
+    private SupportEventsResult? _events;
+    private bool _loading = true;
+    private bool _resuming;
+    private bool _showClosed;
+    private string? _search;
+
+    private List<SupportCase> FilteredCases =>
+        (_cases?.Cases ?? [])
+            .Where(c => _showClosed || c.IsOpen)
+            .Where(c => string.IsNullOrWhiteSpace(_search)
+                        || c.CaseId.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)
+                        || (c.DisplayName?.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false)
+                        || (c.ClassificationName?.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+            .ToList();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        CancellationToken token;
+        try
+        {
+            token = _cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        await LoadAsync();
+        if (!token.IsCancellationRequested)
+        {
+            _ = PollLoopAsync(token);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        CancellationToken token;
+        try
+        {
+            token = _cts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var cases = Api.ListSupportCasesAsync(cancellationToken: token);
+            var events = Api.ListSupportEventsAsync(token);
+            var subscription = Api.GetSupportSubscriptionAsync(token);
+            _cases = await cases ?? new SupportCasesResult();
+            _events = await events ?? new SupportEventsResult();
+            _subscription = await subscription ?? new SupportSubscriptionStatus();
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            await Snackbar.Add($"Failed to load support cases: {ex.Message}", Severity.Error);
+            _cases ??= new SupportCasesResult();
+            _events ??= new SupportEventsResult();
+            _subscription ??= new SupportSubscriptionStatus();
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ResumeAsync()
+    {
+        _resuming = true;
+        try
+        {
+            _subscription = await Api.ResumeSupportSubscriptionAsync(_cts.Token);
+            await Snackbar.Add("Resume requested — Google re-verifies the topic and switches back to WORKING once it can publish.", Severity.Success);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            await Snackbar.Add($"Failed to resume the subscription: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _resuming = false;
+        }
+    }
+
+    private async Task PollLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(PollInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                try
+                {
+                    _cases = await Api.ListSupportCasesAsync(cancellationToken: cancellationToken) ?? _cases;
+                    _events = await Api.ListSupportEventsAsync(cancellationToken) ?? _events;
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+                {
+                    break;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Circuit torn down.
+        }
+    }
+
+    private string CaseLabel(string caseId) =>
+        _cases?.Cases.FirstOrDefault(c => c.CaseId == caseId)?.DisplayName is { Length: > 0 } title ? $"#{caseId} · {title}" : $"#{caseId}";
+
+    internal static string StateLabel(string? state) => state switch
+    {
+        "NEW" => "New",
+        "IN_PROGRESS_GOOGLE_SUPPORT" => "With Google",
+        "ACTION_REQUIRED" => "Waiting on us",
+        "SOLUTION_PROVIDED" => "Solution provided",
+        "CLOSED" => "Closed",
+        null or "" => "—",
+        _ => state
+    };
+
+    internal static BadgeStyle StateStyle(string? state) => state switch
+    {
+        "NEW" => BadgeStyle.Info,
+        "IN_PROGRESS_GOOGLE_SUPPORT" => BadgeStyle.Primary,
+        "ACTION_REQUIRED" => BadgeStyle.Warning,
+        "SOLUTION_PROVIDED" => BadgeStyle.Success,
+        _ => BadgeStyle.Light
+    };
+
+    internal static BadgeStyle PriorityStyle(string? priority) => priority switch
+    {
+        "P0" or "P1" => BadgeStyle.Danger,
+        "P2" => BadgeStyle.Warning,
+        _ => BadgeStyle.Base
+    };
+
+    internal static string EventLabel(string? type) => type switch
+    {
+        "CASE_CREATED" => "Case created",
+        "CASE_UPDATED" => "Case updated",
+        "COMMENT_ADDED" => "Comment",
+        "ATTACHMENT_ADDED" => "Attachment added",
+        "ATTACHMENT_DELETED" => "Attachment deleted",
+        null or "" => "Unknown",
+        _ => type
+    };
+
+    internal static BadgeStyle EventStyle(string? type) => type switch
+    {
+        "CASE_CREATED" => BadgeStyle.Info,
+        "COMMENT_ADDED" => BadgeStyle.Primary,
+        "CASE_UPDATED" => BadgeStyle.Secondary,
+        _ => BadgeStyle.Light
+    };
+
+    private static BadgeStyle SubscriptionStyle(string? state) => state switch
+    {
+        "WORKING" => BadgeStyle.Success,
+        "FAILING" => BadgeStyle.Danger,
+        _ => BadgeStyle.Light
+    };
+
+    public void Dispose()
+    {
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _cts.Dispose();
+    }
+}

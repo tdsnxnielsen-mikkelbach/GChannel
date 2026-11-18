@@ -319,6 +319,40 @@ public sealed class GChannelApiClient(
     public Task<ChannelNotificationsResult?> ListNotificationsAsync(CancellationToken cancellationToken = default) =>
         GetAsync<ChannelNotificationsResult>(ApiRoutes.Notifications, cancellationToken);
 
+    // Cloud Customer Care support cases. These surface the API's ProblemDetails text (IAM / API errors) in the exception.
+
+    /// <summary>The mirrored support cases plus the pipeline's state.</summary>
+    public Task<SupportCasesResult?> ListSupportCasesAsync(bool openOnly = false, CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportCasesResult>(HttpMethod.Get, ApiRoutes.SupportCases(openOnly), null, cancellationToken);
+
+    /// <summary>One case with comments and attachments (<paramref name="refresh"/> re-reads it from Google first).</summary>
+    public Task<SupportCaseDetail?> GetSupportCaseAsync(string caseId, bool refresh = false, CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportCaseDetail>(HttpMethod.Get, ApiRoutes.SupportCase(caseId, refresh), null, cancellationToken);
+
+    public Task<SupportCaseDetail?> CreateSupportCaseAsync(CreateSupportCaseRequest request, CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportCaseDetail>(HttpMethod.Post, ApiRoutes.SupportCaseCreate, request, cancellationToken);
+
+    public Task<SupportCaseDetail?> AddSupportCommentAsync(string caseId, string body, CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportCaseDetail>(HttpMethod.Post, ApiRoutes.SupportCaseComments(caseId), new AddSupportCommentRequest { Body = body }, cancellationToken);
+
+    public Task<SupportCaseDetail?> CloseSupportCaseAsync(string caseId, CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportCaseDetail>(HttpMethod.Post, ApiRoutes.SupportCaseClose(caseId), EmptyBody, cancellationToken);
+
+    public Task<SupportCaseDetail?> EscalateSupportCaseAsync(string caseId, EscalateSupportCaseRequest request, CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportCaseDetail>(HttpMethod.Post, ApiRoutes.SupportCaseEscalate(caseId), request, cancellationToken);
+
+    public Task<SupportClassificationsResult?> SearchSupportClassificationsAsync(string? search, CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportClassificationsResult>(HttpMethod.Get, ApiRoutes.SupportClassifications(search), null, cancellationToken);
+
+    public Task<SupportSubscriptionStatus?> GetSupportSubscriptionAsync(CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportSubscriptionStatus>(HttpMethod.Get, ApiRoutes.SupportSubscription, null, cancellationToken);
+
+    public Task<SupportSubscriptionStatus?> ResumeSupportSubscriptionAsync(CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportSubscriptionStatus>(HttpMethod.Post, ApiRoutes.SupportSubscriptionResume, EmptyBody, cancellationToken);
+
+    public Task<SupportEventsResult?> ListSupportEventsAsync(CancellationToken cancellationToken = default) =>
+        SendWithProblemAsync<SupportEventsResult>(HttpMethod.Get, ApiRoutes.SupportEvents, null, cancellationToken);
+
     /// <summary>Lists the account's Pub/Sub subscriber registration (topic + service accounts).</summary>
     public Task<SubscriberRegistration?> ListSubscribersAsync(CancellationToken cancellationToken = default) =>
         GetAsync<SubscriberRegistration>(ApiRoutes.PubSubSubscribers, cancellationToken);
@@ -455,6 +489,41 @@ public sealed class GChannelApiClient(
         using var response = await http.SendAsync(message, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
+
+    /// <summary>
+    /// Like <see cref="SendAsync{T}"/> (no body when <paramref name="body"/> is null), but a failed call throws an
+    /// <see cref="HttpRequestException"/> carrying the ProblemDetails detail / title / validation errors, so pages can show it.
+    /// </summary>
+    private async Task<T?> SendWithProblemAsync<T>(HttpMethod method, string route, object? body, CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(method, route);
+        if (body is not null)
+        {
+            message.Content = JsonContent.Create(body);
+        }
+        await AttachGoogleTokenAsync(message);
+
+        using var response = await http.SendAsync(message, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            string? detail = null;
+            try
+            {
+                var problem = await response.Content.ReadFromJsonAsync<ProblemPayload>(cancellationToken);
+                detail = problem?.Errors is { Count: > 0 } errors
+                    ? string.Join(" ", errors.SelectMany(e => e.Value))
+                    : problem?.Detail ?? problem?.Title;
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
+            {
+                // Not a ProblemDetails body; fall back to the status code.
+            }
+            throw new HttpRequestException(detail ?? $"{(int)response.StatusCode} {response.ReasonPhrase}", null, response.StatusCode);
+        }
+        return await response.Content.ReadFromJsonAsync<T>(cancellationToken);
+    }
+
+    private sealed record ProblemPayload(string? Title, string? Detail, Dictionary<string, string[]>? Errors);
 
     private async Task AttachGoogleTokenAsync(HttpRequestMessage message)
     {

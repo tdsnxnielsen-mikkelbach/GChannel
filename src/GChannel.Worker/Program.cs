@@ -41,7 +41,10 @@ builder.Services.AddHostedService<RecurringJobsBootstrap>();
 // Google Pub/Sub → Service Bus bridge for Channel change notifications.
 builder.Services.AddHostedService<ChannelNotificationsService>();
 
-// Wolverine: handlers for the estate-events subscription and the estate-sync / jobs / operations queues.
+// Google Pub/Sub → Service Bus bridge for Cloud Customer Care support events.
+builder.Services.AddHostedService<SupportEventsService>();
+
+// Wolverine: handlers for the estate-events subscription and the estate-sync / jobs / operations / support queues.
 builder.UseWolverine(opts => opts.ConfigureGChannelMessaging("gchannel-worker", MessagingRole.Worker, typeof(ProjectCustomerHandler).Assembly, builder.Environment));
 
 var host = builder.Build();

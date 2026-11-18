@@ -73,6 +73,16 @@ All paths are relative to `https://cloudchannel.googleapis.com`.
 > [configuration.md](configuration.md#pubsub-notifications-7) and
 > [architecture.md](architecture.md#eventing--operations).
 
+> **Support cases (Cloud Support API v2).** `GET /api/support/cases[?open=true]` and
+> `GET /api/support/cases/{caseId}[?refresh=true]` read the Marten mirror kept current by the support Pub/Sub
+> connector (a refresh re-reads the case live; on failure the stored copy is returned with `refreshError`).
+> `POST /api/support/cases` (create), `…/{caseId}/comments`, `…/{caseId}/close` and `…/{caseId}/escalate`
+> call `cases.create` / `comments.create` / `cases.close` / `cases.escalate` and return the refreshed case.
+> `GET /api/support/classifications?search=` wraps `caseClassifications.search`; `GET /api/support/subscription`
+> and `POST /api/support/subscription/resume` read and resume the organization's `supportEventSubscriptions`;
+> `GET /api/support/events` returns the 200 newest support events. All return **503** until
+> `GoogleSupport:OrganizationId` and the service-account key are configured.
+
 > **Customer provisioning & pre-transfer import (§12.2).** Two account-level customer flows fill the last
 > §2 gaps. `POST /api/customers/import` (`accounts.customers.import`) brings a customer that already has a
 > Cloud Identity into the reseller account before a transfer — it returns the `Customer` **directly**

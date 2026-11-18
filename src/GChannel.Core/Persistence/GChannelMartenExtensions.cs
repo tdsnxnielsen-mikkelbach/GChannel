@@ -154,6 +154,14 @@ public static class GChannelMartenExtensions
             .Index(x => x.EligibleCount)
             .Index(x => x.LastScannedUtc);
 
+        opts.Schema.For<SupportCaseRecord>()
+            .Index(x => x.State)
+            .Index(x => x.UpdateTime);
+
+        opts.Schema.For<SupportEventRecord>()
+            .Index(x => x.ReceivedAt)
+            .Index(x => x.CaseId);
+
         opts.Schema.For<RecurringJobState>();
         opts.Schema.For<SyncCursor>();
         opts.Schema.For<DashboardRefreshState>();

@@ -221,6 +221,41 @@ public static class ApiRoutes
     public static string PubSubSubscriber(string serviceAccount) =>
         $"/api/notifications/subscribers/{serviceAccount}";
 
+    // Cloud Customer Care support cases (cloudsupport.googleapis.com) — mirrored from the support event
+    // subscription (Pub/Sub) and managed through the Cloud Support API with the service account.
+
+    /// <summary>The mirrored support cases of the organization (all states unless <paramref name="openOnly"/>).</summary>
+    public static string SupportCases(bool openOnly = false) => openOnly ? "/api/support/cases?open=true" : "/api/support/cases";
+
+    /// <summary>Creates a support case (POST).</summary>
+    public const string SupportCaseCreate = "/api/support/cases";
+
+    /// <summary>One case with comments and attachments; <paramref name="refresh"/> re-reads it from Google first.</summary>
+    public static string SupportCase(string caseId, bool refresh = false) =>
+        $"/api/support/cases/{Uri.EscapeDataString(caseId)}" + (refresh ? "?refresh=true" : string.Empty);
+
+    /// <summary>Adds a comment to a case (POST).</summary>
+    public static string SupportCaseComments(string caseId) => $"/api/support/cases/{Uri.EscapeDataString(caseId)}/comments";
+
+    /// <summary>Closes a case (POST).</summary>
+    public static string SupportCaseClose(string caseId) => $"/api/support/cases/{Uri.EscapeDataString(caseId)}/close";
+
+    /// <summary>Escalates a case (POST).</summary>
+    public static string SupportCaseEscalate(string caseId) => $"/api/support/cases/{Uri.EscapeDataString(caseId)}/escalate";
+
+    /// <summary>Case classifications matching a display-name search (needed to create a case).</summary>
+    public static string SupportClassifications(string? search) =>
+        "/api/support/classifications" + (string.IsNullOrWhiteSpace(search) ? string.Empty : $"?search={Uri.EscapeDataString(search)}");
+
+    /// <summary>The organization's support event subscriptions (state / failure reason).</summary>
+    public const string SupportSubscription = "/api/support/subscription";
+
+    /// <summary>Resumes a FAILING support event subscription (no-op update that makes Google re-verify the topic).</summary>
+    public const string SupportSubscriptionResume = "/api/support/subscription/resume";
+
+    /// <summary>Recent support events received from Pub/Sub.</summary>
+    public const string SupportEvents = "/api/support/events";
+
     // Cloud Billing budgets (billingbudgets.googleapis.com) — outside the Channel API; reads/writes
     // budgets on the reseller's billing accounts and per-customer sub-accounts via a service account.
 

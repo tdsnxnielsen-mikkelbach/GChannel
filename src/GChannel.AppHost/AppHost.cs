@@ -109,6 +109,7 @@ estateEvents.AddServiceBusSubscription("api-cache").WithProperties(ConfigureSubs
 serviceBus.AddServiceBusQueue("estate-sync").WithProperties(ConfigureQueue);
 serviceBus.AddServiceBusQueue("jobs").WithProperties(ConfigureQueue);
 serviceBus.AddServiceBusQueue("operations").WithProperties(ConfigureQueue);
+serviceBus.AddServiceBusQueue("support").WithProperties(ConfigureQueue);
 // Dead letters are only ever sent (never consumed by the apps), so the queue keeps the Service Bus defaults;
 // inspect / resubmit them with Service Bus Explorer in the portal.
 serviceBus.AddServiceBusQueue("wolverine-dead-letter-queue");
@@ -185,6 +186,12 @@ var ionGatewayEnabled = builder.AddParameter("IonGatewayEnabled");
 var ionGatewayBaseUrl = builder.AddParameter("IonGatewayBaseUrl");
 var ionGatewayApiKeyParam = builder.AddParameter("IonGatewayApiKey", secret: true);
 
+// Cloud Customer Care support cases (Eventing → Support). The organization id enables the Cloud Support API calls
+// (service-account key above); the subscription is the pull subscription on the `support-events` topic that the
+// org's SupportEventSubscription publishes to (project: GoogleChannelPubSubProjectId). Blank keeps each part off.
+var googleSupportOrganizationId = builder.AddParameter("GoogleSupportOrganizationId");
+var googleSupportPubSubSubscriptionId = builder.AddParameter("GoogleSupportPubSubSubscriptionId");
+
 // Back-end services container app (internal): owns PostgreSQL (Marten), Redis (cache), Service Bus
 // (Wolverine) and the Google Channel API.
 var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
@@ -208,6 +215,8 @@ var apiService = builder.AddProject<Projects.GChannel_ApiService>("apiservice")
     .WithEnvironment("GoogleBilling__ExcludeBillingAccountIds", googleBillingExcludeBillingAccountIds)
     .WithEnvironment("IonGateway__Enabled", ionGatewayEnabled)
     .WithEnvironment("IonGateway__BaseUrl", ionGatewayBaseUrl)
+    .WithEnvironment("GoogleSupport__OrganizationId", googleSupportOrganizationId)
+    .WithEnvironment("GoogleSupport__PubSubSubscriptionId", googleSupportPubSubSubscriptionId)
     .WaitFor(database)
     .WaitFor(cache)
     .WaitFor(serviceBus);
@@ -238,6 +247,8 @@ var worker = builder.AddProject<Projects.GChannel_Worker>("worker")
     .WithEnvironment("GoogleBilling__SubAccountDomainMap", googleBillingSubAccountDomainMap)
     .WithEnvironment("IonGateway__Enabled", ionGatewayEnabled)
     .WithEnvironment("IonGateway__BaseUrl", ionGatewayBaseUrl)
+    .WithEnvironment("GoogleSupport__OrganizationId", googleSupportOrganizationId)
+    .WithEnvironment("GoogleSupport__PubSubSubscriptionId", googleSupportPubSubSubscriptionId)
     .WithReplicas(1)
     .WaitFor(database)
     .WaitFor(cache)

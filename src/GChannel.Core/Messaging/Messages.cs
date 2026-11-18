@@ -19,6 +19,12 @@ public sealed record EntitlementChanged(string CustomerId, string EntitlementId,
 /// <summary>A Google Pub/Sub change notification arrived (bridged by the worker's subscriber).</summary>
 public sealed record ChannelNotificationArrived(ChannelNotification Notification);
 
+/// <summary>
+/// A Cloud Customer Care support event arrived from Pub/Sub (bridged by the worker's support subscriber). Sent to the
+/// worker-only Service Bus queue "support"; the handler records it and refreshes the case from the Cloud Support API.
+/// </summary>
+public sealed record SupportEventArrived(SupportEvent Event);
+
 /// <summary>A mutating Channel API call returned a long-running operation to track.</summary>
 public sealed record OperationSubmitted(
     [property: SagaIdentity] string OperationName,
@@ -62,6 +68,9 @@ public sealed record RunBillingPostureScan(Guid RunId) : IRecurringJobTick;
 
 /// <summary>One nightly incoming-transfer scan (listTransferableSkus for every customer in the read model).</summary>
 public sealed record RunIncomingTransferScan(Guid RunId) : IRecurringJobTick;
+
+/// <summary>One daily support-case catch-up (cases.list for the organization; refreshes cases whose events were missed).</summary>
+public sealed record RunSupportCaseCatchUp(Guid RunId) : IRecurringJobTick;
 
 // ---------------------------------------------------------------------------------------------------
 // Operation tracking saga — Service Bus queue "operations".
