@@ -7,22 +7,17 @@
 > belong in `docs/` or commit messages, not here. The rules live in
 > [`.github/copilot-instructions.md`](../.github/copilot-instructions.md).
 
-**Last updated:** 2026-11-18 08:35 UTC · **branch:** `main`, deployed application code `8ac3f17`.
-New: **Eventing → Support** (Google Cloud support cases via the Pub/Sub connector) — deployed, waiting on GCP setup. No CI workflows.
+**Last updated:** 2026-11-18 09:15 UTC · **branch:** `main`, deployed application code `c13e4bb`.
+The Support feature (`8ac3f17`) was **removed** again in `c13e4bb` (see *Session log*). No CI workflows.
 
 ## Current state
 
 ### Code
 
-- **Support cases (`8ac3f17`):** follows Google's
-  [Pub/Sub connector](https://docs.cloud.google.com/support/docs/reference/pubsub-connector). The worker's
-  `SupportEventsService` pulls `GoogleSupport:PubSubSubscriptionId`, then sends to the new Service Bus `support`
-  queue. `SupportEventArrivedHandler` reads the case through the Cloud Support API v2 (`ISupportCasesService`,
-  reseller SA key) into `SupportCaseRecord` and `SupportEventRecord`. A daily `support-case-catch-up` runs at
-  04:00 UTC. `/api/support/*` lists and reads cases, and creates, comments, closes and escalates them; it also
-  searches classifications and resumes the subscription. All return 503 until `GoogleSupport:OrganizationId` is set.
-  Pages: `/support`, `/support/cases/{id}`, `/support/new`. Setup:
-  [configuration.md](configuration.md#google-cloud-support-cases-pubsub-connector).
+- **No support-case feature.** The Cloud Support API covers only Google Cloud Customer Care cases (Standard,
+  Enhanced or Premium plan), and its Pub/Sub event subscriptions need Premium. All of our cases are Google
+  Workspace / reseller cases, which have no public API. A possible alternative is to parse case emails via the
+  Gmail API (not started; the user hasn't decided).
 - **Incoming transfers (`197192f`):** nightly `RunIncomingTransferScan` (03:00 UTC, `GoogleChannel:TransferScan*`)
   → `IncomingTransferRecord`; `/customers/transfers` with Re-check and Transfer deep link.
 - **Operation log (`dff122e`, `7976ea5`):** Google can't list operations (501), so the API writes a Marten
@@ -30,21 +25,19 @@ New: **Eventing → Support** (Google Cloud support cases via the Pub/Sub connec
   and `/operations` lists it. Toasts link through `UiNotifier.AddOperation`.
 - **Earlier:** transfer billing account `2c99982`; catalog caches `268b71b`/`5a5ba70`/`e65e5f6`; PR #8 spend window.
 - **Stack:** Marten/Wolverine on PostgreSQL/Service Bus; Radzen.Blazor 12.1.8 (`UiNotifier`, Driver.js attributes).
-  Aspire 13.6.4; `Microsoft.OpenApi` intentionally pinned to 2.x; `Google.Apis.CloudSupport.v2` 1.78.0.4287.
-- Quality gates: build 0 errors; suite 75/75 (12 new support tests); Release publish/codegen passed via `azd up`.
+  Aspire 13.6.4; `Microsoft.OpenApi` intentionally pinned to 2.x.
+- Quality gates: build 0 errors; suite 63/63; Release publish/codegen passed via `azd up`.
 
 ### Azure (`rg-gchannel`, Sweden Central, azd env `gchannel`, sub `ba99b95e-…`)
 
-- Deployed 2026-11-18 08:28 UTC via `azd up` from `main` (`8ac3f17`):
-  API `0000092`, worker `0000084`, web `0000087`, all Healthy/Running, with Static codegen. The `support` queue
-  was provisioned. azd parameters: `GoogleSupportPubSubSubscriptionId=gchannel-support-sub` and
-  `GoogleSupportOrganizationId=""`. The support subscriber logged `NotFound (gchannel-support-sub)` and stopped,
-  which is expected until the GCP setup (item 1) is done; it restarts with the next revision.
+- Deployed 2026-11-18 09:08 UTC via `azd up` from `main` (`c13e4bb`): API `0000093`, worker `0000085`,
+  web `0000088`, all Healthy/Running, with Static codegen. The `GoogleSupport*` azd parameters were unset, and the
+  orphaned `support` Service Bus queue (empty) was deleted by hand.
 
 | Resource | Notes |
 | --- | --- |
 | `postgres-676wfhbuks6uu` | Flexible Server PG16 `Standard_B1ms`, zone 2 (no pinning), **Entra-only**; db `gchanneldb` with schemas `gchannel`, `wolverine_api`, `wolverine_worker` (+ the orphaned old `wolverine`, see open items) |
-| `messaging-676wfhbuks6uu` | Service Bus Standard, **local auth disabled**; topic `estate-events` (+`worker-estate`, `api-cache`), queues `estate-sync`, `jobs`, `operations`, `support`, `wolverine-dead-letter-queue` |
+| `messaging-676wfhbuks6uu` | Service Bus Standard, **local auth disabled**; topic `estate-events` (+`worker-estate`, `api-cache`), queues `estate-sync`, `jobs`, `operations`, `wolverine-dead-letter-queue` |
 | `cache-676wfhbuks6uu` | Managed Redis B0, access keys disabled (Entra access policy) |
 | `secrets-676wfhbuks6uu` | Key Vault: `google-client-secret`, `google-channel-sa-key`, `ion-gateway-api-key` |
 | `mi-676wfhbuks6uu` | the **single** user-assigned identity used by all three apps: Postgres Entra admin, Service Bus Data Owner, Redis access policy, KV Secrets User, AcrPull |
@@ -55,18 +48,10 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Open items
 
-1. **Support cases — GCP setup (user).** Run the one-time commands in
-   [configuration.md](configuration.md#google-cloud-support-cases-pubsub-connector):
-   - enable the APIs;
-   - create topic `support-events` with `cloud-support-apievents@system.gserviceaccount.com` as publisher;
-   - create subscription `gchannel-support-sub`, with the SA as subscriber;
-   - grant the SA org roles `cloudsupport.techSupportEditor`, `supportSubscriptionEditor` and `organizationViewer`;
-   - POST the `supportEventSubscriptions`.
-
-   The **org ID is unknown**: the local gcloud SA can't list organizations, so get it with
-   `gcloud organizations list` as an org user. Then run `azd env config set
-   infra.parameters.GoogleSupportOrganizationId <id>` and `azd up`. Untested against the live API, so expect
-   role or field fixes. Create a **test case** first.
+1. **GCP leftovers from the support attempt (user, optional cleanup)** in project `tdsgchannel` / org
+   `427790891977`: topic `support-events`, subscription `gchannel-support-sub`, and the org roles granted to
+   `gchannel-dashboard@…` (`cloudsupport.*`, `organizationViewer`) and to the user. They are harmless, but can
+   be deleted. Keep `cloudresourcemanager.googleapis.com` enabled.
 2. **Triage 3 notification dead letters** with `EventStreamUnexpectedMaxEventIdException` when appropriate.
    They are not the old snapshot-collision failures; do not blindly replay or delete them.
 3. **Month-boundary edge:** UTC "last complete" can differ from GCP's US Pacific invoice month for a few hours. Accepted.
@@ -95,8 +80,7 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 
 ## Next steps (suggested order)
 
-1. User: run the support GCP setup and supply the org ID (item 1). Then deploy, open `/support`, create a
-   **test case**, and confirm the event arrives: a feed row, the case mirrored, and the subscription `WORKING`.
+1. Optional: decide whether to build an email-based (Gmail API) Workspace case tracker; tidy GCP leftovers (item 1).
 2. Act on Google's answer to the STG ticket: token, trace IDs, PSC comparison (items 11, 12).
 3. Verify product/SKU cache hits on another same-product entitlement (item 6).
 4. Triage the 3 unrelated notification dead letters without blindly replaying (item 2).
@@ -106,10 +90,10 @@ redirect URI unchanged). Aspire dashboard: `https://aspire-dashboard.ext.gentlew
 ## Start-of-session checklist
 
 ```powershell
-git status -sb; git log --oneline -5                     # expect main; deployed application code 8ac3f17
+git status -sb; git log --oneline -5                     # expect main; deployed application code c13e4bb
 az account show --query name -o tsv                      # "Azure subscription 1"; else az login / azd auth login
 dotnet build GChannel.slnx -nologo -v q                  # 0 errors
-dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 75 tests (Docker required)
+dotnet test --project tests\GChannel.Tests\GChannel.Tests.csproj   # 63 tests (Docker required)
 az containerapp revision list -n worker -g rg-gchannel --query "[?properties.active].{r:name,h:properties.healthState}" -o table
 ```
 
@@ -157,3 +141,4 @@ resources outside `rg-gchannel` on the user's behalf; `.azure/` is git-ignored a
 - **2026-11-17 12:15** — Operation log `dff122e`/`7976ea5` deployed; 61 pass. Live STG transfer rerun recorded end to end (worker poll → Failed); Google returns only FORBIDDEN + traceId, no ErrorInfo.
 - **2026-11-17 12:38** — Incoming transfers `197192f` deployed; 63 pass. The scan runs live; STG listed and deep link verified; resold customers return TRANSFER_TOKEN_DOES_NOT_EXIST (item 11).
 - **2026-11-18 08:28** — STG ticket raised with Google. Support cases via the Pub/Sub connector, `8ac3f17`, deployed with `azd up` (new `support` queue); 75 pass. Awaiting user GCP setup and org ID (item 1).
+- **2026-11-18 09:08** — Support events need Premium Support, and all of our cases are Workspace cases, which have no public API. Reverted in `c13e4bb`, deployed, `support` queue deleted; 63 pass.
